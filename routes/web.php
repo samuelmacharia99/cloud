@@ -1,35 +1,20 @@
 <?php
 
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\ProductController;
-use App\Http\Controllers\ServiceController;
-use App\Http\Controllers\InvoiceController;
-use App\Http\Controllers\TicketController;
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/dashboard');
+Route::get('/', function () {
+    return view('welcome');
+});
+
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware('auth')->group(function () {
-    Route::get('/dashboard', DashboardController::class)->name('dashboard');
-
-    // Products
-    Route::resource('products', ProductController::class);
-
-    // Services
-    Route::resource('services', ServiceController::class);
-
-    // Invoices
-    Route::resource('invoices', InvoiceController::class);
-
-    // Tickets
-    Route::resource('tickets', TicketController::class)->only(['index', 'show', 'create', 'store']);
-    Route::post('/tickets/{ticket}/reply', [TicketController::class, 'reply'])->name('tickets.reply');
-    Route::post('/tickets/{ticket}/close', [TicketController::class, 'close'])->name('tickets.close');
-
-    // Admin only
-    Route::middleware('admin')->group(function () {
-        // Admin dashboard features
-    });
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
 require __DIR__.'/auth.php';
