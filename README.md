@@ -1,59 +1,252 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Talksasa Cloud - Modern Hosting Billing Platform
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A clean, modern, and scalable web hosting billing and provisioning platform built with Laravel 12, Livewire, and Tailwind CSS.
 
-## About Laravel
+## Features
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Admin Dashboard** - Overview of customers, services, invoices, and support tickets
+- **Customer Dashboard** - Manage services, view invoices, domains, and support tickets
+- **Product Management** - Create and manage hosting products with flexible pricing
+- **Service Management** - Provision and manage customer services
+- **Billing System** - Invoice generation, payment tracking, and outstanding balance management
+- **Domain Management** - Track domains with DNS zone management
+- **Support Ticketing** - Customer support with ticket tracking
+- **Modern UI** - Premium SaaS-style interface with dark mode support
+- **Responsive Design** - Works seamlessly on desktop, tablet, and mobile
+- **Reseller-Ready Architecture** - Foundation for multi-tier reseller support
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Tech Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Backend**: Laravel 12, PHP 8.3+
+- **Frontend**: Blade, Livewire, Tailwind CSS, Alpine.js
+- **Database**: MySQL / MariaDB
+- **Build Tool**: Vite
+- **Authentication**: Laravel Breeze
 
-## Learning Laravel
+## Quick Start
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+### Prerequisites
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- PHP 8.3 or higher
+- Composer
+- Node.js 18+
+- MySQL 8.0+ or MariaDB 10.4+
 
-## Laravel Sponsors
+### Installation
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd talksasa-cloud
+   ```
 
-### Premium Partners
+2. **Install PHP dependencies**
+   ```bash
+   composer install
+   ```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+3. **Install Node dependencies**
+   ```bash
+   npm install
+   ```
+
+4. **Create environment file**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+
+5. **Configure database**
+   Update `.env` with your database credentials:
+   ```
+   DB_CONNECTION=mysql
+   DB_HOST=127.0.0.1
+   DB_PORT=3306
+   DB_DATABASE=talksasa_cloud
+   DB_USERNAME=root
+   DB_PASSWORD=
+   ```
+
+6. **Run migrations**
+   ```bash
+   php artisan migrate
+   ```
+
+7. **Seed sample data (optional)**
+   ```bash
+   php artisan db:seed
+   ```
+
+8. **Build frontend assets**
+   ```bash
+   npm run build
+   ```
+
+### Development
+
+1. **Start development server**
+   ```bash
+   php artisan serve
+   ```
+
+2. **Start Vite dev server (in another terminal)**
+   ```bash
+   npm run dev
+   ```
+
+Visit `http://localhost:8000` to access the application.
+
+## Project Structure
+
+```
+talksasa-cloud/
+├── app/
+│   ├── Models/              # Eloquent models
+│   ├── Http/
+│   │   ├── Controllers/     # Route controllers
+│   │   └── Middleware/      # HTTP middleware
+│   ├── Policies/            # Authorization policies
+│   ├── Actions/             # Service classes
+│   └── Providers/           # Service providers
+├── database/
+│   ├── migrations/          # Database migrations
+│   ├── seeders/             # Database seeders
+│   └── factories/           # Model factories
+├── resources/
+│   ├── views/               # Blade templates
+│   │   ├── layouts/         # Layout templates
+│   │   ├── dashboard/       # Dashboard views
+│   │   ├── products/        # Product views
+│   │   ├── services/        # Service views
+│   │   ├── invoices/        # Invoice views
+│   │   └── tickets/         # Ticket views
+│   ├── css/                 # Tailwind CSS
+│   └── js/                  # JavaScript
+├── routes/
+│   ├── web.php              # Web routes
+│   ├── api.php              # API routes
+│   ├── auth.php             # Auth routes
+│   └── console.php          # Console commands
+├── config/                  # Configuration files
+└── public/                  # Public assets
+```
+
+## Models & Relationships
+
+### Core Models
+
+- **User** - Customer/Admin accounts
+- **Product** - Hosting products (plans)
+- **Service** - Customer service subscriptions
+- **Invoice** - Billing invoices
+- **InvoiceItem** - Individual invoice line items
+- **Payment** - Payment records
+- **Domain** - Customer domains
+- **DnsZone** - DNS management
+- **DnsRecord** - Individual DNS records
+- **Ticket** - Support tickets
+- **TicketReply** - Support ticket responses
+- **Setting** - Application settings
+
+### Key Relationships
+
+- User → Services (1:N)
+- User → Invoices (1:N)
+- User → Domains (1:N)
+- User → Tickets (1:N)
+- Service → Product (N:1)
+- Invoice → InvoiceItems (1:N)
+- Invoice → Payments (1:N)
+- Domain → DnsZones (1:N)
+- DnsZone → DnsRecords (1:N)
+- Ticket → TicketReplies (1:N)
+
+## Routes
+
+### Public Routes
+- `/` - Redirect to dashboard
+- `/register` - User registration (Breeze)
+- `/login` - User login (Breeze)
+
+### Authenticated Routes
+- `/dashboard` - Main dashboard (role-based)
+- `/products` - Product catalog
+- `/services` - Service management
+- `/invoices` - Invoice management
+- `/tickets` - Support tickets
+
+### Admin Routes
+- `/products/create` - Create new product
+- `/services/create` - Create new service
+- `/invoices/create` - Create new invoice
+
+## Database Schema
+
+All tables include proper:
+- ✅ Timestamps (created_at, updated_at)
+- ✅ Foreign key constraints
+- ✅ Indexes on frequently queried columns
+- ✅ Proper data types and constraints
+- ✅ Soft deletes support (can be added)
+
+## Authentication
+
+Uses Laravel Breeze for authentication. Register new accounts or login with:
+- Email
+- Password
+
+Admin accounts are flagged with `is_admin` boolean.
+
+## Configuration
+
+Key configuration files:
+
+- `config/app.php` - Application settings
+- `config/database.php` - Database configuration
+- `config/auth.php` - Authentication settings
+- `.env` - Environment variables
+
+## Development Guidelines
+
+### Code Style
+- Follow Laravel conventions
+- Use meaningful variable names
+- Add docblock comments for complex logic
+- Organize code into service classes
+
+### Database
+- Always write migrations in order
+- Use foreign keys with appropriate constraints
+- Add indexes to frequently queried columns
+- Use soft deletes for audit trails
+
+### Frontend
+- Use Blade for templating
+- Leverage Tailwind for styling
+- Implement dark mode support
+- Ensure responsive design
+
+## Future Enhancements
+
+- [ ] Livewire components for real-time updates
+- [ ] Payment gateway integration
+- [ ] DirectAdmin API integration
+- [ ] Multi-tenant reseller support
+- [ ] Advanced reporting and analytics
+- [ ] Email notifications
+- [ ] API rate limiting
+- [ ] Two-factor authentication
 
 ## Contributing
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+1. Create a feature branch
+2. Make your changes
+3. Submit a pull request
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Proprietary - All rights reserved
+
+## Support
+
+For issues and questions, use the support ticketing system or contact the development team.

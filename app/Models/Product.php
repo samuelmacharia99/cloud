@@ -1,13 +1,41 @@
 <?php
+
 namespace App\Models;
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Product extends Model {
+class Product extends Model
+{
     use HasFactory;
-    protected $fillable = ["tenant_id", "name", "description", "type", "pricing_monthly", "pricing_annual", "specs"];
-    protected $casts = ["specs" => "json"];
-    
-    public function tenant() { return $this->belongsTo(Tenant::class); }
-    public function services() { return $this->hasMany(Service::class); }
+
+    protected $fillable = [
+        'name',
+        'slug',
+        'description',
+        'category',
+        'price',
+        'billing_cycle',
+        'features',
+        'setup_fee',
+        'is_active',
+        'order',
+    ];
+
+    protected $casts = [
+        'features' => 'array',
+        'is_active' => 'boolean',
+        'price' => 'decimal:2',
+        'setup_fee' => 'decimal:2',
+    ];
+
+    public function services()
+    {
+        return $this->hasMany(Service::class);
+    }
+
+    public function invoiceItems()
+    {
+        return $this->hasMany(InvoiceItem::class);
+    }
 }
