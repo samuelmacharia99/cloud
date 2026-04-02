@@ -18,6 +18,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/invoices', \App\Http\Controllers\Admin\InvoiceController::class)->names('admin.invoices');
         Route::resource('admin/payments', \App\Http\Controllers\Admin\PaymentController::class)->names('admin.payments');
         Route::resource('admin/services', \App\Http\Controllers\Admin\ServiceController::class)->names('admin.services');
+        Route::resource('admin/orders', \App\Http\Controllers\Admin\OrderController::class)->only(['index', 'show'])->names('admin.orders');
 
         // Service actions
         Route::post('admin/services/{service}/provision', [\App\Http\Controllers\Admin\ServiceController::class, 'provision'])->name('admin.services.provision');
@@ -34,8 +35,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('customer')->group(function () {
         Route::get('/my/services', [\App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::get('/my/services/{service}', [\App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
-        Route::get('/my/orders', fn() => view('customer.orders.index'))->name('customer.orders.index');
-        Route::get('/my/invoices', fn() => view('customer.invoices.index'))->name('customer.invoices.index');
+        Route::resource('my/orders', \App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
+        Route::resource('my/invoices', \App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('/my/payments', fn() => view('customer.payments.index'))->name('customer.payments.index');
         Route::get('/my/tickets', fn() => view('customer.tickets.index'))->name('customer.tickets.index');
     });

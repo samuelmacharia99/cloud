@@ -41,9 +41,33 @@
                         @enderror
                     </div>
 
-                    <!-- Amount -->
+                    <!-- Subtotal -->
                     <div>
-                        <label for="total" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Invoice Amount</label>
+                        <label for="subtotal" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Subtotal</label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
+                            <input type="number" id="subtotal" name="subtotal" value="{{ old('subtotal') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('subtotal') border-red-500 @enderror" required>
+                        </div>
+                        @error('subtotal')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- Tax -->
+                    <div>
+                        <label for="tax" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Tax <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                        <div class="relative">
+                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
+                            <input type="number" id="tax" name="tax" value="{{ old('tax', '0') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('tax') border-red-500 @enderror">
+                        </div>
+                        @error('tax')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- Total -->
+                    <div>
+                        <label for="total" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Total</label>
                         <div class="relative">
                             <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
                             <input type="number" id="total" name="total" value="{{ old('total') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('total') border-red-500 @enderror" required>
@@ -58,7 +82,7 @@
                         <label for="status" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Status</label>
                         <select id="status" name="status" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('status') border-red-500 @enderror" required>
                             <option value="draft" @selected(old('status') === 'draft')>Draft</option>
-                            <option value="sent" @selected(old('status') === 'sent')>Sent</option>
+                            <option value="unpaid" @selected(old('status') === 'unpaid')>Unpaid</option>
                             <option value="paid" @selected(old('status') === 'paid')>Paid</option>
                             <option value="overdue" @selected(old('status') === 'overdue')>Overdue</option>
                             <option value="cancelled" @selected(old('status') === 'cancelled')>Cancelled</option>
@@ -73,9 +97,9 @@
                 <div class="space-y-6">
                     <!-- Due Date -->
                     <div>
-                        <label for="due_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Due Date <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
-                        <input type="date" id="due_at" name="due_at" value="{{ old('due_at') }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('due_at') border-red-500 @enderror">
-                        @error('due_at')
+                        <label for="due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Due Date <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                        <input type="date" id="due_date" name="due_date" value="{{ old('due_date') }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('due_date') border-red-500 @enderror">
+                        @error('due_date')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>

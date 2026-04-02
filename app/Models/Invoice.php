@@ -56,7 +56,7 @@ class Invoice extends Model
 
     public function isOverdue(): bool
     {
-        return $this->status === 'unpaid' && $this->due_date->isPast();
+        return in_array($this->status, ['unpaid', 'overdue']) && $this->due_date?->isPast();
     }
 
     public function getAmountPaid(): float

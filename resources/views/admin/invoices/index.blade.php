@@ -34,7 +34,7 @@
                 <select name="status" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
                     <option value="all">All Status</option>
                     <option value="draft" @selected(request('status') === 'draft')>Draft</option>
-                    <option value="sent" @selected(request('status') === 'sent')>Sent</option>
+                    <option value="unpaid" @selected(request('status') === 'unpaid')>Unpaid</option>
                     <option value="paid" @selected(request('status') === 'paid')>Paid</option>
                     <option value="overdue" @selected(request('status') === 'overdue')>Overdue</option>
                     <option value="cancelled" @selected(request('status') === 'cancelled')>Cancelled</option>
@@ -73,14 +73,16 @@
                             </td>
                             <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                {{ $invoice->due_at ? $invoice->due_at->format('M d, Y') : '-' }}
+                                {{ $invoice->due_date ? $invoice->due_date->format('M d, Y') : '-' }}
                             </td>
                             <td class="px-6 py-4">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                                     @if($invoice->status === 'paid')
                                         bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                    @elseif($invoice->status === 'sent')
-                                        bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
+                                    @elseif($invoice->status === 'unpaid')
+                                        bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                                    @elseif($invoice->status === 'draft')
+                                        bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                                     @elseif($invoice->status === 'overdue')
                                         bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                                     @elseif($invoice->status === 'cancelled')

@@ -24,8 +24,10 @@
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                         @if($invoice->status === 'paid')
                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                        @elseif($invoice->status === 'sent')
-                            bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
+                        @elseif($invoice->status === 'unpaid')
+                            bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                        @elseif($invoice->status === 'draft')
+                            bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                         @elseif($invoice->status === 'overdue')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                         @elseif($invoice->status === 'cancelled')
@@ -70,10 +72,63 @@
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Due Date</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $invoice->due_at?->format('M d, Y') ?? 'Not set' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $invoice->due_date?->format('M d, Y') ?? 'Not set' }}</p>
                     </div>
                 </div>
             </div>
+
+            <!-- Line Items -->
+            @if ($invoice->items->count() > 0)
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Line Items</h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="border-b border-slate-200 dark:border-slate-700">
+                                <tr>
+                                    <th class="text-left py-3 px-3 font-medium text-slate-600 dark:text-slate-300">#</th>
+                                    <th class="text-left py-3 px-3 font-medium text-slate-600 dark:text-slate-300">Description</th>
+                                    <th class="text-right py-3 px-3 font-medium text-slate-600 dark:text-slate-300">Qty</th>
+                                    <th class="text-right py-3 px-3 font-medium text-slate-600 dark:text-slate-300">Unit Price</th>
+                                    <th class="text-right py-3 px-3 font-medium text-slate-600 dark:text-slate-300">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                                @foreach ($invoice->items as $item)
+                                    <tr>
+                                        <td class="py-3 px-3 text-slate-900 dark:text-white">{{ $loop->iteration }}</td>
+                                        <td class="py-3 px-3">
+                                            <div>
+                                                <p class="font-medium text-slate-900 dark:text-white">{{ $item->product->name ?? 'Unknown Product' }}</p>
+                                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
+                                            </div>
+                                        </td>
+                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>
+                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white">${{ number_format($item->unit_price, 2) }}</td>
+                                        <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">${{ number_format($item->amount, 2) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Totals -->
+                    <div class="mt-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <div class="flex justify-end gap-16">
+                            <div>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Subtotal</p>
+                                <p class="font-medium text-slate-900 dark:text-white">${{ number_format($invoice->subtotal, 2) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Tax</p>
+                                <p class="font-medium text-slate-900 dark:text-white">${{ number_format($invoice->tax, 2) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Total</p>
+                                <p class="font-bold text-lg text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            @endif
 
             <!-- Payments -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">

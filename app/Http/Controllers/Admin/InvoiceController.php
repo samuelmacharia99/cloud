@@ -47,11 +47,18 @@ class InvoiceController extends Controller
     {
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
+            'status' => 'required|in:draft,unpaid,paid,overdue,cancelled',
+            'subtotal' => 'required|numeric|min:0',
+            'tax' => 'nullable|numeric|min:0',
             'total' => 'required|numeric|min:0',
-            'status' => 'required|in:draft,sent,paid,overdue,cancelled',
-            'due_at' => 'nullable|date',
+            'due_date' => 'nullable|date',
             'notes' => 'nullable|string',
         ]);
+
+        // Auto-generate invoice number
+        $count = Invoice::count() + 1;
+        $validated['invoice_number'] = 'INV-' . now()->format('Ymd') . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+        $validated['tax'] ??= 0;
 
         Invoice::create($validated);
 
@@ -61,7 +68,7 @@ class InvoiceController extends Controller
 
     public function show(Invoice $invoice)
     {
-        $invoice->load('user', 'payments');
+        $invoice->load('user', 'items.product', 'payments');
         return view('admin.invoices.show', compact('invoice'));
     }
 
@@ -75,12 +82,15 @@ class InvoiceController extends Controller
     {
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
+            'status' => 'required|in:draft,unpaid,paid,overdue,cancelled',
+            'subtotal' => 'required|numeric|min:0',
+            'tax' => 'nullable|numeric|min:0',
             'total' => 'required|numeric|min:0',
-            'status' => 'required|in:draft,sent,paid,overdue,cancelled',
-            'due_at' => 'nullable|date',
+            'due_date' => 'nullable|date',
             'notes' => 'nullable|string',
         ]);
 
+        $validated['tax'] ??= 0;
         $invoice->update($validated);
 
         return redirect()->route('admin.invoices.show', $invoice)
