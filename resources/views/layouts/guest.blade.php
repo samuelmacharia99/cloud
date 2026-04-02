@@ -67,7 +67,7 @@
 
                     <!-- Form Content -->
                     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-lg">
-                        {{ $slot }}
+                        @yield('content')
                     </div>
                 </div>
 
