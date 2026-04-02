@@ -44,6 +44,11 @@ class Invoice extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function services()
+    {
+        return $this->hasMany(Service::class);
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';

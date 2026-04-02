@@ -3,6 +3,12 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\User;
+use App\Models\Service;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\Ticket;
+use App\Models\Product;
 
 class DashboardController extends Controller
 {
@@ -19,16 +25,95 @@ class DashboardController extends Controller
 
     private function adminDashboard()
     {
-        $data = [
-            'totalCustomers' => \App\Models\User::where('is_admin', false)->count(),
-            'activeServices' => \App\Models\Service::where('status', 'active')->count(),
-            'unpaidInvoices' => \App\Models\Invoice::where('status', 'unpaid')->sum('total'),
-            'totalRevenue' => \App\Models\Payment::where('status', 'completed')->sum('amount'),
-            'recentInvoices' => \App\Models\Invoice::latest()->take(5)->get(),
-            'openTickets' => \App\Models\Ticket::where('status', 'open')->count(),
+        // Key Metrics
+        $totalCustomers = User::where('is_admin', false)->count();
+        $activeServices = Service::where('status', 'active')->count();
+        $totalServices = Service::count();
+        $suspendedServices = Service::where('status', 'suspended')->count();
+        $unpaidInvoiceTotal = Invoice::where('status', 'unpaid')->sum('total');
+        $overdueInvoiceTotal = Invoice::where('status', 'overdue')->sum('total');
+        $totalRevenue = Payment::where('status', 'completed')->sum('amount');
+        $pendingPayments = Payment::where('status', 'pending')->sum('amount');
+        $openTickets = Ticket::where('status', '!=', 'closed')->count();
+        $urgentTickets = Ticket::where('status', '!=', 'closed')->where('priority', 'urgent')->count();
+
+        // Recent Activity
+        $recentCustomers = User::where('is_admin', false)->latest()->take(8)->get();
+        $recentServices = Service::with('user', 'product')->latest()->take(8)->get();
+        $recentInvoices = Invoice::with('user')->latest()->take(8)->get();
+        $recentPayments = Payment::with('user', 'invoice')->latest()->take(8)->get();
+        $openTickets_data = Ticket::with('user', 'assignee')->where('status', '!=', 'closed')->latest()->take(8)->get();
+
+        // Status Breakdown
+        $serviceStatus = [
+            'active' => Service::where('status', 'active')->count(),
+            'suspended' => Service::where('status', 'suspended')->count(),
+            'terminated' => Service::where('status', 'terminated')->count(),
+            'cancelled' => Service::where('status', 'cancelled')->count(),
         ];
 
-        return view('dashboard.admin', $data);
+        $invoiceStatus = [
+            'unpaid' => Invoice::where('status', 'unpaid')->count(),
+            'paid' => Invoice::where('status', 'paid')->count(),
+            'overdue' => Invoice::where('status', 'overdue')->count(),
+            'cancelled' => Invoice::where('status', 'cancelled')->count(),
+        ];
+
+        // Revenue Data (last 30 days)
+        $revenueData = [];
+        for ($i = 29; $i >= 0; $i--) {
+            $date = now()->subDays($i);
+            $revenue = Payment::where('status', 'completed')
+                ->whereDate('created_at', $date->toDateString())
+                ->sum('amount');
+            $revenueData[] = $revenue;
+        }
+
+        // Top Products
+        $topProducts = Product::withCount('services')
+            ->orderBy('services_count', 'desc')
+            ->take(5)
+            ->get();
+
+        // Recent Signups (last 7 days)
+        $signupData = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $date = now()->subDays($i);
+            $signups = User::where('is_admin', false)
+                ->whereDate('created_at', $date->toDateString())
+                ->count();
+            $signupData[] = $signups;
+        }
+
+        return view('dashboard.admin', [
+            // Metrics
+            'totalCustomers' => $totalCustomers,
+            'activeServices' => $activeServices,
+            'totalServices' => $totalServices,
+            'suspendedServices' => $suspendedServices,
+            'unpaidInvoiceTotal' => $unpaidInvoiceTotal,
+            'overdueInvoiceTotal' => $overdueInvoiceTotal,
+            'totalRevenue' => $totalRevenue,
+            'pendingPayments' => $pendingPayments,
+            'openTickets' => $openTickets,
+            'urgentTickets' => $urgentTickets,
+
+            // Recent Activity
+            'recentCustomers' => $recentCustomers,
+            'recentServices' => $recentServices,
+            'recentInvoices' => $recentInvoices,
+            'recentPayments' => $recentPayments,
+            'openTickets_data' => $openTickets_data,
+
+            // Status Breakdowns
+            'serviceStatus' => $serviceStatus,
+            'invoiceStatus' => $invoiceStatus,
+
+            // Chart Data
+            'revenueData' => json_encode($revenueData),
+            'signupData' => json_encode($signupData),
+            'topProducts' => $topProducts,
+        ]);
     }
 
     private function customerDashboard($user)

@@ -24,6 +24,12 @@ return Application::configure(basePath: dirname(__DIR__))
         ], append: [
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
         ]);
+
+        // Register custom route middleware
+        $middleware->alias([
+            'admin' => \App\Http\Middleware\CheckAdminRole::class,
+            'customer' => \App\Http\Middleware\CheckCustomerRole::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

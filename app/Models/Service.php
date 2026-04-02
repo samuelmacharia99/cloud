@@ -12,21 +12,29 @@ class Service extends Model
     protected $fillable = [
         'user_id',
         'product_id',
-        'name',
+        'order_item_id',
+        'reseller_id',
+        'invoice_id',
+        'node_id',
+        'provisioning_driver_key',
         'status',
         'billing_cycle',
         'next_due_date',
-        'termination_date',
-        'custom_fields',
-        'notes',
+        'suspend_date',
+        'terminate_date',
+        'service_meta',
+        'external_reference',
+        'credentials',
     ];
 
     protected $casts = [
-        'custom_fields' => 'array',
+        'service_meta' => 'array',
         'next_due_date' => 'datetime',
-        'termination_date' => 'datetime',
+        'suspend_date' => 'datetime',
+        'terminate_date' => 'datetime',
     ];
 
+    // Relationships
     public function user()
     {
         return $this->belongsTo(User::class);
@@ -37,11 +45,17 @@ class Service extends Model
         return $this->belongsTo(Product::class);
     }
 
-    public function invoiceItems()
+    public function invoice()
     {
-        return $this->hasMany(InvoiceItem::class);
+        return $this->belongsTo(Invoice::class);
     }
 
+    public function reseller()
+    {
+        return $this->belongsTo(User::class, 'reseller_id');
+    }
+
+    // Status helpers
     public function isActive(): bool
     {
         return $this->status === 'active';
@@ -55,5 +69,36 @@ class Service extends Model
     public function isTerminated(): bool
     {
         return $this->status === 'terminated';
+    }
+
+    public function isPending(): bool
+    {
+        return $this->status === 'pending';
+    }
+
+    public function isProvisioning(): bool
+    {
+        return $this->status === 'provisioning';
+    }
+
+    public function isFailed(): bool
+    {
+        return $this->status === 'failed';
+    }
+
+    // Scopes
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function scopeSuspended($query)
+    {
+        return $query->where('status', 'suspended');
+    }
+
+    public function scopeTerminated($query)
+    {
+        return $query->where('status', 'terminated');
     }
 }
