@@ -116,6 +116,206 @@
         </div>
     </div>
 
+    <!-- Monitoring Dashboard (for container hosts and database servers) -->
+    @if($node->isMonitored())
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">24h Monitoring</h2>
+                @if($node->latestMonitoring && $node->latestMonitoring->getAlert())
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
+                        ⚠️ {{ $node->latestMonitoring->getAlert() }}
+                    </span>
+                @endif
+            </div>
+
+            @if($node->latestMonitoring)
+                <!-- Real-time Gauges -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Uptime Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Uptime</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white">{{ $node->latestMonitoring->uptime_percentage }}%</span>
+                            <span class="
+                                @if($node->latestMonitoring->uptime_percentage >= 95)
+                                    text-emerald-500
+                                @elseif($node->latestMonitoring->uptime_percentage >= 90)
+                                    text-amber-500
+                                @else
+                                    text-red-500
+                                @endif
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                @if($node->latestMonitoring->uptime_percentage >= 95)
+                                    bg-emerald-500
+                                @elseif($node->latestMonitoring->uptime_percentage >= 90)
+                                    bg-amber-500
+                                @else
+                                    bg-red-500
+                                @endif
+                            " style="width: {{ $node->latestMonitoring->uptime_percentage }}%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Last 24 hours</p>
+                    </div>
+
+                    <!-- RAM Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">RAM Usage</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white">{{ $node->latestMonitoring->getRamUsagePercentage() }}%</span>
+                            <span class="
+                                @if($node->latestMonitoring->getRamUsagePercentage() <= 85)
+                                    text-emerald-500
+                                @elseif($node->latestMonitoring->getRamUsagePercentage() <= 90)
+                                    text-amber-500
+                                @else
+                                    text-red-500
+                                @endif
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                @if($node->latestMonitoring->getRamUsagePercentage() <= 85)
+                                    bg-emerald-500
+                                @elseif($node->latestMonitoring->getRamUsagePercentage() <= 90)
+                                    bg-amber-500
+                                @else
+                                    bg-red-500
+                                @endif
+                            " style="width: {{ $node->latestMonitoring->getRamUsagePercentage() }}%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ $node->latestMonitoring->ram_used_gb }} / {{ $node->latestMonitoring->ram_total_gb }} GB</p>
+                    </div>
+
+                    <!-- Storage Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Storage Usage</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white">{{ $node->latestMonitoring->getStorageUsagePercentage() }}%</span>
+                            <span class="
+                                @if($node->latestMonitoring->getStorageUsagePercentage() <= 90)
+                                    text-emerald-500
+                                @elseif($node->latestMonitoring->getStorageUsagePercentage() <= 95)
+                                    text-amber-500
+                                @else
+                                    text-red-500
+                                @endif
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                @if($node->latestMonitoring->getStorageUsagePercentage() <= 90)
+                                    bg-emerald-500
+                                @elseif($node->latestMonitoring->getStorageUsagePercentage() <= 95)
+                                    bg-amber-500
+                                @else
+                                    bg-red-500
+                                @endif
+                            " style="width: {{ $node->latestMonitoring->getStorageUsagePercentage() }}%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ $node->latestMonitoring->storage_used_gb }} / {{ $node->latestMonitoring->storage_total_gb }} GB</p>
+                    </div>
+                </div>
+
+                <!-- Monitoring History -->
+                <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Recent Readings (Last 24h)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-800">
+                                    <th class="text-left py-2 font-semibold text-slate-600 dark:text-slate-400">Time</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Uptime</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">RAM</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Storage</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                @forelse($node->monitoring()->latest('recorded_at')->limit(20)->get() as $reading)
+                                    <tr>
+                                        <td class="py-3 text-slate-600 dark:text-slate-400">
+                                            {{ $reading->recorded_at->format('M d, H:i') }}
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                @if($reading->uptime_percentage >= 95)
+                                                    text-emerald-600 dark:text-emerald-400
+                                                @elseif($reading->uptime_percentage >= 90)
+                                                    text-amber-600 dark:text-amber-400
+                                                @else
+                                                    text-red-600 dark:text-red-400
+                                                @endif
+                                            ">
+                                                {{ $reading->uptime_percentage }}%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                @if($reading->getRamUsagePercentage() <= 85)
+                                                    text-emerald-600 dark:text-emerald-400
+                                                @elseif($reading->getRamUsagePercentage() <= 90)
+                                                    text-amber-600 dark:text-amber-400
+                                                @else
+                                                    text-red-600 dark:text-red-400
+                                                @endif
+                                            ">
+                                                {{ $reading->getRamUsagePercentage() }}%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                @if($reading->getStorageUsagePercentage() <= 90)
+                                                    text-emerald-600 dark:text-emerald-400
+                                                @elseif($reading->getStorageUsagePercentage() <= 95)
+                                                    text-amber-600 dark:text-amber-400
+                                                @else
+                                                    text-red-600 dark:text-red-400
+                                                @endif
+                                            ">
+                                                {{ $reading->getStorageUsagePercentage() }}%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            @if($reading->isHealthy())
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                    Healthy
+                                                </span>
+                                            @elseif($reading->isDegraded())
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                                                    Warning
+                                                </span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="py-6 text-center text-slate-500 dark:text-slate-400">
+                                            No monitoring data yet. Nodes will send data via heartbeat.
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @else
+                <div class="text-center py-8 text-slate-500 dark:text-slate-400">
+                    <p>No monitoring data received yet.</p>
+                    <p class="text-sm mt-1">Waiting for first heartbeat from node...</p>
+                </div>
+            @endif
+        </div>
+    @endif
+
     <!-- Node Information -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Hardware & Location -->

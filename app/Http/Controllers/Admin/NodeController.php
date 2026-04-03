@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\Node;
 use App\Models\Service;
+use App\Models\NodeMonitoring;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 
@@ -112,7 +113,7 @@ class NodeController extends Controller
 
     public function show(Node $node)
     {
-        $node->load('services.product', 'services.user');
+        $node->load('services.product', 'services.user', 'latestMonitoring');
 
         // Calculate utilization percentages
         $cpuPercentage = $node->getCpuUsagePercentage();
@@ -213,6 +214,42 @@ class NodeController extends Controller
     public function heartbeat(Request $request, Node $node)
     {
         $node->recordHeartbeat();
+
+        // Only monitor container_host and database_server nodes
+        if ($node->isMonitored()) {
+            $validated = $request->validate([
+                'uptime_percentage' => 'nullable|integer|min:0|max:100',
+                'ram_used_gb' => 'nullable|integer|min:0',
+                'ram_total_gb' => 'nullable|integer|min:1',
+                'storage_used_gb' => 'nullable|integer|min:0',
+                'storage_total_gb' => 'nullable|integer|min:1',
+                'cpu_percentage' => 'nullable|integer|min:0|max:100',
+            ]);
+
+            // Only record if we have monitoring data
+            if (array_filter($validated)) {
+                $monitoring = NodeMonitoring::create([
+                    'node_id' => $node->id,
+                    'uptime_percentage' => $validated['uptime_percentage'] ?? 100,
+                    'ram_used_gb' => $validated['ram_used_gb'] ?? 0,
+                    'ram_total_gb' => $validated['ram_total_gb'] ?? $node->ram_gb,
+                    'storage_used_gb' => $validated['storage_used_gb'] ?? 0,
+                    'storage_total_gb' => $validated['storage_total_gb'] ?? $node->storage_gb,
+                    'cpu_percentage' => $validated['cpu_percentage'] ?? null,
+                ]);
+
+                // Auto-degrade status if thresholds exceeded
+                $ram_pct = $monitoring->getRamUsagePercentage();
+                $storage_pct = $monitoring->getStorageUsagePercentage();
+                $uptime = $monitoring->uptime_percentage;
+
+                $should_degrade = $ram_pct > 85 || $storage_pct > 90 || $uptime < 95;
+
+                if ($should_degrade && $node->status !== 'degraded') {
+                    $node->update(['status' => 'degraded']);
+                }
+            }
+        }
 
         return response()->json([
             'success' => true,

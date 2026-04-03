@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
             ProductSeeder::class,
             DomainExtensionSeeder::class,
             NodeSeeder::class,
+            NodeMonitoringSeeder::class,
             ServiceSeeder::class,
             OrderSeeder::class,
             InvoiceSeeder::class,

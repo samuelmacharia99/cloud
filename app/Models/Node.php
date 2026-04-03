@@ -53,7 +53,22 @@ class Node extends Model
         return $this->hasMany(Service::class, 'node_id');
     }
 
+    public function monitoring()
+    {
+        return $this->hasMany(NodeMonitoring::class, 'node_id');
+    }
+
+    public function latestMonitoring()
+    {
+        return $this->hasOne(NodeMonitoring::class, 'node_id')->latest('recorded_at');
+    }
+
     // Helper Methods
+    public function isMonitored(): bool
+    {
+        return in_array($this->type, ['container_host', 'database_server']);
+    }
+
     public function isHealthy(): bool
     {
         return $this->status === 'online' && $this->is_active;
