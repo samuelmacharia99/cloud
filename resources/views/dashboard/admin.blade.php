@@ -268,7 +268,7 @@
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Services</h2>
-                    <a href="{{ route('services.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
+                    <a href="{{ route('admin.services.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
                 </div>
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -295,7 +295,7 @@
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Payments</h2>
-                    <a href="{{ route('payments.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
+                    <a href="{{ route('admin.payments.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
                 </div>
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -304,7 +304,7 @@
                         <div class="flex items-center justify-between gap-3">
                             <div>
                                 <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->user?->name ?? 'Unknown' }}</p>
-                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->gateway }}</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() ?? 'Manual' }}</p>
                             </div>
                             <p class="text-sm font-semibold text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }}</p>
                         </div>
@@ -325,7 +325,7 @@
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Recent Invoices</h2>
-                    <a href="{{ route('invoices.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
+                    <a href="{{ route('admin.invoices.index') }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">View all →</a>
                 </div>
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">

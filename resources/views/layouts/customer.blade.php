@@ -150,11 +150,8 @@
                         <h1 class="hidden sm:block text-lg font-semibold">@yield('title')</h1>
                     </div>
 
-                    <!-- Spacer -->
-                    <div class="flex-1"></div>
-
                     <!-- Right: Actions + Dark Mode + Notifications + Profile -->
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 ml-auto">
                         <!-- Pay Invoice Quick Button (if customer has balance) -->
                         <button class="hidden lg:flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -163,15 +160,18 @@
                             <span>Pay Invoice</span>
                         </button>
 
-                        <!-- Dark Mode Toggle -->
-                        <button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition" @click="dark = !dark; localStorage.setItem('theme', dark ? 'dark' : 'light')">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" x-show="!dark">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 015.646 5.646 9.001 9.001 0 0120.354 15.354z"/>
-                            </svg>
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" x-show="dark">
+                        <!-- Dark Mode Toggle Switch -->
+                        <div class="flex items-center gap-2 px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
+                            <svg class="w-4 h-4 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1m-16 0H1m15.364 1.636l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
                             </svg>
-                        </button>
+                            <button @click="dark = !dark; localStorage.setItem('theme', dark ? 'dark' : 'light')" class="relative w-10 h-6 bg-slate-300 dark:bg-slate-600 rounded-full transition-colors focus:outline-none">
+                                <span :class="dark ? 'translate-x-5' : 'translate-x-0'" class="absolute top-0.5 left-0.5 w-5 h-5 bg-white dark:bg-slate-900 rounded-full transition-transform shadow"></span>
+                            </button>
+                            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 015.646 5.646 9.001 9.001 0 0120.354 15.354z"/>
+                            </svg>
+                        </div>
 
                         <!-- Account Dropdown -->
                         <div class="relative" x-data="{ accountOpen: false }">
@@ -212,6 +212,24 @@
                         </div>
                     </div>
                 </header>
+
+                @if (session('impersonating'))
+                <!-- Impersonation Banner -->
+                <div class="h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex items-center px-6 justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0m-.5 4.5h.01"/>
+                        </svg>
+                        <span class="text-sm font-medium text-amber-900 dark:text-amber-100">You are viewing as a customer. <strong>{{ auth()->user()->name }}</strong></span>
+                    </div>
+                    <form method="POST" action="{{ route('admin.exit-impersonation') }}" class="flex items-center gap-2">
+                        @csrf
+                        <button type="submit" class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 dark:bg-amber-700 dark:hover:bg-amber-600 text-white text-sm font-medium rounded-lg transition">
+                            Exit View
+                        </button>
+                    </form>
+                </div>
+                @endif
 
                 <!-- Page Content -->
                 <main class="flex-1 overflow-auto">

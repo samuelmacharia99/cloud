@@ -12,8 +12,10 @@ class Domain extends Model
     protected $fillable = [
         'user_id',
         'name',
+        'extension',
         'registrar',
         'status',
+        'registered_at',
         'expires_at',
         'auto_renew',
         'nameserver_1',
@@ -22,6 +24,7 @@ class Domain extends Model
     ];
 
     protected $casts = [
+        'registered_at' => 'datetime',
         'expires_at' => 'datetime',
         'auto_renew' => 'boolean',
     ];
@@ -29,6 +32,11 @@ class Domain extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function domainExtension()
+    {
+        return $this->belongsTo(DomainExtension::class, 'extension', 'extension');
     }
 
     public function dnsZones()

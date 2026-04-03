@@ -2,22 +2,22 @@
 
 @section('title', 'Sign In')
 
-<div class="space-y-6">
+<div class="space-y-5">
     <!-- Header -->
     <div>
-        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Welcome back</h2>
-        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Sign in to your account to continue</p>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Welcome back</h2>
+        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Sign in to your account to continue</p>
     </div>
 
     <!-- Session Status -->
     @if (session('status'))
-        <div class="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-sm text-emerald-700 dark:text-emerald-300">
+        <div class="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300">
             {{ session('status') }}
         </div>
     @endif
 
     <!-- Form -->
-    <form method="POST" action="{{ route('login') }}" class="space-y-4">
+    <form method="POST" action="{{ route('login') }}" class="space-y-3.5">
         @csrf
 
         <!-- Email Address -->
@@ -63,23 +63,23 @@
         </div>
 
         <!-- Submit -->
-        <x-primary-button class="w-full justify-center mt-6">
+        <x-primary-button class="w-full justify-center mt-4">
             {{ __('Sign In') }}
         </x-primary-button>
     </form>
 
     <!-- Divider -->
-    <div class="relative">
+    <div class="relative pt-2">
         <div class="absolute inset-0 flex items-center">
             <div class="w-full border-t border-slate-300 dark:border-slate-700"></div>
         </div>
         <div class="relative flex justify-center text-xs">
-            <span class="px-2 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400">or</span>
+            <span class="px-2 bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-500">or</span>
         </div>
     </div>
 
     <!-- Links -->
-    <div class="space-y-3 text-center text-sm">
+    <div class="space-y-2.5 text-center text-xs">
         @if (Route::has('password.request'))
             <div>
                 <a href="{{ route('password.request') }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition">

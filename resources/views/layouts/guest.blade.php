@@ -56,17 +56,17 @@
             </div>
 
             <!-- Right Form Panel -->
-            <div class="flex-1 flex flex-col justify-center items-center px-6 py-12 lg:w-7/12">
-                <div class="w-full max-w-md">
+            <div class="flex-1 flex flex-col justify-center items-center px-4 py-12 lg:w-7/12">
+                <div class="w-full max-w-sm">
                     <!-- Mobile Logo (visible on mobile only) -->
-                    <div class="lg:hidden mb-8">
+                    <div class="lg:hidden mb-6">
                         <a href="/" class="inline-flex items-center gap-2">
                             <x-application-logo />
                         </a>
                     </div>
 
                     <!-- Form Content -->
-                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 shadow-lg">
+                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-md">
                         @yield('content')
                     </div>
                 </div>

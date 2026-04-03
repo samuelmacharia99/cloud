@@ -1,6 +1,10 @@
-@extends('layouts.app')
+@extends('layouts.admin')
 
 @section('title', 'Support Tickets')
+
+@section('breadcrumb')
+<p class="text-sm font-medium text-slate-600 dark:text-slate-400">Support Tickets</p>
+@endsection
 
 @section('content')
 <div class="space-y-6">

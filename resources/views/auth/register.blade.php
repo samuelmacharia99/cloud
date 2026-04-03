@@ -2,15 +2,15 @@
 
 @section('title', 'Create Account')
 
-<div class="space-y-6">
+<div class="space-y-5">
     <!-- Header -->
     <div>
-        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Create your account</h2>
-        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Join Talksasa Cloud and start managing your services</p>
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create your account</h2>
+        <p class="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Join Talksasa Cloud and start managing your services</p>
     </div>
 
     <!-- Form -->
-    <form method="POST" action="{{ route('register') }}" class="space-y-4">
+    <form method="POST" action="{{ route('register') }}" class="space-y-3.5">
         @csrf
 
         <!-- Full Name -->
@@ -100,23 +100,23 @@
         </div>
 
         <!-- Submit -->
-        <x-primary-button class="w-full justify-center">
+        <x-primary-button class="w-full justify-center mt-4">
             {{ __('Create Account') }}
         </x-primary-button>
     </form>
 
     <!-- Divider -->
-    <div class="relative">
+    <div class="relative pt-2">
         <div class="absolute inset-0 flex items-center">
             <div class="w-full border-t border-slate-300 dark:border-slate-700"></div>
         </div>
         <div class="relative flex justify-center text-xs">
-            <span class="px-2 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400">or</span>
+            <span class="px-2 bg-white dark:bg-slate-900 text-slate-400 dark:text-slate-500">or</span>
         </div>
     </div>
 
     <!-- Sign In Link -->
-    <div class="text-center text-sm">
+    <div class="text-center text-xs">
         <span class="text-slate-600 dark:text-slate-400">Already have an account? </span>
         <a href="{{ route('login') }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition">
             Sign in

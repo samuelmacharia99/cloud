@@ -126,4 +126,40 @@ class CustomerController extends Controller
         return redirect()->route('admin.customers.show', $customer)
             ->with('success', 'Customer updated successfully.');
     }
+
+    public function impersonate(User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        // Store the admin ID in session for later exit
+        session(['impersonating' => auth()->id(), 'impersonating_user_id' => $customer->id]);
+
+        // Log out the current admin and log in as the customer
+        auth()->logout();
+        auth()->loginUsingId($customer->id);
+
+        return redirect()->route('dashboard')
+            ->with('success', "You are now viewing the dashboard as {$customer->name}.");
+    }
+
+    public function exitImpersonation()
+    {
+        if (!session('impersonating')) {
+            return redirect()->route('admin.customers.index');
+        }
+
+        $adminId = session('impersonating');
+
+        // Clear impersonation session data
+        session()->forget(['impersonating', 'impersonating_user_id']);
+
+        // Log out and log back in as admin
+        auth()->logout();
+        auth()->loginUsingId($adminId);
+
+        return redirect()->route('admin.customers.index')
+            ->with('success', 'Exited customer view.');
+    }
 }
