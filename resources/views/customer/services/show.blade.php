@@ -112,21 +112,59 @@
                 </div>
 
                 <!-- Action Buttons -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
-                        Restart Service
-                    </button>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-data="{ showCancelModal: false }">
+                    @if ($service->status->value !== 'terminated' && $service->status->value !== 'cancelled')
+                        <button @click="showCancelModal = true" class="px-4 py-2 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900 font-medium rounded-lg transition text-sm">
+                            Cancel Service
+                        </button>
+                    @endif
+                    @if ($service->status->value === 'active')
+                        <form action="{{ route('customer.services.renew', $service) }}" method="POST" onsubmit="return confirm('Are you sure you want to renew this service? An invoice will be created.');">
+                            @csrf
+                            <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
+                                Renew Service
+                            </button>
+                        </form>
+                    @endif
                     <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
                         View Documentation
                     </button>
-                    @if ($service->status === 'active')
-                        <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
-                            Renew Service
-                        </button>
-                    @endif
-                    <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
-                        Support
-                    </button>
+                </div>
+
+                <!-- Cancel Service Modal -->
+                <div x-show="showCancelModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" x-cloak>
+                    <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6" @click.stop>
+                        <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Cancel Service</h3>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                            Are you sure you want to cancel "{{ $service->name }}"? Please provide a reason for cancellation.
+                        </p>
+
+                        <form action="{{ route('customer.services.cancel', $service) }}" method="POST">
+                            @csrf
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Cancellation Reason</label>
+                                <textarea
+                                    name="reason"
+                                    required
+                                    minlength="10"
+                                    maxlength="1000"
+                                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 rounded-lg text-sm focus:ring-2 focus:ring-red-500 dark:focus:ring-red-400"
+                                    rows="4"
+                                    placeholder="Tell us why you want to cancel this service..."
+                                ></textarea>
+                                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Minimum 10 characters required</p>
+                            </div>
+
+                            <div class="flex gap-3">
+                                <button type="button" @click="showCancelModal = false" class="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition">
+                                    Keep Service
+                                </button>
+                                <button type="submit" class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
+                                    Cancel Service
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
 

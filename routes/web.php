@@ -79,6 +79,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('customer')->group(function () {
         Route::get('/my/services', [\App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::get('/my/services/{service}', [\App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
+        Route::post('/my/services/{service}/cancel', [\App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
+        Route::post('/my/services/{service}/renew', [\App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
         Route::resource('my/orders', \App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
         Route::resource('my/invoices', \App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('my/invoices/{invoice}/download', [\App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
