@@ -4,6 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Provisioning\ProvisioningService;
+use App\Services\NotificationService;
 
 class TerminateServicesCommand extends BaseCronCommand
 {
@@ -19,12 +21,18 @@ class TerminateServicesCommand extends BaseCronCommand
             ->get();
 
         $count = 0;
+        $provisioningService = app(ProvisioningService::class);
+        $notificationService = app(NotificationService::class);
+
         foreach ($services as $service) {
-            $service->update([
-                'status' => 'terminated',
-                'terminate_date' => now(),
-            ]);
-            $count++;
+            try {
+                // Use provisioning service to terminate
+                $provisioningService->terminate($service);
+                $notificationService->notifyServiceTerminated($service->fresh());
+                $count++;
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to terminate service {$service->id}: {$e->getMessage()}");
+            }
         }
 
         return "Terminated {$count} service(s) after {$terminateDays}-day suspension window.";

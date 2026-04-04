@@ -4,6 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Provisioning\ProvisioningService;
+use App\Services\NotificationService;
 
 class SuspendServicesCommand extends BaseCronCommand
 {
@@ -28,12 +30,18 @@ class SuspendServicesCommand extends BaseCronCommand
             ->get();
 
         $count = 0;
+        $provisioningService = app(ProvisioningService::class);
+        $notificationService = app(NotificationService::class);
+
         foreach ($services as $service) {
-            $service->update([
-                'status' => 'suspended',
-                'suspend_date' => now(),
-            ]);
-            $count++;
+            try {
+                // Use provisioning service to suspend
+                $provisioningService->suspend($service);
+                $notificationService->notifyServiceSuspended($service->fresh());
+                $count++;
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error("Failed to suspend service {$service->id}: {$e->getMessage()}");
+            }
         }
 
         return "Suspended {$count} service(s) past grace period.";
