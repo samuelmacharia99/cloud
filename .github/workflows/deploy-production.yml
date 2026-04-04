@@ -1,0 +1,139 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, ctype, json, bcmath
+
+      - name: Install dependencies
+        run: composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
+
+      - name: Check syntax
+        run: find . -name "*.php" -not -path "./vendor/*" -not -path "./node_modules/*" | xargs -I {} php -l {}
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to Production Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            set -e
+
+            cd /var/www/talksasa-cloud
+
+            # Create backup
+            BACKUP_TIME=$(date +%Y%m%d_%H%M%S)
+            cp -r . ../talksasa-cloud.backup.$BACKUP_TIME
+            echo "📦 Backup created: talksasa-cloud.backup.$BACKUP_TIME"
+
+            # Pull latest code
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            # Install dependencies
+            composer install --no-ansi --no-interaction --no-progress --prefer-dist --optimize-autoloader
+
+            # Run migrations (with backup ready)
+            php artisan migrate --force
+
+            # Clear caches
+            php artisan cache:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # Seed if needed (CronJobSeeder is safe to re-run)
+            php artisan db:seed --class=CronJobSeeder --force
+
+            # Restart services
+            sudo systemctl restart talksasa-queue || true
+            sudo systemctl restart talksasa-scheduler || true
+
+            echo "✅ Production deployment complete"
+            echo "📝 Backup available at: ../talksasa-cloud.backup.$BACKUP_TIME"
+
+      - name: Verify deployment
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /var/www/talksasa-cloud
+
+            # Check app health
+            curl -f http://localhost:8000/health || exit 1
+
+            # Check cron status
+            php artisan cron:status | head -20
+
+            echo "✅ Deployment verified"
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: |
+            Production deployment ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true
+
+  rollback:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Rollback on failure
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USER }}
+          key: ${{ secrets.PROD_SSH_KEY }}
+          script: |
+            cd /var/www
+
+            # Find latest backup
+            LATEST_BACKUP=$(ls -t talksasa-cloud.backup.* | head -1)
+
+            if [ -z "$LATEST_BACKUP" ]; then
+              echo "❌ No backup found!"
+              exit 1
+            fi
+
+            echo "⚠️  Rolling back to $LATEST_BACKUP"
+            rm -rf talksasa-cloud.old
+            mv talksasa-cloud talksasa-cloud.old
+            mv $LATEST_BACKUP talksasa-cloud
+
+            cd talksasa-cloud
+            sudo systemctl restart talksasa-queue || true
+            sudo systemctl restart talksasa-scheduler || true
+
+            echo "✅ Rollback complete"

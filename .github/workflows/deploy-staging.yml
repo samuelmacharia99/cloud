@@ -1,0 +1,50 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Deploy to Staging Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /var/www/talksasa-cloud
+            git fetch origin
+            git checkout develop
+            git pull origin develop
+
+            # Install dependencies
+            composer install --no-ansi --no-interaction --no-progress --prefer-dist --optimize-autoloader
+
+            # Run migrations
+            php artisan migrate --force
+
+            # Clear caches
+            php artisan cache:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # Restart queue
+            sudo systemctl restart talksasa-queue || true
+
+            echo "✅ Staging deployment complete"
+
+      - name: Notify deployment
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: 'Staging deployment ${{ job.status }}'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        continue-on-error: true

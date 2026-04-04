@@ -1,0 +1,21 @@
+# CODEOWNERS for talksasa-cloud
+
+# All files require approval from admins
+* @samuelmacharia99
+
+# Billing system
+app/Services/MpesaService.php @samuelmacharia99
+app/Console/Commands/Generate*.php @samuelmacharia99
+app/Console/Commands/Mark*.php @samuelmacharia99
+app/Http/Controllers/*/InvoiceController.php @samuelmacharia99
+app/Mail/*Invoice*.php @samuelmacharia99
+
+# Cron system
+app/Console/ @samuelmacharia99
+app/Console/Kernel.php @samuelmacharia99
+
+# Provisioning
+app/Services/Provisioning/ @samuelmacharia99
+
+# Migrations (critical - require review)
+database/migrations/ @samuelmacharia99
