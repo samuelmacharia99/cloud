@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\Invoice;
 use App\Models\User;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoiceController extends Controller
 {
@@ -56,8 +58,10 @@ class InvoiceController extends Controller
         ]);
 
         // Auto-generate invoice number
-        $count = Invoice::count() + 1;
-        $validated['invoice_number'] = 'INV-' . now()->format('Ymd') . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+        $prefix = Setting::getValue('invoice_prefix', 'INV');
+        $year = now()->format('Y');
+        $count = Invoice::whereYear('created_at', $year)->count() + 1;
+        $validated['invoice_number'] = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
         $validated['tax'] ??= 0;
 
         Invoice::create($validated);
@@ -95,5 +99,22 @@ class InvoiceController extends Controller
 
         return redirect()->route('admin.invoices.show', $invoice)
             ->with('success', 'Invoice updated successfully.');
+    }
+
+    public function download(Invoice $invoice)
+    {
+        $invoice->load('user', 'items.product', 'payments');
+        $settings = [
+            'logo_url' => Setting::getValue('logo_url', ''),
+            'company_name' => Setting::getValue('company_name', 'Talksasa Cloud'),
+            'billing_address' => Setting::getValue('billing_address', ''),
+            'billing_city' => Setting::getValue('billing_city', ''),
+            'billing_country' => Setting::getValue('billing_country', ''),
+            'billing_vat_number' => Setting::getValue('billing_vat_number', ''),
+            'footer_text' => Setting::getValue('footer_text', ''),
+        ];
+
+        return Pdf::loadView('pdf.invoice', compact('invoice', 'settings'))
+            ->download('invoice-' . $invoice->invoice_number . '.pdf');
     }
 }

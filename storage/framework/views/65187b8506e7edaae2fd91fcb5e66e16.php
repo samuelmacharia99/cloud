@@ -114,6 +114,208 @@
         </div>
     </div>
 
+    <!-- Monitoring Dashboard (for container hosts and database servers) -->
+    <?php if($node->isMonitored()): ?>
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">24h Monitoring</h2>
+                <?php if($node->latestMonitoring && $node->latestMonitoring->getAlert()): ?>
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
+                        ⚠️ <?php echo e($node->latestMonitoring->getAlert()); ?>
+
+                    </span>
+                <?php endif; ?>
+            </div>
+
+            <?php if($node->latestMonitoring): ?>
+                <!-- Real-time Gauges -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <!-- Uptime Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Uptime</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white"><?php echo e($node->latestMonitoring->uptime_percentage); ?>%</span>
+                            <span class="
+                                <?php if($node->latestMonitoring->uptime_percentage >= 95): ?>
+                                    text-emerald-500
+                                <?php elseif($node->latestMonitoring->uptime_percentage >= 90): ?>
+                                    text-amber-500
+                                <?php else: ?>
+                                    text-red-500
+                                <?php endif; ?>
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                <?php if($node->latestMonitoring->uptime_percentage >= 95): ?>
+                                    bg-emerald-500
+                                <?php elseif($node->latestMonitoring->uptime_percentage >= 90): ?>
+                                    bg-amber-500
+                                <?php else: ?>
+                                    bg-red-500
+                                <?php endif; ?>
+                            " style="width: <?php echo e($node->latestMonitoring->uptime_percentage); ?>%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Last 24 hours</p>
+                    </div>
+
+                    <!-- RAM Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">RAM Usage</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white"><?php echo e($node->latestMonitoring->getRamUsagePercentage()); ?>%</span>
+                            <span class="
+                                <?php if($node->latestMonitoring->getRamUsagePercentage() <= 85): ?>
+                                    text-emerald-500
+                                <?php elseif($node->latestMonitoring->getRamUsagePercentage() <= 90): ?>
+                                    text-amber-500
+                                <?php else: ?>
+                                    text-red-500
+                                <?php endif; ?>
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                <?php if($node->latestMonitoring->getRamUsagePercentage() <= 85): ?>
+                                    bg-emerald-500
+                                <?php elseif($node->latestMonitoring->getRamUsagePercentage() <= 90): ?>
+                                    bg-amber-500
+                                <?php else: ?>
+                                    bg-red-500
+                                <?php endif; ?>
+                            " style="width: <?php echo e($node->latestMonitoring->getRamUsagePercentage()); ?>%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400"><?php echo e($node->latestMonitoring->ram_used_gb); ?> / <?php echo e($node->latestMonitoring->ram_total_gb); ?> GB</p>
+                    </div>
+
+                    <!-- Storage Gauge -->
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-6">
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-4">Storage Usage</p>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-3xl font-bold text-slate-900 dark:text-white"><?php echo e($node->latestMonitoring->getStorageUsagePercentage()); ?>%</span>
+                            <span class="
+                                <?php if($node->latestMonitoring->getStorageUsagePercentage() <= 90): ?>
+                                    text-emerald-500
+                                <?php elseif($node->latestMonitoring->getStorageUsagePercentage() <= 95): ?>
+                                    text-amber-500
+                                <?php else: ?>
+                                    text-red-500
+                                <?php endif; ?>
+                            ">
+                                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"/></svg>
+                            </span>
+                        </div>
+                        <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                            <div class="h-2 rounded-full
+                                <?php if($node->latestMonitoring->getStorageUsagePercentage() <= 90): ?>
+                                    bg-emerald-500
+                                <?php elseif($node->latestMonitoring->getStorageUsagePercentage() <= 95): ?>
+                                    bg-amber-500
+                                <?php else: ?>
+                                    bg-red-500
+                                <?php endif; ?>
+                            " style="width: <?php echo e($node->latestMonitoring->getStorageUsagePercentage()); ?>%"></div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400"><?php echo e($node->latestMonitoring->storage_used_gb); ?> / <?php echo e($node->latestMonitoring->storage_total_gb); ?> GB</p>
+                    </div>
+                </div>
+
+                <!-- Monitoring History -->
+                <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Recent Readings (Last 24h)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-800">
+                                    <th class="text-left py-2 font-semibold text-slate-600 dark:text-slate-400">Time</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Uptime</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">RAM</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Storage</th>
+                                    <th class="text-right py-2 font-semibold text-slate-600 dark:text-slate-400">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                <?php $__empty_1 = true; $__currentLoopData = $node->monitoring()->latest('recorded_at')->limit(20)->get(); $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $reading): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); $__empty_1 = false; ?>
+                                    <tr>
+                                        <td class="py-3 text-slate-600 dark:text-slate-400">
+                                            <?php echo e($reading->recorded_at->format('M d, H:i')); ?>
+
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                <?php if($reading->uptime_percentage >= 95): ?>
+                                                    text-emerald-600 dark:text-emerald-400
+                                                <?php elseif($reading->uptime_percentage >= 90): ?>
+                                                    text-amber-600 dark:text-amber-400
+                                                <?php else: ?>
+                                                    text-red-600 dark:text-red-400
+                                                <?php endif; ?>
+                                            ">
+                                                <?php echo e($reading->uptime_percentage); ?>%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                <?php if($reading->getRamUsagePercentage() <= 85): ?>
+                                                    text-emerald-600 dark:text-emerald-400
+                                                <?php elseif($reading->getRamUsagePercentage() <= 90): ?>
+                                                    text-amber-600 dark:text-amber-400
+                                                <?php else: ?>
+                                                    text-red-600 dark:text-red-400
+                                                <?php endif; ?>
+                                            ">
+                                                <?php echo e($reading->getRamUsagePercentage()); ?>%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <span class="
+                                                <?php if($reading->getStorageUsagePercentage() <= 90): ?>
+                                                    text-emerald-600 dark:text-emerald-400
+                                                <?php elseif($reading->getStorageUsagePercentage() <= 95): ?>
+                                                    text-amber-600 dark:text-amber-400
+                                                <?php else: ?>
+                                                    text-red-600 dark:text-red-400
+                                                <?php endif; ?>
+                                            ">
+                                                <?php echo e($reading->getStorageUsagePercentage()); ?>%
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-right">
+                                            <?php if($reading->isHealthy()): ?>
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                                    Healthy
+                                                </span>
+                                            <?php elseif($reading->isDegraded()): ?>
+                                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
+                                                    Warning
+                                                </span>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
+                                    <tr>
+                                        <td colspan="5" class="py-6 text-center text-slate-500 dark:text-slate-400">
+                                            No monitoring data yet. Nodes will send data via heartbeat.
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="text-center py-8 text-slate-500 dark:text-slate-400">
+                    <p>No monitoring data received yet.</p>
+                    <p class="text-sm mt-1">Waiting for first heartbeat from node...</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
+
     <!-- Node Information -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Hardware & Location -->

@@ -60,4 +60,12 @@ class Product extends Model
     {
         return $this->hasMany(InvoiceItem::class);
     }
+
+    /**
+     * Get the label for a product type
+     */
+    public static function typeLabel(string $type): string
+    {
+        return self::TYPES[$type] ?? ucfirst(str_replace('_', ' ', $type));
+    }
 }

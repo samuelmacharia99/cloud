@@ -16,6 +16,7 @@ class Service extends Model
         'reseller_id',
         'invoice_id',
         'node_id',
+        'name',
         'provisioning_driver_key',
         'status',
         'billing_cycle',

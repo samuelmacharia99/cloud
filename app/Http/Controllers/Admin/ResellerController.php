@@ -38,6 +38,8 @@ class ResellerController extends Controller
     {
         abort_if(!$user->is_reseller, 404);
 
+        $user->load('resellerPackage');
+
         $services = Service::where('reseller_id', $user->id)
             ->with('user', 'product')
             ->get();
@@ -62,5 +64,20 @@ class ResellerController extends Controller
 
         $user->update(['is_reseller' => false]);
         return back()->with('success', 'Reseller status removed.');
+    }
+
+    public function impersonate(User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        // Store the admin ID in session for later exit
+        session(['impersonating' => auth()->id(), 'impersonating_user_id' => $user->id]);
+
+        // Log out the current admin and log in as the reseller
+        auth()->logout();
+        auth()->loginUsingId($user->id);
+
+        return redirect()->route('dashboard')
+            ->with('success', "You are now viewing the dashboard as {$user->name}.");
     }
 }

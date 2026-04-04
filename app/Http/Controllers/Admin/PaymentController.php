@@ -9,7 +9,9 @@ use App\Http\Requests\StorePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Service;
 use App\Models\User;
+use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
@@ -154,10 +156,38 @@ class PaymentController extends Controller
             ->where('status', PaymentStatus::Completed->value)
             ->sum('amount');
 
+        $wasUnpaid = $invoice->status !== 'paid';
+
         if ($amountPaid >= $invoice->total) {
             $invoice->update(['status' => 'paid']);
+
+            // Auto-provision services if invoice just became paid
+            if ($wasUnpaid) {
+                $this->provisionServices($invoice);
+            }
         } elseif ($amountPaid > 0) {
             $invoice->update(['status' => 'unpaid']);
+        }
+    }
+
+    /**
+     * Provision all pending services linked to an invoice.
+     */
+    private function provisionServices(Invoice $invoice): void
+    {
+        $provisioningService = new ProvisioningService();
+
+        // Find all pending services for this invoice
+        $services = Service::where('invoice_id', $invoice->id)
+            ->where('status', 'pending')
+            ->get();
+
+        foreach ($services as $service) {
+            try {
+                $provisioningService->provision($service);
+            } catch (\Exception $e) {
+                \Log::error("Auto-provisioning failed for service {$service->id}: {$e->getMessage()}");
+            }
         }
     }
 

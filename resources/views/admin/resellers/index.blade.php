@@ -100,7 +100,7 @@
                                     <a href="{{ route('admin.resellers.show', $reseller) }}" class="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium" title="View reseller">
                                         View
                                     </a>
-                                    <form method="POST" action="{{ route('admin.customers.impersonate', $reseller) }}" class="inline">
+                                    <form method="POST" action="{{ route('admin.resellers.impersonate', $reseller) }}" class="inline">
                                         @csrf
                                         <button type="submit" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition" title="View as this reseller">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

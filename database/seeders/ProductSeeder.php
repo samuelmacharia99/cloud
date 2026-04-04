@@ -118,22 +118,6 @@ class ProductSeeder extends Seeder
                 'featured' => false,
                 'order' => 6,
             ],
-            [
-                'name' => 'SMS Bundle 500',
-                'slug' => 'sms-bundle-500',
-                'description' => 'Send up to 500 SMS messages. Perfect for notifications and marketing campaigns.',
-                'category' => 'Communications',
-                'type' => 'sms_bundle',
-                'price' => 10.00,
-                'billing_cycle' => 'monthly',
-                'features' => ['500 SMS Credits', '12-month Validity', 'API Access', 'Delivery Reports'],
-                'setup_fee' => 0,
-                'provisioning_driver_key' => 'twilio',
-                'is_active' => true,
-                'visible_to_resellers' => true,
-                'featured' => false,
-                'order' => 7,
-            ],
         ];
 
         foreach ($products as $product) {

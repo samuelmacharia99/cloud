@@ -43,6 +43,12 @@
                 <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
                     Notifications
                 </button>
+                <button @click="activeTab = 'cron'" :class="activeTab === 'cron' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Cron Jobs
+                </button>
+                <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    SMS
+                </button>
             </div>
         </div>
 
@@ -155,11 +161,30 @@
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">M-Pesa Daraja API</legend>
+                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                        <p class="text-sm text-blue-700 dark:text-blue-300">
+                            <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Obtain these credentials from M-Pesa Daraja API portal (developer.safaricom.co.ke).
+                        </p>
+                    </div>
+                    <div class="space-y-4">
+                        <x-form-select name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
+                        <x-form-input name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" placeholder="From Daraja API portal" />
+                        <x-form-input name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" placeholder="From Daraja API portal" />
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Bank Transfer Details</legend>
                     <div class="space-y-4">
                         <x-form-input name="settings[bank_name]" label="Bank Name" value="{{ $settings['bank_name'] ?? '' }}" />
                         <x-form-input name="settings[bank_account_name]" label="Account Name" value="{{ $settings['bank_account_name'] ?? '' }}" />
                         <x-form-input name="settings[bank_account_number]" label="Account Number" value="{{ $settings['bank_account_number'] ?? '' }}" />
+                        <x-form-input name="settings[bank_branch]" label="Branch" value="{{ $settings['bank_branch'] ?? '' }}" placeholder="e.g., Nairobi Main Branch" />
+                        <x-form-input name="settings[bank_swift_code]" label="SWIFT/BIC Code" value="{{ $settings['bank_swift_code'] ?? '' }}" placeholder="e.g., KENBKENA" />
                     </div>
                 </fieldset>
             </div>
@@ -184,15 +209,155 @@
                         <x-form-input name="settings[terminate_after_days]" label="Terminate Service After (days)" type="number" value="{{ $settings['terminate_after_days'] ?? '60' }}" />
                     </div>
                 </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Configuration</legend>
+                    <div class="space-y-4">
+                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                            <p class="text-sm text-blue-700 dark:text-blue-300">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Configure DirectAdmin API credentials for automatic hosting account provisioning.
+                            </p>
+                        </div>
+                        <x-form-input name="settings[directadmin_api_url]" label="DirectAdmin API URL" placeholder="https://your-directadmin-server.com:2222" value="{{ $settings['directadmin_api_url'] ?? '' }}" />
+                        <x-form-input name="settings[directadmin_api_user]" label="DirectAdmin Admin Username" placeholder="admin" value="{{ $settings['directadmin_api_user'] ?? 'admin' }}" />
+                        <x-form-input name="settings[directadmin_api_password]" label="DirectAdmin Admin Password" type="password" value="{{ $settings['directadmin_api_password'] ?? '' }}" />
+                        <x-form-input name="settings[directadmin_default_package]" label="Default Hosting Package" placeholder="default" value="{{ $settings['directadmin_default_package'] ?? 'default' }}" />
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Leave URL blank to disable DirectAdmin provisioning. Services will be marked active without automatic account creation.</p>
+                    </div>
+                </fieldset>
             </div>
 
             <!-- Branding Tab -->
-            <div x-show="activeTab === 'branding'" class="space-y-4">
+            <div x-show="activeTab === 'branding'" class="space-y-6">
+                <!-- Logo Section -->
                 <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Branding & Appearance</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Logo</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[logo_url]" label="Logo URL" type="url" value="{{ $settings['logo_url'] ?? '' }}" />
-                        <x-form-input name="settings[favicon_url]" label="Favicon URL" type="url" value="{{ $settings['favicon_url'] ?? '' }}" />
+                        <div x-data="brandingUpload('{{ $settings['logo_url'] ?? '' }}')">
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Logo Image</label>
+                            <div class="flex gap-4">
+                                <!-- Upload Area -->
+                                <div class="flex-1">
+                                    <div class="relative">
+                                        <input
+                                            type="file"
+                                            id="logoUpload"
+                                            @change="upload($event, 'logo')"
+                                            accept="image/*"
+                                            class="hidden"
+                                        />
+                                        <label
+                                            for="logoUpload"
+                                            class="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-all"
+                                        >
+                                            <div class="text-center">
+                                                <svg class="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                                    <span x-show="!uploading">Click to upload or drag and drop</span>
+                                                    <span x-show="uploading">Uploading...</span>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">PNG, JPG, GIF up to 5MB</p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Preview -->
+                                <div class="flex flex-col items-center justify-center">
+                                    <div class="w-24 h-24 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                        <img
+                                            x-show="preview"
+                                            :src="preview"
+                                            alt="Logo preview"
+                                            class="w-full h-full object-contain p-2 rounded"
+                                        />
+                                        <svg
+                                            x-show="!preview"
+                                            class="w-12 h-12 text-slate-300"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
+                                    </div>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Preview</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Favicon Section -->
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Favicon</legend>
+                    <div class="space-y-4">
+                        <div x-data="brandingUpload('{{ $settings['favicon_url'] ?? '' }}')">
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Favicon Image</label>
+                            <div class="flex gap-4">
+                                <!-- Upload Area -->
+                                <div class="flex-1">
+                                    <div class="relative">
+                                        <input
+                                            type="file"
+                                            id="faviconUpload"
+                                            @change="upload($event, 'favicon')"
+                                            accept="image/*"
+                                            class="hidden"
+                                        />
+                                        <label
+                                            for="faviconUpload"
+                                            class="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-all"
+                                        >
+                                            <div class="text-center">
+                                                <svg class="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                                    <span x-show="!uploading">Click to upload or drag and drop</span>
+                                                    <span x-show="uploading">Uploading...</span>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">PNG, JPG, ICO up to 5MB (32x32 recommended)</p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Preview -->
+                                <div class="flex flex-col items-center justify-center">
+                                    <div class="w-16 h-16 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                        <img
+                                            x-show="preview"
+                                            :src="preview"
+                                            alt="Favicon preview"
+                                            class="w-full h-full object-contain p-1 rounded"
+                                        />
+                                        <svg
+                                            x-show="!preview"
+                                            class="w-8 h-8 text-slate-300"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
+                                    </div>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Preview</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Other Branding Options -->
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Other Options</legend>
+                    <div class="space-y-4">
                         <x-form-input name="settings[primary_color]" label="Primary Color" type="color" value="{{ $settings['primary_color'] ?? '#2563eb' }}" />
                         <x-form-input name="settings[company_name]" label="Company Name" value="{{ $settings['company_name'] ?? 'Talksasa Cloud' }}" />
                         <x-form-input name="settings[footer_text]" label="Footer Text" value="{{ $settings['footer_text'] ?? '© 2026 Talksasa Cloud. All rights reserved.' }}" />
@@ -219,29 +384,278 @@
                         <x-form-input name="settings[mail_from_address]" label="From Address" type="email" value="{{ $settings['mail_from_address'] ?? 'noreply@talksasa.cloud' }}" />
                     </div>
                 </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMTP Configuration</legend>
+                    <div x-data="{ testEmail: '', testing: false }" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Email Address</label>
+                            <input type="email" x-model="testEmail" placeholder="your@email.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter an email address to send a test email and verify your SMTP settings are working correctly.</p>
+                        </div>
+                        <form action="{{ route('admin.settings.test-smtp') }}" method="POST" class="inline">
+                            @csrf
+                            <input type="hidden" name="email" x-bind:value="testEmail">
+                            <button type="submit" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                                Send Test Email
+                            </button>
+                        </form>
+                    </div>
+                </fieldset>
             </div>
 
             <!-- Notifications Tab -->
             <div x-show="activeTab === 'notifications'" class="space-y-4">
                 <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Notification Preferences</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">General Notifications</legend>
                     <div class="space-y-3">
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="settings[notify_new_order]" value="1" @checked(($settings['notify_new_order'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on New Orders</span>
                         </label>
                         <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on New Support Tickets</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Invoice Notifications</legend>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_invoice_generated]" value="1" @checked(($settings['notify_invoice_generated'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify When Invoice Generated</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_invoice_reminder]" value="1" @checked(($settings['notify_invoice_reminder'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify With Invoice Payment Reminders</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_invoice_overdue]" value="1" @checked(($settings['notify_invoice_overdue'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify When Invoice Becomes Overdue</span>
+                        </label>
+                        <label class="flex items-center gap-2">
                             <input type="checkbox" name="settings[notify_payment]" value="1" @checked(($settings['notify_payment'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on Payment Received</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Service Notifications</legend>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_service_activated]" value="1" @checked(($settings['notify_service_activated'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify When Service is Activated</span>
                         </label>
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="settings[notify_service_suspend]" value="1" @checked(($settings['notify_service_suspend'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on Service Suspension</span>
                         </label>
                         <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on New Support Tickets</span>
+                            <input type="checkbox" name="settings[notify_service_terminated]" value="1" @checked(($settings['notify_service_terminated'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify When Service is Terminated</span>
                         </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_domain_expiry]" value="1" @checked(($settings['notify_domain_expiry'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on Domain Expiry Warnings</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Cron Tab -->
+            <div x-show="activeTab === 'cron'" class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Configure automated cron job scheduling and monitoring retention settings.
+                    </p>
+                </div>
+
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Scheduling</legend>
+                    <div class="space-y-4">
+                        <x-form-select name="settings[cron_timezone]" label="Cron Job Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg', 'Africa/Lagos' => 'Africa/Lagos', 'Africa/Cairo' => 'Africa/Cairo']" value="{{ $settings['cron_timezone'] ?? 'Africa/Nairobi' }}" />
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Timezone used for scheduling all cron jobs. Update this to match your local timezone.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Execution & Retention</legend>
+                    <div class="space-y-4">
+                        <x-form-input name="settings[max_execution_time]" label="Maximum Execution Time (seconds)" type="number" value="{{ $settings['max_execution_time'] ?? '120' }}" min="10" max="3600" />
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Maximum time allowed for a single cron job to execute before timeout.</p>
+
+                        <x-form-input name="settings[cron_retention_days]" label="Log Retention Period (days)" type="number" value="{{ $settings['cron_retention_days'] ?? '30' }}" min="1" max="365" />
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Number of days to keep cron job logs and monitoring data. Older records are automatically deleted.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Server Cron Configuration</legend>
+                    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+                        <p class="text-sm text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                            <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 0v2M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span><strong>CRITICAL:</strong> Add the cron command below to your server's crontab to enable automatic job execution. Without this, cron jobs will not run!</span>
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-3">Cron Command (Copy & Add to Crontab)</label>
+                            <div class="relative">
+                                <input type="text" id="cronCommand" readonly value="{{ php_uname('a') }}" class="w-full px-4 py-3 bg-slate-950 text-emerald-400 font-mono text-sm rounded-lg border border-slate-700 focus:border-blue-500 focus:outline-none" />
+                                <button type="button" onclick="copyCronCommand()" class="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded transition-colors">
+                                    Copy
+                                </button>
+                            </div>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Command generated from your server environment. This triggers the Laravel scheduler every minute.</p>
+                        </div>
+
+                        <div class="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-3">
+                            <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Server Information</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Project Path</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all">{{ base_path() }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">PHP Executable</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all">{{ PHP_BINARY }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Log Directory</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all">{{ storage_path('logs') }}</p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Artisan Path</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all">{{ base_path('artisan') }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-3">How to Add to Crontab</h4>
+                            <ol class="text-sm text-blue-800 dark:text-blue-300 space-y-2 list-decimal list-inside mb-4">
+                                <li>SSH into your server</li>
+                                <li>Run: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">crontab -e</code></li>
+                                <li>Paste the command above at the end of the file</li>
+                                <li>Save and exit (Ctrl+X for nano, :wq for vim)</li>
+                                <li>Verify: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">crontab -l</code> should show your entry</li>
+                                <li>Check logs: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">tail -f {{ storage_path('logs/schedule.log') }}</code></li>
+                            </ol>
+                            <div class="pt-3 border-t border-blue-200 dark:border-blue-900">
+                                <p class="text-sm text-blue-800 dark:text-blue-300 mb-2">💡 <strong>Tip:</strong> You can also view this information via command line:</p>
+                                <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono text-blue-100">php artisan cron:show-setup</code>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                            <!-- Scheduler Status -->
+                            <div>
+                                <h4 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Scheduler Status</h4>
+                                @php
+                                    $latestLog = \App\Models\CronJobLog::latest('started_at')->first();
+                                    $isActive = $latestLog && $latestLog->started_at->diffInMinutes(now()) <= 5;
+                                @endphp
+
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-slate-100 dark:bg-slate-800">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex items-center justify-center w-8 h-8 rounded-full {{ $isActive ? 'bg-green-100 dark:bg-green-900' : 'bg-yellow-100 dark:bg-yellow-900' }}">
+                                            <div class="w-3 h-3 rounded-full {{ $isActive ? 'bg-green-500' : 'bg-yellow-500' }} {{ $isActive ? 'animate-pulse' : '' }}"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                                {{ $isActive ? '🟢 Active' : '🟡 Inactive' }}
+                                            </p>
+                                            <p class="text-xs text-slate-600 dark:text-slate-400">
+                                                @if ($latestLog)
+                                                    Last activity {{ $latestLog->started_at->diffForHumans() }}
+                                                @else
+                                                    No activity recorded yet
+                                                @endif
+                                            </p>
+                                        </div>
+                                    </div>
+                                    @if ($isActive)
+                                        <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs font-medium">
+                                            ✓ Running
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded text-xs font-medium">
+                                            ⚠ Setup Required
+                                        </span>
+                                    @endif
+                                </div>
+
+                                @if (!$isActive)
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                                        ⚠️ Scheduler is not running. Add the cron command above to your server's crontab.
+                                    </p>
+                                @else
+                                    <p class="text-xs text-green-700 dark:text-green-300 mt-2">
+                                        ✅ Cron scheduler is active and processing jobs regularly.
+                                    </p>
+                                @endif
+                            </div>
+
+                            <!-- Dashboard Link -->
+                            <a href="{{ route('admin.cron.index') }}" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Go to Cron Jobs Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- SMS Tab -->
+            <div x-show="activeTab === 'sms'" class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
+                        Configure SMS notifications using the Talksasa Bulk SMS API.
+                    </p>
+                </div>
+
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
+                    <div class="space-y-4">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
+                        </label>
+                        <x-form-input name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
+                        <x-form-input name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
+                    <div x-data="{ testPhone: '', testing: false }" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Phone Number</label>
+                            <input type="text" x-model="testPhone" placeholder="+254700000000" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter a phone number to send a test SMS and verify your API configuration is working correctly.</p>
+                        </div>
+                        <form action="{{ route('admin.settings.test-sms') }}" method="POST" class="inline">
+                            @csrf
+                            <input type="hidden" name="phone" x-bind:value="testPhone">
+                            <button type="submit" :disabled="!testPhone || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                                Send Test SMS
+                            </button>
+                        </form>
                     </div>
                 </fieldset>
             </div>
@@ -259,3 +673,91 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    // Generate dynamic cron command
+    document.addEventListener('DOMContentLoaded', function() {
+        const projectPath = '{{ base_path() }}';
+        const phpBinary = '{{ PHP_BINARY }}';
+        const logsPath = '{{ storage_path('logs/schedule.log') }}';
+
+        // Build the cron command
+        const cronCommand = `* * * * * ${phpBinary} ${projectPath}/artisan schedule:run >> ${logsPath} 2>&1`;
+
+        const cronCommandInput = document.getElementById('cronCommand');
+        if (cronCommandInput) {
+            cronCommandInput.value = cronCommand;
+        }
+    });
+
+    function copyCronCommand() {
+        const cronCommand = document.getElementById('cronCommand');
+
+        // Copy to clipboard
+        cronCommand.select();
+        cronCommand.setSelectionRange(0, 99999);
+
+        try {
+            document.execCommand('copy');
+
+            // Show success feedback
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = 'Copied!';
+            button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            button.classList.add('bg-green-600');
+
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove('bg-green-600');
+                button.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            }, 2000);
+        } catch (err) {
+            alert('Failed to copy command. Please copy manually.');
+        }
+    }
+
+    // Alpine.js component for branding uploads
+    function brandingUpload(initialPreview) {
+        return {
+            uploading: false,
+            preview: initialPreview,
+
+            upload(event, type) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('type', type);
+                formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                this.uploading = true;
+
+                fetch('{{ route('admin.settings.upload-file') }}', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        this.preview = data.url;
+                        alert(data.message);
+                        event.target.value = '';
+                    } else {
+                        alert('Upload failed: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Upload failed. Please try again.');
+                })
+                .finally(() => {
+                    this.uploading = false;
+                });
+            }
+        };
+    }
+</script>
+@endpush

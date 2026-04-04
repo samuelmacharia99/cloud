@@ -18,11 +18,13 @@ class OrderItem extends Model
         'unit_price',
         'amount',
         'billing_cycle',
+        'custom_options',
     ];
 
     protected $casts = [
         'unit_price' => 'decimal:2',
         'amount' => 'decimal:2',
+        'custom_options' => 'array',
     ];
 
     public function order(): BelongsTo

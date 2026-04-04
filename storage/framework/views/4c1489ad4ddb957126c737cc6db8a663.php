@@ -1,0 +1,1432 @@
+<?php $__env->startSection('title', 'Settings'); ?>
+
+<?php $__env->startSection('breadcrumb'); ?>
+<p class="text-sm font-medium text-slate-600 dark:text-slate-400">Settings</p>
+<?php $__env->stopSection(); ?>
+
+<?php $__env->startSection('content'); ?>
+<div class="space-y-6">
+    <!-- Header -->
+    <div>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Platform Settings</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Configure system-wide settings and preferences.</p>
+    </div>
+
+    <!-- Settings Form with Tabs -->
+    <div x-data="{ activeTab: 'general' }" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+        <!-- Tab Navigation -->
+        <div class="border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+            <div class="flex gap-1 px-6 min-w-max">
+                <button @click="activeTab = 'general'" :class="activeTab === 'general' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    General
+                </button>
+                <button @click="activeTab = 'billing'" :class="activeTab === 'billing' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Billing
+                </button>
+                <button @click="activeTab = 'tax'" :class="activeTab === 'tax' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Tax
+                </button>
+                <button @click="activeTab = 'payment_methods'" :class="activeTab === 'payment_methods' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Payment Methods
+                </button>
+                <button @click="activeTab = 'provisioning'" :class="activeTab === 'provisioning' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Provisioning
+                </button>
+                <button @click="activeTab = 'branding'" :class="activeTab === 'branding' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Branding
+                </button>
+                <button @click="activeTab = 'email'" :class="activeTab === 'email' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Email
+                </button>
+                <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Notifications
+                </button>
+                <button @click="activeTab = 'cron'" :class="activeTab === 'cron' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Cron Jobs
+                </button>
+                <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    SMS
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab Content -->
+        <form method="POST" action="<?php echo e(route('admin.settings.update')); ?>" class="p-8 space-y-6">
+            <?php echo csrf_field(); ?>
+
+            <!-- General Tab -->
+            <div x-show="activeTab === 'general'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Site Information</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[site_name]','label' => 'Site Name','value' => ''.e($settings['site_name'] ?? 'Talksasa Cloud').'','required' => true]] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[site_name]','label' => 'Site Name','value' => ''.e($settings['site_name'] ?? 'Talksasa Cloud').'','required' => true]); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[site_url]','label' => 'Site URL','type' => 'url','value' => ''.e($settings['site_url'] ?? 'https://talksasa.cloud').'','required' => true]] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[site_url]','label' => 'Site URL','type' => 'url','value' => ''.e($settings['site_url'] ?? 'https://talksasa.cloud').'','required' => true]); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[site_email]','label' => 'System Email','type' => 'email','value' => ''.e($settings['site_email'] ?? '').'','required' => true]] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[site_email]','label' => 'System Email','type' => 'email','value' => ''.e($settings['site_email'] ?? '').'','required' => true]); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[support_email]','label' => 'Support Email','type' => 'email','value' => ''.e($settings['support_email'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[support_email]','label' => 'Support Email','type' => 'email','value' => ''.e($settings['support_email'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Regional Settings</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal67ad07a4b593e690d435fee92e6413bb = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal67ad07a4b593e690d435fee92e6413bb = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-select','data' => ['name' => 'settings[timezone]','label' => 'Timezone','options' => ['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg'],'value' => ''.e($settings['timezone'] ?? 'UTC').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-select'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[timezone]','label' => 'Timezone','options' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg']),'value' => ''.e($settings['timezone'] ?? 'UTC').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $attributes = $__attributesOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $component = $__componentOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__componentOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal67ad07a4b593e690d435fee92e6413bb = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal67ad07a4b593e690d435fee92e6413bb = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-select','data' => ['name' => 'settings[currency]','label' => 'Default Currency','options' => ['KES' => 'KES', 'USD' => 'USD', 'EUR' => 'EUR'],'value' => ''.e($settings['currency'] ?? 'KES').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-select'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[currency]','label' => 'Default Currency','options' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(['KES' => 'KES', 'USD' => 'USD', 'EUR' => 'EUR']),'value' => ''.e($settings['currency'] ?? 'KES').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $attributes = $__attributesOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $component = $__componentOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__componentOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[currency_symbol]','label' => 'Currency Symbol','value' => ''.e($settings['currency_symbol'] ?? 'Ksh').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[currency_symbol]','label' => 'Currency Symbol','value' => ''.e($settings['currency_symbol'] ?? 'Ksh').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Billing Tab -->
+            <div x-show="activeTab === 'billing'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Company Information</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[billing_company]','label' => 'Company Name','value' => ''.e($settings['billing_company'] ?? 'Talksasa Cloud Ltd').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[billing_company]','label' => 'Company Name','value' => ''.e($settings['billing_company'] ?? 'Talksasa Cloud Ltd').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[billing_address]','label' => 'Address','value' => ''.e($settings['billing_address'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[billing_address]','label' => 'Address','value' => ''.e($settings['billing_address'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[billing_city]','label' => 'City','value' => ''.e($settings['billing_city'] ?? 'Nairobi').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[billing_city]','label' => 'City','value' => ''.e($settings['billing_city'] ?? 'Nairobi').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[billing_country]','label' => 'Country','value' => ''.e($settings['billing_country'] ?? 'Kenya').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[billing_country]','label' => 'Country','value' => ''.e($settings['billing_country'] ?? 'Kenya').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[billing_vat_number]','label' => 'VAT/Tax Number','value' => ''.e($settings['billing_vat_number'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[billing_vat_number]','label' => 'VAT/Tax Number','value' => ''.e($settings['billing_vat_number'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Invoice Settings</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[invoice_prefix]','label' => 'Invoice Number Prefix','value' => ''.e($settings['invoice_prefix'] ?? 'INV').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[invoice_prefix]','label' => 'Invoice Number Prefix','value' => ''.e($settings['invoice_prefix'] ?? 'INV').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[invoice_due_days]','label' => 'Invoice Due Days','type' => 'number','value' => ''.e($settings['invoice_due_days'] ?? '30').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[invoice_due_days]','label' => 'Invoice Due Days','type' => 'number','value' => ''.e($settings['invoice_due_days'] ?? '30').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[grace_period_days]','label' => 'Grace Period (days)','type' => 'number','value' => ''.e($settings['grace_period_days'] ?? '7').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[grace_period_days]','label' => 'Grace Period (days)','type' => 'number','value' => ''.e($settings['grace_period_days'] ?? '7').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Tax Tab -->
+            <div x-show="activeTab === 'tax'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Tax Configuration</legend>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="settings[tax_enabled]" value="1" <?php if(($settings['tax_enabled'] ?? '0') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable Tax Calculation</span>
+                            </label>
+                        </div>
+
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[tax_rate]','label' => 'Tax Rate (%)','type' => 'number','step' => '0.01','value' => ''.e($settings['tax_rate'] ?? '16').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[tax_rate]','label' => 'Tax Rate (%)','type' => 'number','step' => '0.01','value' => ''.e($settings['tax_rate'] ?? '16').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[tax_name]','label' => 'Tax Name','value' => ''.e($settings['tax_name'] ?? 'VAT').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[tax_name]','label' => 'Tax Name','value' => ''.e($settings['tax_name'] ?? 'VAT').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+
+                        <div>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="settings[tax_inclusive]" value="1" <?php if(($settings['tax_inclusive'] ?? '0') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Tax Inclusive (prices already include tax)</span>
+                            </label>
+                        </div>
+
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[tax_number]','label' => 'Tax Registration Number','value' => ''.e($settings['tax_number'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[tax_number]','label' => 'Tax Registration Number','value' => ''.e($settings['tax_number'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Payment Methods Tab -->
+            <div x-show="activeTab === 'payment_methods'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enabled Payment Methods</legend>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[mpesa_enabled]" value="1" <?php if(($settings['mpesa_enabled'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">M-Pesa</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[card_enabled]" value="1" <?php if(($settings['card_enabled'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Card Payments (Stripe)</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[bank_transfer_enabled]" value="1" <?php if(($settings['bank_transfer_enabled'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Bank Transfer</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[manual_enabled]" value="1" <?php if(($settings['manual_enabled'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Manual Payment Recording</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">M-Pesa Credentials</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[mpesa_shortcode]','label' => 'Shortcode','value' => ''.e($settings['mpesa_shortcode'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[mpesa_shortcode]','label' => 'Shortcode','value' => ''.e($settings['mpesa_shortcode'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[mpesa_passkey]','label' => 'Passkey','type' => 'password','value' => ''.e($settings['mpesa_passkey'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[mpesa_passkey]','label' => 'Passkey','type' => 'password','value' => ''.e($settings['mpesa_passkey'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Bank Transfer Details</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[bank_name]','label' => 'Bank Name','value' => ''.e($settings['bank_name'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[bank_name]','label' => 'Bank Name','value' => ''.e($settings['bank_name'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[bank_account_name]','label' => 'Account Name','value' => ''.e($settings['bank_account_name'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[bank_account_name]','label' => 'Account Name','value' => ''.e($settings['bank_account_name'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[bank_account_number]','label' => 'Account Number','value' => ''.e($settings['bank_account_number'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[bank_account_number]','label' => 'Account Number','value' => ''.e($settings['bank_account_number'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Provisioning Tab -->
+            <div x-show="activeTab === 'provisioning'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Provisioning Settings</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal67ad07a4b593e690d435fee92e6413bb = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal67ad07a4b593e690d435fee92e6413bb = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-select','data' => ['name' => 'settings[provisioning_mode]','label' => 'Provisioning Mode','options' => ['manual' => 'Manual', 'automatic' => 'Automatic'],'value' => ''.e($settings['provisioning_mode'] ?? 'manual').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-select'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[provisioning_mode]','label' => 'Provisioning Mode','options' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(['manual' => 'Manual', 'automatic' => 'Automatic']),'value' => ''.e($settings['provisioning_mode'] ?? 'manual').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $attributes = $__attributesOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $component = $__componentOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__componentOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[auto_provision]" value="1" <?php if(($settings['auto_provision'] ?? '0') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Auto-Provision Immediately After Payment</span>
+                        </label>
+
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[suspend_on_overdue]" value="1" <?php if(($settings['suspend_on_overdue'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Suspend Services on Overdue Payment</span>
+                        </label>
+
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[terminate_after_days]','label' => 'Terminate Service After (days)','type' => 'number','value' => ''.e($settings['terminate_after_days'] ?? '60').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[terminate_after_days]','label' => 'Terminate Service After (days)','type' => 'number','value' => ''.e($settings['terminate_after_days'] ?? '60').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Branding Tab -->
+            <div x-show="activeTab === 'branding'" class="space-y-6">
+                <!-- Logo Section -->
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Logo</legend>
+                    <div class="space-y-4">
+                        <div x-data="brandingUpload('<?php echo e($settings['logo_url'] ?? ''); ?>')">
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Logo Image</label>
+                            <div class="flex gap-4">
+                                <!-- Upload Area -->
+                                <div class="flex-1">
+                                    <div class="relative">
+                                        <input
+                                            type="file"
+                                            id="logoUpload"
+                                            @change="upload($event, 'logo')"
+                                            accept="image/*"
+                                            class="hidden"
+                                        />
+                                        <label
+                                            for="logoUpload"
+                                            class="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-all"
+                                        >
+                                            <div class="text-center">
+                                                <svg class="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                                    <span x-show="!uploading">Click to upload or drag and drop</span>
+                                                    <span x-show="uploading">Uploading...</span>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">PNG, JPG, GIF up to 5MB</p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Preview -->
+                                <div class="flex flex-col items-center justify-center">
+                                    <div class="w-24 h-24 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                        <img
+                                            x-show="preview"
+                                            :src="preview"
+                                            alt="Logo preview"
+                                            class="w-full h-full object-contain p-2 rounded"
+                                        />
+                                        <svg
+                                            x-show="!preview"
+                                            class="w-12 h-12 text-slate-300"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
+                                    </div>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Preview</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Favicon Section -->
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Favicon</legend>
+                    <div class="space-y-4">
+                        <div x-data="brandingUpload('<?php echo e($settings['favicon_url'] ?? ''); ?>')">
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Favicon Image</label>
+                            <div class="flex gap-4">
+                                <!-- Upload Area -->
+                                <div class="flex-1">
+                                    <div class="relative">
+                                        <input
+                                            type="file"
+                                            id="faviconUpload"
+                                            @change="upload($event, 'favicon')"
+                                            accept="image/*"
+                                            class="hidden"
+                                        />
+                                        <label
+                                            for="faviconUpload"
+                                            class="flex items-center justify-center w-full px-6 py-8 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-all"
+                                        >
+                                            <div class="text-center">
+                                                <svg class="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                                    <span x-show="!uploading">Click to upload or drag and drop</span>
+                                                    <span x-show="uploading">Uploading...</span>
+                                                </p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">PNG, JPG, ICO up to 5MB (32x32 recommended)</p>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <!-- Preview -->
+                                <div class="flex flex-col items-center justify-center">
+                                    <div class="w-16 h-16 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                                        <img
+                                            x-show="preview"
+                                            :src="preview"
+                                            alt="Favicon preview"
+                                            class="w-full h-full object-contain p-1 rounded"
+                                        />
+                                        <svg
+                                            x-show="!preview"
+                                            class="w-8 h-8 text-slate-300"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                        </svg>
+                                    </div>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Preview</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <!-- Other Branding Options -->
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Other Options</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[primary_color]','label' => 'Primary Color','type' => 'color','value' => ''.e($settings['primary_color'] ?? '#2563eb').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[primary_color]','label' => 'Primary Color','type' => 'color','value' => ''.e($settings['primary_color'] ?? '#2563eb').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[company_name]','label' => 'Company Name','value' => ''.e($settings['company_name'] ?? 'Talksasa Cloud').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[company_name]','label' => 'Company Name','value' => ''.e($settings['company_name'] ?? 'Talksasa Cloud').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[footer_text]','label' => 'Footer Text','value' => ''.e($settings['footer_text'] ?? '© 2026 Talksasa Cloud. All rights reserved.').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[footer_text]','label' => 'Footer Text','value' => ''.e($settings['footer_text'] ?? '© 2026 Talksasa Cloud. All rights reserved.').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Email Tab -->
+            <div x-show="activeTab === 'email'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMTP Configuration</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[smtp_host]','label' => 'SMTP Host','value' => ''.e($settings['smtp_host'] ?? 'smtp.mailtrap.io').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[smtp_host]','label' => 'SMTP Host','value' => ''.e($settings['smtp_host'] ?? 'smtp.mailtrap.io').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[smtp_port]','label' => 'SMTP Port','type' => 'number','value' => ''.e($settings['smtp_port'] ?? '587').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[smtp_port]','label' => 'SMTP Port','type' => 'number','value' => ''.e($settings['smtp_port'] ?? '587').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[smtp_user]','label' => 'SMTP Username','value' => ''.e($settings['smtp_user'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[smtp_user]','label' => 'SMTP Username','value' => ''.e($settings['smtp_user'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[smtp_password]','label' => 'SMTP Password','type' => 'password','value' => ''.e($settings['smtp_password'] ?? '').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[smtp_password]','label' => 'SMTP Password','type' => 'password','value' => ''.e($settings['smtp_password'] ?? '').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Email Settings</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[mail_from_name]','label' => 'From Name','value' => ''.e($settings['mail_from_name'] ?? 'Talksasa Cloud').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[mail_from_name]','label' => 'From Name','value' => ''.e($settings['mail_from_name'] ?? 'Talksasa Cloud').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[mail_from_address]','label' => 'From Address','type' => 'email','value' => ''.e($settings['mail_from_address'] ?? 'noreply@talksasa.cloud').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[mail_from_address]','label' => 'From Address','type' => 'email','value' => ''.e($settings['mail_from_address'] ?? 'noreply@talksasa.cloud').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMTP Configuration</legend>
+                    <div x-data="{ testEmail: '', testing: false }" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Email Address</label>
+                            <input type="email" x-model="testEmail" placeholder="your@email.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter an email address to send a test email and verify your SMTP settings are working correctly.</p>
+                        </div>
+                        <form action="<?php echo e(route('admin.settings.test-smtp')); ?>" method="POST" class="inline">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="email" x-bind:value="testEmail">
+                            <button type="submit" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                                Send Test Email
+                            </button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Notifications Tab -->
+            <div x-show="activeTab === 'notifications'" class="space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Notification Preferences</legend>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_new_order]" value="1" <?php if(($settings['notify_new_order'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on New Orders</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_payment]" value="1" <?php if(($settings['notify_payment'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on Payment Received</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_service_suspend]" value="1" <?php if(($settings['notify_service_suspend'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on Service Suspension</span>
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[notify_ticket]" value="1" <?php if(($settings['notify_ticket'] ?? '1') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Notify on New Support Tickets</span>
+                        </label>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Cron Tab -->
+            <div x-show="activeTab === 'cron'" class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Configure automated cron job scheduling and monitoring retention settings.
+                    </p>
+                </div>
+
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Scheduling</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal67ad07a4b593e690d435fee92e6413bb = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal67ad07a4b593e690d435fee92e6413bb = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-select','data' => ['name' => 'settings[cron_timezone]','label' => 'Cron Job Timezone','options' => ['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg', 'Africa/Lagos' => 'Africa/Lagos', 'Africa/Cairo' => 'Africa/Cairo'],'value' => ''.e($settings['cron_timezone'] ?? 'Africa/Nairobi').'']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-select'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[cron_timezone]','label' => 'Cron Job Timezone','options' => \Illuminate\View\Compilers\BladeCompiler::sanitizeComponentAttribute(['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg', 'Africa/Lagos' => 'Africa/Lagos', 'Africa/Cairo' => 'Africa/Cairo']),'value' => ''.e($settings['cron_timezone'] ?? 'Africa/Nairobi').'']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $attributes = $__attributesOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__attributesOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal67ad07a4b593e690d435fee92e6413bb)): ?>
+<?php $component = $__componentOriginal67ad07a4b593e690d435fee92e6413bb; ?>
+<?php unset($__componentOriginal67ad07a4b593e690d435fee92e6413bb); ?>
+<?php endif; ?>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Timezone used for scheduling all cron jobs. Update this to match your local timezone.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Execution & Retention</legend>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[max_execution_time]','label' => 'Maximum Execution Time (seconds)','type' => 'number','value' => ''.e($settings['max_execution_time'] ?? '120').'','min' => '10','max' => '3600']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[max_execution_time]','label' => 'Maximum Execution Time (seconds)','type' => 'number','value' => ''.e($settings['max_execution_time'] ?? '120').'','min' => '10','max' => '3600']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Maximum time allowed for a single cron job to execute before timeout.</p>
+
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[cron_retention_days]','label' => 'Log Retention Period (days)','type' => 'number','value' => ''.e($settings['cron_retention_days'] ?? '30').'','min' => '1','max' => '365']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[cron_retention_days]','label' => 'Log Retention Period (days)','type' => 'number','value' => ''.e($settings['cron_retention_days'] ?? '30').'','min' => '1','max' => '365']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Number of days to keep cron job logs and monitoring data. Older records are automatically deleted.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Server Cron Configuration</legend>
+                    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+                        <p class="text-sm text-amber-700 dark:text-amber-300 flex items-start gap-2">
+                            <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 0v2M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span><strong>CRITICAL:</strong> Add the cron command below to your server's crontab to enable automatic job execution. Without this, cron jobs will not run!</span>
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-3">Cron Command (Copy & Add to Crontab)</label>
+                            <div class="relative">
+                                <input type="text" id="cronCommand" readonly value="<?php echo e(php_uname('a')); ?>" class="w-full px-4 py-3 bg-slate-950 text-emerald-400 font-mono text-sm rounded-lg border border-slate-700 focus:border-blue-500 focus:outline-none" />
+                                <button type="button" onclick="copyCronCommand()" class="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded transition-colors">
+                                    Copy
+                                </button>
+                            </div>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Command generated from your server environment. This triggers the Laravel scheduler every minute.</p>
+                        </div>
+
+                        <div class="bg-slate-100 dark:bg-slate-800 rounded-lg p-4 space-y-3">
+                            <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Server Information</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Project Path</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all"><?php echo e(base_path()); ?></p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">PHP Executable</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all"><?php echo e(PHP_BINARY); ?></p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Log Directory</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all"><?php echo e(storage_path('logs')); ?></p>
+                                </div>
+                                <div>
+                                    <p class="text-slate-600 dark:text-slate-400">Artisan Path</p>
+                                    <p class="text-slate-900 dark:text-white font-mono text-xs break-all"><?php echo e(base_path('artisan')); ?></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-3">How to Add to Crontab</h4>
+                            <ol class="text-sm text-blue-800 dark:text-blue-300 space-y-2 list-decimal list-inside mb-4">
+                                <li>SSH into your server</li>
+                                <li>Run: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">crontab -e</code></li>
+                                <li>Paste the command above at the end of the file</li>
+                                <li>Save and exit (Ctrl+X for nano, :wq for vim)</li>
+                                <li>Verify: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">crontab -l</code> should show your entry</li>
+                                <li>Check logs: <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono">tail -f <?php echo e(storage_path('logs/schedule.log')); ?></code></li>
+                            </ol>
+                            <div class="pt-3 border-t border-blue-200 dark:border-blue-900">
+                                <p class="text-sm text-blue-800 dark:text-blue-300 mb-2">💡 <strong>Tip:</strong> You can also view this information via command line:</p>
+                                <code class="bg-blue-900/50 px-2 py-1 rounded text-xs font-mono text-blue-100">php artisan cron:show-setup</code>
+                            </div>
+                        </div>
+
+                        <div class="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-4">
+                            <!-- Scheduler Status -->
+                            <div>
+                                <h4 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Scheduler Status</h4>
+                                <?php
+                                    $latestLog = \App\Models\CronJobLog::latest('started_at')->first();
+                                    $isActive = $latestLog && $latestLog->started_at->diffInMinutes(now()) <= 5;
+                                ?>
+
+                                <div class="flex items-center justify-between p-3 rounded-lg bg-slate-100 dark:bg-slate-800">
+                                    <div class="flex items-center gap-3">
+                                        <div class="flex items-center justify-center w-8 h-8 rounded-full <?php echo e($isActive ? 'bg-green-100 dark:bg-green-900' : 'bg-yellow-100 dark:bg-yellow-900'); ?>">
+                                            <div class="w-3 h-3 rounded-full <?php echo e($isActive ? 'bg-green-500' : 'bg-yellow-500'); ?> <?php echo e($isActive ? 'animate-pulse' : ''); ?>"></div>
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-medium text-slate-900 dark:text-white">
+                                                <?php echo e($isActive ? '🟢 Active' : '🟡 Inactive'); ?>
+
+                                            </p>
+                                            <p class="text-xs text-slate-600 dark:text-slate-400">
+                                                <?php if($latestLog): ?>
+                                                    Last activity <?php echo e($latestLog->started_at->diffForHumans()); ?>
+
+                                                <?php else: ?>
+                                                    No activity recorded yet
+                                                <?php endif; ?>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <?php if($isActive): ?>
+                                        <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded text-xs font-medium">
+                                            ✓ Running
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded text-xs font-medium">
+                                            ⚠ Setup Required
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <?php if(!$isActive): ?>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                                        ⚠️ Scheduler is not running. Add the cron command above to your server's crontab.
+                                    </p>
+                                <?php else: ?>
+                                    <p class="text-xs text-green-700 dark:text-green-300 mt-2">
+                                        ✅ Cron scheduler is active and processing jobs regularly.
+                                    </p>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Dashboard Link -->
+                            <a href="<?php echo e(route('admin.cron.index')); ?>" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Go to Cron Jobs Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- SMS Tab -->
+            <div x-show="activeTab === 'sms'" class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
+                        Configure SMS notifications using the Talksasa Bulk SMS API.
+                    </p>
+                </div>
+
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
+                    <div class="space-y-4">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" name="settings[sms_enabled]" value="1" <?php if(($settings['sms_enabled'] ?? '0') == '1'): echo 'checked'; endif; ?> class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
+                        </label>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[sms_api_token]','label' => 'API Token','type' => 'password','value' => ''.e($settings['sms_api_token'] ?? '').'','placeholder' => 'Bearer token from Talksasa']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[sms_api_token]','label' => 'API Token','type' => 'password','value' => ''.e($settings['sms_api_token'] ?? '').'','placeholder' => 'Bearer token from Talksasa']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['name' => 'settings[sms_sender_id]','label' => 'Sender ID','value' => ''.e($settings['sms_sender_id'] ?? 'TalksasaCloud').'','maxlength' => '11']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['name' => 'settings[sms_sender_id]','label' => 'Sender ID','value' => ''.e($settings['sms_sender_id'] ?? 'TalksasaCloud').'','maxlength' => '11']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
+                    <div x-data="{ testPhone: '', testing: false }" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Phone Number</label>
+                            <input type="text" x-model="testPhone" placeholder="+254700000000" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter a phone number to send a test SMS and verify your API configuration is working correctly.</p>
+                        </div>
+                        <form action="<?php echo e(route('admin.settings.test-sms')); ?>" method="POST" class="inline">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="phone" x-bind:value="testPhone">
+                            <button type="submit" :disabled="!testPhone || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                                Send Test SMS
+                            </button>
+                        </form>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Save Button -->
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Save Settings
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php $__env->stopSection(); ?>
+
+<?php $__env->startPush('scripts'); ?>
+<script>
+    // Generate dynamic cron command
+    document.addEventListener('DOMContentLoaded', function() {
+        const projectPath = '<?php echo e(base_path()); ?>';
+        const phpBinary = '<?php echo e(PHP_BINARY); ?>';
+        const logsPath = '<?php echo e(storage_path('logs/schedule.log')); ?>';
+
+        // Build the cron command
+        const cronCommand = `* * * * * ${phpBinary} ${projectPath}/artisan schedule:run >> ${logsPath} 2>&1`;
+
+        const cronCommandInput = document.getElementById('cronCommand');
+        if (cronCommandInput) {
+            cronCommandInput.value = cronCommand;
+        }
+    });
+
+    function copyCronCommand() {
+        const cronCommand = document.getElementById('cronCommand');
+
+        // Copy to clipboard
+        cronCommand.select();
+        cronCommand.setSelectionRange(0, 99999);
+
+        try {
+            document.execCommand('copy');
+
+            // Show success feedback
+            const button = event.target;
+            const originalText = button.textContent;
+            button.textContent = 'Copied!';
+            button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            button.classList.add('bg-green-600');
+
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.classList.remove('bg-green-600');
+                button.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            }, 2000);
+        } catch (err) {
+            alert('Failed to copy command. Please copy manually.');
+        }
+    }
+
+    // Alpine.js component for branding uploads
+    function brandingUpload(initialPreview) {
+        return {
+            uploading: false,
+            preview: initialPreview,
+
+            upload(event, type) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('type', type);
+                formData.append('_token', document.querySelector('meta[name="csrf-token"]').content);
+
+                this.uploading = true;
+
+                fetch('<?php echo e(route('admin.settings.upload-file')); ?>', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        this.preview = data.url;
+                        alert(data.message);
+                        event.target.value = '';
+                    } else {
+                        alert('Upload failed: ' + (data.message || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Upload failed. Please try again.');
+                })
+                .finally(() => {
+                    this.uploading = false;
+                });
+            }
+        };
+    }
+</script>
+<?php $__env->stopPush(); ?>
+
+<?php echo $__env->make('layouts.admin', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /home/zumi/php/road-map/talksasa-cloud/resources/views/admin/settings/index.blade.php ENDPATH**/ ?>

@@ -54,7 +54,7 @@
     </div>
 
     <!-- Stats Grid -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Services Managed</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $services->count() }}</p>
@@ -62,6 +62,13 @@
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Customers Served</p>
             <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $customerIds->count() }}</p>
+        </div>
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+            <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Package</p>
+            <p class="text-lg font-bold text-slate-900 dark:text-white mt-2">{{ $user->resellerPackage?->name ?? '—' }}</p>
+            @if($user->resellerPackage)
+                <p class="text-xs text-slate-500 mt-1">Ksh {{ number_format($user->resellerPackage->price, 0) }}/{{ $user->resellerPackage->billing_cycle === 'monthly' ? 'mo' : 'yr' }}</p>
+            @endif
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Member Since</p>
@@ -116,10 +123,30 @@
                                 <p class="text-slate-600 dark:text-slate-400 mb-1">Status</p>
                                 <p class="text-slate-900 dark:text-white font-medium">Active</p>
                             </div>
-                            @if ($user->company_name)
+                            <div>
+                                <p class="text-slate-600 dark:text-slate-400 mb-1">Current Package</p>
+                                @if ($user->resellerPackage)
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-slate-900 dark:text-white">{{ $user->resellerPackage->name }}</span>
+                                        <span class="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-xs">
+                                            {{ ucfirst($user->resellerPackage->billing_cycle) }}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Subscribed {{ $user->package_subscribed_at?->diffForHumans() }}
+                                        &bull;
+                                        {{ $user->getManagedActiveServicesCount() }} / {{ $user->resellerPackage->storage_space }} service slots
+                                        &bull;
+                                        {{ $customerIds->count() }} / {{ $user->resellerPackage->max_users }} customers
+                                    </p>
+                                @else
+                                    <span class="text-amber-600 dark:text-amber-400 font-medium text-sm">No package assigned</span>
+                                @endif
+                            </div>
+                            @if ($user->company)
                                 <div>
                                     <p class="text-slate-600 dark:text-slate-400 mb-1">Company</p>
-                                    <p class="text-slate-900 dark:text-white font-medium">{{ $user->company_name }}</p>
+                                    <p class="text-slate-900 dark:text-white font-medium">{{ $user->company }}</p>
                                 </div>
                             @endif
                         </div>

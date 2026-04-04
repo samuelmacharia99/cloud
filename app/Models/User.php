@@ -26,6 +26,8 @@ class User extends Authenticatable
         'is_reseller',
         'status',
         'email_verified_at',
+        'reseller_package_id',
+        'package_subscribed_at',
     ];
 
     protected $hidden = [
@@ -40,6 +42,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'is_reseller' => 'boolean',
+            'package_subscribed_at' => 'datetime',
         ];
     }
 
@@ -68,6 +71,11 @@ class User extends Authenticatable
         return $this->hasMany(Domain::class);
     }
 
+    public function resellerPackage()
+    {
+        return $this->belongsTo(ResellerPackage::class, 'reseller_package_id');
+    }
+
     public function isAdmin(): bool
     {
         return $this->is_admin;
@@ -90,5 +98,71 @@ class User extends Authenticatable
         return $this->services()
             ->where('status', 'active')
             ->count();
+    }
+
+    /**
+     * Count of services this reseller manages, regardless of status.
+     */
+    public function getManagedServicesCount(): int
+    {
+        return Service::where('reseller_id', $this->id)->count();
+    }
+
+    /**
+     * Count of active services managed by this reseller (used as storage proxy).
+     */
+    public function getManagedActiveServicesCount(): int
+    {
+        return Service::where('reseller_id', $this->id)
+                      ->where('status', 'active')
+                      ->count();
+    }
+
+    /**
+     * Distinct customers (users with at least one service managed by this reseller).
+     */
+    public function getManagedCustomersCount(): int
+    {
+        return Service::where('reseller_id', $this->id)
+                      ->distinct('user_id')
+                      ->count('user_id');
+    }
+
+    /**
+     * Returns true if reseller has a package assigned.
+     */
+    public function hasResellerPackage(): bool
+    {
+        return !is_null($this->reseller_package_id);
+    }
+
+    /**
+     * Returns true if the reseller has hit or exceeded the user limit.
+     */
+    public function isAtUserLimit(): bool
+    {
+        if (!$this->resellerPackage) {
+            return true;
+        }
+        return $this->getManagedCustomersCount() >= $this->resellerPackage->max_users;
+    }
+
+    /**
+     * Returns true if the reseller has hit or exceeded the service (storage proxy) limit.
+     */
+    public function isAtServiceLimit(): bool
+    {
+        if (!$this->resellerPackage) {
+            return true;
+        }
+        return $this->getManagedActiveServicesCount() >= $this->resellerPackage->storage_space;
+    }
+
+    /**
+     * True when either limit is exceeded — used by middleware.
+     */
+    public function isOverPackageLimits(): bool
+    {
+        return $this->isAtUserLimit() || $this->isAtServiceLimit();
     }
 }

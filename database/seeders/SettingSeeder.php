@@ -41,12 +41,17 @@ class SettingSeeder extends Seeder
             ['key' => 'mpesa_enabled', 'value' => 'true', 'description' => 'Enable M-Pesa payments'],
             ['key' => 'mpesa_shortcode', 'value' => '123456', 'description' => 'M-Pesa merchant shortcode'],
             ['key' => 'mpesa_passkey', 'value' => 'bfb279f9aa9bdbcf158e97dd1a2c6f6d', 'description' => 'M-Pesa API passkey'],
+            ['key' => 'mpesa_consumer_key', 'value' => '', 'description' => 'M-Pesa Daraja API consumer key'],
+            ['key' => 'mpesa_consumer_secret', 'value' => '', 'description' => 'M-Pesa Daraja API consumer secret'],
+            ['key' => 'mpesa_environment', 'value' => 'sandbox', 'description' => 'M-Pesa API environment (sandbox or production)'],
             ['key' => 'card_enabled', 'value' => 'true', 'description' => 'Enable card payments'],
             ['key' => 'stripe_key', 'value' => 'sk_test_', 'description' => 'Stripe secret key'],
             ['key' => 'bank_transfer_enabled', 'value' => 'true', 'description' => 'Enable bank transfer payments'],
             ['key' => 'bank_name', 'value' => 'Kenya Commercial Bank', 'description' => 'Bank name'],
             ['key' => 'bank_account_name', 'value' => 'Talksasa Cloud Limited', 'description' => 'Bank account name'],
             ['key' => 'bank_account_number', 'value' => '1234567890', 'description' => 'Bank account number'],
+            ['key' => 'bank_branch', 'value' => '', 'description' => 'Bank branch name'],
+            ['key' => 'bank_swift_code', 'value' => '', 'description' => 'Bank SWIFT/BIC code'],
             ['key' => 'manual_enabled', 'value' => 'true', 'description' => 'Enable manual payment entry'],
 
             // Provisioning settings
@@ -54,6 +59,11 @@ class SettingSeeder extends Seeder
             ['key' => 'auto_provision', 'value' => 'true', 'description' => 'Auto-provision services'],
             ['key' => 'suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend services when overdue'],
             ['key' => 'terminate_after_days', 'value' => '30', 'description' => 'Days before terminating suspended service'],
+
+            // Cron settings
+            ['key' => 'cron_timezone', 'value' => 'Africa/Nairobi', 'description' => 'Timezone for cron job scheduling'],
+            ['key' => 'cron_retention_days', 'value' => '30', 'description' => 'Days to retain cron logs and monitoring data'],
+            ['key' => 'max_execution_time', 'value' => '120', 'description' => 'Maximum cron job execution time in seconds'],
 
             // Branding settings
             ['key' => 'logo_url', 'value' => '/images/logo.png', 'description' => 'Logo image URL'],
@@ -75,10 +85,30 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_payment', 'value' => 'true', 'description' => 'Notify on payments received'],
             ['key' => 'notify_service_suspend', 'value' => 'true', 'description' => 'Notify on service suspension'],
             ['key' => 'notify_ticket', 'value' => 'true', 'description' => 'Notify on new support tickets'],
+            ['key' => 'notify_invoice_generated', 'value' => 'true', 'description' => 'Notify on invoice generation'],
+            ['key' => 'notify_invoice_reminder', 'value' => 'true', 'description' => 'Notify with invoice payment reminders'],
+            ['key' => 'notify_invoice_overdue', 'value' => 'true', 'description' => 'Notify when invoice becomes overdue'],
+            ['key' => 'notify_service_activated', 'value' => 'true', 'description' => 'Notify when service is activated'],
+            ['key' => 'notify_service_terminated', 'value' => 'true', 'description' => 'Notify when service is terminated'],
+            ['key' => 'notify_domain_expiry', 'value' => 'true', 'description' => 'Notify on domain expiry warnings'],
+
+            // SMS settings
+            ['key' => 'sms_enabled', 'value' => 'false', 'description' => 'Enable SMS notifications'],
+            ['key' => 'sms_api_token', 'value' => '', 'description' => 'Talksasa SMS API Bearer token'],
+            ['key' => 'sms_sender_id', 'value' => 'TalksasaCloud', 'description' => 'SMS sender ID (max 11 chars)'],
+
+            // DirectAdmin settings
+            ['key' => 'directadmin_api_url', 'value' => '', 'description' => 'DirectAdmin API URL (e.g., https://da.example.com:2222)'],
+            ['key' => 'directadmin_api_user', 'value' => 'admin', 'description' => 'DirectAdmin admin username'],
+            ['key' => 'directadmin_api_password', 'value' => '', 'description' => 'DirectAdmin admin password'],
+            ['key' => 'directadmin_default_package', 'value' => 'default', 'description' => 'Default DirectAdmin package for hosting accounts'],
         ];
 
         foreach ($settings as $setting) {
-            Setting::create($setting);
+            Setting::updateOrCreate(
+                ['key' => $setting['key']],
+                ['value' => $setting['value'], 'description' => $setting['description']]
+            );
         }
     }
 }

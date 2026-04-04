@@ -144,6 +144,19 @@ class CustomerController extends Controller
             ->with('success', "You are now viewing the dashboard as {$customer->name}.");
     }
 
+    public function destroy(User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        $customerName = $customer->name;
+        $customer->delete();
+
+        return redirect()->route('admin.customers.index')
+            ->with('success', "Customer '{$customerName}' has been deleted successfully.");
+    }
+
     public function exitImpersonation()
     {
         if (!session('impersonating')) {

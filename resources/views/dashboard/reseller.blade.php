@@ -150,6 +150,55 @@
 
         <!-- Right Sidebar: Summary Cards -->
         <div class="space-y-6">
+            <!-- Your Plan Card -->
+            <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-slate-900 dark:text-white">Your Plan</h3>
+                    <a href="{{ route('reseller.packages.index') }}" class="text-xs text-purple-600 dark:text-purple-400 hover:underline font-medium">Manage</a>
+                </div>
+                @if ($resellerPackage)
+                    <p class="text-lg font-bold text-purple-700 dark:text-purple-300">{{ $resellerPackage->name }}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">{{ ucfirst($resellerPackage->billing_cycle) }}</p>
+                    <!-- Service Slots Usage -->
+                    <div class="mb-4">
+                        <div class="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                            <span>Service Slots</span>
+                            <span>{{ $activeServices }} / {{ $resellerPackage->storage_space }}</span>
+                        </div>
+                        @php
+                            $servicePct = $resellerPackage->storage_space > 0
+                                ? min(100, round(($activeServices / $resellerPackage->storage_space) * 100))
+                                : 0;
+                            $serviceColor = $servicePct >= 90 ? 'bg-red-500' : ($servicePct >= 75 ? 'bg-amber-500' : 'bg-emerald-500');
+                        @endphp
+                        <div class="w-full h-2 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div class="{{ $serviceColor }} h-2 rounded-full transition-all" style="width: {{ $servicePct }}%"></div>
+                        </div>
+                    </div>
+                    <!-- Customers Usage -->
+                    <div>
+                        <div class="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
+                            <span>Customers</span>
+                            <span>{{ $managedCustomers->count() }} / {{ $resellerPackage->max_users }}</span>
+                        </div>
+                        @php
+                            $customerPct = $resellerPackage->max_users > 0
+                                ? min(100, round(($managedCustomers->count() / $resellerPackage->max_users) * 100))
+                                : 0;
+                            $customerColor = $customerPct >= 90 ? 'bg-red-500' : ($customerPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500');
+                        @endphp
+                        <div class="w-full h-2 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div class="{{ $customerColor }} h-2 rounded-full transition-all" style="width: {{ $customerPct }}%"></div>
+                        </div>
+                    </div>
+                @else
+                    <p class="text-sm text-amber-700 dark:text-amber-400 font-medium mb-4">No active plan</p>
+                    <a href="{{ route('reseller.packages.index') }}" class="w-full block text-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        Choose a Package
+                    </a>
+                @endif
+            </div>
+
             <!-- Managed Customers List -->
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800">

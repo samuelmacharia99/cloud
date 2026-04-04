@@ -122,6 +122,9 @@ class DashboardController extends Controller
 
     private function resellerDashboard($user)
     {
+        // Load reseller package
+        $user->load('resellerPackage');
+
         // Services managed by this reseller
         $managedServices = Service::where('reseller_id', $user->id)
             ->with('user', 'product')
@@ -148,9 +151,10 @@ class DashboardController extends Controller
         $totalCommission = $totalRevenue * $commissionRate;
 
         $data = [
-            'managedServices' => $managedServices->take(8),
-            'managedCustomers' => $managedCustomers,
+            'resellerPackage' => $user->resellerPackage,
             'activeServices' => $activeServices,
+            'managedCustomers' => $managedCustomers,
+            'managedServices' => $managedServices->take(8),
             'suspendedServices' => $suspendedServices,
             'totalServices' => $totalServices,
             'totalRevenue' => $totalRevenue,

@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Mail;
 
 class SettingController extends Controller
 {
@@ -22,8 +24,10 @@ class SettingController extends Controller
         ],
         'payment_methods' => [
             'mpesa_enabled', 'mpesa_shortcode', 'mpesa_passkey',
+            'mpesa_consumer_key', 'mpesa_consumer_secret', 'mpesa_environment',
             'card_enabled', 'stripe_key',
             'bank_transfer_enabled', 'bank_name', 'bank_account_name', 'bank_account_number',
+            'bank_branch', 'bank_swift_code',
             'manual_enabled',
         ],
         'provisioning' => [
@@ -38,6 +42,15 @@ class SettingController extends Controller
         ],
         'notifications' => [
             'notify_new_order', 'notify_payment', 'notify_service_suspend', 'notify_ticket',
+        ],
+        'cron' => [
+            'cron_timezone', 'cron_retention_days', 'max_execution_time',
+        ],
+        'sms' => [
+            'sms_enabled', 'sms_api_token', 'sms_sender_id',
+        ],
+        'directadmin' => [
+            'directadmin_api_url', 'directadmin_api_user', 'directadmin_api_password', 'directadmin_default_package',
         ],
     ];
 
@@ -75,5 +88,100 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'Settings saved successfully.');
+    }
+
+    public function uploadFile(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $request->validate([
+            'file' => 'required|image|max:5120', // 5MB max
+            'type' => 'required|in:logo,favicon',
+        ]);
+
+        $file = $request->file('file');
+        $type = $request->input('type');
+
+        // Store file in public disk under branding directory
+        $path = $file->store("branding/{$type}", 'public');
+        $url = asset("storage/{$path}");
+
+        // Update setting
+        $settingKey = $type === 'logo' ? 'logo_url' : 'favicon_url';
+        Setting::setValue($settingKey, $url);
+
+        return response()->json([
+            'success' => true,
+            'url' => $url,
+            'message' => ucfirst($type) . ' uploaded successfully.',
+        ]);
+    }
+
+    public function testSmtp(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $request->validate([
+            'email' => 'required|email',
+        ]);
+
+        $toEmail = $request->input('email');
+        $subject = 'Talksasa Cloud - SMTP Test Email';
+        $body = "This is a test email from Talksasa Cloud.\n\nIf you received this email, your SMTP settings are configured correctly!";
+
+        try {
+            $fromName = Setting::getValue('mail_from_name', 'Talksasa Cloud');
+            $fromAddress = Setting::getValue('mail_from_address', 'noreply@talksasa.cloud');
+
+            Mail::raw($body, function ($message) use ($toEmail, $fromName, $fromAddress, $subject) {
+                $message->to($toEmail)
+                        ->from($fromAddress, $fromName)
+                        ->subject($subject);
+            });
+
+            // Log the email
+            \App\Models\Email::create([
+                'recipient' => $toEmail,
+                'subject' => $subject,
+                'body' => $body,
+                'status' => 'sent',
+                'sent_by' => auth()->id(),
+                'created_at' => now(),
+            ]);
+
+            return back()->with('success', 'Test email sent successfully to ' . $toEmail);
+        } catch (\Exception $e) {
+            // Log the failed email
+            \App\Models\Email::create([
+                'recipient' => $toEmail,
+                'subject' => $subject,
+                'body' => $body,
+                'status' => 'failed',
+                'response' => $e->getMessage(),
+                'sent_by' => auth()->id(),
+                'created_at' => now(),
+            ]);
+
+            return back()->with('error', 'Failed to send test email: ' . $e->getMessage());
+        }
+    }
+
+    public function testSms(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $request->validate([
+            'phone' => 'required|string|min:10',
+        ]);
+
+        $senderId = Setting::getValue('sms_sender_id', 'TalksasaCloud');
+        $smsService = new \App\Services\SmsService();
+        $result = $smsService->sendTest($request->input('phone'), $senderId);
+
+        if ($result['success']) {
+            return back()->with('success', $result['message']);
+        } else {
+            return back()->with('error', $result['message']);
+        }
     }
 }

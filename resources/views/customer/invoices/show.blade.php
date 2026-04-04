@@ -147,19 +147,139 @@
 
             <!-- Payment Status & Actions -->
             <div class="border-t border-slate-200 dark:border-slate-700 pt-8">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    @if ($invoice->status !== 'paid')
-                        <button disabled class="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg transition opacity-50 cursor-not-allowed" title="Payment functionality coming soon">
-                            Pay Now
-                        </button>
-                    @else
-                        <button disabled class="px-6 py-3 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-medium rounded-lg" title="This invoice has been paid">
-                            Paid
-                        </button>
-                    @endif
-                    <button disabled class="px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition opacity-50 cursor-not-allowed" title="Download functionality coming soon">
+                @if ($invoice->status->value === 'paid')
+                    <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                        <p class="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                            <svg class="w-5 h-5 inline mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                            Thank you! This invoice has been paid.
+                        </p>
+                    </div>
+                @else
+                    <!-- Payment Panel -->
+                    <div x-data="{ paymentTab: 'mpesa', processing: false, message: '', phone: '' }" class="mb-6">
+                        <!-- Tabs -->
+                        <div class="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-800">
+                            <button @click="paymentTab = 'mpesa'" :class="paymentTab === 'mpesa' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-2 font-medium text-sm transition-colors">
+                                M-Pesa
+                            </button>
+                            <button @click="paymentTab = 'bank'" :class="paymentTab === 'bank' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-2 font-medium text-sm transition-colors">
+                                Bank Transfer
+                            </button>
+                        </div>
+
+                        <!-- M-Pesa Tab -->
+                        <div x-show="paymentTab === 'mpesa'" class="space-y-4 pb-6">
+                            <form @submit.prevent="async function() {
+                                this.processing = true;
+                                this.message = '';
+
+                                try {
+                                    const response = await fetch('{{ route("customer.mpesa.initiate", $invoice) }}', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRF-Token': document.querySelector('meta[name=\"csrf-token\"]').getAttribute('content'),
+                                        },
+                                        body: JSON.stringify({
+                                            phone: this.phone,
+                                        }),
+                                    });
+                                    const data = await response.json();
+                                    this.processing = false;
+                                    if (data.success) {
+                                        this.message = 'success: ' + data.message;
+                                    } else {
+                                        this.message = 'error: ' + data.message;
+                                    }
+                                } catch (error) {
+                                    this.processing = false;
+                                    this.message = 'error: ' + (error.message || 'Network error');
+                                }
+                            }()">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Phone Number</label>
+                                        <input type="tel" x-model="phone" placeholder="0712345678 or +254712345678" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm" required>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Enter your M-Pesa phone number. You'll receive a prompt to enter your PIN.</p>
+                                    </div>
+                                    <div class="flex gap-2 items-center">
+                                        <button type="submit" :disabled="processing" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition text-sm">
+                                            <span x-show="!processing">Pay Ksh {{ number_format($invoice->getAmountRemaining(), 0) }}</span>
+                                            <span x-show="processing">Processing...</span>
+                                        </button>
+                                        <div x-show="message" :class="message.includes('success') ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'" class="text-sm" x-text="message"></div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- Bank Transfer Tab -->
+                        <div x-show="paymentTab === 'bank'" class="space-y-4 pb-6">
+                            @php
+                                $bankName = \App\Models\Setting::getValue('bank_name', '');
+                                $accountName = \App\Models\Setting::getValue('bank_account_name', '');
+                                $accountNumber = \App\Models\Setting::getValue('bank_account_number', '');
+                                $branch = \App\Models\Setting::getValue('bank_branch', '');
+                                $swiftCode = \App\Models\Setting::getValue('bank_swift_code', '');
+                            @endphp
+
+                            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-3 mb-4">
+                                <h4 class="font-semibold text-slate-900 dark:text-white">Bank Details</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                                    @if ($bankName)
+                                        <div>
+                                            <p class="text-slate-600 dark:text-slate-400">Bank Name</p>
+                                            <p class="font-medium text-slate-900 dark:text-white">{{ $bankName }}</p>
+                                        </div>
+                                    @endif
+                                    @if ($accountName)
+                                        <div>
+                                            <p class="text-slate-600 dark:text-slate-400">Account Name</p>
+                                            <p class="font-medium text-slate-900 dark:text-white">{{ $accountName }}</p>
+                                        </div>
+                                    @endif
+                                    @if ($accountNumber)
+                                        <div>
+                                            <p class="text-slate-600 dark:text-slate-400">Account Number</p>
+                                            <p class="font-medium text-slate-900 dark:text-white">{{ $accountNumber }}</p>
+                                        </div>
+                                    @endif
+                                    @if ($branch)
+                                        <div>
+                                            <p class="text-slate-600 dark:text-slate-400">Branch</p>
+                                            <p class="font-medium text-slate-900 dark:text-white">{{ $branch }}</p>
+                                        </div>
+                                    @endif
+                                    @if ($swiftCode)
+                                        <div>
+                                            <p class="text-slate-600 dark:text-slate-400">SWIFT Code</p>
+                                            <p class="font-medium text-slate-900 dark:text-white">{{ $swiftCode }}</p>
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+
+                            <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                                <p class="text-sm text-blue-700 dark:text-blue-300">
+                                    <strong>Important:</strong> Please use invoice number <code class="bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">{{ $invoice->invoice_number }}</code> as your payment reference.
+                                </p>
+                            </div>
+
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-4">After sending the payment, contact support with your bank transfer receipt for payment confirmation.</p>
+                        </div>
+                    </div>
+                @endif
+
+                <!-- Download PDF Button -->
+                <div class="mb-6">
+                    <a href="{{ route('customer.invoices.download', $invoice) }}" class="inline-flex items-center px-6 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                        </svg>
                         Download PDF
-                    </button>
+                    </a>
                 </div>
 
                 <!-- Payment History -->
@@ -170,21 +290,21 @@
                             @foreach ($invoice->payments as $payment)
                                 <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded">
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }}</p>
-                                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst($payment->gateway) }} • {{ $payment->created_at->format('M d, Y') }}</p>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white">Ksh {{ number_format($payment->amount, 0) }}</p>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() }} • {{ $payment->created_at->format('M d, Y') }}</p>
                                     </div>
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                        @if($payment->status === 'completed')
+                                        @if($payment->status->value === 'completed')
                                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                        @elseif($payment->status === 'pending')
+                                        @elseif($payment->status->value === 'pending')
                                             bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                        @elseif($payment->status === 'failed')
+                                        @elseif($payment->status->value === 'failed')
                                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                                         @else
                                             bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                                         @endif
                                     ">
-                                        {{ ucfirst($payment->status) }}
+                                        {{ $payment->status->label() }}
                                     </span>
                                 </div>
                             @endforeach

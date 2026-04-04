@@ -64,7 +64,7 @@
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($invoices as $invoice)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                            <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ str_pad($invoice->id, 5, '0', STR_PAD_LEFT) }}</td>
+                            <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ $invoice->invoice_number }}</td>
                             <td class="px-6 py-4">
                                 <div>
                                     <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->user->name }}</p>
