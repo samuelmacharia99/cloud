@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Customer;
 
 use App\Models\Service;
 use App\Models\ContainerMetric;
+use App\Models\ContainerDomain;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\NginxProxyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ContainerController
@@ -162,6 +165,111 @@ class ContainerController
         } catch (\Exception $e) {
             \Log::error("Failed to fetch metrics for service {$service->id}: " . $e->getMessage());
             return response()->json(['error' => 'Failed to fetch metrics'], 500);
+        }
+    }
+
+    /**
+     * Bind a domain to a container
+     */
+    public function bindDomain(Service $service, Request $request): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            }
+
+            $request->validate([
+                'domain' => 'required|string|regex:/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z]{2,}$/i|unique:container_domains,domain',
+            ]);
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            // Check DNS configuration
+            $nginxService = new NginxProxyService();
+            $dnsCorrect = $nginxService->checkDns($request->domain, $deployment->node->ip_address);
+
+            // Create domain record
+            $domain = ContainerDomain::create([
+                'container_deployment_id' => $deployment->id,
+                'domain' => strtolower($request->domain),
+                'status' => 'pending',
+            ]);
+
+            // Bind domain to nginx
+            $nginxService->bind($domain);
+
+            $message = "Domain {$domain->domain} bound successfully";
+            if (!$dnsCorrect) {
+                $message .= " (Note: DNS is not yet pointing to {$deployment->node->ip_address})";
+            }
+
+            return back()->with('success', $message);
+        } catch (\Exception $e) {
+            \Log::error("Failed to bind domain for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to bind domain: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Unbind a domain from a container
+     */
+    public function unbindDomain(Service $service, ContainerDomain $domain): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            }
+
+            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+                return back()->withErrors(['error' => 'Domain does not belong to this service']);
+            }
+
+            $domainName = $domain->domain;
+
+            $nginxService = new NginxProxyService();
+            $nginxService->unbind($domain);
+
+            return back()->with('success', "Domain {$domainName} unbind successfully");
+        } catch (\Exception $e) {
+            \Log::error("Failed to unbind domain for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to unbind domain: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Enable SSL for a domain
+     */
+    public function enableSsl(Service $service, ContainerDomain $domain): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            }
+
+            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+                return back()->withErrors(['error' => 'Domain does not belong to this service']);
+            }
+
+            if ($domain->status !== 'active') {
+                return back()->withErrors(['error' => 'Domain must be active to enable SSL']);
+            }
+
+            $nginxService = new NginxProxyService();
+            $nginxService->enableSsl($domain);
+
+            return back()->with('success', "SSL enabled for {$domain->domain}");
+        } catch (\Exception $e) {
+            \Log::error("Failed to enable SSL for domain {$domain->domain}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to enable SSL: ' . $e->getMessage()]);
         }
     }
 }

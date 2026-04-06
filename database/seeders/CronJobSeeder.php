@@ -73,6 +73,13 @@ class CronJobSeeder extends Seeder
                 'schedule' => '*/5 * * * *',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Renew SSL Certificates',
+                'description' => 'Renews expiring SSL certificates for container domains using certbot.',
+                'command' => 'cron:renew-ssl-certificates',
+                'schedule' => '0 2 * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {

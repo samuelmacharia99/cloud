@@ -157,6 +157,59 @@
             </div>
         </div>
 
+        <!-- Custom Domains -->
+        <div class="mb-6 border rounded-lg p-4">
+            <h4 class="font-semibold mb-4">Custom Domains</h4>
+
+            @if ($deployment->domains()->count() > 0)
+                <div class="space-y-2 mb-4">
+                    @foreach ($deployment->domains as $domain)
+                        <div class="flex items-center justify-between bg-gray-50 p-3 rounded">
+                            <div>
+                                <p class="font-mono text-sm">{{ $domain->domain }}</p>
+                                <div class="flex items-center gap-2 mt-1">
+                                    @php
+                                        $statusColor = $domain->getStatusColor();
+                                    @endphp
+                                    <span class="px-2 py-1 rounded text-xs font-semibold {{ $statusColor }}">
+                                        {{ ucfirst($domain->status) }}
+                                    </span>
+                                    @if ($domain->hasSsl())
+                                        <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800">SSL ✓</span>
+                                    @endif
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                @if ($domain->status === 'active' && !$domain->ssl_enabled)
+                                    <form method="POST" action="{{ route('admin.services.container.domains.ssl', [$service, $domain]) }}" style="display:inline;">
+                                        @csrf
+                                        <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                            Enable SSL
+                                        </button>
+                                    </form>
+                                @endif
+                                <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" style="display:inline;">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700" onclick="return confirm('Remove this domain?')">
+                                        Remove
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('admin.services.container.domains.bind', $service) }}" class="flex gap-2">
+                @csrf
+                <input type="text" name="domain" placeholder="example.com" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm" required>
+                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                    Bind Domain
+                </button>
+            </form>
+        </div>
+
         <!-- Docker Compose YAML -->
         <div class="mb-6 border rounded-lg p-4">
             <button type="button" class="flex items-center justify-between w-full font-semibold mb-2" onclick="toggleCompose()">

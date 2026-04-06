@@ -47,6 +47,11 @@ class ContainerDeployment extends Model
         return $this->hasMany(ContainerMetric::class);
     }
 
+    public function domains()
+    {
+        return $this->hasMany(ContainerDomain::class);
+    }
+
     // Status Helpers
     public function isRunning(): bool
     {
@@ -101,5 +106,11 @@ class ContainerDeployment extends Model
     public function latestMetric(): ?ContainerMetric
     {
         return $this->metrics()->latest('recorded_at')->first();
+    }
+
+    // Primary domain helper
+    public function primaryDomain(): ?ContainerDomain
+    {
+        return $this->domains()->where('status', 'active')->first();
     }
 }

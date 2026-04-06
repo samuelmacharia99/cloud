@@ -82,6 +82,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('admin/services/{service}/container/logs', [\App\Http\Controllers\Admin\ContainerController::class, 'logs'])->name('admin.services.container.logs');
         Route::get('admin/services/{service}/container/metrics', [\App\Http\Controllers\Admin\ContainerController::class, 'metrics'])->name('admin.services.container.metrics');
         Route::post('admin/services/{service}/container/redeploy', [\App\Http\Controllers\Admin\ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
+        Route::post('admin/services/{service}/container/domains', [\App\Http\Controllers\Admin\ContainerController::class, 'bindDomain'])->name('admin.services.container.domains.bind');
+        Route::delete('admin/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Admin\ContainerController::class, 'unbindDomain'])->name('admin.services.container.domains.unbind');
+        Route::post('admin/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Admin\ContainerController::class, 'enableSsl'])->name('admin.services.container.domains.ssl');
 
         // Placeholder routes for future implementation
         Route::get('/tickets', fn() => view('admin.tickets.index'))->name('tickets.index');
@@ -127,6 +130,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
         Route::get('my/services/{service}/container/metrics', [\App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
+        Route::post('my/services/{service}/container/domains', [\App\Http\Controllers\Customer\ContainerController::class, 'bindDomain'])->name('customer.services.container.domains.bind');
+        Route::delete('my/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Customer\ContainerController::class, 'unbindDomain'])->name('customer.services.container.domains.unbind');
+        Route::post('my/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');
 
         Route::get('/my/domains/available', fn() => view('customer.domains.available', ['extensions' => \App\Models\DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
         Route::get('/my/tickets', fn() => view('customer.tickets.index'))->name('customer.tickets.index');
