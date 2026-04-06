@@ -18,13 +18,18 @@ class ProvisioningService
 
             if ($driver === 'directadmin') {
                 $this->provisionDirectAdmin($service);
+            } elseif ($driver === 'container') {
+                $containerService = new ContainerDeploymentService();
+                $containerService->deploy($service);
             } else {
                 // For domains, manual hosting, etc. — just activate
                 $service->update(['status' => 'active']);
             }
 
-            // Send service activated notification
-            app(NotificationService::class)->notifyServiceActivated($service->fresh());
+            // Send service activated notification (only if not already sent by the driver)
+            if ($service->status === 'active' && ! $service->containerDeployment) {
+                app(NotificationService::class)->notifyServiceActivated($service->fresh());
+            }
         } catch (\Exception $e) {
             \Log::error("Provisioning failed for service {$service->id}: {$e->getMessage()}");
             $service->update(['status' => 'failed']);
@@ -44,9 +49,15 @@ class ProvisioningService
             if ($driver === 'directadmin' && $service->external_reference) {
                 $daService = new DirectAdminService();
                 $daService->suspendAccount($service);
+            } elseif ($driver === 'container') {
+                $containerService = new ContainerDeploymentService();
+                $containerService->suspend($service);
             }
 
-            $service->update(['status' => 'suspended']);
+            // Update status if not already updated by driver
+            if ($service->status !== 'suspended') {
+                $service->update(['status' => 'suspended']);
+            }
 
             // Send service suspended notification
             app(NotificationService::class)->notifyServiceSuspended($service->fresh());
@@ -68,9 +79,15 @@ class ProvisioningService
             if ($driver === 'directadmin' && $service->external_reference) {
                 $daService = new DirectAdminService();
                 $daService->unsuspendAccount($service);
+            } elseif ($driver === 'container') {
+                $containerService = new ContainerDeploymentService();
+                $containerService->unsuspend($service);
             }
 
-            $service->update(['status' => 'active']);
+            // Update status if not already updated by driver
+            if ($service->status !== 'active') {
+                $service->update(['status' => 'active']);
+            }
         } catch (\Exception $e) {
             \Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
 
@@ -89,9 +106,15 @@ class ProvisioningService
             if ($driver === 'directadmin' && $service->external_reference) {
                 $daService = new DirectAdminService();
                 $daService->terminateAccount($service);
+            } elseif ($driver === 'container') {
+                $containerService = new ContainerDeploymentService();
+                $containerService->terminate($service);
             }
 
-            $service->update(['status' => 'terminated', 'terminate_date' => now()]);
+            // Update status if not already updated by driver
+            if ($service->status !== 'terminated') {
+                $service->update(['status' => 'terminated', 'terminate_date' => now()]);
+            }
 
             // Send service terminated notification
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());

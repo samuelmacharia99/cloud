@@ -56,6 +56,16 @@ class Service extends Model
         return $this->belongsTo(User::class, 'reseller_id');
     }
 
+    public function node()
+    {
+        return $this->belongsTo(Node::class);
+    }
+
+    public function containerDeployment()
+    {
+        return $this->hasOne(ContainerDeployment::class);
+    }
+
     // Status helpers
     public function isActive(): bool
     {

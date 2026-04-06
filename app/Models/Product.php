@@ -23,6 +23,7 @@ class Product extends Model
         'setup_fee',
         'provisioning_driver_key',
         'resource_limits',
+        'container_template_id',
         'is_active',
         'visible_to_resellers',
         'featured',
@@ -59,6 +60,11 @@ class Product extends Model
     public function invoiceItems()
     {
         return $this->hasMany(InvoiceItem::class);
+    }
+
+    public function containerTemplate()
+    {
+        return $this->belongsTo(ContainerTemplate::class);
     }
 
     /**
