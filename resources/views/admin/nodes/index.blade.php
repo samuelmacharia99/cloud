@@ -14,10 +14,10 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Infrastructure Nodes</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your servers and container hosts.</p>
         </div>
-        <a href="{{ route('admin.nodes.create') }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
+        <button @click="$dispatch('open-node-type-modal')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             Add Node
-        </a>
+        </button>
     </div>
 
     <!-- Stats Cards -->
@@ -215,6 +215,45 @@
     <!-- Pagination -->
     <div class="mt-6">
         {{ $nodes->links() }}
+    </div>
+</div>
+
+<!-- Node Type Selection Modal -->
+<div x-data="{ show: false }" x-on:open-node-type-modal.window="show = true" x-show="show"
+     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" x-cloak>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
+        <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">What type of node?</h2>
+        <p class="text-slate-600 dark:text-slate-400 mb-8">Select the node type to continue.</p>
+
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <!-- DirectAdmin Node -->
+            <a href="{{ route('admin.nodes.create', ['type' => 'directadmin']) }}"
+               class="group p-6 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 transition cursor-pointer flex flex-col items-center text-center">
+                <div class="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center mb-4 group-hover:bg-blue-200 dark:group-hover:bg-blue-900 transition">
+                    <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/>
+                    </svg>
+                </div>
+                <h3 class="font-semibold text-slate-900 dark:text-white mb-1">DirectAdmin Node</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Control panel server running DirectAdmin</p>
+            </a>
+
+            <!-- Container Server -->
+            <a href="{{ route('admin.nodes.create', ['type' => 'container_host']) }}"
+               class="group p-6 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-purple-500 dark:hover:border-purple-400 transition cursor-pointer flex flex-col items-center text-center">
+                <div class="w-16 h-16 rounded-2xl bg-purple-100 dark:bg-purple-950 flex items-center justify-center mb-4 group-hover:bg-purple-200 dark:group-hover:bg-purple-900 transition">
+                    <svg class="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                </div>
+                <h3 class="font-semibold text-slate-900 dark:text-white mb-1">Container Server</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Infrastructure server for deploying containers</p>
+            </a>
+        </div>
+
+        <button @click="show = false" class="w-full py-2 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+            Cancel
+        </button>
     </div>
 </div>
 @endsection

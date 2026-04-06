@@ -12,6 +12,9 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Resellers</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage reseller accounts and commissions.</p>
         </div>
+        <a href="<?php echo e(route('admin.resellers.create')); ?>" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+            Add Reseller
+        </a>
     </div>
 
     <!-- Stats -->

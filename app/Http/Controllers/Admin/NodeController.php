@@ -76,33 +76,78 @@ class NodeController extends Controller
             'container_host' => 'Container Host',
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
+            'directadmin' => 'DirectAdmin Server',
         ];
+        $type = request('type', '');
 
-        return view('admin.nodes.create', compact('regions', 'types'));
+        return view('admin.nodes.create', compact('regions', 'types', 'type'));
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'hostname' => 'required|string|unique:nodes,hostname',
-            'ip_address' => 'required|ip|unique:nodes,ip_address',
-            'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server',
-            'status' => 'required|in:online,offline,degraded,maintenance',
-            'cpu_cores' => 'required|integer|min:1',
-            'ram_gb' => 'required|integer|min:1',
-            'storage_gb' => 'required|integer|min:1',
-            'region' => 'nullable|string|max:50',
-            'datacenter' => 'nullable|string|max:255',
-            'ssh_port' => 'required|string|max:10',
-            'api_url' => 'nullable|url',
-            'api_token' => 'nullable|string',
-            'verify_ssl' => 'nullable|boolean',
-            'description' => 'nullable|string',
-            'is_active' => 'nullable|boolean',
-        ]);
+        $type = $request->input('type');
 
-        $validated['verify_ssl'] = $request->has('verify_ssl');
+        if ($type === 'directadmin') {
+            $validated = $request->validate([
+                'name'           => 'required|string|max:255',
+                'hostname'       => 'required|string|unique:nodes,hostname',
+                'ip_address'     => 'required|ip|unique:nodes,ip_address',
+                'type'           => 'required|in:directadmin',
+                'da_port'        => 'required|string|max:10',
+                'ssh_username'   => 'required|string|max:100',
+                'ssh_password'   => 'nullable|string',
+                'da_login_key'   => 'nullable|string',
+                'region'         => 'nullable|string|max:50',
+                'datacenter'     => 'nullable|string|max:255',
+                'description'    => 'nullable|string',
+                'is_active'      => 'nullable|boolean',
+            ]);
+            $validated['status'] = 'offline';
+            $validated['cpu_cores'] = 0;
+            $validated['ram_gb'] = 0;
+            $validated['storage_gb'] = 0;
+            $validated['ssh_port'] = $validated['da_port'];
+        } elseif ($type === 'container_host') {
+            $validated = $request->validate([
+                'name'           => 'required|string|max:255',
+                'hostname'       => 'required|string|unique:nodes,hostname',
+                'ip_address'     => 'required|ip|unique:nodes,ip_address',
+                'type'           => 'required|in:container_host',
+                'ssh_port'       => 'required|string|max:10',
+                'ssh_username'   => 'required|string|max:100',
+                'ssh_password'   => 'nullable|string',
+                'cpu_cores'      => 'required|integer|min:1',
+                'ram_gb'         => 'required|integer|min:1',
+                'storage_gb'     => 'required|integer|min:1',
+                'region'         => 'nullable|string|max:50',
+                'datacenter'     => 'nullable|string|max:255',
+                'description'    => 'nullable|string',
+                'is_active'      => 'nullable|boolean',
+            ]);
+            $validated['status'] = 'offline';
+        } else {
+            // Fallback: generic node type (existing behavior)
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'hostname' => 'required|string|unique:nodes,hostname',
+                'ip_address' => 'required|ip|unique:nodes,ip_address',
+                'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
+                'status' => 'required|in:online,offline,degraded,maintenance',
+                'cpu_cores' => 'required|integer|min:1',
+                'ram_gb' => 'required|integer|min:1',
+                'storage_gb' => 'required|integer|min:1',
+                'region' => 'nullable|string|max:50',
+                'datacenter' => 'nullable|string|max:255',
+                'ssh_port' => 'required|string|max:10',
+                'api_url' => 'nullable|url',
+                'api_token' => 'nullable|string',
+                'verify_ssl' => 'nullable|boolean',
+                'description' => 'nullable|string',
+                'is_active' => 'nullable|boolean',
+            ]);
+            $validated['verify_ssl'] = $request->has('verify_ssl');
+        }
+
         $validated['is_active'] = $request->has('is_active');
 
         Node::create($validated);

@@ -19,6 +19,10 @@ class Node extends Model
         'ram_used_gb',
         'storage_used_gb',
         'ssh_port',
+        'ssh_username',
+        'ssh_password',
+        'da_login_key',
+        'da_port',
         'api_url',
         'api_token',
         'verify_ssl',
@@ -41,6 +45,8 @@ class Node extends Model
         'container_count' => 'integer',
         'verify_ssl' => 'boolean',
         'is_active' => 'boolean',
+        'ssh_password' => 'encrypted',
+        'da_login_key' => 'encrypted',
         'last_heartbeat_at' => 'datetime',
         'last_health_check_at' => 'datetime',
         'created_at' => 'datetime',
@@ -141,6 +147,7 @@ class Node extends Model
             'container_host' => 'Container Host',
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
+            'directadmin' => 'DirectAdmin Server',
             default => 'Unknown',
         };
     }
