@@ -42,6 +42,11 @@ class ContainerDeployment extends Model
         return $this->belongsTo(Node::class);
     }
 
+    public function metrics()
+    {
+        return $this->hasMany(ContainerMetric::class);
+    }
+
     // Status Helpers
     public function isRunning(): bool
     {
@@ -90,5 +95,11 @@ class ContainerDeployment extends Model
         }
 
         return now()->diffInSeconds($this->deployed_at);
+    }
+
+    // Metrics helper
+    public function latestMetric(): ?ContainerMetric
+    {
+        return $this->metrics()->latest('recorded_at')->first();
     }
 }

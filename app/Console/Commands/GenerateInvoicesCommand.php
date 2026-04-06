@@ -6,6 +6,7 @@ use App\Models\Service;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Setting;
+use App\Models\ContainerMetric;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\DB;
 
@@ -63,6 +64,11 @@ class GenerateInvoicesCommand extends BaseCronCommand
                     'amount' => $price,
                 ]);
 
+                // Add overage charges if applicable
+                if ($service->product->overage_enabled && $service->containerDeployment) {
+                    $this->addOverageItems($invoice, $service, $taxEnabled, $taxRate);
+                }
+
                 $service->update([
                     'invoice_id' => $invoice->id,
                     'next_due_date' => $this->advanceDueDate($service),
@@ -98,5 +104,87 @@ class GenerateInvoicesCommand extends BaseCronCommand
             'annual' => now()->parse($service->next_due_date)->addYear(),
             default => now()->parse($service->next_due_date)->addMonth(),
         };
+    }
+
+    /**
+     * Add overage invoice items for container deployments
+     */
+    private function addOverageItems(Invoice $invoice, Service $service, bool $taxEnabled, float $taxRate): void
+    {
+        $deployment = $service->containerDeployment;
+        $template = $service->product->containerTemplate;
+        $product = $service->product;
+
+        if (!$deployment || !$template) {
+            return;
+        }
+
+        // Calculate billing period
+        $from = $service->last_invoice_date ?? $service->created_at;
+        $to = now();
+        $billingHours = (float) $from->diffInHours($to);
+
+        if ($billingHours <= 0) {
+            return;
+        }
+
+        // Get average usage from metrics
+        $avgCpuPercent = ContainerMetric::averageCpuPercent($deployment, $from, $to);
+        $avgMemoryMb = ContainerMetric::averageMemoryMb($deployment, $from, $to);
+
+        // Convert CPU % to cores (100% = 1 core)
+        $avgCpuCores = $avgCpuPercent / 100;
+
+        // Convert memory MB to GB
+        $avgMemoryGb = $avgMemoryMb / 1024;
+
+        // Get included allocation
+        $includedCores = $template->required_cpu_cores;
+        $includedGb = $template->required_ram_mb / 1024;
+
+        // Calculate overage
+        $cpuOverageHours = max(0, $avgCpuCores - $includedCores) * $billingHours;
+        $memoryOverageGbHours = max(0, $avgMemoryGb - $includedGb) * $billingHours;
+
+        $cpuOverageAmount = $cpuOverageHours * $product->cpu_overage_rate;
+        $memoryOverageAmount = $memoryOverageGbHours * $product->ram_overage_rate;
+
+        // Add CPU overage item
+        if ($cpuOverageAmount > 0) {
+            $cpuTax = $taxEnabled ? round($cpuOverageAmount * $taxRate / 100, 2) : 0;
+
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'service_id' => $service->id,
+                'product_id' => $service->product_id,
+                'description' => "CPU Overage — {$cpuOverageHours} core-hours @ KES {$product->cpu_overage_rate}/hour",
+                'quantity' => $cpuOverageHours,
+                'unit_price' => $product->cpu_overage_rate,
+                'amount' => $cpuOverageAmount,
+            ]);
+
+            $invoice->increment('subtotal', $cpuOverageAmount);
+            $invoice->increment('tax', $cpuTax);
+            $invoice->increment('total', $cpuOverageAmount + $cpuTax);
+        }
+
+        // Add RAM overage item
+        if ($memoryOverageAmount > 0) {
+            $memTax = $taxEnabled ? round($memoryOverageAmount * $taxRate / 100, 2) : 0;
+
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'service_id' => $service->id,
+                'product_id' => $service->product_id,
+                'description' => "RAM Overage — {$memoryOverageGbHours} GB-hours @ KES {$product->ram_overage_rate}/GB-hour",
+                'quantity' => $memoryOverageGbHours,
+                'unit_price' => $product->ram_overage_rate,
+                'amount' => $memoryOverageAmount,
+            ]);
+
+            $invoice->increment('subtotal', $memoryOverageAmount);
+            $invoice->increment('tax', $memTax);
+            $invoice->increment('total', $memoryOverageAmount + $memTax);
+        }
     }
 }

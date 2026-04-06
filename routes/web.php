@@ -80,6 +80,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/services/{service}/container/stop', [\App\Http\Controllers\Admin\ContainerController::class, 'stop'])->name('admin.services.container.stop');
         Route::post('admin/services/{service}/container/start', [\App\Http\Controllers\Admin\ContainerController::class, 'start'])->name('admin.services.container.start');
         Route::get('admin/services/{service}/container/logs', [\App\Http\Controllers\Admin\ContainerController::class, 'logs'])->name('admin.services.container.logs');
+        Route::get('admin/services/{service}/container/metrics', [\App\Http\Controllers\Admin\ContainerController::class, 'metrics'])->name('admin.services.container.metrics');
         Route::post('admin/services/{service}/container/redeploy', [\App\Http\Controllers\Admin\ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
 
         // Placeholder routes for future implementation
@@ -125,6 +126,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('my/services/{service}/container/stop', [\App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
+        Route::get('my/services/{service}/container/metrics', [\App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
 
         Route::get('/my/domains/available', fn() => view('customer.domains.available', ['extensions' => \App\Models\DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
         Route::get('/my/tickets', fn() => view('customer.tickets.index'))->name('customer.tickets.index');

@@ -66,6 +66,13 @@ class CronJobSeeder extends Seeder
                 'schedule' => '0 1 * * *',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Collect Container Metrics',
+                'description' => 'Collects CPU, memory, and I/O metrics from running Docker containers via docker stats.',
+                'command' => 'cron:collect-container-metrics',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {

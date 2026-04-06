@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Models\Service;
+use App\Models\ContainerMetric;
 use App\Services\Provisioning\ContainerDeploymentService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -123,6 +124,44 @@ class ContainerController
         } catch (\Exception $e) {
             \Log::error("Failed to fetch logs for service {$service->id}: " . $e->getMessage());
             return response()->json(['error' => 'Failed to fetch logs'], 500);
+        }
+    }
+
+    /**
+     * Get container metrics for chart display
+     */
+    public function metrics(Service $service): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return response()->json(['error' => 'Invalid service type'], 400);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return response()->json(['labels' => [], 'cpu' => [], 'memory' => []]);
+            }
+
+            // Get last 24 hours of metrics
+            $metrics = ContainerMetric::where('container_deployment_id', $deployment->id)
+                ->where('recorded_at', '>=', now()->subHours(24))
+                ->orderBy('recorded_at')
+                ->get();
+
+            $labels = $metrics->map(fn($m) => $m->recorded_at->format('H:i'))->toArray();
+            $cpuData = $metrics->map(fn($m) => round($m->cpu_percentage, 2))->toArray();
+            $memoryData = $metrics->map(fn($m) => $m->memory_used_mb)->toArray();
+
+            return response()->json([
+                'labels' => $labels,
+                'cpu' => $cpuData,
+                'memory' => $memoryData,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to fetch metrics for service {$service->id}: " . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch metrics'], 500);
         }
     }
 }

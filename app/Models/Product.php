@@ -24,6 +24,9 @@ class Product extends Model
         'provisioning_driver_key',
         'resource_limits',
         'container_template_id',
+        'cpu_overage_rate',
+        'ram_overage_rate',
+        'overage_enabled',
         'is_active',
         'visible_to_resellers',
         'featured',
@@ -40,6 +43,9 @@ class Product extends Model
         'monthly_price' => 'decimal:2',
         'yearly_price' => 'decimal:2',
         'setup_fee' => 'decimal:2',
+        'cpu_overage_rate' => 'float',
+        'ram_overage_rate' => 'float',
+        'overage_enabled' => 'boolean',
     ];
 
     const TYPES = [
