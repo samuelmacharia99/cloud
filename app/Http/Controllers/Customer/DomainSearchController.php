@@ -16,13 +16,18 @@ class DomainSearchController extends Controller
     public function search(Request $request)
     {
         $query = $request->get('q', '');
+        $results = [];
+        $searchQuery = $query;
 
         if (empty($query)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Please enter a domain name to search',
-                'results' => [],
-            ]);
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Please enter a domain name to search',
+                    'results' => [],
+                ]);
+            }
+            return view('public.domain-search', ['results' => [], 'query' => '']);
         }
 
         // Clean up the query - remove www and extract domain name
@@ -38,7 +43,6 @@ class DomainSearchController extends Controller
             $extensions = DomainExtension::where('enabled', true)->get();
         }
 
-        $results = [];
         foreach ($extensions as $ext) {
             if (!$ext) continue;
 
@@ -62,10 +66,14 @@ class DomainSearchController extends Controller
         // Sort available domains first
         usort($results, fn($a, $b) => $b['available'] <=> $a['available']);
 
-        return response()->json([
-            'success' => true,
-            'results' => $results,
-        ]);
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'results' => $results,
+            ]);
+        }
+
+        return view('public.domain-search', ['results' => $results, 'query' => $query, 'searchQuery' => $searchQuery]);
     }
 
     /**
