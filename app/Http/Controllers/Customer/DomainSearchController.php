@@ -19,15 +19,13 @@ class DomainSearchController extends Controller
         $results = [];
         $searchQuery = $query;
 
+        // Always return JSON for public search route (called via AJAX)
         if (empty($query)) {
-            if ($request->wantsJson()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Please enter a domain name to search',
-                    'results' => [],
-                ]);
-            }
-            return view('public.domain-search', ['results' => [], 'query' => '']);
+            return response()->json([
+                'success' => false,
+                'message' => 'Please enter a domain name to search',
+                'results' => [],
+            ]);
         }
 
         // Clean up the query - remove www and extract domain name
@@ -82,14 +80,11 @@ class DomainSearchController extends Controller
         // Sort available domains first
         usort($results, fn($a, $b) => $b['available'] <=> $a['available']);
 
-        if ($request->wantsJson()) {
-            return response()->json([
-                'success' => true,
-                'results' => $results,
-            ]);
-        }
-
-        return view('public.domain-search', ['results' => $results, 'query' => $query, 'searchQuery' => $searchQuery]);
+        // Always return JSON for public search route
+        return response()->json([
+            'success' => true,
+            'results' => $results,
+        ]);
     }
 
     /**

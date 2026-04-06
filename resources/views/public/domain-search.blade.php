@@ -7,7 +7,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="antialiased bg-white">
+<body class="antialiased bg-white" x-data="domainSearch()">
     <!-- Navigation -->
     <nav class="fixed w-full top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
@@ -29,32 +29,33 @@
 
     <!-- Main Content -->
     <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 min-h-screen">
-        <div class="max-w-4xl mx-auto" x-data="domainSearch()">
+        <div class="max-w-4xl mx-auto">
             <!-- Search Header -->
             <div class="mb-12 text-center">
                 <h1 class="text-4xl md:text-5xl font-bold text-gray-900 mb-4">Find Your Perfect Domain</h1>
                 <p class="text-xl text-gray-600 mb-8">Search millions of domains and get started in minutes</p>
 
                 <!-- Search Form -->
-                <form @submit.prevent="searchDomain()" class="flex gap-2 max-w-2xl mx-auto">
+                <div class="flex gap-2 max-w-2xl mx-auto">
                     <div class="flex-1 relative">
                         <input
                             type="text"
                             x-model="searchQuery"
+                            @keydown.enter="searchDomain()"
                             placeholder="e.g., google.com or google"
                             class="w-full px-6 py-4 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition text-lg"
                             required
                         >
                     </div>
                     <button
-                        type="submit"
+                        @click="searchDomain()"
                         class="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition disabled:opacity-50"
                         :disabled="loading"
                     >
                         <span x-show="!loading">Search</span>
                         <span x-show="loading" class="inline-block">Searching...</span>
                     </button>
-                </form>
+                </div>
 
                 <p class="text-center text-sm text-gray-500 mt-4">
                     Type full domain (google.com) or just the name (google)
@@ -262,14 +263,29 @@
                     this.results = [];
 
                     try {
-                        const response = await fetch(`{{ route('domains.search.public') }}?q=${encodeURIComponent(this.searchQuery)}`);
+                        const url = new URL('{{ route('domains.search.public') }}', window.location.origin);
+                        url.searchParams.append('q', this.searchQuery);
+
+                        const response = await fetch(url.toString(), {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json',
+                                'Content-Type': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
                         const data = await response.json();
 
                         if (data.success) {
                             this.results = data.results;
                             this.resultsDisplayed = true;
                         } else {
-                            this.showToast('Error searching domains', 'error');
+                            this.showToast(data.message || 'Error searching domains', 'error');
                         }
                     } catch (error) {
                         console.error('Search error:', error);
