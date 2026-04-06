@@ -107,6 +107,30 @@
             @endif
         </div>
 
+        <!-- Node Status Alert -->
+        @if ($deployment->node && $deployment->node->status === 'offline')
+            <div class="mb-6 bg-red-100 border border-red-400 rounded-lg p-4">
+                <p class="text-red-700 font-semibold mb-2">⚠️ Container Host Offline</p>
+                <p class="text-sm text-red-600 mb-3">The node hosting this container is offline. Immediate action recommended.</p>
+                <a href="{{ route('admin.services.container.migrate', $service) }}" class="inline-block px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                    Migrate Now
+                </a>
+            </div>
+        @endif
+
+        <!-- Migration History -->
+        @if ($deployment->migrated_at)
+            <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p class="text-sm text-blue-800 mb-1">
+                    <strong>Last Migration:</strong> {{ $deployment->migrated_at->format('M d, Y H:i') }}
+                </p>
+                <p class="text-sm text-blue-700">
+                    From <strong>{{ $deployment->migratedFromNode?->hostname ?? 'Unknown' }}</strong>
+                    ({{ ucfirst(str_replace('_', ' ', $deployment->migration_reason ?? 'manual')) }})
+                </p>
+            </div>
+        @endif
+
         <!-- Action Buttons -->
         <div class="flex flex-wrap gap-3 mb-6">
             @if ($deployment->isRunning())
@@ -138,6 +162,10 @@
                     Redeploy
                 </button>
             </form>
+
+            <a href="{{ route('admin.services.container.migrate', $service) }}" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                Migrate
+            </a>
 
             <button type="button" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700" onclick="toggleLogs()">
                 View Logs

@@ -29,6 +29,7 @@ class ContainerDeployment extends Model
         'deployed_at' => 'datetime',
         'terminated_at' => 'datetime',
         'last_status_check_at' => 'datetime',
+        'migrated_at' => 'datetime',
     ];
 
     // Relationships
@@ -40,6 +41,11 @@ class ContainerDeployment extends Model
     public function node(): BelongsTo
     {
         return $this->belongsTo(Node::class);
+    }
+
+    public function migratedFromNode(): BelongsTo
+    {
+        return $this->belongsTo(Node::class, 'migrated_from_node_id');
     }
 
     public function metrics()

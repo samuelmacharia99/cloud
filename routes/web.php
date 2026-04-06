@@ -86,6 +86,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('admin/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Admin\ContainerController::class, 'unbindDomain'])->name('admin.services.container.domains.unbind');
         Route::post('admin/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Admin\ContainerController::class, 'enableSsl'])->name('admin.services.container.domains.ssl');
 
+        // Container migration
+        Route::get('admin/services/{service}/container/migrate', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'index'])->name('admin.services.container.migrate');
+        Route::post('admin/services/{service}/container/migrate', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
+        Route::post('admin/nodes/{node}/migrate-containers', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'migrateNode'])->name('admin.nodes.migrate-containers');
+
         // Placeholder routes for future implementation
         Route::get('/tickets', fn() => view('admin.tickets.index'))->name('tickets.index');
     });
