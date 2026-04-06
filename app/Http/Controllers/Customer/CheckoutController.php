@@ -43,8 +43,14 @@ class CheckoutController extends Controller
 
                 $item['name'] = $product->name;
                 $item['description'] = $product->description ?? $product->name;
+                $item['type'] = $product->type;
                 $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
                 $item['amount'] = $item['unit_price'];
+
+                // Load container template if applicable
+                if ($product->type === 'container_hosting' && $product->containerTemplate) {
+                    $item['container_template'] = $product->containerTemplate;
+                }
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
                 if (!$extension) continue;
@@ -174,6 +180,18 @@ class CheckoutController extends Controller
                             'custom_options' => [],
                         ]);
 
+                        // Prepare service metadata
+                        $serviceMeta = [];
+
+                        // For container products, collect environment variables
+                        if ($product->type === 'container_hosting') {
+                            $envValuesKey = "env_values[{$item['key']}]";
+                            $envValues = $request->input($envValuesKey, []);
+                            if (!empty($envValues)) {
+                                $serviceMeta['env_values'] = $envValues;
+                            }
+                        }
+
                         // Create Service
                         $service = Service::create([
                             'user_id' => $user->id,
@@ -184,6 +202,7 @@ class CheckoutController extends Controller
                             'billing_cycle' => $item['billing_cycle'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
                             'provisioning_driver_key' => $product->provisioning_driver_key,
+                            'service_meta' => $serviceMeta,
                         ]);
 
                         // Create InvoiceItem

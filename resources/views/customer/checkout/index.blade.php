@@ -30,6 +30,66 @@
                 </div>
             </div>
 
+            <!-- Container Product Configuration -->
+            @php
+                $containerProducts = array_filter($cartItems, fn($item) => $item['type'] === 'container_hosting');
+            @endphp
+            @if (!empty($containerProducts))
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Container Configuration</h2>
+
+                    <div class="space-y-6">
+                        @foreach($containerProducts as $key => $product)
+                            @php
+                                $template = $product['container_template'] ?? null;
+                            @endphp
+                            @if ($template && $template->environment_variables)
+                                <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0">
+                                    <h3 class="font-semibold text-slate-900 dark:text-white mb-4">{{ $product['name'] }}</h3>
+
+                                    <div class="space-y-4">
+                                        @foreach($template->environment_variables as $envVar)
+                                            @php
+                                                $isRequired = $envVar['required'] ?? false;
+                                                $isSecret = $envVar['secret'] ?? false;
+                                                $fieldName = "env_values[{$key}][{$envVar['key']}]";
+                                                $inputType = $isSecret ? 'password' : 'text';
+                                            @endphp
+
+                                            <div>
+                                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                    {{ $envVar['label'] ?? $envVar['key'] }}
+                                                    @if ($isRequired)
+                                                        <span class="text-red-600 dark:text-red-400">*</span>
+                                                    @endif
+                                                </label>
+
+                                                <input
+                                                    type="{{ $inputType }}"
+                                                    name="{{ $fieldName }}"
+                                                    value="{{ old($fieldName, $envVar['default'] ?? '') }}"
+                                                    placeholder="{{ $envVar['default'] ?? '' }}"
+                                                    {{ $isRequired ? 'required' : '' }}
+                                                    class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition"
+                                                />
+
+                                                @if (isset($envVar['description']))
+                                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $envVar['description'] }}</p>
+                                                @endif
+
+                                                @error($fieldName)
+                                                    <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                                                @enderror
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
             <!-- Customer Info -->
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Your Information</h2>

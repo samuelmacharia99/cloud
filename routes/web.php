@@ -74,6 +74,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/services/{service}/terminate', [\App\Http\Controllers\Admin\ServiceController::class, 'terminate'])->name('admin.services.terminate');
         Route::post('admin/services/{service}/refresh-status', [\App\Http\Controllers\Admin\ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
 
+        // Container management
+        Route::resource('admin/container-templates', \App\Http\Controllers\Admin\ContainerTemplateController::class)->names('admin.container-templates');
+        Route::post('admin/services/{service}/container/restart', [\App\Http\Controllers\Admin\ContainerController::class, 'restart'])->name('admin.services.container.restart');
+        Route::post('admin/services/{service}/container/stop', [\App\Http\Controllers\Admin\ContainerController::class, 'stop'])->name('admin.services.container.stop');
+        Route::post('admin/services/{service}/container/start', [\App\Http\Controllers\Admin\ContainerController::class, 'start'])->name('admin.services.container.start');
+        Route::get('admin/services/{service}/container/logs', [\App\Http\Controllers\Admin\ContainerController::class, 'logs'])->name('admin.services.container.logs');
+        Route::post('admin/services/{service}/container/redeploy', [\App\Http\Controllers\Admin\ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
+
         // Placeholder routes for future implementation
         Route::get('/tickets', fn() => view('admin.tickets.index'))->name('tickets.index');
     });
@@ -110,6 +118,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         // Payment methods
         Route::post('/my/invoices/{invoice}/mpesa', [\App\Http\Controllers\Customer\MpesaController::class, 'initiate'])->name('customer.mpesa.initiate');
+
+        // Container management
+        Route::get('my/services/{service}/container', [\App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
+        Route::post('my/services/{service}/container/restart', [\App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
+        Route::post('my/services/{service}/container/stop', [\App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
+        Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
+        Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
 
         Route::get('/my/domains/available', fn() => view('customer.domains.available', ['extensions' => \App\Models\DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
         Route::get('/my/tickets', fn() => view('customer.tickets.index'))->name('customer.tickets.index');

@@ -154,6 +154,9 @@
                     <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($service->service_meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                 </div>
             @endif
+
+            <!-- Container Panel (if applicable) -->
+            @include('admin.services.partials.container-panel')
         </div>
 
         <!-- Sidebar -->
