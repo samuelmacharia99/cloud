@@ -153,6 +153,39 @@
                 @enderror
             </div>
 
+            <!-- Container Overage Billing (conditional) -->
+            <div x-show="'{{ old('type', '') }}'.includes('container')" class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container Overage Billing</h3>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Enable Overage -->
+                    <div>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" name="overage_enabled" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('overage_enabled') === '1' || old('overage_enabled') === true)>
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable overage billing</span>
+                        </label>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Charge customers for usage above template allocation</p>
+                    </div>
+
+                    <!-- CPU Overage Rate -->
+                    <div>
+                        <label for="cpu_overage_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU Overage Rate (KES/core-hour)</label>
+                        <input type="number" id="cpu_overage_rate" name="cpu_overage_rate" value="{{ old('cpu_overage_rate', 0) }}" step="0.01" min="0" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('cpu_overage_rate') border-red-500 @enderror">
+                        @error('cpu_overage_rate')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- RAM Overage Rate -->
+                    <div>
+                        <label for="ram_overage_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM Overage Rate (KES/GB-hour)</label>
+                        <input type="number" id="ram_overage_rate" name="ram_overage_rate" value="{{ old('ram_overage_rate', 0) }}" step="0.01" min="0" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_overage_rate') border-red-500 @enderror">
+                        @error('ram_overage_rate')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+            </div>
+
             <!-- Form Actions -->
             <div class="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-slate-800">
                 <a href="{{ route('admin.products.index') }}" class="px-6 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">

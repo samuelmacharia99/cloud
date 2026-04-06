@@ -144,6 +144,19 @@
             </button>
         </div>
 
+        <!-- Resource Usage Metrics -->
+        <div class="mb-6 border rounded-lg p-4">
+            <h4 class="font-semibold mb-4">Resource Usage (Last 24 Hours)</h4>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <canvas id="cpuChart" height="80"></canvas>
+                </div>
+                <div>
+                    <canvas id="memoryChart" height="80"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Docker Compose YAML -->
         <div class="mb-6 border rounded-lg p-4">
             <button type="button" class="flex items-center justify-between w-full font-semibold mb-2" onclick="toggleCompose()">
@@ -165,7 +178,79 @@
         </div>
     </div>
 
+    @push('scripts')
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
+        let cpuChart = null;
+        let memoryChart = null;
+
+        function initializeCharts() {
+            fetch('{{ route("admin.services.container.metrics", $service) }}')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.labels && data.labels.length > 0) {
+                        renderCpuChart(data);
+                        renderMemoryChart(data);
+                    }
+                })
+                .catch(error => console.error('Failed to load metrics:', error));
+        }
+
+        function renderCpuChart(data) {
+            const ctx = document.getElementById('cpuChart').getContext('2d');
+            if (cpuChart) cpuChart.destroy();
+            cpuChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'CPU %',
+                        data: data.cpu,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 1,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: { y: { beginAtZero: true, max: 100 } }
+                }
+            });
+        }
+
+        function renderMemoryChart(data) {
+            const ctx = document.getElementById('memoryChart').getContext('2d');
+            if (memoryChart) memoryChart.destroy();
+            memoryChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'Memory (MB)',
+                        data: data.memory,
+                        borderColor: 'rgb(34, 197, 94)',
+                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                        borderWidth: 1,
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true, position: 'top' } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+
+        // Initialize charts on page load
+        document.addEventListener('DOMContentLoaded', initializeCharts);
+
         function toggleCompose() {
             const content = document.getElementById('compose-content');
             const toggle = document.getElementById('compose-toggle');
@@ -201,4 +286,5 @@
                 });
         }
     </script>
+    @endpush
 @endif

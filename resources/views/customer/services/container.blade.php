@@ -159,6 +159,19 @@
             </div>
         </div>
 
+        <!-- Resource Usage Metrics -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 class="text-lg font-bold mb-4">Resource Usage (Last 24 Hours)</h3>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                    <canvas id="cpuChart" height="80"></canvas>
+                </div>
+                <div>
+                    <canvas id="memoryChart" height="80"></canvas>
+                </div>
+            </div>
+        </div>
+
         <!-- Logs Panel -->
         <div id="logs-container" class="bg-white rounded-lg shadow p-6 hidden mb-8">
             <div class="flex justify-between items-center mb-4">
@@ -190,7 +203,77 @@
     @endif
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
+    let cpuChart = null;
+    let memoryChart = null;
+
+    function initializeCharts() {
+        fetch('{{ route("customer.services.container.metrics", $service) }}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.labels && data.labels.length > 0) {
+                    renderCpuChart(data);
+                    renderMemoryChart(data);
+                }
+            })
+            .catch(error => console.error('Failed to load metrics:', error));
+    }
+
+    function renderCpuChart(data) {
+        const ctx = document.getElementById('cpuChart').getContext('2d');
+        if (cpuChart) cpuChart.destroy();
+        cpuChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    label: 'CPU %',
+                    data: data.cpu,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 1,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top' } },
+                scales: { y: { beginAtZero: true, max: 100 } }
+            }
+        });
+    }
+
+    function renderMemoryChart(data) {
+        const ctx = document.getElementById('memoryChart').getContext('2d');
+        if (memoryChart) memoryChart.destroy();
+        memoryChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    label: 'Memory (MB)',
+                    data: data.memory,
+                    borderColor: 'rgb(34, 197, 94)',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    borderWidth: 1,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: true, position: 'top' } },
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeCharts);
+
     function toggleLogs() {
         const container = document.getElementById('logs-container');
         container.classList.toggle('hidden');
