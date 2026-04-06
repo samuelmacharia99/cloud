@@ -11,9 +11,12 @@ use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
 
 class CheckoutController extends Controller
 {
@@ -22,13 +25,16 @@ class CheckoutController extends Controller
     /**
      * Show checkout page
      */
-    public function show()
+    public function show(Request $request)
     {
+        // Get cart from session and localStorage (domains)
         $cart = session(self::CART_SESSION_KEY, []);
 
         if (empty($cart)) {
             return redirect()->route('customer.cart.index')->with('error', 'Your cart is empty');
         }
+
+        $user = auth()->user();
 
         // Prepare cart items with details
         $cartItems = [];
@@ -326,5 +332,270 @@ class CheckoutController extends Controller
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
         return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Show public checkout page (with optional account creation)
+     */
+    public function showPublic(Request $request)
+    {
+        // If user is authenticated, use regular checkout
+        if (auth()->check()) {
+            return $this->show();
+        }
+
+        // Build cart from session
+        $cartItems = [];
+        $subtotal = 0;
+
+        // Process cart items from session
+        $sessionCart = session(self::CART_SESSION_KEY, []);
+        foreach ($sessionCart as $key => $item) {
+            $item['key'] = $key;
+
+            if ($item['type'] === 'product') {
+                $product = Product::find($item['product_id']);
+                if (!$product) continue;
+
+                $item['name'] = $product->name;
+                $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
+                $item['amount'] = $item['unit_price'];
+            } elseif ($item['type'] === 'domain') {
+                $extension = DomainExtension::where('extension', $item['extension'])->first();
+                if (!$extension) continue;
+
+                $pricing = $extension->getRetailPricing($item['years'] ?? 1);
+                $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                $item['amount'] = $item['unit_price'];
+                $item['name'] = "{$item['domain']}{$item['extension']}";
+            }
+
+            $subtotal += $item['amount'];
+            $cartItems[] = $item;
+        }
+
+        if (empty($cartItems)) {
+            return redirect('/')->with('error', 'Your cart is empty');
+        }
+
+        // Calculate tax
+        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+        $total = $subtotal + $tax;
+
+        return view('public.checkout', [
+            'cartItems' => $cartItems,
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'taxEnabled' => $taxEnabled,
+            'taxRate' => $taxRate,
+            'total' => $total,
+        ]);
+    }
+
+    /**
+     * Process public checkout (create account then order)
+     */
+    public function processPublic(Request $request)
+    {
+        // Validate account creation
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8|confirmed',
+            'agree_terms' => 'required|accepted',
+        ]);
+
+        try {
+            $cart = session(self::CART_SESSION_KEY, []);
+
+            if (empty($cart)) {
+                return back()->with('error', 'Your cart is empty');
+            }
+
+            // Create user account
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => Hash::make($request->password),
+                'email_verified_at' => now(), // Auto-verify for checkout
+            ]);
+
+            // Log the user in
+            Auth::login($user);
+
+            // Now process the order using the authenticated user
+            return $this->processCheckout($user, $cart, $request);
+        } catch (\Exception $e) {
+            \Log::error("Public checkout failed: {$e->getMessage()}");
+            return back()->with('error', 'Checkout failed: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    /**
+     * Helper to process checkout for both authenticated and public users
+     */
+    private function processCheckout(User $user, array $cart, Request $request)
+    {
+        try {
+            $order = \DB::transaction(function () use ($cart, $user) {
+                // Get cart items with details
+                $cartItems = [];
+                $subtotal = 0;
+
+                foreach ($cart as $key => $item) {
+                    if ($item['type'] === 'product') {
+                        $product = Product::find($item['product_id']);
+                        if (!$product) continue;
+
+                        $price = $this->getProductPrice($product, $item['billing_cycle']);
+                        $item['unit_price'] = $price;
+                        $item['amount'] = $price;
+                    } elseif ($item['type'] === 'domain') {
+                        $extension = DomainExtension::where('extension', $item['extension'])->first();
+                        if (!$extension) continue;
+
+                        $pricing = $extension->getRetailPricing($item['years'] ?? 1);
+                        $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                        $item['amount'] = $item['unit_price'];
+                    }
+
+                    $subtotal += $item['amount'];
+                    $cartItems[] = $item;
+                }
+
+                if (empty($cartItems)) {
+                    throw new \Exception('No valid items in cart');
+                }
+
+                // Calculate totals
+                $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+                $taxRate = (float) Setting::getValue('tax_rate', 0);
+                $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+                $total = $subtotal + $tax;
+
+                // Create Order
+                $order = Order::create([
+                    'user_id' => $user->id,
+                    'order_number' => 'ORD-' . uniqid(),
+                    'status' => 'pending',
+                    'payment_status' => 'unpaid',
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                ]);
+
+                // Create Invoice
+                $invoice = Invoice::create([
+                    'user_id' => $user->id,
+                    'invoice_number' => $this->generateInvoiceNumber(),
+                    'status' => 'unpaid',
+                    'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                ]);
+
+                // Create OrderItems, Services, and Domains
+                foreach ($cartItems as $item) {
+                    if ($item['type'] === 'product') {
+                        $product = Product::find($item['product_id']);
+
+                        // Create OrderItem
+                        $orderItem = OrderItem::create([
+                            'order_id' => $order->id,
+                            'product_id' => $product->id,
+                            'description' => $product->name,
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                            'billing_cycle' => $item['billing_cycle'],
+                            'custom_options' => [],
+                        ]);
+
+                        // Create Service
+                        $service = Service::create([
+                            'user_id' => $user->id,
+                            'product_id' => $product->id,
+                            'order_item_id' => $orderItem->id,
+                            'name' => $product->name,
+                            'status' => 'pending',
+                            'billing_cycle' => $item['billing_cycle'],
+                            'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
+                            'provisioning_driver_key' => $product->provisioning_driver_key,
+                        ]);
+
+                        // Create InvoiceItem
+                        InvoiceItem::create([
+                            'invoice_id' => $invoice->id,
+                            'service_id' => $service->id,
+                            'product_id' => $product->id,
+                            'description' => $product->name,
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                        ]);
+                    } elseif ($item['type'] === 'domain') {
+                        $extension = DomainExtension::where('extension', $item['extension'])->first();
+
+                        // Create Domain
+                        $domain = Domain::create([
+                            'user_id' => $user->id,
+                            'name' => $item['domain'],
+                            'extension' => $item['extension'],
+                            'status' => 'pending',
+                        ]);
+
+                        // Create Service for domain
+                        $domainProduct = Product::where('type', 'domain')->first();
+                        if ($domainProduct) {
+                            $orderItem = OrderItem::create([
+                                'order_id' => $order->id,
+                                'product_id' => $domainProduct->id,
+                                'description' => "{$item['domain']}{$item['extension']}",
+                                'quantity' => 1,
+                                'unit_price' => $item['unit_price'],
+                                'amount' => $item['amount'],
+                                'billing_cycle' => 'annual',
+                                'custom_options' => [],
+                            ]);
+
+                            $service = Service::create([
+                                'user_id' => $user->id,
+                                'product_id' => $domainProduct->id,
+                                'order_item_id' => $orderItem->id,
+                                'name' => "{$item['domain']}{$item['extension']}",
+                                'status' => 'pending',
+                                'billing_cycle' => 'annual',
+                                'next_due_date' => now()->addDays(365),
+                            ]);
+
+                            InvoiceItem::create([
+                                'invoice_id' => $invoice->id,
+                                'service_id' => $service->id,
+                                'product_id' => $domainProduct->id,
+                                'description' => "{$item['domain']}{$item['extension']}",
+                                'quantity' => 1,
+                                'unit_price' => $item['unit_price'],
+                                'amount' => $item['amount'],
+                            ]);
+                        }
+                    }
+                }
+
+                return $order;
+            });
+
+            // Clear cart
+            session([self::CART_SESSION_KEY => []]);
+
+            return redirect()
+                ->route('customer.invoices.show', Invoice::where('user_id', $user->id)->latest()->first())
+                ->with('success', 'Account created and order placed! Please pay your invoice to activate services.');
+        } catch (\Exception $e) {
+            \Log::error("Checkout processing failed: {$e->getMessage()}");
+            return back()->with('error', 'Checkout failed: ' . $e->getMessage());
+        }
     }
 }

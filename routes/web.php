@@ -13,8 +13,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('admin/exit-impersonation', [\App\Http\Controllers\Admin\CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
 });
 
-// Public domain search (no authentication required)
+// Public domain search and checkout (no authentication required)
 Route::get('/search-domains', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search.public');
+Route::get('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'showPublic'])->name('checkout.show.public');
+Route::post('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'processPublic'])->name('checkout.process.public');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
