@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\User;
 use App\Models\Service;
+use App\Models\ResellerPackage;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 
@@ -46,8 +47,9 @@ class ResellerController extends Controller
 
         $customerIds = $services->pluck('user_id')->unique();
         $customers = User::whereIn('id', $customerIds)->get();
+        $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers'));
+        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages'));
     }
 
     public function promote(User $user)
@@ -64,6 +66,52 @@ class ResellerController extends Controller
 
         $user->update(['is_reseller' => false]);
         return back()->with('success', 'Reseller status removed.');
+    }
+
+    public function create()
+    {
+        $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+        return view('admin.resellers.create', compact('packages'));
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name'                => 'required|string|max:255',
+            'email'               => 'required|email|unique:users,email',
+            'password'            => 'required|min:8|confirmed',
+            'phone'               => 'nullable|string|max:30',
+            'company'             => 'nullable|string|max:255',
+            'country'             => 'nullable|string|max:100',
+            'reseller_package_id' => 'nullable|exists:reseller_packages,id',
+            'notes'               => 'nullable|string|max:1000',
+        ]);
+
+        $user = User::create(array_merge($validated, [
+            'is_reseller'           => true,
+            'status'                => 'active',
+            'package_subscribed_at' => $validated['reseller_package_id'] ? now() : null,
+        ]));
+
+        return redirect()->route('admin.resellers.show', $user)
+            ->with('success', "Reseller '{$user->name}' created successfully.");
+    }
+
+    public function assignPackage(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'reseller_package_id' => 'required|exists:reseller_packages,id',
+        ]);
+
+        $user->update([
+            'reseller_package_id'   => $validated['reseller_package_id'],
+            'package_subscribed_at' => now(),
+        ]);
+
+        $package = ResellerPackage::find($validated['reseller_package_id']);
+        return back()->with('success', "Package '{$package->name}' assigned to {$user->name}.");
     }
 
     public function impersonate(User $user)

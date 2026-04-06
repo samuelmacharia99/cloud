@@ -126,13 +126,13 @@
                             <div>
                                 <p class="text-slate-600 dark:text-slate-400 mb-1">Current Package</p>
                                 @if ($user->resellerPackage)
-                                    <div class="flex items-center gap-2">
+                                    <div class="flex items-center gap-2 mb-2">
                                         <span class="font-medium text-slate-900 dark:text-white">{{ $user->resellerPackage->name }}</span>
                                         <span class="px-2 py-0.5 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded text-xs">
                                             {{ ucfirst($user->resellerPackage->billing_cycle) }}
                                         </span>
                                     </div>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
                                         Subscribed {{ $user->package_subscribed_at?->diffForHumans() }}
                                         &bull;
                                         {{ $user->getManagedActiveServicesCount() }} / {{ $user->resellerPackage->storage_space }} service slots
@@ -140,8 +140,27 @@
                                         {{ $customerIds->count() }} / {{ $user->resellerPackage->max_users }} customers
                                     </p>
                                 @else
-                                    <span class="text-amber-600 dark:text-amber-400 font-medium text-sm">No package assigned</span>
+                                    <span class="inline-block px-2 py-1 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded text-xs font-medium mb-3">No package assigned</span>
                                 @endif
+
+                                <!-- Assign / Change Package Form -->
+                                <form method="POST" action="{{ route('admin.resellers.assign-package', $user) }}" class="flex items-center gap-2">
+                                    @csrf
+                                    <select name="reseller_package_id" class="flex-1 px-3 py-1.5 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white @error('reseller_package_id') border-red-500 @enderror">
+                                        @foreach ($packages->groupBy('billing_cycle') as $cycle => $cyclePackages)
+                                            <optgroup label="{{ ucfirst($cycle) }}">
+                                                @foreach ($cyclePackages as $package)
+                                                    <option value="{{ $package->id }}" {{ $user->reseller_package_id == $package->id ? 'selected' : '' }}>
+                                                        {{ $package->name }} — Ksh {{ number_format($package->price, 0) }}/{{ $cycle === 'monthly' ? 'mo' : 'yr' }}
+                                                    </option>
+                                                @endforeach
+                                            </optgroup>
+                                        @endforeach
+                                    </select>
+                                    <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition whitespace-nowrap">
+                                        {{ $user->resellerPackage ? 'Change' : 'Assign' }}
+                                    </button>
+                                </form>
                             </div>
                             @if ($user->company)
                                 <div>

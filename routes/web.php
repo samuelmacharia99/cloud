@@ -39,9 +39,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/reseller-packages', \App\Http\Controllers\Admin\ResellerPackageController::class)->names('admin.reseller-packages');
         Route::resource('admin/orders', \App\Http\Controllers\Admin\OrderController::class)->only(['index', 'show'])->names('admin.orders');
         Route::get('admin/resellers', [\App\Http\Controllers\Admin\ResellerController::class, 'index'])->name('admin.resellers.index');
+        Route::get('admin/resellers/create', [\App\Http\Controllers\Admin\ResellerController::class, 'create'])->name('admin.resellers.create');
+        Route::post('admin/resellers', [\App\Http\Controllers\Admin\ResellerController::class, 'store'])->name('admin.resellers.store');
         Route::get('admin/resellers/{user}', [\App\Http\Controllers\Admin\ResellerController::class, 'show'])->name('admin.resellers.show');
         Route::post('admin/resellers/{user}/promote', [\App\Http\Controllers\Admin\ResellerController::class, 'promote'])->name('admin.resellers.promote');
         Route::post('admin/resellers/{user}/demote', [\App\Http\Controllers\Admin\ResellerController::class, 'demote'])->name('admin.resellers.demote');
+        Route::post('admin/resellers/{user}/assign-package', [\App\Http\Controllers\Admin\ResellerController::class, 'assignPackage'])->name('admin.resellers.assign-package');
         Route::post('admin/resellers/{user}/impersonate', [\App\Http\Controllers\Admin\ResellerController::class, 'impersonate'])->name('admin.resellers.impersonate');
         Route::get('admin/settings', [\App\Http\Controllers\Admin\SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [\App\Http\Controllers\Admin\SettingController::class, 'update'])->name('admin.settings.update');
