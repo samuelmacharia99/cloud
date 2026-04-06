@@ -34,33 +34,49 @@ class DomainSearchController extends Controller
         $query = str_replace(['www.', 'https://', 'http://'], '', strtolower($query));
         $query = trim($query);
 
-        // If user included TLD, extract domain and TLD
+        // If user included TLD (full domain), search only that domain
         if (strpos($query, '.') !== false) {
-            [$domain, $tld] = explode('.', $query, 2);
-            $extensions = [DomainExtension::where('extension', '.' . $tld)->first()];
+            [$domainName, $tld] = explode('.', $query, 2);
+            $extension = DomainExtension::where('extension', '.' . $tld)->first();
+
+            if ($extension) {
+                $available = $this->checkAvailability($query);
+                $pricing = $extension->getRetailPricing(1);
+                $price = $pricing ? (float) $pricing->price : 0;
+
+                $results[] = [
+                    'domain' => $domainName,
+                    'extension' => '.' . $tld,
+                    'full_domain' => $query,
+                    'available' => $available,
+                    'price' => $price,
+                    'currency' => 'KES',
+                    'years' => [1, 2, 3, 5],
+                ];
+            }
         } else {
             // Search across all enabled extensions
             $extensions = DomainExtension::where('enabled', true)->get();
-        }
 
-        foreach ($extensions as $ext) {
-            if (!$ext) continue;
+            foreach ($extensions as $ext) {
+                if (!$ext) continue;
 
-            $fullDomain = $query . $ext->extension;
-            $available = $this->checkAvailability($fullDomain);
+                $fullDomain = $query . $ext->extension;
+                $available = $this->checkAvailability($fullDomain);
 
-            $pricing = $ext->getRetailPricing(1);
-            $price = $pricing ? (float) $pricing->price : 0;
+                $pricing = $ext->getRetailPricing(1);
+                $price = $pricing ? (float) $pricing->price : 0;
 
-            $results[] = [
-                'domain' => $query,
-                'extension' => $ext->extension,
-                'full_domain' => $fullDomain,
-                'available' => $available,
-                'price' => $price,
-                'currency' => 'KES',
-                'years' => [1, 2, 3, 5],
-            ];
+                $results[] = [
+                    'domain' => $query,
+                    'extension' => $ext->extension,
+                    'full_domain' => $fullDomain,
+                    'available' => $available,
+                    'price' => $price,
+                    'currency' => 'KES',
+                    'years' => [1, 2, 3, 5],
+                ];
+            }
         }
 
         // Sort available domains first
