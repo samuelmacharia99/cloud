@@ -11,9 +11,9 @@ class TechStackRoutingService
     /**
      * Determine hosting type and product based on language + database selection
      *
-     * Rules:
-     * - PHP + MySQL/MariaDB = DirectAdmin (shared hosting)
-     * - Everything else + PostgreSQL/MongoDB/Redis = Container hosting
+     * Database Restrictions:
+     * - PHP & WordPress: MySQL and MariaDB only (DirectAdmin shared hosting)
+     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis (Container hosting)
      */
     public static function determineHostingType(
         ContainerTemplate $language,
@@ -61,8 +61,8 @@ class TechStackRoutingService
         ContainerTemplate $language,
         DatabaseTemplate $database
     ): bool {
-        // PHP only works with MySQL/MariaDB
-        if ($language->hosting_type === 'directadmin') {
+        // PHP and WordPress only support MySQL/MariaDB
+        if (in_array(strtolower($language->slug), ['php', 'wordpress'])) {
             return in_array($database->type, ['mysql', 'mariadb']);
         }
 
@@ -79,6 +79,14 @@ class TechStackRoutingService
      */
     public static function getAvailableDatabasesForLanguage(ContainerTemplate $language): \Illuminate\Database\Eloquent\Collection
     {
+        // PHP and WordPress only support MySQL and MariaDB
+        if (in_array(strtolower($language->slug), ['php', 'wordpress'])) {
+            return DatabaseTemplate::active()
+                                  ->whereIn('type', ['mysql', 'mariadb'])
+                                  ->get();
+        }
+
+        // For other languages, show all databases matching hosting type
         if ($language->hosting_type === 'directadmin') {
             return DatabaseTemplate::active()
                                   ->forHostingType('directadmin')
@@ -95,13 +103,21 @@ class TechStackRoutingService
      */
     public static function getAvailableLanguagesForDatabase(DatabaseTemplate $database): \Illuminate\Database\Eloquent\Collection
     {
-        if ($database->hosting_type === 'directadmin') {
-            return ContainerTemplate::where('hosting_type', 'directadmin')
+        // MySQL and MariaDB only support PHP and WordPress
+        if (in_array($database->type, ['mysql', 'mariadb'])) {
+            return ContainerTemplate::whereIn('slug', ['php', 'wordpress'])
                                    ->active()
                                    ->get();
         }
 
-        return ContainerTemplate::where('hosting_type', 'container')
+        // Other databases (PostgreSQL, MongoDB, Redis) only for container hosting
+        if ($database->hosting_type === 'container') {
+            return ContainerTemplate::where('hosting_type', 'container')
+                                   ->active()
+                                   ->get();
+        }
+
+        return ContainerTemplate::where('hosting_type', $database->hosting_type)
                                ->active()
                                ->get();
     }
