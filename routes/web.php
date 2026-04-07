@@ -58,6 +58,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/settings/test-smtp', [\App\Http\Controllers\Admin\SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [\App\Http\Controllers\Admin\SettingController::class, 'testSms'])->name('admin.settings.test-sms');
 
+        // Currency Management
+        Route::get('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'index'])->name('admin.currencies.index');
+        Route::post('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'store'])->name('admin.currencies.store');
+        Route::patch('admin/currencies/{currency}', [\App\Http\Controllers\Admin\CurrencyController::class, 'update'])->name('admin.currencies.update');
+        Route::delete('admin/currencies/{currency}', [\App\Http\Controllers\Admin\CurrencyController::class, 'destroy'])->name('admin.currencies.destroy');
+        Route::post('admin/currencies/refresh', [\App\Http\Controllers\Admin\CurrencyController::class, 'refreshRates'])->name('admin.currencies.refresh');
+        Route::post('admin/currencies/test-conversion', [\App\Http\Controllers\Admin\CurrencyController::class, 'testConversion'])->name('admin.currencies.test-conversion');
+
         // SMS Notifications
         Route::get('admin/sms', [\App\Http\Controllers\Admin\SmsController::class, 'index'])->name('admin.sms.index');
         Route::post('admin/sms/send', [\App\Http\Controllers\Admin\SmsController::class, 'send'])->name('admin.sms.send');

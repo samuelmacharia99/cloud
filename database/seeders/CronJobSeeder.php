@@ -80,6 +80,13 @@ class CronJobSeeder extends Seeder
                 'schedule' => '0 2 * * *',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Update Exchange Rates',
+                'description' => 'Fetches latest currency exchange rates from global API and updates database.',
+                'command' => 'cron:update-exchange-rates',
+                'schedule' => '0 0 * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {
