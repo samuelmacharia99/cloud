@@ -3,12 +3,12 @@
 @section('title', 'Select Your Techstack')
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="techstackSelector()" @keydown.escape="showDatabaseModal = false">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Select Your Techstack</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose your programming language and database</p>
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Deploy Your Application</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Select your programming language to get started</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -20,88 +20,167 @@
         </a>
     </div>
 
-    <!-- Selection Form -->
-    <form action="{{ route('customer.confirm-techstack') }}" method="POST" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8" x-data="techstackSelector()">
-        @csrf
-
-        <div class="grid md:grid-cols-2 gap-8">
-            <!-- Language Selection -->
-            <div>
-                <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Programming Language</h2>
-                <div class="space-y-3">
-                    @foreach($languages as $language)
-                        <label class="block p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition" :class="{ 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800': selectedLanguage.id === {{ $language->id }} }">
-                            <input type="radio" name="language_id" value="{{ $language->id }}" @change="selectLanguage($event)" class="mr-3">
-                            <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
-                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $language->description }}</p>
-                            @if($language->versions && count($language->versions) > 0)
-                                <div class="mt-2 flex flex-wrap gap-2">
-                                    @foreach($language->versions as $version)
-                                        <span class="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-xs rounded text-slate-700 dark:text-slate-300">v{{ $version }}</span>
-                                    @endforeach
-                                </div>
-                            @endif
-                        </label>
-                    @endforeach
-                </div>
-                @error('language_id')<p class="text-red-600 text-sm mt-2">{{ $message }}</p>@enderror
-            </div>
-
-            <!-- Database Selection -->
-            <div>
-                <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Database</h2>
-                <div class="space-y-3">
-                    <template x-if="availableDatabases.length > 0">
-                        <div class="space-y-3">
-                            <template x-for="db in availableDatabases" :key="db.id">
-                                <label class="block p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition" :class="{ 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800': selectedDatabase.id === db.id }">
-                                    <input type="radio" name="database_id" :value="db.id" @change="selectDatabase(db)" class="mr-3">
-                                    <span class="font-semibold text-slate-900 dark:text-white" x-text="db.name"></span>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="'Type: ' + db.type"></p>
-                                </label>
-                            </template>
-                        </div>
-                    </template>
-                    <template x-if="availableDatabases.length === 0 && selectedLanguage.id">
-                        <div class="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg">
-                            <p class="text-sm text-yellow-700 dark:text-yellow-200">Please select a language first</p>
-                        </div>
-                    </template>
-                    <template x-if="!selectedLanguage.id">
-                        <div class="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-                            <p class="text-sm text-gray-600 dark:text-gray-400">Select a language to see available databases</p>
-                        </div>
-                    </template>
-                </div>
-                @error('database_id')<p class="text-red-600 text-sm mt-2">{{ $message }}</p>@enderror
-            </div>
-        </div>
-
-        <!-- Routing Info -->
-        <template x-if="selectedLanguage.id && selectedDatabase.id">
-            <div class="mt-8 p-6 rounded-lg" :class="hostingTypeInfo.bgClass">
-                <div class="flex items-start gap-3">
-                    <svg class="w-6 h-6 flex-shrink-0 mt-0.5" :class="hostingTypeInfo.iconClass" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2z" clip-rule="evenodd"/>
+    <!-- Language Selection Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        @foreach($languages as $language)
+            <button
+                type="button"
+                @click="selectLanguageAndShowModal($event, {{ $language->id }})"
+                class="p-4 border-2 rounded-lg transition-all text-left hover:shadow-lg"
+                :class="selectedLanguage.id === {{ $language->id }}
+                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-md'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-600'"
+            >
+                <div class="flex items-start justify-between mb-2">
+                    <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
+                    <svg v-if="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                     </svg>
+                </div>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">{{ $language->description }}</p>
+                @if($language->versions && count($language->versions) > 0)
+                    <div class="flex flex-wrap gap-1">
+                        @foreach($language->versions as $version)
+                            <span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-xs rounded text-slate-700 dark:text-slate-300 whitespace-nowrap">v{{ $version }}</span>
+                        @endforeach
+                    </div>
+                @endif
+            </button>
+        @endforeach
+    </div>
+
+    <!-- Alternative: Browse Services -->
+    <div class="flex justify-center pt-4">
+        <a href="{{ route('customer.browse-services') }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            Browse All Services
+        </a>
+    </div>
+
+    <!-- Database Selection Modal -->
+    <div
+        x-show="showDatabaseModal"
+        x-transition:enter="ease-out duration-300"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        class="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center p-4 z-50"
+        @click.self="showDatabaseModal = false"
+    >
+        <div
+            @click.stop
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0 scale-95"
+            x-transition:enter-end="opacity-100 scale-100"
+            class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        >
+            <!-- Modal Header -->
+            <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Select Database</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Choose a database for <span class="font-semibold" x-text="selectedLanguage.name"></span>
+                    </p>
+                </div>
+                <button
+                    @click="showDatabaseModal = false"
+                    class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                >
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Database Options -->
+            <div class="p-6 space-y-3">
+                <template x-if="availableDatabases.length > 0">
+                    <div class="space-y-3">
+                        <template x-for="db in availableDatabases" :key="db.id">
+                            <label class="block p-4 border-2 rounded-lg cursor-pointer transition-all"
+                                :class="selectedDatabase.id === db.id
+                                    ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800'
+                                    : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600'"
+                            >
+                                <div class="flex items-start gap-3">
+                                    <input
+                                        type="radio"
+                                        name="database_id"
+                                        :value="db.id"
+                                        @change="selectDatabase(db, true)"
+                                        class="mt-1"
+                                    >
+                                    <div class="flex-1">
+                                        <span class="font-semibold text-slate-900 dark:text-white" x-text="db.name"></span>
+                                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="'Type: ' + db.type"></p>
+                                    </div>
+                                    <svg v-if="selectedDatabase.id === db.id" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                            </label>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="availableDatabases.length === 0 && loading">
+                    <div class="text-center py-8">
+                        <div class="inline-block animate-spin">
+                            <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <p class="text-slate-600 dark:text-slate-400 mt-2">Loading databases...</p>
+                    </div>
+                </template>
+            </div>
+
+            <!-- Hosting Info & Products -->
+            <template x-if="selectedDatabase.id">
+                <div class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                    <!-- Hosting Type Info -->
+                    <div class="p-4 rounded-lg" :class="hostingTypeInfo.bgClass">
+                        <div class="flex items-start gap-3">
+                            <span class="text-2xl" x-text="hostingTypeInfo.emoji"></span>
+                            <div>
+                                <p class="font-semibold" :class="hostingTypeInfo.textClass" x-text="hostingTypeInfo.label"></p>
+                                <p class="text-sm mt-1" :class="hostingTypeInfo.descClass" x-text="hostingTypeInfo.description"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Available Products -->
                     <div>
-                        <p class="font-semibold text-sm" :class="hostingTypeInfo.textClass" x-text="hostingTypeInfo.label"></p>
-                        <p class="text-sm mt-1" :class="hostingTypeInfo.descClass" x-text="hostingTypeInfo.description"></p>
+                        <h3 class="font-semibold text-slate-900 dark:text-white mb-3">Available Hosting Plans</h3>
+                        <div class="space-y-2" x-html="productsHTML"></div>
+                        <template x-if="availableProducts.length === 0">
+                            <p class="text-sm text-slate-600 dark:text-slate-400 py-4">No hosting plans available for this combination.</p>
+                        </template>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex gap-3 pt-4">
+                        <form :action="confirmTechstackUrl" method="POST" class="flex-1">
+                            @csrf
+                            <input type="hidden" name="language_id" :value="selectedLanguage.id">
+                            <input type="hidden" name="database_id" :value="selectedDatabase.id">
+                            <button
+                                type="submit"
+                                :disabled="availableProducts.length === 0"
+                                class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition"
+                            >
+                                Continue to Packages
+                            </button>
+                        </form>
+                        <button
+                            @click="showDatabaseModal = false"
+                            type="button"
+                            class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        >
+                            Back
+                        </button>
                     </div>
                 </div>
-            </div>
-        </template>
-
-        <!-- Submit Button -->
-        <div class="mt-8 flex gap-4">
-            <button type="submit" :disabled="!selectedLanguage.id || !selectedDatabase.id" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition">
-                Continue
-            </button>
-            <a href="{{ route('customer.browse-services') }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                Browse All Services
-            </a>
+            </template>
         </div>
-    </form>
+    </div>
 </div>
 
 <script>
@@ -110,19 +189,26 @@ function techstackSelector() {
         selectedLanguage: {},
         selectedDatabase: {},
         availableDatabases: [],
+        availableProducts: [],
+        showDatabaseModal: false,
         loading: false,
+        confirmTechstackUrl: '{{ route("customer.confirm-techstack") }}',
 
-        selectLanguage(event) {
-            const languageId = event.target.value;
+        selectLanguageAndShowModal(event, languageId) {
             const language = @json($languages).find(l => l.id == languageId);
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
+            this.availableProducts = [];
+            this.showDatabaseModal = true;
             this.loadDatabases(languageId);
         },
 
-        selectDatabase(db) {
+        selectDatabase(db, loadProducts = false) {
             this.selectedDatabase = db;
+            if (loadProducts) {
+                this.loadProducts();
+            }
         },
 
         async loadDatabases(languageId) {
@@ -138,19 +224,40 @@ function techstackSelector() {
             }
         },
 
+        async loadProducts() {
+            try {
+                // Determine hosting type
+                const isPhp = this.selectedLanguage.hosting_type === 'directadmin';
+                const productType = isPhp ? 'shared_hosting' : 'container_hosting';
+                const templateId = !isPhp ? this.selectedLanguage.id : null;
+
+                // Fetch products based on type
+                const url = new URL('/api/products', window.location.origin);
+                url.searchParams.append('type', productType);
+                if (templateId) {
+                    url.searchParams.append('template_id', templateId);
+                }
+
+                const response = await fetch(url);
+                const data = await response.json();
+                this.availableProducts = data.products || [];
+            } catch (error) {
+                console.error('Error loading products:', error);
+                this.availableProducts = [];
+            }
+        },
+
         get hostingTypeInfo() {
             const isDirectAdmin = this.selectedLanguage.hosting_type === 'directadmin';
             return {
-                label: isDirectAdmin ? '🌐 DirectAdmin Shared Hosting' : '🐳 Container Hosting',
+                emoji: isDirectAdmin ? '🌐' : '🐳',
+                label: isDirectAdmin ? 'DirectAdmin Shared Hosting' : 'Container Hosting',
                 description: isDirectAdmin
                     ? 'Your application will be deployed to shared hosting with DirectAdmin control panel'
                     : 'Your application will be deployed to a containerized environment with Docker',
                 bgClass: isDirectAdmin
                     ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
                     : 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700',
-                iconClass: isDirectAdmin
-                    ? 'text-blue-600 dark:text-blue-400'
-                    : 'text-purple-600 dark:text-purple-400',
                 textClass: isDirectAdmin
                     ? 'text-blue-900 dark:text-blue-200'
                     : 'text-purple-900 dark:text-purple-200',
@@ -158,6 +265,23 @@ function techstackSelector() {
                     ? 'text-blue-700 dark:text-blue-300'
                     : 'text-purple-700 dark:text-purple-300',
             };
+        },
+
+        get productsHTML() {
+            if (this.availableProducts.length === 0) {
+                return '';
+            }
+            return this.availableProducts.map(product => `
+                <div class="p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="font-semibold text-slate-900 dark:text-white">${product.name}</p>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">${product.description}</p>
+                        </div>
+                        <p class="text-lg font-bold text-blue-600 dark:text-blue-400">KES ${Number(product.monthly_price).toLocaleString()}/mo</p>
+                    </div>
+                </div>
+            `).join('');
         }
     };
 }

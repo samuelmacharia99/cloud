@@ -121,6 +121,37 @@ class ServiceBrowserController extends Controller
     }
 
     /**
+     * Get available products for a techstack combination (AJAX)
+     */
+    public function getAvailableProducts(Request $request)
+    {
+        $request->validate([
+            'type' => 'required|in:shared_hosting,container_hosting',
+            'template_id' => 'nullable|exists:container_templates,id',
+        ]);
+
+        $query = Product::where('type', $request->type)
+            ->where('is_active', true);
+
+        if ($request->template_id) {
+            $query->where('container_template_id', $request->template_id);
+        }
+
+        $products = $query->orderBy('order')->get();
+
+        return response()->json([
+            'products' => $products->map(fn($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'slug' => $p->slug,
+                'description' => $p->description,
+                'monthly_price' => $p->monthly_price,
+                'features' => $p->features ?? [],
+            ]),
+        ]);
+    }
+
+    /**
      * Browse all services without techstack selection
      */
     public function browse(Request $request)
