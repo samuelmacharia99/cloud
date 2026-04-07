@@ -3,49 +3,143 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Checkout — {{ config('app.name', 'Talksasa Cloud') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        :root {
+            --cyan-bright: #00D9FF;
+            --cyan-dark: #0099CC;
+            --neon-green: #00FF88;
+            --dark-bg: #0F172A;
+            --dark-card: #1E293B;
+            --dark-border: #334155;
+        }
+
+        body {
+            background: linear-gradient(135deg, #0F172A 0%, #1a1f3a 50%, #0F172A 100%);
+            color: #e2e8f0;
+        }
+
+        .glow-cyan {
+            box-shadow: 0 0 20px rgba(0, 217, 255, 0.3), inset 0 0 20px rgba(0, 217, 255, 0.1);
+        }
+
+        .text-gradient {
+            background: linear-gradient(135deg, #ffffff 0%, var(--cyan-bright) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .accent-green {
+            color: var(--neon-green);
+        }
+
+        .btn-cyan {
+            background: linear-gradient(135deg, var(--cyan-bright) 0%, #0099CC 100%);
+            color: #0F172A;
+            font-weight: 600;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(0, 217, 255, 0.3);
+        }
+
+        .btn-cyan:hover {
+            box-shadow: 0 0 30px rgba(0, 217, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .card-dark {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(0, 217, 255, 0.2);
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .input-dark {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(0, 217, 255, 0.2);
+            color: #e2e8f0;
+            padding: 0.875rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .input-dark:focus {
+            outline: none;
+            border-color: var(--cyan-bright);
+            box-shadow: 0 0 15px rgba(0, 217, 255, 0.3);
+            background: rgba(30, 41, 59, 0.8);
+        }
+
+        .nav-link {
+            color: #cbd5e1;
+            transition: color 0.3s ease;
+            text-decoration: none;
+        }
+
+        .nav-link:hover {
+            color: var(--cyan-bright);
+        }
+    </style>
 </head>
-<body class="antialiased bg-white">
+<body class="bg-[#0F172A]" x-data="checkoutApp()">
     <!-- Navigation -->
-    <nav class="fixed w-full top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+    <nav class="fixed w-full top-0 z-50 bg-[#0F172A]/90 backdrop-blur-lg border-b border-[rgba(0,217,255,0.1)]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <a href="/" class="flex items-center gap-2 hover:opacity-75 transition">
-                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center">
-                        <span class="text-white font-bold">TC</span>
+            <div class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-3 hover:opacity-75 transition">
+                    <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center glow-cyan-sm">
+                        <span class="text-[#0F172A] font-bold text-sm">TC</span>
                     </div>
-                    <span class="text-xl font-bold text-gray-900">Talksasa</span>
+                    <span class="text-xl font-bold text-gradient">Talksasa</span>
                 </a>
             </div>
 
             <div class="flex items-center gap-4">
                 @auth
-                    <span class="text-gray-600">{{ auth()->user()->name }}</span>
+                    <span class="text-slate-300">{{ auth()->user()->name }}</span>
                 @else
-                    <span class="text-gray-600">Checkout</span>
+                    <span class="text-slate-400">Create Account & Checkout</span>
                 @endauth
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 min-h-screen">
+    <section class="pt-32 pb-20 px-4 sm:px-6 lg:px-8 min-h-screen">
         <div class="max-w-7xl mx-auto">
             <div class="grid md:grid-cols-3 gap-8">
-                <!-- Left: Order Summary -->
-                <div class="md:col-span-2">
-                    <div class="bg-white rounded-xl border border-gray-200 p-8 mb-8">
-                        <h2 class="text-2xl font-bold text-gray-900 mb-6">Order Summary</h2>
+                <!-- Left: Order Summary & Account Form -->
+                <div class="md:col-span-2 space-y-8">
+                    <!-- Order Summary -->
+                    <div class="card-dark p-8">
+                        <h2 class="text-2xl font-bold text-white mb-6">Order Summary</h2>
 
                         <div class="space-y-4">
                             @foreach ($cartItems as $item)
-                                <div class="flex justify-between items-start border-b border-gray-200 pb-4">
-                                    <div>
-                                        <p class="font-semibold text-gray-900">{{ $item['name'] }}</p>
-                                        <p class="text-sm text-gray-600">{{ $item['description'] ?? '' }}</p>
+                                <div class="flex justify-between items-start border-b border-[rgba(0,217,255,0.1)] pb-4 last:border-0">
+                                    <div class="flex-1">
+                                        <p class="font-semibold text-white">{{ $item['name'] }}</p>
+                                        <p class="text-sm text-slate-400">{{ $item['description'] ?? '' }}</p>
                                     </div>
-                                    <p class="text-lg font-bold text-gray-900">KES {{ number_format($item['amount'], 0) }}</p>
+                                    <div class="flex items-center gap-4">
+                                        <p class="text-lg font-bold text-cyan-400">KES {{ number_format($item['amount'], 0) }}</p>
+                                        <button
+                                            @click="removeItem('{{ $item['full_domain'] ?? $item['name'] }}')"
+                                            class="text-slate-400 hover:text-red-400 transition-colors flex items-center justify-center w-6 h-6 flex-shrink-0"
+                                            title="Remove item"
+                                        >
+                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                            </svg>
+                                        </button>
+                                    </div>
                                 </div>
                             @endforeach
                         </div>
@@ -53,75 +147,75 @@
 
                     <!-- Account Creation Form (for unauthenticated users) -->
                     @guest
-                        <div class="bg-white rounded-xl border border-gray-200 p-8">
-                            <h2 class="text-2xl font-bold text-gray-900 mb-6">Create Your Account</h2>
-                            <p class="text-gray-600 mb-6">Create an account to complete your order. Your account will give you access to manage your domains and services.</p>
+                        <div class="card-dark p-8">
+                            <h2 class="text-2xl font-bold text-white mb-2">Create Your Account</h2>
+                            <p class="text-slate-400 mb-6">We'll use this information to manage your domains and services</p>
 
                             <form action="{{ route('checkout.process.public') }}" method="POST" class="space-y-6">
                                 @csrf
 
                                 <!-- Name -->
                                 <div>
-                                    <label for="name" class="block text-sm font-medium text-gray-900 mb-2">Full Name</label>
+                                    <label for="name" class="block text-sm font-medium text-white mb-2">Full Name</label>
                                     <input
                                         type="text"
                                         id="name"
                                         name="name"
                                         value="{{ old('name') }}"
-                                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition @error('name') border-red-500 @enderror"
+                                        class="input-dark w-full @error('name') border-red-500 @enderror"
                                         required
                                     >
                                     @error('name')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                                     @enderror
                                 </div>
 
                                 <!-- Email -->
                                 <div>
-                                    <label for="email" class="block text-sm font-medium text-gray-900 mb-2">Email Address</label>
+                                    <label for="email" class="block text-sm font-medium text-white mb-2">Email Address</label>
                                     <input
                                         type="email"
                                         id="email"
                                         name="email"
                                         value="{{ old('email') }}"
-                                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition @error('email') border-red-500 @enderror"
+                                        class="input-dark w-full @error('email') border-red-500 @enderror"
                                         required
                                     >
                                     @error('email')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                                     @enderror
                                 </div>
 
                                 <!-- Password -->
                                 <div>
-                                    <label for="password" class="block text-sm font-medium text-gray-900 mb-2">Password</label>
+                                    <label for="password" class="block text-sm font-medium text-white mb-2">Password</label>
                                     <input
                                         type="password"
                                         id="password"
                                         name="password"
-                                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition @error('password') border-red-500 @enderror"
+                                        class="input-dark w-full @error('password') border-red-500 @enderror"
                                         required
                                     >
-                                    <p class="mt-1 text-sm text-gray-500">At least 8 characters</p>
+                                    <p class="mt-1 text-sm text-slate-500">At least 8 characters</p>
                                     @error('password')
-                                        <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+                                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
                                     @enderror
                                 </div>
 
                                 <!-- Password Confirmation -->
                                 <div>
-                                    <label for="password_confirmation" class="block text-sm font-medium text-gray-900 mb-2">Confirm Password</label>
+                                    <label for="password_confirmation" class="block text-sm font-medium text-white mb-2">Confirm Password</label>
                                     <input
                                         type="password"
                                         id="password_confirmation"
                                         name="password_confirmation"
-                                        class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 transition"
+                                        class="input-dark w-full"
                                         required
                                     >
                                 </div>
 
                                 <!-- Terms -->
-                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div class="bg-[rgba(0,217,255,0.1)] border border-[rgba(0,217,255,0.2)] rounded-lg p-4">
                                     <label class="flex items-start gap-3 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -129,26 +223,26 @@
                                             class="mt-1 @error('agree_terms') border-red-500 @enderror"
                                             required
                                         >
-                                        <span class="text-sm text-gray-700">
-                                            I agree to the Terms of Service and Privacy Policy. I understand that my account will be created and I authorize the charge for this order.
+                                        <span class="text-sm text-slate-300">
+                                            I agree to the Terms of Service and Privacy Policy. I authorize the charge for this order.
                                         </span>
                                     </label>
                                     @error('agree_terms')
-                                        <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                                        <p class="mt-2 text-sm text-red-400">{{ $message }}</p>
                                     @enderror
                                 </div>
 
                                 <!-- Submit Button -->
                                 <button
                                     type="submit"
-                                    class="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition"
+                                    class="btn-cyan w-full"
                                 >
                                     Create Account & Complete Order
                                 </button>
 
                                 <!-- Already have account -->
-                                <p class="text-center text-gray-600">
-                                    Already have an account? <a href="{{ route('login') }}" class="text-blue-600 hover:text-blue-700 font-semibold">Sign in</a>
+                                <p class="text-center text-slate-400">
+                                    Already have an account? <a href="{{ route('login') }}" class="text-cyan-400 hover:text-cyan-300 font-semibold">Sign in</a>
                                 </p>
                             </form>
                         </div>
@@ -156,14 +250,14 @@
 
                     @auth
                         <!-- Authenticated user checkout -->
-                        <div class="bg-white rounded-xl border border-gray-200 p-8">
-                            <h2 class="text-2xl font-bold text-gray-900 mb-6">Complete Your Order</h2>
+                        <div class="card-dark p-8">
+                            <h2 class="text-2xl font-bold text-white mb-6">Complete Your Order</h2>
 
-                            <form action="{{ route('customer.checkout.process') }}" method="POST">
+                            <form action="{{ route('checkout.process.public') }}" method="POST" class="space-y-6">
                                 @csrf
 
                                 <!-- Terms -->
-                                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                <div class="bg-[rgba(0,217,255,0.1)] border border-[rgba(0,217,255,0.2)] rounded-lg p-4 mb-6">
                                     <label class="flex items-start gap-3 cursor-pointer">
                                         <input
                                             type="checkbox"
@@ -171,8 +265,8 @@
                                             class="mt-1"
                                             required
                                         >
-                                        <span class="text-sm text-gray-700">
-                                            I agree to the Terms of Service and authorize the charge for this order.
+                                        <span class="text-sm text-slate-300">
+                                            I authorize the charge for this order.
                                         </span>
                                     </label>
                                 </div>
@@ -180,7 +274,7 @@
                                 <!-- Submit Button -->
                                 <button
                                     type="submit"
-                                    class="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition"
+                                    class="btn-cyan w-full"
                                 >
                                     Complete Order
                                 </button>
@@ -191,37 +285,37 @@
 
                 <!-- Right: Order Total -->
                 <div>
-                    <div class="bg-white rounded-xl border border-gray-200 p-8 sticky top-32">
-                        <h3 class="text-xl font-bold text-gray-900 mb-6">Order Total</h3>
+                    <div class="card-dark p-8 sticky top-32">
+                        <h3 class="text-xl font-bold text-white mb-6">Order Total</h3>
 
-                        <div class="space-y-4 mb-6 pb-6 border-b border-gray-200">
-                            <div class="flex justify-between text-gray-700">
+                        <div class="space-y-4 mb-6 pb-6 border-b border-[rgba(0,217,255,0.1)]">
+                            <div class="flex justify-between text-slate-300">
                                 <span>Subtotal</span>
                                 <span class="font-semibold">KES {{ number_format($subtotal, 0) }}</span>
                             </div>
                             @if ($taxEnabled && $tax > 0)
-                                <div class="flex justify-between text-gray-700">
+                                <div class="flex justify-between text-slate-300">
                                     <span>Tax ({{ $taxRate }}%)</span>
                                     <span class="font-semibold">KES {{ number_format($tax, 0) }}</span>
                                 </div>
                             @endif
                         </div>
 
-                        <div class="flex justify-between items-center">
-                            <span class="text-lg font-bold text-gray-900">Total</span>
-                            <span class="text-3xl font-bold text-blue-600">KES {{ number_format($total, 0) }}</span>
+                        <div class="flex justify-between items-center mb-8">
+                            <span class="text-lg font-bold text-white">Total</span>
+                            <span class="text-3xl font-bold text-gradient">KES {{ number_format($total, 0) }}</span>
                         </div>
 
-                        <div class="mt-6 pt-6 border-t border-gray-200">
-                            <div class="space-y-2 text-sm text-gray-600">
+                        <div class="pt-6 border-t border-[rgba(0,217,255,0.1)]">
+                            <div class="space-y-2 text-sm text-slate-400">
                                 <p>✓ Secure checkout</p>
-                                <p>✓ Invoice will be created</p>
-                                <p>✓ Payment options available</p>
+                                <p>✓ Invoice will be generated</p>
+                                <p>✓ Instant activation</p>
                             </div>
                         </div>
 
                         <!-- Back Link -->
-                        <a href="{{ route('domains.search.public') }}" class="block mt-6 text-center text-blue-600 hover:text-blue-700 font-semibold">
+                        <a href="/" class="block mt-6 text-center text-cyan-400 hover:text-cyan-300 font-semibold">
                             ← Continue Shopping
                         </a>
                     </div>
@@ -231,17 +325,49 @@
     </section>
 
     <!-- Footer -->
-    <footer class="bg-gray-900 text-gray-400 py-12 px-4 sm:px-6 lg:px-8">
+    <footer class="border-t border-[rgba(0,217,255,0.1)] py-12 px-4 sm:px-6 lg:px-8">
         <div class="max-w-7xl mx-auto">
-            <div class="flex justify-between items-center">
+            <div class="flex justify-between items-center text-sm text-slate-400">
                 <p>&copy; 2026 Talksasa Cloud. All rights reserved.</p>
-                <div class="flex gap-4">
-                    <a href="/" class="hover:text-white transition">Home</a>
-                    <a href="#" class="hover:text-white transition">Privacy</a>
-                    <a href="#" class="hover:text-white transition">Contact</a>
+                <div class="flex gap-6">
+                    <a href="#" class="nav-link">Privacy</a>
+                    <a href="#" class="nav-link">Terms</a>
+                    <a href="#" class="nav-link">Support</a>
                 </div>
             </div>
         </div>
     </footer>
+
+    <script>
+        function checkoutApp() {
+            return {
+                removeItem(itemName) {
+                    // Remove from localStorage cart
+                    const cart = JSON.parse(localStorage.getItem('domainCart') || '[]');
+                    const filtered = cart.filter(d => d.full_domain !== itemName);
+                    localStorage.setItem('domainCart', JSON.stringify(filtered));
+
+                    // Re-sync cart to session
+                    fetch('{{ route("checkout.sync-cart") }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({ cart: filtered })
+                    }).then(response => {
+                        if (response.ok) {
+                            // Reload the page to show updated cart
+                            window.location.reload();
+                        }
+                    }).catch(error => {
+                        console.error('Error removing item:', error);
+                        alert('Failed to remove item');
+                    });
+                }
+            }
+        }
+    </script>
 </body>
 </html>

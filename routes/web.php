@@ -4,9 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DashboardController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/', [\App\Http\Controllers\WelcomeController::class, 'index'])->name('welcome');
 
 Route::middleware(['auth'])->group(function () {
     // Exit impersonation (accessible by all authenticated users, including impersonated customers)
@@ -15,6 +13,7 @@ Route::middleware(['auth'])->group(function () {
 
 // Public domain search and checkout (no authentication required)
 Route::get('/search-domains', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search.public');
+Route::post('/sync-cart', [\App\Http\Controllers\Customer\CheckoutController::class, 'syncCart'])->name('checkout.sync-cart');
 Route::get('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'showPublic'])->name('checkout.show.public');
 Route::post('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'processPublic'])->name('checkout.process.public');
 

@@ -335,6 +335,57 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Sync localStorage cart to session
+     */
+    public function syncCart(Request $request)
+    {
+        $cartItems = $request->input('cart', []);
+
+        if (!is_array($cartItems)) {
+            return response()->json(['error' => 'Invalid cart format'], 400);
+        }
+
+        // Convert domain items to proper format
+        $processedCart = [];
+        foreach ($cartItems as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $itemType = $item['type'] ?? null;
+            $fullDomain = $item['full_domain'] ?? null;
+
+            if ($itemType === 'domain' || $fullDomain) {
+                // Domain from localStorage
+                if ($fullDomain) {
+                    $parts = explode('.', $fullDomain, 2);
+                    $domain = $parts[0] ?? '';
+                    $extension = '.' . ($parts[1] ?? '');
+                } else {
+                    $domain = $item['domain'] ?? '';
+                    $extension = $item['extension'] ?? '';
+                }
+
+                $processedCart[] = [
+                    'type' => 'domain',
+                    'domain' => $domain,
+                    'extension' => $extension,
+                    'full_domain' => $fullDomain ?? ($domain . $extension),
+                    'years' => $item['years'] ?? 1,
+                    'price' => $item['price'] ?? 0,
+                ];
+            } else {
+                // Other item types
+                $processedCart[] = $item;
+            }
+        }
+
+        session([self::CART_SESSION_KEY => $processedCart]);
+
+        return response()->json(['success' => true, 'count' => count($processedCart)]);
+    }
+
+    /**
      * Show public checkout page (with optional account creation)
      */
     public function showPublic(Request $request)
@@ -395,24 +446,32 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Process public checkout (create account then order)
+     * Process public checkout (create account then order or use authenticated user)
      */
     public function processPublic(Request $request)
     {
-        // Validate account creation
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
-            'agree_terms' => 'required|accepted',
-        ]);
-
         try {
             $cart = session(self::CART_SESSION_KEY, []);
 
             if (empty($cart)) {
                 return back()->with('error', 'Your cart is empty');
             }
+
+            // If user is already authenticated, use their account
+            if (auth()->check()) {
+                $request->validate([
+                    'agree_terms' => 'required|accepted',
+                ]);
+                return $this->processCheckout(auth()->user(), $cart, $request);
+            }
+
+            // For unauthenticated users, validate and create account
+            $request->validate([
+                'name' => 'required|string|max:255',
+                'email' => 'required|email|unique:users,email',
+                'password' => 'required|string|min:8|confirmed',
+                'agree_terms' => 'required|accepted',
+            ]);
 
             // Create user account
             $user = User::create([
