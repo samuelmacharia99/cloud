@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Models\ContainerDomain;
 use App\Models\Node;
+use App\Services\SSH\SSHService;
 use Exception;
 
 class NginxProxyService
@@ -25,8 +26,7 @@ class NginxProxyService
             $config = $this->generateConfig($domain, false);
 
             // Connect to node via SSH
-            $ssh = new SSHService();
-            $ssh->connect($node->ip_address, $node->ssh_username, $node->ssh_private_key);
+            $ssh = SSHService::forNode($node);
 
             // Create sites-enabled directory if needed
             $ssh->exec("mkdir -p /etc/nginx/sites-enabled");
@@ -76,8 +76,7 @@ class NginxProxyService
         }
 
         try {
-            $ssh = new SSHService();
-            $ssh->connect($node->ip_address, $node->ssh_username, $node->ssh_private_key);
+            $ssh = SSHService::forNode($node);
 
             // Remove config file
             if ($domain->nginx_config_path) {
@@ -112,8 +111,7 @@ class NginxProxyService
         }
 
         try {
-            $ssh = new SSHService();
-            $ssh->connect($node->ip_address, $node->ssh_username, $node->ssh_private_key);
+            $ssh = SSHService::forNode($node);
 
             // Get admin email from settings
             $adminEmail = setting('admin_email', 'admin@talksasa.cloud');
@@ -181,8 +179,7 @@ class NginxProxyService
         }
 
         try {
-            $ssh = new SSHService();
-            $ssh->connect($node->ip_address, $node->ssh_username, $node->ssh_private_key);
+            $ssh = SSHService::forNode($node);
 
             // Renew certificate
             $renewCmd = "certbot renew --cert-name {$domain->domain} --quiet 2>&1";
