@@ -64,7 +64,7 @@ class ServiceBrowserController extends Controller
     }
 
     /**
-     * Confirm techstack and show products
+     * Confirm techstack and show all available products
      */
     public function confirmTechstack(Request $request)
     {
@@ -81,12 +81,25 @@ class ServiceBrowserController extends Controller
             return back()->with('error', 'Invalid techstack combination selected');
         }
 
-        // Determine hosting type and get product
+        // Determine hosting type
         $routing = TechStackRoutingService::determineHostingType($language, $database);
-        $product = TechStackRoutingService::getRecommendedProduct($language, $database);
 
-        if (!$product) {
-            return back()->with('error', 'No hosting plan available for this techstack');
+        // Get all available products for this hosting type
+        $productsQuery = Product::where('is_active', true);
+
+        if ($routing['hosting_type'] === 'directadmin') {
+            // PHP/WordPress → all shared hosting packages
+            $productsQuery->where('type', 'shared_hosting');
+        } else {
+            // Other languages → container hosting packages for this template
+            $productsQuery->where('type', 'container_hosting')
+                         ->where('container_template_id', $language->id);
+        }
+
+        $products = $productsQuery->orderBy('order')->get();
+
+        if ($products->isEmpty()) {
+            return back()->with('error', 'No hosting plans available for this techstack');
         }
 
         // Store selection in session temporarily
@@ -106,7 +119,7 @@ class ServiceBrowserController extends Controller
             'language' => $language,
             'database' => $database,
             'routing' => $routing,
-            'product' => $product,
+            'products' => $products,
             'cartCount' => $cartCount,
         ]);
     }

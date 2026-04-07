@@ -131,7 +131,7 @@
                 </template>
             </div>
 
-            <!-- Hosting Info & Products -->
+            <!-- Hosting Info -->
             <template x-if="selectedDatabase.id">
                 <div class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                     <!-- Hosting Type Info -->
@@ -145,25 +145,15 @@
                         </div>
                     </div>
 
-                    <!-- Available Products -->
-                    <div>
-                        <h3 class="font-semibold text-slate-900 dark:text-white mb-3">Available Hosting Plans</h3>
-                        <div class="space-y-2" x-html="productsHTML"></div>
-                        <template x-if="availableProducts.length === 0">
-                            <p class="text-sm text-slate-600 dark:text-slate-400 py-4">No hosting plans available for this combination.</p>
-                        </template>
-                    </div>
-
                     <!-- Action Buttons -->
-                    <div class="flex gap-3 pt-4">
+                    <div class="flex gap-3 pt-2">
                         <form :action="confirmTechstackUrl" method="POST" class="flex-1">
                             <?php echo csrf_field(); ?>
                             <input type="hidden" name="language_id" :value="selectedLanguage.id">
                             <input type="hidden" name="database_id" :value="selectedDatabase.id">
                             <button
                                 type="submit"
-                                :disabled="availableProducts.length === 0"
-                                class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition"
+                                class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
                             >
                                 Continue to Packages
                             </button>
@@ -188,7 +178,6 @@ function techstackSelector() {
         selectedLanguage: {},
         selectedDatabase: {},
         availableDatabases: [],
-        availableProducts: [],
         showDatabaseModal: false,
         loading: false,
         confirmTechstackUrl: '<?php echo e(route("customer.confirm-techstack")); ?>',
@@ -198,16 +187,12 @@ function techstackSelector() {
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
-            this.availableProducts = [];
             this.showDatabaseModal = true;
             this.loadDatabases(languageId);
         },
 
-        selectDatabase(db, loadProducts = false) {
+        selectDatabase(db) {
             this.selectedDatabase = db;
-            if (loadProducts) {
-                this.loadProducts();
-            }
         },
 
         async loadDatabases(languageId) {
@@ -220,29 +205,6 @@ function techstackSelector() {
                 console.error('Error loading databases:', error);
             } finally {
                 this.loading = false;
-            }
-        },
-
-        async loadProducts() {
-            try {
-                // Determine hosting type
-                const isPhp = this.selectedLanguage.hosting_type === 'directadmin';
-                const productType = isPhp ? 'shared_hosting' : 'container_hosting';
-                const templateId = !isPhp ? this.selectedLanguage.id : null;
-
-                // Fetch products based on type
-                const url = new URL('/api/products', window.location.origin);
-                url.searchParams.append('type', productType);
-                if (templateId) {
-                    url.searchParams.append('template_id', templateId);
-                }
-
-                const response = await fetch(url);
-                const data = await response.json();
-                this.availableProducts = data.products || [];
-            } catch (error) {
-                console.error('Error loading products:', error);
-                this.availableProducts = [];
             }
         },
 
@@ -266,22 +228,6 @@ function techstackSelector() {
             };
         },
 
-        get productsHTML() {
-            if (this.availableProducts.length === 0) {
-                return '';
-            }
-            return this.availableProducts.map(product => `
-                <div class="p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800">
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="font-semibold text-slate-900 dark:text-white">${product.name}</p>
-                            <p class="text-xs text-slate-600 dark:text-slate-400">${product.description}</p>
-                        </div>
-                        <p class="text-lg font-bold text-blue-600 dark:text-blue-400">KES ${Number(product.monthly_price).toLocaleString()}/mo</p>
-                    </div>
-                </div>
-            `).join('');
-        }
     };
 }
 </script>
