@@ -76,22 +76,37 @@
                 <?php endif; ?>
 
                 <!-- Add to Cart Button -->
-                <form action="<?php echo e(route('customer.cart.add')); ?>" method="POST" class="flex gap-2" x-data="{ cycle: 'monthly' }">
+                <form action="<?php echo e(route('customer.cart.add')); ?>" method="POST" class="space-y-3" x-data="{ cycle: 'monthly', version: <?php echo e($product->containerTemplate && $product->containerTemplate->versions ? "'" . ($product->containerTemplate->versions[0] ?? '') . "'" : 'null'); ?> }">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="type" value="product">
                     <input type="hidden" name="product_id" value="<?php echo e($product->id); ?>">
                     <input type="hidden" name="billing_cycle" x-bind:value="cycle">
+                    <?php if($product->containerTemplate && $product->containerTemplate->versions && count($product->containerTemplate->versions) > 0): ?>
+                        <input type="hidden" name="version" x-bind:value="version">
+                    <?php endif; ?>
 
-                    <select x-model="cycle" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi-annual">Semi-Annual</option>
-                        <option value="annual">Annual</option>
-                    </select>
+                    <?php if($product->containerTemplate && $product->containerTemplate->versions && count($product->containerTemplate->versions) > 0): ?>
+                        <div class="flex gap-2">
+                            <select x-model="version" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                                <?php $__currentLoopData = $product->containerTemplate->versions; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $version): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                    <option value="<?php echo e($version); ?>"><?php echo e($product->containerTemplate->name); ?> <?php echo e($version); ?></option>
+                                <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
+                            </select>
+                        </div>
+                    <?php endif; ?>
 
-                    <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
-                        Add to Cart
-                    </button>
+                    <div class="flex gap-2">
+                        <select x-model="cycle" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semi-annual">Semi-Annual</option>
+                            <option value="annual">Annual</option>
+                        </select>
+
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
+                            Add to Cart
+                        </button>
+                    </div>
                 </form>
             </div>
         <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); if ($__empty_1): ?>
