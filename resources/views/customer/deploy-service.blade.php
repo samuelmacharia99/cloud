@@ -74,22 +74,37 @@
                 @endif
 
                 <!-- Add to Cart Button -->
-                <form action="{{ route('customer.cart.add') }}" method="POST" class="flex gap-2" x-data="{ cycle: 'monthly' }">
+                <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-3" x-data="{ cycle: 'monthly', version: {{ $product->containerTemplate && $product->containerTemplate->versions ? "'" . ($product->containerTemplate->versions[0] ?? '') . "'" : 'null' }} }">
                     @csrf
                     <input type="hidden" name="type" value="product">
                     <input type="hidden" name="product_id" value="{{ $product->id }}">
                     <input type="hidden" name="billing_cycle" x-bind:value="cycle">
+                    @if($product->containerTemplate && $product->containerTemplate->versions && count($product->containerTemplate->versions) > 0)
+                        <input type="hidden" name="version" x-bind:value="version">
+                    @endif
 
-                    <select x-model="cycle" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi-annual">Semi-Annual</option>
-                        <option value="annual">Annual</option>
-                    </select>
+                    @if($product->containerTemplate && $product->containerTemplate->versions && count($product->containerTemplate->versions) > 0)
+                        <div class="flex gap-2">
+                            <select x-model="version" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                                @foreach($product->containerTemplate->versions as $version)
+                                    <option value="{{ $version }}">{{ $product->containerTemplate->name }} {{ $version }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    @endif
 
-                    <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
-                        Add to Cart
-                    </button>
+                    <div class="flex gap-2">
+                        <select x-model="cycle" class="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semi-annual">Semi-Annual</option>
+                            <option value="annual">Annual</option>
+                        </select>
+
+                        <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
+                            Add to Cart
+                        </button>
+                    </div>
                 </form>
             </div>
         @empty

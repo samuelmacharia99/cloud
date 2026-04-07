@@ -112,6 +112,13 @@
             @error('setup_commands')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
         </div>
 
+        <div class="mb-6">
+            <label class="block text-sm font-semibold mb-2">Available Versions (JSON)</label>
+            <textarea name="versions" rows="3" class="w-full px-3 py-2 border rounded-lg font-mono text-sm @error('versions') border-red-500 @enderror" placeholder='["3.11","3.12"]'>{{ old('versions') ? json_encode(old('versions')) : '' }}</textarea>
+            <p class="text-gray-500 text-sm mt-1">Array of version strings available for selection (e.g., ["3.11","3.12"] or ["8.0","8.1","8.2"])</p>
+            @error('versions')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
+        </div>
+
         <div class="grid grid-cols-2 gap-6 mb-8">
             <div>
                 <label class="block text-sm font-semibold mb-2">Sort Order *</label>

@@ -21,6 +21,7 @@ class ContainerTemplate extends Model
         'volume_paths',
         'compose_services',
         'setup_commands',
+        'versions',
         'is_active',
         'order',
     ];
@@ -30,6 +31,7 @@ class ContainerTemplate extends Model
         'volume_paths' => 'array',
         'compose_services' => 'array',
         'setup_commands' => 'array',
+        'versions' => 'array',
         'is_active' => 'boolean',
         'required_ram_mb' => 'integer',
         'required_cpu_cores' => 'decimal:1',

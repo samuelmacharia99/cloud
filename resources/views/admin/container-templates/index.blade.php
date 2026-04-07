@@ -69,6 +69,17 @@
                             @endif
                         </div>
 
+                        @if ($template->versions && count($template->versions) > 0)
+                            <div class="mt-4">
+                                <p class="text-sm text-gray-500 mb-2"><strong>Available Versions:</strong></p>
+                                <div class="flex flex-wrap gap-2">
+                                    @foreach ($template->versions as $version)
+                                        <span class="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">{{ $version }}</span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
                         <p class="text-sm text-gray-500 mt-2">
                             Using: <strong>{{ $template->products()->count() }}</strong> products
                         </p>
