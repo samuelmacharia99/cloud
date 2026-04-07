@@ -117,6 +117,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
 
         // Shopping experience
+        Route::get('/select-techstack', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'selectTechstack'])->name('customer.select-techstack');
+        Route::post('/confirm-techstack', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'confirmTechstack'])->name('customer.confirm-techstack');
+        Route::get('/api/languages/{language}/databases', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'getAvailableDatabases'])->name('api.languages.databases');
+        Route::get('/api/databases/{database}/languages', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'getAvailableLanguages'])->name('api.databases.languages');
         Route::get('/deploy-service', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
         Route::get('/my/domains', [\App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
