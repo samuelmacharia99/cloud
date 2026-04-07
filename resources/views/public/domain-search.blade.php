@@ -97,16 +97,18 @@
 
                                     <div class="mt-4 pt-4 border-t border-gray-200 flex gap-3">
                                         <button
+                                            type="button"
                                             @click="addToCart(domain)"
                                             class="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-semibold hover:shadow-lg transition"
                                         >
                                             Add to Cart
                                         </button>
                                         <button
+                                            type="button"
                                             @click="addToCart(domain); goToCheckout()"
                                             class="flex-1 px-4 py-2.5 border-2 border-blue-600 text-blue-600 rounded-lg font-semibold hover:bg-blue-50 transition"
                                         >
-                                            Buy Now
+                                            Proceed Shopping
                                         </button>
                                     </div>
                                 </div>

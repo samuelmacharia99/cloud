@@ -385,12 +385,14 @@
                                 <div class="mt-4 flex gap-3">
                                     <template x-if="!isInCart(domain.full_domain)">
                                         <button
+                                            type="button"
                                             @click="addToCart(domain)"
                                             class="btn-cyan flex-1 text-sm"
                                         >
                                             Add to Cart
                                         </button>
                                         <button
+                                            type="button"
                                             @click="addToCart(domain)"
                                             class="btn-outline flex-1 text-sm"
                                         >
@@ -399,6 +401,7 @@
                                     </template>
                                     <template x-if="isInCart(domain.full_domain)">
                                         <button
+                                            type="button"
                                             @click="removeFromCart(domain.full_domain)"
                                             class="flex-1 px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-400 rounded-lg font-semibold hover:bg-red-500/30 transition text-sm"
                                         >
@@ -596,6 +599,7 @@
                         </div>
                     </div>
                     <button
+                        type="button"
                         @click="removeFromCart(domain.full_domain)"
                         class="w-full mt-3 px-3 py-2 bg-red-500/10 border border-red-500/50 text-red-400 rounded text-xs font-semibold hover:bg-red-500/20 transition"
                     >
@@ -613,12 +617,14 @@
                 </div>
             </div>
             <button
+                type="button"
                 @click="goToCheckout()"
                 class="btn-cyan w-full"
             >
                 Checkout
             </button>
             <button
+                type="button"
                 @click="document.getElementById('domain-search').scrollIntoView()"
                 class="w-full px-4 py-2 border border-[rgba(0,217,255,0.3)] text-cyan-400 rounded-lg font-semibold hover:border-cyan-400 transition text-sm"
             >

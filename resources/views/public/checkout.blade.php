@@ -131,6 +131,7 @@
                                     <div class="flex items-center gap-4">
                                         <p class="text-lg font-bold text-cyan-400">KES {{ number_format($item['amount'], 0) }}</p>
                                         <button
+                                            type="button"
                                             @click="removeItem('{{ $item['full_domain'] ?? $item['name'] }}')"
                                             class="text-slate-400 hover:text-red-400 transition-colors flex items-center justify-center w-6 h-6 flex-shrink-0"
                                             title="Remove item"
