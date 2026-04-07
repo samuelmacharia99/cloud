@@ -112,9 +112,18 @@ class ServiceBrowserController extends Controller
     }
 
     /**
-     * Browse available services to deploy (original flow - kept for backwards compatibility)
+     * Redirect to techstack selection - primary deployment flow
      */
     public function index(Request $request)
+    {
+        // Always redirect to techstack selection first
+        return redirect()->route('customer.select-techstack');
+    }
+
+    /**
+     * Browse all services without techstack selection
+     */
+    public function browse(Request $request)
     {
         // Get selected filter type from query params
         $selectedType = $request->get('type', null);

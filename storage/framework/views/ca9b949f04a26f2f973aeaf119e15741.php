@@ -1,8 +1,6 @@
-@extends('layouts.customer')
+<?php $__env->startSection('title', 'Select Your Techstack'); ?>
 
-@section('title', 'Select Your Techstack')
-
-@section('content')
+<?php $__env->startSection('content'); ?>
 <div class="space-y-6">
     <!-- Header -->
     <div class="flex items-center justify-between">
@@ -10,41 +8,48 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Select Your Techstack</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Choose your programming language and database</p>
         </div>
-        <a href="{{ route('customer.cart.index') }}" class="relative">
+        <a href="<?php echo e(route('customer.cart.index')); ?>" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
             </svg>
-            @if($cartCount > 0)
-                <span class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">{{ $cartCount }}</span>
-            @endif
+            <?php if($cartCount > 0): ?>
+                <span class="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center"><?php echo e($cartCount); ?></span>
+            <?php endif; ?>
         </a>
     </div>
 
     <!-- Selection Form -->
-    <form action="{{ route('customer.confirm-techstack') }}" method="POST" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8" x-data="techstackSelector()">
-        @csrf
+    <form action="<?php echo e(route('customer.confirm-techstack')); ?>" method="POST" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8" x-data="techstackSelector()">
+        <?php echo csrf_field(); ?>
 
         <div class="grid md:grid-cols-2 gap-8">
             <!-- Language Selection -->
             <div>
                 <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-4">Programming Language</h2>
                 <div class="space-y-3">
-                    @foreach($languages as $language)
-                        <label class="block p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition" :class="{ 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800': selectedLanguage.id === {{ $language->id }} }">
-                            <input type="radio" name="language_id" value="{{ $language->id }}" @change="selectLanguage($event)" class="mr-3">
-                            <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
-                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $language->description }}</p>
-                            @if($language->versions && count($language->versions) > 0)
+                    <?php $__currentLoopData = $languages; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $language): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <label class="block p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition" :class="{ 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800': selectedLanguage.id === <?php echo e($language->id); ?> }">
+                            <input type="radio" name="language_id" value="<?php echo e($language->id); ?>" @change="selectLanguage($event)" class="mr-3">
+                            <span class="font-semibold text-slate-900 dark:text-white"><?php echo e($language->name); ?></span>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1"><?php echo e($language->description); ?></p>
+                            <?php if($language->versions && count($language->versions) > 0): ?>
                                 <div class="mt-2 flex flex-wrap gap-2">
-                                    @foreach($language->versions as $version)
-                                        <span class="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-xs rounded text-slate-700 dark:text-slate-300">v{{ $version }}</span>
-                                    @endforeach
+                                    <?php $__currentLoopData = $language->versions; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $version): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                                        <span class="px-2 py-1 bg-slate-100 dark:bg-slate-700 text-xs rounded text-slate-700 dark:text-slate-300">v<?php echo e($version); ?></span>
+                                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                                 </div>
-                            @endif
+                            <?php endif; ?>
                         </label>
-                    @endforeach
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                 </div>
-                @error('language_id')<p class="text-red-600 text-sm mt-2">{{ $message }}</p>@enderror
+                <?php $__errorArgs = ['language_id'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?><p class="text-red-600 text-sm mt-2"><?php echo e($message); ?></p><?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
             </div>
 
             <!-- Database Selection -->
@@ -73,7 +78,14 @@
                         </div>
                     </template>
                 </div>
-                @error('database_id')<p class="text-red-600 text-sm mt-2">{{ $message }}</p>@enderror
+                <?php $__errorArgs = ['database_id'];
+$__bag = $errors->getBag($__errorArgs[1] ?? 'default');
+if ($__bag->has($__errorArgs[0])) :
+if (isset($message)) { $__messageOriginal = $message; }
+$message = $__bag->first($__errorArgs[0]); ?><p class="text-red-600 text-sm mt-2"><?php echo e($message); ?></p><?php unset($message);
+if (isset($__messageOriginal)) { $message = $__messageOriginal; }
+endif;
+unset($__errorArgs, $__bag); ?>
             </div>
         </div>
 
@@ -97,7 +109,7 @@
             <button type="submit" :disabled="!selectedLanguage.id || !selectedDatabase.id" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg font-semibold transition">
                 Continue
             </button>
-            <a href="{{ route('customer.browse-services') }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <a href="<?php echo e(route('customer.browse-services')); ?>" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                 Browse All Services
             </a>
         </div>
@@ -114,7 +126,7 @@ function techstackSelector() {
 
         selectLanguage(event) {
             const languageId = event.target.value;
-            const language = @json($languages).find(l => l.id == languageId);
+            const language = <?php echo json_encode($languages, 15, 512) ?>.find(l => l.id == languageId);
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
@@ -162,4 +174,6 @@ function techstackSelector() {
     };
 }
 </script>
-@endsection
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layouts.customer', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /home/zumi/php/road-map/talksasa-cloud/resources/views/customer/select-techstack.blade.php ENDPATH**/ ?>

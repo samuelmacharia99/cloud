@@ -122,6 +122,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/api/languages/{language}/databases', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'getAvailableDatabases'])->name('api.languages.databases');
         Route::get('/api/databases/{database}/languages', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'getAvailableLanguages'])->name('api.databases.languages');
         Route::get('/deploy-service', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
+        Route::get('/browse-services', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
         Route::get('/my/domains', [\App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
 
