@@ -3,7 +3,7 @@
 @section('title', 'Confirm Techstack & Choose Package')
 
 @section('content')
-<div class="space-y-6" x-data="packageSelector()">
+<div class="space-y-6" x-data="packageConfigurator()">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
@@ -100,7 +100,7 @@
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
         <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Finalize Your Order</h2>
 
-        <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-4" x-data="{ cycle: 'monthly', version: '{{ $language->versions[0] ?? '' }}' }">
+        <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-4" x-init="updatePrice()">
             @csrf
             <input type="hidden" name="type" value="product">
             <input type="hidden" name="product_id" :value="selectedProductId">
@@ -125,19 +125,44 @@
                 <!-- Billing Cycle -->
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Billing Cycle</label>
-                    <select x-model="cycle" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                    <select x-model="cycle" @change="updatePrice()" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
                         <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="semi-annual">Semi-Annual</option>
-                        <option value="annual">Annual</option>
+                        <option value="quarterly">Quarterly (Save 2%)</option>
+                        <option value="semi-annual">Semi-Annual (Save 5%)</option>
+                        <option value="annual">Annual (Save 8%)</option>
                     </select>
                 </div>
 
-                <!-- Summary -->
-                <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                    <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Total Price</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white" x-text="'KES ' + Number(selectedProductPrice).toLocaleString()"></p>
-                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-1" x-text="getCycleLabel()"></p>
+                <!-- Summary with Dynamic Pricing -->
+                <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-lg p-4">
+                    <p class="text-xs text-blue-700 dark:text-blue-400 mb-1">Total Amount Due</p>
+                    <p class="text-3xl font-bold text-blue-600 dark:text-blue-400" x-text="'KES ' + formatPrice(calculatedPrice)"></p>
+                    <p class="text-sm text-blue-700 dark:text-blue-300 mt-2" x-text="getPricingLabel()"></p>
+                    <template x-if="discountAmount > 0">
+                        <p class="text-sm text-green-700 dark:text-green-400 mt-1 font-semibold">You save KES <span x-text="formatPrice(discountAmount)"></span></p>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Pricing Breakdown -->
+            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-2">
+                <div class="flex justify-between text-sm">
+                    <span class="text-slate-600 dark:text-slate-400">Base Price (Monthly)</span>
+                    <span class="font-semibold text-slate-900 dark:text-white">KES <span x-text="formatPrice(basePrice)"></span></span>
+                </div>
+                <template x-if="billingMonths > 1">
+                    <div class="flex justify-between text-sm">
+                        <span class="text-slate-600 dark:text-slate-400" x-text="`${billingMonths} months × base price`"></span>
+                        <span class="font-semibold text-slate-900 dark:text-white">KES <span x-text="formatPrice(basePrice * billingMonths)"></span></span>
+                    </div>
+                    <div class="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
+                        <span class="text-slate-600 dark:text-slate-400">Discount Applied</span>
+                        <span class="font-semibold text-green-700 dark:text-green-400" x-text="`-KES ${formatPrice(discountAmount)}`"></span>
+                    </div>
+                </template>
+                <div class="flex justify-between text-base font-bold border-t border-slate-300 dark:border-slate-600 pt-2 mt-2">
+                    <span class="text-slate-900 dark:text-white">Total Due</span>
+                    <span class="text-blue-600 dark:text-blue-400" x-text="'KES ' + formatPrice(calculatedPrice)"></span>
                 </div>
             </div>
 
@@ -163,26 +188,66 @@
 </div>
 
 <script>
-function packageSelector() {
+function packageConfigurator() {
     return {
+        // Package Selection
         selectedProductId: null,
         selectedProductName: '',
         selectedProductPrice: 0,
 
+        // Order Configuration
+        cycle: 'monthly',
+        version: '{{ $language->versions[0] ?? '' }}',
+        basePrice: 0,
+        calculatedPrice: 0,
+        discountAmount: 0,
+        billingMonths: 1,
+
+        // Select a product
         selectProduct(productId, productName, productPrice) {
             this.selectedProductId = productId;
             this.selectedProductName = productName;
             this.selectedProductPrice = productPrice;
+            this.basePrice = productPrice;
+            this.cycle = 'monthly'; // Reset to monthly when selecting new product
+            this.updatePrice();
         },
 
-        getCycleLabel() {
-            const labels = {
-                'monthly': '/month',
-                'quarterly': '/3 months',
-                'semi-annual': '/6 months',
-                'annual': '/year'
+        // Update price based on billing cycle
+        updatePrice() {
+            const discounts = {
+                'monthly': { months: 1, rate: 0 },
+                'quarterly': { months: 3, rate: 0.02 },
+                'semi-annual': { months: 6, rate: 0.05 },
+                'annual': { months: 12, rate: 0.08 }
             };
-            return labels[document.querySelector('select[name="billing_cycle"]')?.value] || '/month';
+
+            const config = discounts[this.cycle] || discounts['monthly'];
+            this.billingMonths = config.months;
+
+            // Calculate subtotal (months × base price)
+            const subtotal = this.basePrice * config.months;
+
+            // Apply discount
+            const discount = subtotal * config.rate;
+            this.discountAmount = discount;
+            this.calculatedPrice = subtotal - discount;
+        },
+
+        // Format price with thousands separator
+        formatPrice(amount) {
+            return Math.round(amount).toLocaleString('en-US');
+        },
+
+        // Get billing period label
+        getPricingLabel() {
+            const labels = {
+                'monthly': 'Per month',
+                'quarterly': 'Per 3 months',
+                'semi-annual': 'Per 6 months',
+                'annual': 'Per year'
+            };
+            return labels[this.cycle] || 'Per month';
         }
     };
 }
