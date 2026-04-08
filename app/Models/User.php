@@ -76,6 +76,11 @@ class User extends Authenticatable
         return $this->belongsTo(ResellerPackage::class, 'reseller_package_id');
     }
 
+    public function credits()
+    {
+        return $this->hasMany(Credit::class);
+    }
+
     public function isAdmin(): bool
     {
         return $this->is_admin;

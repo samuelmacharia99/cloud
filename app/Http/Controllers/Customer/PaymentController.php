@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\CreditService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -145,10 +146,9 @@ class PaymentController extends Controller
                         'status' => 'completed',
                         'paid_at' => now(),
                     ]);
-                    $invoice->update(['status' => 'paid']);
 
-                    // Trigger service provisioning
-                    $this->provisionServices($invoice);
+                    // Process completion (handles overpayments and provisioning)
+                    $this->processPaymentCompletion($payment, $invoice);
                 }
 
                 return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
@@ -209,10 +209,8 @@ class PaymentController extends Controller
                     ]);
                 }
 
-                $invoice->update(['status' => 'paid']);
-
-                // Trigger service provisioning
-                $this->provisionServices($invoice);
+                // Process completion (handles overpayments and provisioning)
+                $this->processPaymentCompletion($payment, $invoice);
 
                 return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
                     ->with('success', 'Payment received successfully!');
@@ -280,10 +278,8 @@ class PaymentController extends Controller
                     ]);
                 }
 
-                $invoice->update(['status' => 'paid']);
-
-                // Trigger service provisioning
-                $this->provisionServices($invoice);
+                // Process completion (handles overpayments and provisioning)
+                $this->processPaymentCompletion($payment, $invoice);
 
                 return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
                     ->with('success', 'Payment received successfully!');
@@ -369,6 +365,29 @@ class PaymentController extends Controller
             Log::error('PayPal webhook error', ['error' => $e->getMessage()]);
             return response()->json(['success' => false], 500);
         }
+    }
+
+    /**
+     * Process payment completion including credits and auto-provisioning
+     */
+    private function processPaymentCompletion(Payment $payment, Invoice $invoice): void
+    {
+        // Handle overpayments by creating credits
+        if ($payment->isOverpayment()) {
+            $payment->createCreditFromOverpayment();
+
+            Log::info('Overpayment detected and credited', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $invoice->id,
+                'overpayment_amount' => $payment->getOverpaymentAmount(),
+            ]);
+        }
+
+        // Mark invoice as paid
+        $invoice->update(['status' => 'paid']);
+
+        // Trigger service provisioning
+        $this->provisionServices($invoice);
     }
 
     /**

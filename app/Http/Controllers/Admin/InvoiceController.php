@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
-use Barryvdh\DomPDF\Facade\Pdf;
 
 class InvoiceController extends Controller
 {
@@ -103,18 +102,11 @@ class InvoiceController extends Controller
 
     public function download(Invoice $invoice)
     {
-        $invoice->load('user', 'items.product', 'payments');
-        $settings = [
-            'logo_url' => Setting::getValue('logo_url', ''),
-            'company_name' => Setting::getValue('company_name', 'Talksasa Cloud'),
-            'billing_address' => Setting::getValue('billing_address', ''),
-            'billing_city' => Setting::getValue('billing_city', ''),
-            'billing_country' => Setting::getValue('billing_country', ''),
-            'billing_vat_number' => Setting::getValue('billing_vat_number', ''),
-            'footer_text' => Setting::getValue('footer_text', ''),
-        ];
+        return \App\Services\InvoicePdfService::download($invoice);
+    }
 
-        return Pdf::loadView('pdf.invoice', compact('invoice', 'settings'))
-            ->download('invoice-' . $invoice->invoice_number . '.pdf');
+    public function preview(Invoice $invoice)
+    {
+        return \App\Services\InvoicePdfService::stream($invoice);
     }
 }

@@ -49,6 +49,17 @@ class Invoice extends Model
         return $this->hasMany(Service::class);
     }
 
+    public function credits()
+    {
+        return $this->belongsToMany(
+            Credit::class,
+            'credit_applications',
+            'invoice_id',
+            'credit_id'
+        )->withPivot('amount_applied')
+        ->withTimestamps();
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';
@@ -66,6 +77,22 @@ class Invoice extends Model
 
     public function getAmountRemaining(): float
     {
-        return $this->total - $this->getAmountPaid();
+        return max(0, $this->total - $this->getAmountPaid() - $this->getAppliedCredits());
+    }
+
+    /**
+     * Get total credits applied to this invoice
+     */
+    public function getAppliedCredits(): float
+    {
+        return $this->credits()->sum('credit_applications.amount_applied') ?? 0;
+    }
+
+    /**
+     * Check if invoice is fully paid (including credits)
+     */
+    public function isFullyPaid(): bool
+    {
+        return $this->getAmountRemaining() <= 0;
     }
 }

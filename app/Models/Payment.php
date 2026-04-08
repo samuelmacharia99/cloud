@@ -35,6 +35,11 @@ class Payment extends Model
         return $this->belongsTo(Invoice::class);
     }
 
+    public function credit()
+    {
+        return $this->hasOne(Credit::class);
+    }
+
     // Status Checks
     public function isCompleted(): bool
     {
@@ -54,6 +59,42 @@ class Payment extends Model
     public function isReversed(): bool
     {
         return $this->status === PaymentStatus::Reversed;
+    }
+
+    /**
+     * Check if this payment is an overpayment
+     */
+    public function isOverpayment(): bool
+    {
+        if (!$this->invoice) {
+            return false;
+        }
+
+        return $this->amount > $this->invoice->total;
+    }
+
+    /**
+     * Get overpayment amount
+     */
+    public function getOverpaymentAmount(): float
+    {
+        if (!$this->invoice || !$this->isOverpayment()) {
+            return 0;
+        }
+
+        return $this->amount - $this->invoice->total;
+    }
+
+    /**
+     * Process overpayment as credit
+     */
+    public function createCreditFromOverpayment(): ?Credit
+    {
+        if (!$this->isOverpayment()) {
+            return null;
+        }
+
+        return \App\Services\CreditService::createFromOverpayment($this);
     }
 
     // Scopes
