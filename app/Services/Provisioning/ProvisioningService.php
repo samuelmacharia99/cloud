@@ -21,6 +21,9 @@ class ProvisioningService
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService();
                 $containerService->deploy($service);
+            } elseif ($driver === 'server') {
+                $serverService = new ServerProvisioningService();
+                $serverService->provision($service);
             } else {
                 // For domains, manual hosting, etc. — just activate
                 $service->update(['status' => 'active']);

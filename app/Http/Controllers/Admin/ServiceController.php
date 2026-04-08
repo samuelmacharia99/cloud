@@ -217,6 +217,34 @@ class ServiceController extends Controller
         return back()->with('success', 'Service status refreshed.');
     }
 
+    public function resendCredentials(Service $service)
+    {
+        // Only allow for VPS and Dedicated Server products
+        if (!Product::isServerType($service->product->type)) {
+            return back()->with('error', 'Credentials can only be resent for VPS and Dedicated Server services.');
+        }
+
+        // Check if service has credentials
+        if (!$service->credentials) {
+            return back()->with('error', 'No credentials found for this service.');
+        }
+
+        try {
+            // Send credentials to customer
+            \Mail::to($service->user->email)->send(new \App\Mail\ServerCredentialsMail($service));
+
+            // Send order notification to admin
+            $adminEmail = Setting::getValue('admin_email');
+            if ($adminEmail) {
+                \Mail::to($adminEmail)->send(new \App\Mail\AdminServerOrderMail($service));
+            }
+
+            return back()->with('success', 'Credentials have been resent to the customer and admin.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to send credentials: ' . $e->getMessage());
+        }
+    }
+
     /**
      * Get service price based on billing cycle
      */

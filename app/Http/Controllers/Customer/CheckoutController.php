@@ -223,6 +223,12 @@ class CheckoutController extends Controller
                             }
                         }
 
+                        // Determine provisioning driver
+                        $provisioningDriver = $product->provisioning_driver_key;
+                        if (! $provisioningDriver && Product::isServerType($product->type)) {
+                            $provisioningDriver = 'server';
+                        }
+
                         // Create Service
                         $service = Service::create([
                             'user_id' => $user->id,
@@ -232,7 +238,7 @@ class CheckoutController extends Controller
                             'status' => 'pending',
                             'billing_cycle' => $item['billing_cycle'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
-                            'provisioning_driver_key' => $product->provisioning_driver_key,
+                            'provisioning_driver_key' => $provisioningDriver,
                             'service_meta' => $serviceMeta,
                         ]);
 

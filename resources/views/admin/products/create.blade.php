@@ -61,6 +61,8 @@
                             <option value="">Select a type...</option>
                             <option value="shared_hosting" @selected(old('type') === 'shared_hosting')>Shared Hosting</option>
                             <option value="container_hosting" @selected(old('type') === 'container_hosting')>Container Hosting</option>
+                            <option value="vps" @selected(old('type') === 'vps')>VPS Server</option>
+                            <option value="dedicated_server" @selected(old('type') === 'dedicated_server')>Dedicated Server</option>
                             <option value="ssl" @selected(old('type') === 'ssl')>SSL Certificate</option>
                             <option value="email_hosting" @selected(old('type') === 'email_hosting')>Email Hosting</option>
                         </select>
@@ -194,6 +196,44 @@
                         @error('ram_overage_rate')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
+                    </div>
+                </div>
+            </div>
+
+            <!-- Server Configuration (VPS / Dedicated Server) -->
+            <div x-show="document.getElementById('type').value === 'vps' || document.getElementById('type').value === 'dedicated_server'" class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <div class="space-y-4 mb-4">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Server Configuration</h3>
+                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                        <p class="text-sm text-blue-900 dark:text-blue-300">Login credentials (username: <code class="font-mono">root</code>, password: auto-generated) will be emailed to the customer and admin upon provisioning.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Server Specs -->
+                    <div>
+                        <label for="server_specs" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Server Specifications <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                        <textarea id="server_specs" name="resource_limits[specs]" rows="3" placeholder="2 vCPU, 4GB RAM, 100GB SSD" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none">{{ old('resource_limits.specs') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['specs'] ?? '' : '') }}</textarea>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">E.g., "2 vCPU, 4GB RAM, 100GB SSD"</p>
+                    </div>
+
+                    <!-- Datacenter Location -->
+                    <div>
+                        <label for="server_location" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Datacenter Location <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                        <input type="text" id="server_location" name="resource_limits[location]" value="{{ old('resource_limits.location') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['location'] ?? '' : '') }}" placeholder="Nairobi, Kenya" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                    </div>
+
+                    <!-- Operating System -->
+                    <div>
+                        <label for="server_os" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Operating System <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                        <select id="server_os" name="resource_limits[os]" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                            <option value="">Select an OS...</option>
+                            <option value="ubuntu_2204" @selected((old('resource_limits.os') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['os'] ?? '' : '')) === 'ubuntu_2204')>Ubuntu 22.04 LTS</option>
+                            <option value="ubuntu_2004" @selected((old('resource_limits.os') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['os'] ?? '' : '')) === 'ubuntu_2004')>Ubuntu 20.04 LTS</option>
+                            <option value="centos_8" @selected((old('resource_limits.os') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['os'] ?? '' : '')) === 'centos_8')>CentOS 8</option>
+                            <option value="debian_11" @selected((old('resource_limits.os') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['os'] ?? '' : '')) === 'debian_11')>Debian 11</option>
+                            <option value="windows_2022" @selected((old('resource_limits.os') ?? (old('resource_limits') ? json_decode(old('resource_limits'), true)['os'] ?? '' : '')) === 'windows_2022')>Windows Server 2022</option>
+                        </select>
                     </div>
                 </div>
             </div>

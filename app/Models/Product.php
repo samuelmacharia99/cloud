@@ -53,6 +53,8 @@ class Product extends Model
         'container_hosting' => 'Container Hosting',
         'ssl' => 'SSL Certificate',
         'email_hosting' => 'Email Hosting',
+        'vps' => 'VPS Server',
+        'dedicated_server' => 'Dedicated Server',
     ];
 
     public function services()
@@ -76,5 +78,13 @@ class Product extends Model
     public static function typeLabel(string $type): string
     {
         return self::TYPES[$type] ?? ucfirst(str_replace('_', ' ', $type));
+    }
+
+    /**
+     * Check if a product type is a server type (VPS or Dedicated Server)
+     */
+    public static function isServerType(string $type): bool
+    {
+        return in_array($type, ['vps', 'dedicated_server']);
     }
 }
