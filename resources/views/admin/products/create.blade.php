@@ -157,8 +157,8 @@
                 </div>
             </div>
 
-            <!-- Resource Limits (Full width) -->
-            <div>
+            <!-- Resource Limits (Full width) - Hide for VPS/Dedicated Server -->
+            <div x-show="document.getElementById('type').value !== 'vps' && document.getElementById('type').value !== 'dedicated_server'">
                 <label for="resource_limits" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Resource Limits <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(JSON format, optional)</span></label>
                 <textarea id="resource_limits" name="resource_limits" rows="4" placeholder='{"cpu": "2", "memory": "2GB", "disk": "20GB"}' class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono resize-none">{{ is_array(old('resource_limits')) ? json_encode(old('resource_limits')) : old('resource_limits') }}</textarea>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter valid JSON or leave blank</p>

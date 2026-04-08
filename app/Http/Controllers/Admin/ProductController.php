@@ -45,6 +45,15 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
+        // Custom validation for resource_limits (can be JSON string or array for server configs)
+        $resourceLimits = $request->input('resource_limits');
+        $resourceLimitsRule = 'nullable';
+
+        if ($resourceLimits !== null && !is_array($resourceLimits)) {
+            // If it's a string, validate as JSON
+            $resourceLimitsRule = 'nullable|json';
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:products,name',
             'slug' => 'nullable|string|max:255|unique:products,slug',
@@ -55,7 +64,7 @@ class ProductController extends Controller
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
             'provisioning_driver_key' => 'nullable|string',
-            'resource_limits' => 'nullable|json',
+            'resource_limits' => $resourceLimitsRule,
             'is_active' => 'boolean',
             'visible_to_resellers' => 'boolean',
             'featured' => 'boolean',
@@ -69,7 +78,7 @@ class ProductController extends Controller
             $validated['slug'] = Str::slug($validated['name']);
         }
 
-        // Parse JSON resource limits if string
+        // Parse JSON resource limits if string, or keep as array if already an array
         if (is_string($validated['resource_limits'] ?? null)) {
             $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
         }
@@ -98,6 +107,15 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
+        // Custom validation for resource_limits (can be JSON string or array for server configs)
+        $resourceLimits = $request->input('resource_limits');
+        $resourceLimitsRule = 'nullable';
+
+        if ($resourceLimits !== null && !is_array($resourceLimits)) {
+            // If it's a string, validate as JSON
+            $resourceLimitsRule = 'nullable|json';
+        }
+
         $validated = $request->validate([
             'name' => 'required|string|max:255|unique:products,name,' . $product->id,
             'slug' => 'required|string|max:255|unique:products,slug,' . $product->id,
@@ -108,7 +126,7 @@ class ProductController extends Controller
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
             'provisioning_driver_key' => 'nullable|string',
-            'resource_limits' => 'nullable|json',
+            'resource_limits' => $resourceLimitsRule,
             'is_active' => 'boolean',
             'visible_to_resellers' => 'boolean',
             'featured' => 'boolean',
@@ -117,7 +135,7 @@ class ProductController extends Controller
             'ram_overage_rate' => 'nullable|numeric|min:0',
         ]);
 
-        // Parse JSON resource limits if string
+        // Parse JSON resource limits if string, or keep as array if already an array
         if (is_string($validated['resource_limits'] ?? null)) {
             $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
         }
