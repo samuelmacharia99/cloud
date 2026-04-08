@@ -139,11 +139,13 @@ class DomainController extends Controller
             'registrar' => 'required|string',
             'dns_management' => 'nullable|boolean',
             'auto_renewal' => 'nullable|boolean',
+            'transfer_price' => 'nullable|numeric|min:0',
         ]);
 
         $validated['dns_management'] = $request->has('dns_management');
         $validated['auto_renewal'] = $request->has('auto_renewal');
         $validated['enabled'] = true;
+        $validated['transfer_price'] = $validated['transfer_price'] ?? 0;
 
         DomainExtension::create($validated);
 

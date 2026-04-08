@@ -218,6 +218,23 @@
                     @error('registrar')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
                 </div>
 
+                <div>
+                    <label for="transfer_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Transfer Price</label>
+                    <div class="flex items-center gap-2">
+                        <span class="text-slate-900 dark:text-white font-medium">$</span>
+                        <input
+                            type="number"
+                            id="transfer_price"
+                            name="transfer_price"
+                            placeholder="0.00"
+                            value="{{ old('transfer_price') }}"
+                            step="0.01"
+                            min="0"
+                            class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Price charged for domain transfers (one-time)</p>
+                </div>
+
                 <div class="space-y-2">
                     <label for="dns_management" class="flex items-center gap-2 cursor-pointer">
                         <input

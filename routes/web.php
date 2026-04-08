@@ -139,6 +139,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/deploy-service', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
         Route::get('/browse-services', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
         Route::get('/my/domains', [\App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
+        Route::get('/my/domains/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferForm'])->name('customer.domains.transfer-form');
+        Route::post('/my/domains/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'processTransfer'])->name('customer.domains.process-transfer');
+        Route::get('/my/domains/{domain}/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferDetails'])->name('customer.domains.transfer-details');
+        Route::post('/my/domains/{domain}/transfer/cancel', [\App\Http\Controllers\Customer\DomainController::class, 'cancelTransfer'])->name('customer.domains.cancel-transfer');
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
 
         // Shopping cart

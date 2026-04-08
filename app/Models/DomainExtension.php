@@ -17,12 +17,14 @@ class DomainExtension extends Model
         'registrar',
         'dns_management',
         'auto_renewal',
+        'transfer_price',
     ];
 
     protected $casts = [
         'enabled' => 'boolean',
         'dns_management' => 'boolean',
         'auto_renewal' => 'boolean',
+        'transfer_price' => 'decimal:2',
     ];
 
     public function pricing()

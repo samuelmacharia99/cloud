@@ -10,6 +10,9 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Domains</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your domain registrations</p>
         </div>
+        <a href="{{ route('customer.domains.transfer-form') }}" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition inline-block">
+            Transfer Domain
+        </a>
     </div>
 
     <!-- Registered Domains Section -->
@@ -155,5 +158,6 @@
             </div>
         </div>
     </div>
+
 </div>
 @endsection

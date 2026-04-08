@@ -28,6 +28,24 @@ class CheckoutController extends Controller
      */
     public function show(Request $request)
     {
+        // Check if an invoice_id is provided (for direct invoice checkout like domain transfers)
+        if ($request->has('invoice_id')) {
+            $invoice = Invoice::where('id', $request->invoice_id)
+                ->where('user_id', auth()->id())
+                ->firstOrFail();
+
+            // Get currency info
+            $currencyCode = Setting::getValue('currency', 'KES');
+            $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
+            return view('customer.checkout.invoice', [
+                'invoice' => $invoice,
+                'user' => auth()->user(),
+                'currency' => $currency,
+                'currencyCode' => $currencyCode,
+            ]);
+        }
+
         // Get cart from session and localStorage (domains)
         $cart = session(self::CART_SESSION_KEY, []);
 
