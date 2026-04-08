@@ -156,9 +156,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'show'])->name('customer.checkout.show');
         Route::post('/checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'process'])->name('customer.checkout.process');
 
-        // Payment methods
-        Route::get('/payments', [\App\Http\Controllers\Customer\PaymentController::class, 'index'])->name('customer.payments.index');
-        Route::get('/payments/{payment}', [\App\Http\Controllers\Customer\PaymentController::class, 'show'])->name('customer.payments.show');
+        // Payment methods (resource routes already defined above, these are additional payment workflows)
         Route::get('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
         Route::post('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'initiate'])->name('customer.payment.initiate');
         Route::get('/invoices/{invoice}/pay/mpesa/verify', [\App\Http\Controllers\Customer\PaymentController::class, 'verifyMpesa'])->name('customer.payment.verify-mpesa');
