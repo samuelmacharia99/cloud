@@ -328,6 +328,21 @@ class PaymentController extends Controller
             $gateway = PaymentGatewayFactory::make('mpesa');
             $result = $gateway->handleCallback($request->all());
 
+            // If payment was successful, trigger provisioning
+            if ($result['success'] && isset($result['payment_id'])) {
+                $payment = Payment::find($result['payment_id']);
+                if ($payment && $payment->invoice) {
+                    try {
+                        $this->provisionServices($payment->invoice);
+                    } catch (\Exception $e) {
+                        Log::error('Auto-provisioning failed from webhook', [
+                            'payment_id' => $payment->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+
             return response()->json($result);
         } catch (\Exception $e) {
             Log::error('M-Pesa callback error', ['error' => $e->getMessage()]);
@@ -344,6 +359,21 @@ class PaymentController extends Controller
             $gateway = PaymentGatewayFactory::make('stripe');
             $result = $gateway->handleWebhook($request->all());
 
+            // If payment was successful, trigger provisioning
+            if ($result['success'] && isset($result['payment_id'])) {
+                $payment = Payment::find($result['payment_id']);
+                if ($payment && $payment->invoice) {
+                    try {
+                        $this->provisionServices($payment->invoice);
+                    } catch (\Exception $e) {
+                        Log::error('Auto-provisioning failed from webhook', [
+                            'payment_id' => $payment->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+
             return response()->json($result);
         } catch (\Exception $e) {
             Log::error('Stripe webhook error', ['error' => $e->getMessage()]);
@@ -359,6 +389,21 @@ class PaymentController extends Controller
         try {
             $gateway = PaymentGatewayFactory::make('paypal');
             $result = $gateway->handleWebhook($request->all());
+
+            // If payment was successful, trigger provisioning
+            if ($result['success'] && isset($result['payment_id'])) {
+                $payment = Payment::find($result['payment_id']);
+                if ($payment && $payment->invoice) {
+                    try {
+                        $this->provisionServices($payment->invoice);
+                    } catch (\Exception $e) {
+                        Log::error('Auto-provisioning failed from webhook', [
+                            'payment_id' => $payment->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
 
             return response()->json($result);
         } catch (\Exception $e) {
