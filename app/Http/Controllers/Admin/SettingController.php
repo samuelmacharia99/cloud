@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\Setting;
+use App\Models\Currency;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Storage;
@@ -68,8 +69,9 @@ class SettingController extends Controller
         $keys = $this->groups[$group] ?? $this->groups['general'];
         $settings = Setting::whereIn('key', $keys)->pluck('value', 'key');
         $groups = $this->groups;
+        $currencies = Currency::active()->get();
 
-        return view('admin.settings.index', compact('group', 'settings', 'keys', 'groups'));
+        return view('admin.settings.index', compact('group', 'settings', 'keys', 'groups', 'currencies'));
     }
 
     public function update(Request $request)

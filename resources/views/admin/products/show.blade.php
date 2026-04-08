@@ -81,7 +81,7 @@
                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Monthly Revenue</p>
                 <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
                     @if ($product->monthly_price)
-                        ${{ number_format($product->monthly_price, 2) }}
+                        {{ $currency?->symbol ?? 'KES' }}{{ number_format($product->monthly_price * ($currency?->exchange_rate ?? 1), 2) }}
                     @else
                         -
                     @endif
@@ -92,7 +92,7 @@
                 <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Yearly Revenue</p>
                 <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
                     @if ($product->yearly_price)
-                        ${{ number_format($product->yearly_price, 2) }}
+                        {{ $currency?->symbol ?? 'KES' }}{{ number_format($product->yearly_price * ($currency?->exchange_rate ?? 1), 2) }}
                     @else
                         -
                     @endif
@@ -138,7 +138,7 @@
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Monthly Price</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">
                             @if ($product->monthly_price)
-                                ${{ number_format($product->monthly_price, 2) }} / month
+                                {{ $currency?->symbol ?? 'KES' }}{{ number_format($product->monthly_price * ($currency?->exchange_rate ?? 1), 2) }} / month
                             @else
                                 Not set
                             @endif
@@ -148,7 +148,7 @@
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Yearly Price</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">
                             @if ($product->yearly_price)
-                                ${{ number_format($product->yearly_price, 2) }} / year
+                                {{ $currency?->symbol ?? 'KES' }}{{ number_format($product->yearly_price * ($currency?->exchange_rate ?? 1), 2) }} / year
                             @else
                                 Not set
                             @endif
@@ -158,7 +158,7 @@
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Setup Fee</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">
                             @if ($product->setup_fee)
-                                ${{ number_format($product->setup_fee, 2) }}
+                                {{ $currency?->symbol ?? 'KES' }}{{ number_format($product->setup_fee * ($currency?->exchange_rate ?? 1), 2) }}
                             @else
                                 No setup fee
                             @endif

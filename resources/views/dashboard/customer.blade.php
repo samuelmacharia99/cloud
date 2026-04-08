@@ -92,12 +92,12 @@
                 <h2 class="text-2xl font-bold">Ready to expand?</h2>
                 <p class="text-emerald-100 mt-1">Deploy a new service instantly and scale your infrastructure</p>
             </div>
-            <button class="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 font-semibold rounded-lg transition flex items-center gap-2">
+            <a href="{{ route('customer.select-techstack') }}" class="px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-600 font-semibold rounded-lg transition flex items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
                 Deploy Service
-            </button>
+            </a>
         </div>
     </div>
 

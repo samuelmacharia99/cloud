@@ -5,18 +5,18 @@ namespace App\Enums;
 enum PaymentMethod: string
 {
     case Mpesa = 'mpesa';
-    case Card = 'card';
+    case Stripe = 'stripe';
+    case PayPal = 'paypal';
     case BankTransfer = 'bank_transfer';
-    case Wallet = 'wallet';
     case Manual = 'manual';
 
     public function label(): string
     {
         return match ($this) {
             self::Mpesa => 'M-PESA',
-            self::Card => 'Credit/Debit Card',
+            self::Stripe => 'Stripe (Card)',
+            self::PayPal => 'PayPal',
             self::BankTransfer => 'Bank Transfer',
-            self::Wallet => 'Wallet',
             self::Manual => 'Manual Entry',
         };
     }
@@ -25,9 +25,9 @@ enum PaymentMethod: string
     {
         return match ($this) {
             self::Mpesa => 'phone',
-            self::Card => 'credit-card',
+            self::Stripe => 'credit-card',
+            self::PayPal => 'globe',
             self::BankTransfer => 'building-2',
-            self::Wallet => 'wallet',
             self::Manual => 'check',
         };
     }
@@ -36,11 +36,16 @@ enum PaymentMethod: string
     {
         return match ($this) {
             self::Mpesa => 'green',
-            self::Card => 'blue',
+            self::Stripe => 'purple',
+            self::PayPal => 'blue',
             self::BankTransfer => 'slate',
-            self::Wallet => 'purple',
             self::Manual => 'amber',
         };
+    }
+
+    public function isOnline(): bool
+    {
+        return in_array($this, [self::Mpesa, self::Stripe, self::PayPal]);
     }
 
     public static function options(): array
@@ -48,5 +53,14 @@ enum PaymentMethod: string
         return collect(self::cases())
             ->mapWithKeys(fn (self $case) => [$case->value => $case->label()])
             ->toArray();
+    }
+
+    public static function onlineGateways(): array
+    {
+        return [
+            self::Mpesa->value => self::Mpesa->label(),
+            self::Stripe->value => self::Stripe->label(),
+            self::PayPal->value => self::PayPal->label(),
+        ];
     }
 }

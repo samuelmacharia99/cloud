@@ -22,6 +22,16 @@ class ProfileController extends Controller
     }
 
     /**
+     * Display the user's security settings.
+     */
+    public function security(Request $request): View
+    {
+        return view('profile.security', [
+            'user' => $request->user(),
+        ]);
+    }
+
+    /**
      * Update the user's profile information.
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
@@ -56,5 +66,16 @@ class ProfileController extends Controller
         $request->session()->regenerateToken();
 
         return Redirect::to('/');
+    }
+
+    /**
+     * Log out user from all other sessions.
+     */
+    public function logoutOtherSessions(Request $request): RedirectResponse
+    {
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return Redirect::route('profile.security')->with('status', 'sessions-cleared');
     }
 }

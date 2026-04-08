@@ -49,6 +49,9 @@
                 <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
                     SMS
                 </button>
+                <button @click="activeTab = 'currencies'" :class="activeTab === 'currencies' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm">
+                    Currencies
+                </button>
             </div>
         </div>
 
@@ -72,8 +75,14 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Regional Settings</legend>
                     <div class="space-y-4">
                         <x-form-select name="settings[timezone]" label="Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg']" value="{{ $settings['timezone'] ?? 'UTC' }}" />
-                        <x-form-select name="settings[currency]" label="Default Currency" :options="['KES' => 'KES', 'USD' => 'USD', 'EUR' => 'EUR']" value="{{ $settings['currency'] ?? 'KES' }}" />
-                        <x-form-input name="settings[currency_symbol]" label="Currency Symbol" value="{{ $settings['currency_symbol'] ?? 'Ksh' }}" />
+                        @php
+                            $currencyOptions = $currencies->pluck('name', 'code')->toArray();
+                        @endphp
+                        <x-form-select name="settings[currency]" label="Default Currency" :options="$currencyOptions" value="{{ $settings['currency'] ?? 'KES' }}" />
+                        @php
+                            $selectedCurrency = $currencies->where('code', $settings['currency'] ?? 'KES')->first();
+                        @endphp
+                        <x-form-input name="settings[currency_symbol]" label="Currency Symbol" value="{{ $selectedCurrency->symbol ?? 'KES' }}" readonly />
                     </div>
                 </fieldset>
             </div>
@@ -656,6 +665,110 @@
                                 Send Test SMS
                             </button>
                         </form>
+                    </div>
+                </fieldset>
+            </div>
+
+            <!-- Currencies Tab -->
+            <div x-show="activeTab === 'currencies'" class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Manage currencies and exchange rates. Base currency is Kenya Shilling (KES).
+                    </p>
+                </div>
+
+                <fieldset>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Currency Management</legend>
+
+                    <!-- Quick Stats -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Base Currency</p>
+                            <p class="text-xl font-bold text-slate-900 dark:text-white">KES</p>
+                        </div>
+                        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Active Currencies</p>
+                            <p class="text-xl font-bold text-slate-900 dark:text-white">{{ $currencies->where('is_active', true)->count() }}</p>
+                        </div>
+                        <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Last Updated</p>
+                            @php
+                                $lastUpdated = $currencies->max('rate_updated_at');
+                            @endphp
+                            <p class="text-sm font-mono text-slate-900 dark:text-white">
+                                @if ($lastUpdated)
+                                    {{ \Carbon\Carbon::parse($lastUpdated)->format('M d H:i') }}
+                                @else
+                                    Never
+                                @endif
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex flex-wrap gap-3 mb-6">
+                        <form action="{{ route('admin.currencies.refresh') }}" method="POST" style="display:inline;">
+                            @csrf
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition text-sm">
+                                🔄 Refresh Exchange Rates
+                            </button>
+                        </form>
+                        <a href="{{ route('admin.currencies.index') }}" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition text-sm inline-flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                            </svg>
+                            Full Currency Manager
+                        </a>
+                    </div>
+
+                    <!-- Currencies Table -->
+                    <div class="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-lg">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white">Code</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white">Name</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white">Symbol</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white">Exchange Rate</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-slate-900 dark:text-white">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                                @forelse ($currencies->sortByDesc('is_active')->sortBy('code') as $currency)
+                                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                        <td class="px-4 py-3 font-mono font-semibold text-slate-900 dark:text-white">
+                                            {{ $currency->code }}
+                                            @if ($currency->code === 'KES')
+                                                <span class="ml-2 px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs rounded">Base</span>
+                                            @endif
+                                        </td>
+                                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ $currency->name }}</td>
+                                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold">{{ $currency->symbol }}</td>
+                                        <td class="px-4 py-3 text-slate-700 dark:text-slate-300 font-mono text-xs">{{ number_format($currency->exchange_rate, 6) }}</td>
+                                        <td class="px-4 py-3">
+                                            @if ($currency->is_active)
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs rounded-full font-medium">
+                                                    ✓ Active
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center gap-1.5 px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded-full font-medium">
+                                                    Inactive
+                                                </span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="px-4 py-6 text-center text-slate-600 dark:text-slate-400">
+                                            No currencies configured. <a href="{{ route('admin.currencies.index') }}" class="text-blue-600 hover:underline font-medium">Manage currencies</a>
+                                        </td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
                     </div>
                 </fieldset>
             </div>

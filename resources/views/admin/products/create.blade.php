@@ -57,17 +57,29 @@
                     <!-- Type -->
                     <div>
                         <label for="type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type</label>
-                        <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required>
+                        <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="$nextTick(() => {})">
                             <option value="">Select a type...</option>
                             <option value="shared_hosting" @selected(old('type') === 'shared_hosting')>Shared Hosting</option>
                             <option value="container_hosting" @selected(old('type') === 'container_hosting')>Container Hosting</option>
-                            <option value="domain" @selected(old('type') === 'domain')>Domain</option>
                             <option value="ssl" @selected(old('type') === 'ssl')>SSL Certificate</option>
                             <option value="email_hosting" @selected(old('type') === 'email_hosting')>Email Hosting</option>
-                            <option value="sms_bundle" @selected(old('type') === 'sms_bundle')>SMS Bundle</option>
-                            <option value="hotspot_plan" @selected(old('type') === 'hotspot_plan')>Hotspot Plan</option>
                         </select>
                         @error('type')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- Container Template (conditional - only for container hosting) -->
+                    <div x-show="document.getElementById('type').value === 'container_hosting'">
+                        <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Container Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for container hosting)</span></label>
+                        <select id="container_template_id" name="container_template_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('container_template_id') border-red-500 @enderror">
+                            <option value="">Select a container template...</option>
+                            @foreach(\App\Models\ContainerTemplate::all() as $template)
+                                <option value="{{ $template->id }}" @selected(old('container_template_id') == $template->id)>{{ $template->name }}</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select which container template this package is for (PHP, Node.js, Python, etc.)</p>
+                        @error('container_template_id')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>

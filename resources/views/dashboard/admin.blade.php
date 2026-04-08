@@ -390,7 +390,7 @@
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $product->name }}</p>
-                                <p class="text-xs text-slate-600 dark:text-slate-400">${{ number_format($product->price, 2) }}</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $currency?->symbol ?? 'KES' }}{{ number_format(($product->monthly_price ?? $product->yearly_price ?? 0) * ($currency?->exchange_rate ?? 1), 2) }}</p>
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ $product->services_count }}</p>

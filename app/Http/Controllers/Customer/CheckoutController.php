@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Currency;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
@@ -82,6 +83,10 @@ class CheckoutController extends Controller
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
             'subtotal' => $subtotal,
@@ -90,6 +95,8 @@ class CheckoutController extends Controller
             'taxRate' => $taxRate,
             'total' => $total,
             'user' => auth()->user(),
+            'currency' => $currency,
+            'currencyCode' => $currencyCode,
         ]);
     }
 
@@ -435,6 +442,10 @@ class CheckoutController extends Controller
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
         return view('public.checkout', [
             'cartItems' => $cartItems,
             'subtotal' => $subtotal,
@@ -442,6 +453,8 @@ class CheckoutController extends Controller
             'taxEnabled' => $taxEnabled,
             'taxRate' => $taxRate,
             'total' => $total,
+            'currency' => $currency,
+            'currencyCode' => $currencyCode,
         ]);
     }
 

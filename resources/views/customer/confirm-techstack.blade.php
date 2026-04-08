@@ -3,7 +3,7 @@
 @section('title', 'Confirm Techstack & Choose Package')
 
 @section('content')
-<div class="space-y-6" x-data="packageConfigurator()">
+<div class="space-y-6" x-data="packageConfigurator('{{ $currencyCode }}', '{{ $currency?->symbol ?? 'KES' }}', {{ $currency?->exchange_rate ?? 1 }})">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
@@ -47,7 +47,7 @@
         @foreach($products as $product)
         <button
             type="button"
-            @click="selectProduct({{ $product->id }}, '{{ $product->name }}', {{ $product->monthly_price }})"
+            @click="selectProduct({{ $product->id }}, '{{ $product->name }}', {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }})"
             class="relative group overflow-hidden rounded-xl border-2 transition-all duration-300 p-6 text-left hover:shadow-lg"
             :class="selectedProductId === {{ $product->id }}
                 ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-lg'
@@ -63,7 +63,10 @@
 
             <!-- Price -->
             <div class="mb-4">
-                <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">KES {{ number_format($product->monthly_price, 0) }}</p>
+                <p class="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                    {{ $currency?->symbol ?? 'KES' }}
+                    {{ number_format(($product->monthly_price * ($currency?->exchange_rate ?? 1)), 0) }}
+                </p>
                 <p class="text-sm text-slate-600 dark:text-slate-400">per month</p>
             </div>
 
@@ -136,10 +139,10 @@
                 <!-- Summary with Dynamic Pricing -->
                 <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-700 rounded-lg p-4">
                     <p class="text-xs text-blue-700 dark:text-blue-400 mb-1">Total Amount Due</p>
-                    <p class="text-3xl font-bold text-blue-600 dark:text-blue-400" x-text="'KES ' + formatPrice(calculatedPrice)"></p>
+                    <p class="text-3xl font-bold text-blue-600 dark:text-blue-400" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></p>
                     <p class="text-sm text-blue-700 dark:text-blue-300 mt-2" x-text="getPricingLabel()"></p>
                     <template x-if="discountAmount > 0">
-                        <p class="text-sm text-green-700 dark:text-green-400 mt-1 font-semibold">You save KES <span x-text="formatPrice(discountAmount)"></span></p>
+                        <p class="text-sm text-green-700 dark:text-green-400 mt-1 font-semibold">You save <span x-text="currencySymbol + ' ' + formatPrice(discountAmount)"></span></p>
                     </template>
                 </div>
             </div>
@@ -148,21 +151,21 @@
             <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-2">
                 <div class="flex justify-between text-sm">
                     <span class="text-slate-600 dark:text-slate-400">Base Price (Monthly)</span>
-                    <span class="font-semibold text-slate-900 dark:text-white">KES <span x-text="formatPrice(basePrice)"></span></span>
+                    <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(basePrice)"></span>
                 </div>
                 <template x-if="billingMonths > 1">
                     <div class="flex justify-between text-sm">
                         <span class="text-slate-600 dark:text-slate-400" x-text="`${billingMonths} months × base price`"></span>
-                        <span class="font-semibold text-slate-900 dark:text-white">KES <span x-text="formatPrice(basePrice * billingMonths)"></span></span>
+                        <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(basePrice * billingMonths)"></span>
                     </div>
                     <div class="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
                         <span class="text-slate-600 dark:text-slate-400">Discount Applied</span>
-                        <span class="font-semibold text-green-700 dark:text-green-400" x-text="`-KES ${formatPrice(discountAmount)}`"></span>
+                        <span class="font-semibold text-green-700 dark:text-green-400" x-text="`-${currencySymbol} ${formatPrice(discountAmount)}`"></span>
                     </div>
                 </template>
                 <div class="flex justify-between text-base font-bold border-t border-slate-300 dark:border-slate-600 pt-2 mt-2">
                     <span class="text-slate-900 dark:text-white">Total Due</span>
-                    <span class="text-blue-600 dark:text-blue-400" x-text="'KES ' + formatPrice(calculatedPrice)"></span>
+                    <span class="text-blue-600 dark:text-blue-400" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></span>
                 </div>
             </div>
 
@@ -188,8 +191,13 @@
 </div>
 
 <script>
-function packageConfigurator() {
+function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
     return {
+        // Currency Info
+        currencyCode: currencyCode,
+        currencySymbol: currencySymbol,
+        exchangeRate: exchangeRate,
+
         // Package Selection
         selectedProductId: null,
         selectedProductName: '',

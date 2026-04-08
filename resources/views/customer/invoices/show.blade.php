@@ -157,119 +157,13 @@
                         </p>
                     </div>
                 @else
-                    <!-- Payment Panel -->
-                    <div x-data="{ paymentTab: 'mpesa', processing: false, message: '', phone: '' }" class="mb-6">
-                        <!-- Tabs -->
-                        <div class="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-800">
-                            <button @click="paymentTab = 'mpesa'" :class="paymentTab === 'mpesa' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-2 font-medium text-sm transition-colors">
-                                M-Pesa
-                            </button>
-                            <button @click="paymentTab = 'bank'" :class="paymentTab === 'bank' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-2 font-medium text-sm transition-colors">
-                                Bank Transfer
-                            </button>
-                        </div>
-
-                        <!-- M-Pesa Tab -->
-                        <div x-show="paymentTab === 'mpesa'" class="space-y-4 pb-6">
-                            <form @submit.prevent="async function() {
-                                this.processing = true;
-                                this.message = '';
-
-                                try {
-                                    const response = await fetch('{{ route("customer.mpesa.initiate", $invoice) }}', {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                            'X-CSRF-Token': document.querySelector('meta[name=\"csrf-token\"]').getAttribute('content'),
-                                        },
-                                        body: JSON.stringify({
-                                            phone: this.phone,
-                                        }),
-                                    });
-                                    const data = await response.json();
-                                    this.processing = false;
-                                    if (data.success) {
-                                        this.message = 'success: ' + data.message;
-                                    } else {
-                                        this.message = 'error: ' + data.message;
-                                    }
-                                } catch (error) {
-                                    this.processing = false;
-                                    this.message = 'error: ' + (error.message || 'Network error');
-                                }
-                            }()">
-                                <div class="space-y-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Phone Number</label>
-                                        <input type="tel" x-model="phone" placeholder="0712345678 or +254712345678" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm" required>
-                                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Enter your M-Pesa phone number. You'll receive a prompt to enter your PIN.</p>
-                                    </div>
-                                    <div class="flex gap-2 items-center">
-                                        <button type="submit" :disabled="processing" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition text-sm">
-                                            <span x-show="!processing">Pay Ksh {{ number_format($invoice->getAmountRemaining(), 0) }}</span>
-                                            <span x-show="processing">Processing...</span>
-                                        </button>
-                                        <div x-show="message" :class="message.includes('success') ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'" class="text-sm" x-text="message"></div>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-
-                        <!-- Bank Transfer Tab -->
-                        <div x-show="paymentTab === 'bank'" class="space-y-4 pb-6">
-                            @php
-                                $bankName = \App\Models\Setting::getValue('bank_name', '');
-                                $accountName = \App\Models\Setting::getValue('bank_account_name', '');
-                                $accountNumber = \App\Models\Setting::getValue('bank_account_number', '');
-                                $branch = \App\Models\Setting::getValue('bank_branch', '');
-                                $swiftCode = \App\Models\Setting::getValue('bank_swift_code', '');
-                            @endphp
-
-                            <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-3 mb-4">
-                                <h4 class="font-semibold text-slate-900 dark:text-white">Bank Details</h4>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                                    @if ($bankName)
-                                        <div>
-                                            <p class="text-slate-600 dark:text-slate-400">Bank Name</p>
-                                            <p class="font-medium text-slate-900 dark:text-white">{{ $bankName }}</p>
-                                        </div>
-                                    @endif
-                                    @if ($accountName)
-                                        <div>
-                                            <p class="text-slate-600 dark:text-slate-400">Account Name</p>
-                                            <p class="font-medium text-slate-900 dark:text-white">{{ $accountName }}</p>
-                                        </div>
-                                    @endif
-                                    @if ($accountNumber)
-                                        <div>
-                                            <p class="text-slate-600 dark:text-slate-400">Account Number</p>
-                                            <p class="font-medium text-slate-900 dark:text-white">{{ $accountNumber }}</p>
-                                        </div>
-                                    @endif
-                                    @if ($branch)
-                                        <div>
-                                            <p class="text-slate-600 dark:text-slate-400">Branch</p>
-                                            <p class="font-medium text-slate-900 dark:text-white">{{ $branch }}</p>
-                                        </div>
-                                    @endif
-                                    @if ($swiftCode)
-                                        <div>
-                                            <p class="text-slate-600 dark:text-slate-400">SWIFT Code</p>
-                                            <p class="font-medium text-slate-900 dark:text-white">{{ $swiftCode }}</p>
-                                        </div>
-                                    @endif
-                                </div>
-                            </div>
-
-                            <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                                <p class="text-sm text-blue-700 dark:text-blue-300">
-                                    <strong>Important:</strong> Please use invoice number <code class="bg-blue-100 dark:bg-blue-900 px-2 py-1 rounded">{{ $invoice->invoice_number }}</code> as your payment reference.
-                                </p>
-                            </div>
-
-                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-4">After sending the payment, contact support with your bank transfer receipt for payment confirmation.</p>
-                        </div>
-                    </div>
+                    <!-- Payment CTA Button -->
+                    <a href="{{ route('customer.payment.select-method', $invoice) }}" class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h10m4 0a1 1 0 11-2 0 1 1 0 012 0z"/>
+                        </svg>
+                        Pay Now - Ksh {{ number_format($invoice->total, 0) }}
+                    </a>
                 @endif
 
                 <!-- Download PDF Button -->

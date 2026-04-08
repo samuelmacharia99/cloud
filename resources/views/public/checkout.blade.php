@@ -88,7 +88,7 @@
         }
     </style>
 </head>
-<body class="bg-[#0F172A]" x-data="checkoutApp()">
+<body class="bg-[#0F172A]" x-data="checkoutApp('{{ $currencyCode }}', '{{ $currency?->symbol ?? 'KES' }}', {{ $currency?->exchange_rate ?? 1 }})">
     <!-- Navigation -->
     <nav class="fixed w-full top-0 z-50 bg-[#0F172A]/90 backdrop-blur-lg border-b border-[rgba(0,217,255,0.1)]">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
@@ -129,7 +129,7 @@
                                         <p class="text-sm text-slate-400">{{ $item['description'] ?? '' }}</p>
                                     </div>
                                     <div class="flex items-center gap-4">
-                                        <p class="text-lg font-bold text-cyan-400">KES {{ number_format($item['amount'], 0) }}</p>
+                                        <p class="text-lg font-bold text-cyan-400">{{ $currency?->symbol ?? 'KES' }} {{ number_format($item['amount'] * ($currency?->exchange_rate ?? 1), 0) }}</p>
                                         <button
                                             type="button"
                                             @click="removeItem('{{ $item['full_domain'] ?? $item['name'] }}')"
@@ -292,19 +292,19 @@
                         <div class="space-y-4 mb-6 pb-6 border-b border-[rgba(0,217,255,0.1)]">
                             <div class="flex justify-between text-slate-300">
                                 <span>Subtotal</span>
-                                <span class="font-semibold">KES {{ number_format($subtotal, 0) }}</span>
+                                <span class="font-semibold">{{ $currency?->symbol ?? 'KES' }} {{ number_format($subtotal * ($currency?->exchange_rate ?? 1), 0) }}</span>
                             </div>
                             @if ($taxEnabled && $tax > 0)
                                 <div class="flex justify-between text-slate-300">
                                     <span>Tax ({{ $taxRate }}%)</span>
-                                    <span class="font-semibold">KES {{ number_format($tax, 0) }}</span>
+                                    <span class="font-semibold">{{ $currency?->symbol ?? 'KES' }} {{ number_format($tax * ($currency?->exchange_rate ?? 1), 0) }}</span>
                                 </div>
                             @endif
                         </div>
 
                         <div class="flex justify-between items-center mb-8">
                             <span class="text-lg font-bold text-white">Total</span>
-                            <span class="text-3xl font-bold text-gradient">KES {{ number_format($total, 0) }}</span>
+                            <span class="text-3xl font-bold text-gradient">{{ $currency?->symbol ?? 'KES' }} {{ number_format($total * ($currency?->exchange_rate ?? 1), 0) }}</span>
                         </div>
 
                         <div class="pt-6 border-t border-[rgba(0,217,255,0.1)]">
@@ -340,8 +340,11 @@
     </footer>
 
     <script>
-        function checkoutApp() {
+        function checkoutApp(currencyCode, currencySymbol, exchangeRate) {
             return {
+                currencyCode: currencyCode,
+                currencySymbol: currencySymbol,
+                exchangeRate: exchangeRate,
                 removeItem(itemName) {
                     // Remove from localStorage cart
                     const cart = JSON.parse(localStorage.getItem('domainCart') || '[]');

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Models\Product;
+use App\Models\Currency;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
@@ -29,7 +31,11 @@ class ProductController extends Controller
 
         $products = $query->withCount('services')->paginate(15)->withQueryString();
 
-        return view('admin.products.index', compact('products'));
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
+        return view('admin.products.index', compact('products', 'currency', 'currencyCode'));
     }
 
     public function create()
@@ -44,6 +50,7 @@ class ProductController extends Controller
             'slug' => 'nullable|string|max:255|unique:products,slug',
             'description' => 'nullable|string',
             'type' => 'required|in:' . implode(',', array_keys(Product::TYPES)),
+            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
             'monthly_price' => 'nullable|numeric|min:0',
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
@@ -52,6 +59,9 @@ class ProductController extends Controller
             'is_active' => 'boolean',
             'visible_to_resellers' => 'boolean',
             'featured' => 'boolean',
+            'overage_enabled' => 'boolean',
+            'cpu_overage_rate' => 'nullable|numeric|min:0',
+            'ram_overage_rate' => 'nullable|numeric|min:0',
         ]);
 
         // Auto-generate slug from name if not provided
@@ -74,7 +84,11 @@ class ProductController extends Controller
     {
         $product->load('services');
 
-        return view('admin.products.show', compact('product'));
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
+        return view('admin.products.show', compact('product', 'currency', 'currencyCode'));
     }
 
     public function edit(Product $product)
@@ -89,6 +103,7 @@ class ProductController extends Controller
             'slug' => 'required|string|max:255|unique:products,slug,' . $product->id,
             'description' => 'nullable|string',
             'type' => 'required|in:' . implode(',', array_keys(Product::TYPES)),
+            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
             'monthly_price' => 'nullable|numeric|min:0',
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
@@ -97,6 +112,9 @@ class ProductController extends Controller
             'is_active' => 'boolean',
             'visible_to_resellers' => 'boolean',
             'featured' => 'boolean',
+            'overage_enabled' => 'boolean',
+            'cpu_overage_rate' => 'nullable|numeric|min:0',
+            'ram_overage_rate' => 'nullable|numeric|min:0',
         ]);
 
         // Parse JSON resource limits if string
@@ -108,5 +126,13 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.show', $product)
             ->with('success', 'Product updated successfully.');
+    }
+
+    public function destroy(Product $product)
+    {
+        $product->delete();
+
+        return redirect()->route('admin.products.index')
+            ->with('success', 'Product deleted successfully.');
     }
 }

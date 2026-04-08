@@ -377,7 +377,7 @@
                                     </div>
                                     <div class="text-right">
                                         <p class="text-2xl font-bold text-gradient">
-                                            KES <span x-text="formatPrice(domain.price)"></span>
+                                            {{ $currency?->symbol ?? 'KES' }} <span x-text="formatPrice(domain.price * {{ $currency?->exchange_rate ?? 1 }})"></span>
                                         </p>
                                         <p class="text-xs text-slate-500">per year</p>
                                     </div>
@@ -519,7 +519,7 @@
                             <h3 class="text-2xl font-bold text-white mb-2 {{ $isMostPopular ? 'mt-4' : '' }}">{{ $package->name }}</h3>
                             <p class="text-slate-400 text-sm mb-6">{{ $package->description }}</p>
                             <div class="mb-6">
-                                <span class="text-4xl font-bold {{ $isMostPopular ? 'text-gradient' : 'text-white' }}">KES {{ number_format($package->monthly_price, 0) }}</span>
+                                <span class="text-4xl font-bold {{ $isMostPopular ? 'text-gradient' : 'text-white' }}">{{ $currency?->symbol ?? 'KES' }} {{ number_format($package->monthly_price * ($currency?->exchange_rate ?? 1), 0) }}</span>
                                 <span class="text-slate-400 text-sm">/month</span>
                             </div>
                             <button class="{{ $isMostPopular ? 'btn-cyan' : 'btn-outline' }} w-full mb-8">Get Started</button>
@@ -594,7 +594,7 @@
                         <div>
                             <p class="font-semibold text-white font-mono" x-text="domain.full_domain"></p>
                             <p class="text-xs text-slate-400 mt-1">
-                                <span x-text="domain.years"></span> year(s) @ KES <span x-text="formatPrice(domain.price)"></span>/year
+                                <span x-text="domain.years"></span> year(s) @ {{ $currency?->symbol ?? 'KES' }} <span x-text="formatPrice(domain.price * {{ $currency?->exchange_rate ?? 1 }})"></span>/year
                             </p>
                         </div>
                     </div>
@@ -613,7 +613,7 @@
             <div class="space-y-2">
                 <div class="flex justify-between text-slate-300 text-sm">
                     <span>Subtotal</span>
-                    <span class="font-semibold">KES <span x-text="formatPrice(cartTotal)"></span></span>
+                    <span class="font-semibold">{{ $currency?->symbol ?? 'KES' }} <span x-text="formatPrice(cartTotal * {{ $currency?->exchange_rate ?? 1 }})"></span></span>
                 </div>
             </div>
             <button

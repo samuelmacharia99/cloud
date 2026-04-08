@@ -19,6 +19,11 @@ Route::post('/sync-cart', [\App\Http\Controllers\Customer\CheckoutController::cl
 Route::get('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'showPublic'])->name('checkout.show.public');
 Route::post('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'processPublic'])->name('checkout.process.public');
 
+// Payment webhooks (public, no authentication required)
+Route::post('/webhooks/mpesa/callback', [\App\Http\Controllers\Customer\PaymentController::class, 'mpesaCallback'])->name('payment.mpesa.callback');
+Route::post('/webhooks/stripe', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
+Route::post('/webhooks/paypal', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
@@ -140,13 +145,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/cart/add', [\App\Http\Controllers\Customer\CartController::class, 'add'])->name('customer.cart.add');
         Route::delete('/cart/{key}', [\App\Http\Controllers\Customer\CartController::class, 'remove'])->name('customer.cart.remove');
         Route::post('/cart/clear', [\App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
+        Route::post('/cart/check-domain', [\App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
 
         // Checkout
         Route::get('/checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'show'])->name('customer.checkout.show');
         Route::post('/checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'process'])->name('customer.checkout.process');
 
         // Payment methods
-        Route::post('/my/invoices/{invoice}/mpesa', [\App\Http\Controllers\Customer\MpesaController::class, 'initiate'])->name('customer.mpesa.initiate');
+        Route::get('/payments', [\App\Http\Controllers\Customer\PaymentController::class, 'index'])->name('customer.payments.index');
+        Route::get('/payments/{payment}', [\App\Http\Controllers\Customer\PaymentController::class, 'show'])->name('customer.payments.show');
+        Route::get('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
+        Route::post('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'initiate'])->name('customer.payment.initiate');
+        Route::get('/invoices/{invoice}/pay/mpesa/verify', [\App\Http\Controllers\Customer\PaymentController::class, 'verifyMpesa'])->name('customer.payment.verify-mpesa');
+        Route::get('/invoices/{invoice}/payment/success', [\App\Http\Controllers\Customer\PaymentController::class, 'success'])->name('customer.payment.success');
+        Route::get('/invoices/{invoice}/payment/stripe/success', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeSuccess'])->name('customer.payment.stripe.success');
+        Route::get('/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeCancel'])->name('customer.payment.stripe.cancel');
+        Route::get('/invoices/{invoice}/payment/paypal/success', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalSuccess'])->name('customer.payment.paypal.success');
+        Route::get('/invoices/{invoice}/payment/paypal/cancel', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalCancel'])->name('customer.payment.paypal.cancel');
 
         // Container management
         Route::get('my/services/{service}/container', [\App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
@@ -167,6 +182,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/security', [ProfileController::class, 'security'])->name('profile.security');
+    Route::post('/security/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions'])->name('profile.logout-other-sessions');
 });
 
 // M-Pesa callback (public, no auth required)

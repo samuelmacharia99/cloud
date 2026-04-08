@@ -9,6 +9,8 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Ticket;
 use App\Models\Product;
+use App\Models\Currency;
+use App\Models\Setting;
 
 class DashboardController extends Controller
 {
@@ -79,6 +81,10 @@ class DashboardController extends Controller
             ->take(5)
             ->get();
 
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
         // Recent Signups (last 7 days)
         $signupData = [];
         for ($i = 6; $i >= 0; $i--) {
@@ -117,6 +123,10 @@ class DashboardController extends Controller
             'revenueData' => json_encode($revenueData),
             'signupData' => json_encode($signupData),
             'topProducts' => $topProducts,
+
+            // Currency
+            'currency' => $currency,
+            'currencyCode' => $currencyCode,
         ]);
     }
 

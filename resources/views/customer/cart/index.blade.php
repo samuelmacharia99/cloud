@@ -2,6 +2,10 @@
 
 @section('title', 'Shopping Cart')
 
+@php
+    $domainExtensions = \App\Models\DomainExtension::where('enabled', true)->orderBy('extension')->get();
+@endphp
+
 @section('content')
 <div class="space-y-6">
     <!-- Header -->
@@ -11,8 +15,9 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Items -->
-        <div class="lg:col-span-2">
+        <!-- Items & Domain Attachment -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Cart Items -->
             @if($itemCount > 0)
                 <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                     <div class="overflow-x-auto">
@@ -61,6 +66,92 @@
                                 @endforeach
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                <!-- Add Domain Section -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="domainChecker()">
+                    <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Add Domain (Optional)</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Register a domain to use with your service</p>
+
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <!-- Domain Name -->
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Domain Name</label>
+                                <input type="text" x-model="domain" placeholder="example" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 text-sm" required>
+                                <p x-show="domainError" class="text-xs text-red-600 dark:text-red-400 mt-1" x-text="domainError"></p>
+                            </div>
+
+                            <!-- Domain Extension -->
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Extension</label>
+                                <select x-model="extension" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm" required>
+                                    <option value="">Select extension...</option>
+                                    @foreach($domainExtensions as $ext)
+                                        <option value="{{ $ext->extension }}">{{ $ext->extension }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <!-- Duration -->
+                            <div>
+                                <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Duration</label>
+                                <select x-model="years" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm" required>
+                                    <option value="1">1 Year</option>
+                                    <option value="2">2 Years</option>
+                                    <option value="3">3 Years</option>
+                                    <option value="5">5 Years</option>
+                                    <option value="10">10 Years</option>
+                                </select>
+                            </div>
+
+                            <!-- Check Availability Button -->
+                            <div class="flex items-end">
+                                <button type="button" @click="checkAvailability()" :disabled="!domain || !extension || checking" :class="!domain || !extension || checking ? 'opacity-50 cursor-not-allowed bg-slate-400' : 'bg-blue-600 hover:bg-blue-700'" class="w-full px-4 py-2 text-white rounded-lg font-medium transition text-sm">
+                                    <span x-show="!checking">Check Availability</span>
+                                    <span x-show="checking" class="inline-flex items-center justify-center gap-2">
+                                        <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Checking...
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Availability Status -->
+                        <div x-show="checked && domain && extension" class="p-4 rounded-lg" :class="available ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700'">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="flex items-start gap-3 flex-1">
+                                    <svg x-show="available" class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                    <svg x-show="!available" class="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                                    </svg>
+                                    <div>
+                                        <p class="font-semibold" :class="available ? 'text-emerald-900 dark:text-emerald-100' : 'text-red-900 dark:text-red-100'" x-text="statusMessage"></p>
+                                        <p x-show="available" class="text-sm text-emerald-700 dark:text-emerald-300 mt-1">
+                                            <span x-text="`Ksh ${price.toLocaleString()} per year`"></span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Add to Cart Button (Only if available) -->
+                                <form x-show="available" action="{{ route('customer.cart.add') }}" method="POST" class="flex-shrink-0">
+                                    @csrf
+                                    <input type="hidden" name="type" value="domain">
+                                    <input type="hidden" name="domain" :value="domain">
+                                    <input type="hidden" name="extension" :value="extension">
+                                    <input type="hidden" name="years" :value="years">
+                                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition text-sm whitespace-nowrap">
+                                        Add to Cart
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
             @else
@@ -116,4 +207,77 @@
         @endif
     </div>
 </div>
+
+<script>
+function domainChecker() {
+    return {
+        domain: '',
+        extension: '',
+        years: '1',
+        checking: false,
+        checked: false,
+        available: false,
+        price: 0,
+        domainError: '',
+        statusMessage: '',
+
+        async checkAvailability() {
+            if (!this.domain || !this.extension) {
+                return;
+            }
+
+            // Validate domain name
+            if (!this.isValidDomain(this.domain)) {
+                this.domainError = 'Domain name can only contain letters, numbers, and hyphens';
+                this.checked = false;
+                return;
+            } else {
+                this.domainError = '';
+            }
+
+            this.checking = true;
+            this.checked = false;
+
+            try {
+                const response = await fetch('{{ route("customer.cart.check-domain") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify({
+                        domain: this.domain,
+                        extension: this.extension,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.available = data.available;
+                    this.price = data.price;
+                    this.statusMessage = data.message;
+                    this.checked = true;
+                } else {
+                    this.available = false;
+                    this.statusMessage = data.message || 'Error checking availability';
+                    this.checked = true;
+                }
+            } catch (error) {
+                this.available = false;
+                this.statusMessage = 'Error checking domain availability';
+                this.checked = true;
+                console.error(error);
+            } finally {
+                this.checking = false;
+            }
+        },
+
+        isValidDomain(domain) {
+            const regex = /^[a-z0-9-]+$/i;
+            return regex.test(domain) && !domain.startsWith('-') && !domain.endsWith('-');
+        },
+    };
+}
+</script>
 @endsection

@@ -25,7 +25,7 @@
         @foreach($languages as $language)
             <button
                 type="button"
-                @click="selectLanguageAndShowModal($event, {{ $language->id }})"
+                @click="selectLanguageAndShowModal({{ $language->id }})"
                 class="p-4 border-2 rounded-lg transition-all text-left hover:shadow-lg"
                 :class="selectedLanguage.id === {{ $language->id }}
                     ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-md'
@@ -33,7 +33,7 @@
             >
                 <div class="flex items-start justify-between mb-2">
                     <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
-                    <svg v-if="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                     </svg>
                 </div>
@@ -105,14 +105,14 @@
                                         type="radio"
                                         name="database_id"
                                         :value="db.id"
-                                        @change="selectDatabase(db, true)"
+                                        @change="selectDatabase(db)"
                                         class="mt-1"
                                     >
                                     <div class="flex-1">
                                         <span class="font-semibold text-slate-900 dark:text-white" x-text="db.name"></span>
                                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="'Type: ' + db.type"></p>
                                     </div>
-                                    <svg v-if="selectedDatabase.id === db.id" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                    <svg x-show="selectedDatabase.id === db.id" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                                     </svg>
                                 </div>
@@ -183,7 +183,7 @@ function techstackSelector() {
         loading: false,
         confirmTechstackUrl: '{{ route("customer.confirm-techstack") }}',
 
-        selectLanguageAndShowModal(event, languageId) {
+        selectLanguageAndShowModal(languageId) {
             const language = @json($languages).find(l => l.id == languageId);
             this.selectedLanguage = language;
             this.selectedDatabase = {};

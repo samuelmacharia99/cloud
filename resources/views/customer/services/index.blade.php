@@ -10,12 +10,12 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Services</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your active services and subscriptions.</p>
         </div>
-        <button class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+        <a href="{{ route('customer.select-techstack') }}" class="inline-flex px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
             <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
             </svg>
             Deploy New Service
-        </button>
+        </a>
     </div>
 
     <!-- Services Cards/Grid -->
@@ -86,9 +86,9 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
             </svg>
             <p class="text-slate-600 dark:text-slate-400">You don't have any services yet</p>
-            <button class="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+            <a href="{{ route('customer.select-techstack') }}" class="inline-block mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                 Deploy Your First Service
-            </button>
+            </a>
         </div>
     @endif
 </div>

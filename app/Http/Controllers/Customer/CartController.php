@@ -8,6 +8,9 @@ use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Customer\DomainSearchController;
+use Exception;
+use ReflectionClass;
 
 class CartController extends Controller
 {
@@ -41,7 +44,8 @@ class CartController extends Controller
                     $pricing = $extension->getRetailPricing($item['years']);
                     $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
                     $item['amount'] = $item['unit_price'];
-                    $item['description'] = "{$item['domain']}{$item['extension']} for {$item['years']} year(s)";
+                    $item['name'] = "{$item['domain']}{$item['extension']}";
+                    $item['description'] = "Domain registration for {$item['years']} year(s)";
                 } else {
                     continue; // Skip if extension not found
                 }
@@ -69,7 +73,7 @@ class CartController extends Controller
     }
 
     /**
-     * Add item to cart (AJAX)
+     * Add item to cart (AJAX or form submission)
      */
     public function add(Request $request)
     {
@@ -88,10 +92,31 @@ class CartController extends Controller
             ];
         } elseif ($type === 'domain') {
             $request->validate([
-                'domain' => 'required|string',
+                'domain' => 'required|string|regex:/^[a-z0-9-]+$/i',
                 'extension' => 'required|string|exists:domain_extensions,extension',
                 'years' => 'required|integer|min:1|max:10',
             ]);
+
+            // Verify domain extension exists and is enabled
+            $extension = DomainExtension::where('extension', $request->extension)
+                ->where('enabled', true)
+                ->first();
+
+            if (!$extension) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This domain extension is not available',
+                ], 422);
+            }
+
+            // Verify pricing exists for this period
+            $pricing = $extension->getRetailPricing($request->years);
+            if (!$pricing) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Pricing not available for this registration period',
+                ], 422);
+            }
 
             $item = [
                 'type' => 'domain',
@@ -100,10 +125,15 @@ class CartController extends Controller
                 'years' => $request->years,
             ];
         } else {
-            return response()->json([
+            $response = [
                 'success' => false,
                 'message' => 'Invalid item type',
-            ], 400);
+            ];
+
+            if ($request->expectsJson()) {
+                return response()->json($response, 400);
+            }
+            return back()->with('error', $response['message']);
         }
 
         // Generate unique key
@@ -115,11 +145,18 @@ class CartController extends Controller
         $cart[$key] = $item;
         session([self::CART_SESSION_KEY => $cart]);
 
-        return response()->json([
+        $response = [
             'success' => true,
             'item_count' => count($cart),
             'message' => 'Item added to cart',
-        ]);
+        ];
+
+        // Return JSON for AJAX requests, redirect for form submissions
+        if ($request->expectsJson()) {
+            return response()->json($response);
+        }
+
+        return redirect()->route('customer.cart.index')->with('success', $response['message']);
     }
 
     /**
@@ -141,6 +178,48 @@ class CartController extends Controller
     {
         session([self::CART_SESSION_KEY => []]);
         return back()->with('success', 'Cart cleared');
+    }
+
+    /**
+     * Check domain availability (AJAX)
+     */
+    public function checkDomainAvailability(Request $request)
+    {
+        $request->validate([
+            'domain' => 'required|string|regex:/^[a-z0-9-]+$/i',
+            'extension' => 'required|string|exists:domain_extensions,extension',
+        ]);
+
+        try {
+            $domainSearch = new DomainSearchController();
+            $fullDomain = $request->domain . $request->extension;
+
+            // Use reflection to call private method for availability check
+            $reflection = new \ReflectionClass($domainSearch);
+            $method = $reflection->getMethod('checkAvailability');
+            $method->setAccessible(true);
+
+            $available = $method->invoke($domainSearch, $fullDomain);
+
+            // Get pricing
+            $extension = DomainExtension::where('extension', $request->extension)->firstOrFail();
+            $pricing = $extension->getRetailPricing(1);
+            $price = $pricing ? (float) $pricing->price : 0;
+
+            return response()->json([
+                'success' => true,
+                'available' => $available,
+                'full_domain' => $fullDomain,
+                'price' => $price,
+                'message' => $available ? 'Domain is available!' : 'Domain is already taken',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error checking domain availability: ' . $e->getMessage(),
+                'available' => false,
+            ], 500);
+        }
     }
 
     /**

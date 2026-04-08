@@ -51,11 +51,8 @@ class Product extends Model
     const TYPES = [
         'shared_hosting' => 'Shared Hosting',
         'container_hosting' => 'Container Hosting',
-        'domain' => 'Domain',
         'ssl' => 'SSL Certificate',
         'email_hosting' => 'Email Hosting',
-        'sms_bundle' => 'SMS Bundle',
-        'hotspot_plan' => 'Hotspot Plan',
     ];
 
     public function services()
