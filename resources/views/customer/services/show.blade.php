@@ -205,14 +205,56 @@
             </div>
 
             <!-- Credentials Tab -->
-            <div x-show="tab === 'credentials'" class="space-y-4">
+            <div x-show="tab === 'credentials'" class="space-y-4" x-data="{ showPassword: false }">
                 <div class="bg-amber-50 dark:bg-amber-950 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p class="text-sm text-amber-900 dark:text-amber-100">
                         Service credentials and access information will be displayed here once your service is provisioned.
                     </p>
                 </div>
 
-                @if ($service->status === 'active' && $service->credentials)
+                <!-- Server Credentials (VPS / Dedicated Server) -->
+                @if ($service->status === 'active' && $service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Server Login Credentials</h3>
+                        <div class="space-y-3">
+                            <!-- Username -->
+                            <div>
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Username</p>
+                                <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white">{{ json_decode($service->credentials)->username }}</p>
+                                    <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ json_decode($service->credentials)->username }}')">
+                                        Copy
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Password -->
+                            <div>
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Password</p>
+                                <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? '{{ json_decode($service->credentials)->password }}' : '•'.repeat(16)"></p>
+                                    <div class="flex items-center gap-2">
+                                        <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="showPassword = !showPassword">
+                                            <span x-show="!showPassword">Show</span>
+                                            <span x-show="showPassword">Hide</span>
+                                        </button>
+                                        <button class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ json_decode($service->credentials)->password }}')">
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Security Notice -->
+                        <div class="mt-4 p-3 bg-red-50 dark:bg-red-950 rounded border border-red-200 dark:border-red-800">
+                            <p class="text-xs text-red-900 dark:text-red-100">
+                                <strong>Security Notice:</strong> Change your root password immediately after first login. Never share these credentials with anyone.
+                            </p>
+                        </div>
+                    </div>
+                @elseif ($service->status === 'active' && $service->credentials)
+                    <!-- Generic credentials display for other product types -->
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
                         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Access Information</h3>
                         <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3">

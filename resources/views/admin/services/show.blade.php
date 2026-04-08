@@ -155,6 +155,31 @@
                 </div>
             @endif
 
+            <!-- Server Credentials (VPS / Dedicated Server) -->
+            @if ($service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Server Credentials</h2>
+                        <form method="POST" action="{{ route('admin.services.resend-credentials', $service) }}" class="inline">
+                            @csrf
+                            <button type="submit" class="px-3 py-1 text-xs bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900 font-medium rounded transition">
+                                Resend Credentials
+                            </button>
+                        </form>
+                    </div>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Username</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ json_decode($service->credentials)->username }}</p>
+                        </div>
+                        <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Password</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ json_decode($service->credentials)->password }}</p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Container Panel (if applicable) -->
             @include('admin.services.partials.container-panel')
         </div>
