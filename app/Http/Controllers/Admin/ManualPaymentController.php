@@ -11,7 +11,9 @@ class ManualPaymentController extends Controller
     public function __construct()
     {
         $this->middleware(function ($request, $next) {
-            $this->authorize('update', Setting::class);
+            if (!auth()->user()->is_admin) {
+                abort(403);
+            }
             return $next($request);
         });
     }

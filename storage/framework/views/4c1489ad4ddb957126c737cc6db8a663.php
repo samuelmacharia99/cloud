@@ -727,6 +727,148 @@
 <?php endif; ?>
                     </div>
                 </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Manual Payment Bank Account</legend>
+                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                        <p class="text-sm text-blue-900 dark:text-blue-300">
+                            <strong>ℹ️ How this works:</strong> When customers select "Manual Payment" during checkout, they will see these bank details to make a transfer. After they submit the payment confirmation, an admin can review and approve it.
+                        </p>
+                    </div>
+                    <div class="space-y-4">
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['useOld' => 'false','name' => 'settings[manual_bank_name]','label' => 'Bank Name','value' => ''.e($settings['manual_bank_name'] ?? '').'','placeholder' => 'e.g., Equity Bank Kenya']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['useOld' => 'false','name' => 'settings[manual_bank_name]','label' => 'Bank Name','value' => ''.e($settings['manual_bank_name'] ?? '').'','placeholder' => 'e.g., Equity Bank Kenya']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['useOld' => 'false','name' => 'settings[manual_account_name]','label' => 'Account Name (Company Name)','value' => ''.e($settings['manual_account_name'] ?? '').'','placeholder' => 'e.g., Talksasa Cloud Limited']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['useOld' => 'false','name' => 'settings[manual_account_name]','label' => 'Account Name (Company Name)','value' => ''.e($settings['manual_account_name'] ?? '').'','placeholder' => 'e.g., Talksasa Cloud Limited']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['useOld' => 'false','name' => 'settings[manual_account_number]','label' => 'Account Number','value' => ''.e($settings['manual_account_number'] ?? '').'','placeholder' => 'e.g., 0123456789']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['useOld' => 'false','name' => 'settings[manual_account_number]','label' => 'Account Number','value' => ''.e($settings['manual_account_number'] ?? '').'','placeholder' => 'e.g., 0123456789']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['useOld' => 'false','name' => 'settings[manual_bank_branch]','label' => 'Branch (Optional)','value' => ''.e($settings['manual_bank_branch'] ?? '').'','placeholder' => 'e.g., Westlands Branch']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['useOld' => 'false','name' => 'settings[manual_bank_branch]','label' => 'Branch (Optional)','value' => ''.e($settings['manual_bank_branch'] ?? '').'','placeholder' => 'e.g., Westlands Branch']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                        <?php if (isset($component)) { $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $component; } ?>
+<?php if (isset($attributes)) { $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14 = $attributes; } ?>
+<?php $component = Illuminate\View\AnonymousComponent::resolve(['view' => 'components.form-input','data' => ['useOld' => 'false','name' => 'settings[manual_bank_swift]','label' => 'SWIFT/BIC Code (Optional)','value' => ''.e($settings['manual_bank_swift'] ?? '').'','placeholder' => 'e.g., EQBLKENA']] + (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag ? $attributes->all() : [])); ?>
+<?php $component->withName('form-input'); ?>
+<?php if ($component->shouldRender()): ?>
+<?php $__env->startComponent($component->resolveView(), $component->data()); ?>
+<?php if (isset($attributes) && $attributes instanceof Illuminate\View\ComponentAttributeBag): ?>
+<?php $attributes = $attributes->except(\Illuminate\View\AnonymousComponent::ignoredParameterNames()); ?>
+<?php endif; ?>
+<?php $component->withAttributes(['useOld' => 'false','name' => 'settings[manual_bank_swift]','label' => 'SWIFT/BIC Code (Optional)','value' => ''.e($settings['manual_bank_swift'] ?? '').'','placeholder' => 'e.g., EQBLKENA']); ?>
+<?php echo $__env->renderComponent(); ?>
+<?php endif; ?>
+<?php if (isset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $attributes = $__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__attributesOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+<?php if (isset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14)): ?>
+<?php $component = $__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14; ?>
+<?php unset($__componentOriginal93a7e4fbb8709cb7edbcf616ab99cd14); ?>
+<?php endif; ?>
+                    </div>
+
+                    <!-- Preview -->
+                    <div class="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
+                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Preview (How customers will see this):</p>
+                        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700 rounded-lg space-y-2 text-sm">
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Bank Name</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold"><?php echo e($settings['manual_bank_name'] ?: '(Not set)'); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Name</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold"><?php echo e($settings['manual_account_name'] ?: '(Not set)'); ?></p>
+                            </div>
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Number</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold font-mono"><?php echo e($settings['manual_account_number'] ?: '(Not set)'); ?></p>
+                            </div>
+                            <?php if($settings['manual_bank_branch']): ?>
+                                <div>
+                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Branch</p>
+                                    <p class="text-emerald-900 dark:text-emerald-200"><?php echo e($settings['manual_bank_branch']); ?></p>
+                                </div>
+                            <?php endif; ?>
+                            <?php if($settings['manual_bank_swift']): ?>
+                                <div>
+                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">SWIFT Code</p>
+                                    <p class="text-emerald-900 dark:text-emerald-200 font-mono"><?php echo e($settings['manual_bank_swift']); ?></p>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </fieldset>
             </div>
 
             <!-- Provisioning Tab -->

@@ -29,7 +29,8 @@ class SettingController extends Controller
             'card_enabled', 'stripe_key',
             'bank_transfer_enabled', 'bank_name', 'bank_account_name', 'bank_account_number',
             'bank_branch', 'bank_swift_code',
-            'manual_enabled',
+            'manual_enabled', 'manual_bank_name', 'manual_account_name', 'manual_account_number',
+            'manual_bank_branch', 'manual_bank_swift',
         ],
         'provisioning' => [
             'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_days',

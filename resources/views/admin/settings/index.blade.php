@@ -197,6 +197,53 @@
                         <x-form-input useOld="false" name="settings[bank_swift_code]" label="SWIFT/BIC Code" value="{{ $settings['bank_swift_code'] ?? '' }}" placeholder="e.g., KENBKENA" />
                     </div>
                 </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Manual Payment Bank Account</legend>
+                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                        <p class="text-sm text-blue-900 dark:text-blue-300">
+                            <strong>ℹ️ How this works:</strong> When customers select "Manual Payment" during checkout, they will see these bank details to make a transfer. After they submit the payment confirmation, an admin can review and approve it.
+                        </p>
+                    </div>
+                    <div class="space-y-4">
+                        <x-form-input useOld="false" name="settings[manual_bank_name]" label="Bank Name" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" />
+                        <x-form-input useOld="false" name="settings[manual_account_name]" label="Account Name (Company Name)" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" />
+                        <x-form-input useOld="false" name="settings[manual_account_number]" label="Account Number" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" />
+                        <x-form-input useOld="false" name="settings[manual_bank_branch]" label="Branch (Optional)" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" />
+                        <x-form-input useOld="false" name="settings[manual_bank_swift]" label="SWIFT/BIC Code (Optional)" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" />
+                    </div>
+
+                    <!-- Preview -->
+                    <div class="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
+                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Preview (How customers will see this):</p>
+                        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700 rounded-lg space-y-2 text-sm">
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Bank Name</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_bank_name'] ?: '(Not set)' }}</p>
+                            </div>
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Name</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_account_name'] ?: '(Not set)' }}</p>
+                            </div>
+                            <div>
+                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Number</p>
+                                <p class="text-emerald-900 dark:text-emerald-200 font-bold font-mono">{{ $settings['manual_account_number'] ?: '(Not set)' }}</p>
+                            </div>
+                            @if ($settings['manual_bank_branch'])
+                                <div>
+                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Branch</p>
+                                    <p class="text-emerald-900 dark:text-emerald-200">{{ $settings['manual_bank_branch'] }}</p>
+                                </div>
+                            @endif
+                            @if ($settings['manual_bank_swift'])
+                                <div>
+                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">SWIFT Code</p>
+                                    <p class="text-emerald-900 dark:text-emerald-200 font-mono">{{ $settings['manual_bank_swift'] }}</p>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </fieldset>
             </div>
 
             <!-- Provisioning Tab -->
