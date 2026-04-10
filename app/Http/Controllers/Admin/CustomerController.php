@@ -194,7 +194,14 @@ class CustomerController extends Controller
      */
     public function addDomain(Request $request, User $customer)
     {
+        \Log::info('addDomain() called', [
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
+            'request_data' => $request->all(),
+        ]);
+
         if ($customer->is_admin) {
+            \Log::warning('addDomain() aborted - customer is admin', ['customer_id' => $customer->id]);
             abort(404);
         }
 
@@ -210,6 +217,11 @@ class CustomerController extends Controller
             'notes' => 'nullable|string|max:1000',
         ]);
 
+        \Log::info('addDomain() validation passed', [
+            'customer_id' => $customer->id,
+            'validated_data' => $validated,
+        ]);
+
         try {
             \DB::transaction(function () use ($validated, $customer) {
                 // Parse domain name (e.g., example.co.ke → name=example, extension=.co.ke)
@@ -223,7 +235,21 @@ class CustomerController extends Controller
                     $extension = '.com';
                 }
 
+                \Log::info('addDomain() domain parsed', [
+                    'domain_name' => $domainName,
+                    'name' => $name,
+                    'extension' => $extension,
+                ]);
+
                 // Create domain
+                \Log::info('addDomain() creating domain record', [
+                    'user_id' => $customer->id,
+                    'name' => $name,
+                    'extension' => $extension,
+                    'status' => $validated['status'],
+                    'expires_at' => $validated['expires_at'],
+                ]);
+
                 $domain = \App\Models\Domain::create([
                     'user_id' => $customer->id,
                     'name' => $name,
@@ -237,6 +263,12 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'],
                 ]);
 
+                \Log::info('addDomain() domain created successfully', [
+                    'domain_id' => $domain->id,
+                    'customer_id' => $customer->id,
+                    'domain_name' => "{$domain->name}{$domain->extension}",
+                ]);
+
                 // Create invoice if next_due_date is provided (10 days prior)
                 if (!empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
@@ -247,14 +279,31 @@ class CustomerController extends Controller
                     $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                     $total = $subtotal + $tax;
 
+                    $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
+
+                    \Log::info('addDomain() creating invoice', [
+                        'customer_id' => $customer->id,
+                        'domain_id' => $domain->id,
+                        'next_due_date' => $validated['next_due_date'],
+                        'invoice_due_date' => $invoiceDueDate->toDateString(),
+                        'subtotal' => $subtotal,
+                        'tax' => $tax,
+                        'total' => $total,
+                    ]);
+
                     $invoice = \App\Models\Invoice::create([
                         'user_id' => $customer->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
-                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10),
+                        'due_date' => $invoiceDueDate,
                         'subtotal' => $subtotal,
                         'tax' => $tax,
                         'total' => $total,
+                    ]);
+
+                    \Log::info('addDomain() invoice created', [
+                        'invoice_id' => $invoice->id,
+                        'invoice_number' => $invoice->invoice_number,
                     ]);
 
                     \App\Models\InvoiceItem::create([
@@ -264,12 +313,36 @@ class CustomerController extends Controller
                         'unit_price' => $price,
                         'amount' => $price,
                     ]);
+
+                    \Log::info('addDomain() invoice item created', [
+                        'invoice_id' => $invoice->id,
+                        'domain_name' => $domainName,
+                    ]);
+                } else {
+                    \Log::info('addDomain() no invoice created - next_due_date not provided', [
+                        'domain_id' => $domain->id,
+                    ]);
                 }
             });
+
+            \Log::info('addDomain() completed successfully', [
+                'customer_id' => $customer->id,
+                'domain_name' => $validated['domain_name'],
+            ]);
 
             return redirect()->route('admin.customers.show', $customer)
                 ->with('success', "Domain {$validated['domain_name']} added successfully.");
         } catch (\Exception $e) {
+            \Log::error('addDomain() failed with exception', [
+                'customer_id' => $customer->id,
+                'domain_name' => $validated['domain_name'] ?? 'unknown',
+                'error_message' => $e->getMessage(),
+                'error_code' => $e->getCode(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'error_trace' => $e->getTraceAsString(),
+            ]);
+
             return back()->with('error', 'Failed to add domain: ' . $e->getMessage());
         }
     }
@@ -279,7 +352,14 @@ class CustomerController extends Controller
      */
     public function addService(Request $request, User $customer)
     {
+        \Log::info('addService() called', [
+            'customer_id' => $customer->id,
+            'customer_name' => $customer->name,
+            'request_data' => $request->all(),
+        ]);
+
         if ($customer->is_admin) {
+            \Log::warning('addService() aborted - customer is admin', ['customer_id' => $customer->id]);
             abort(404);
         }
 
@@ -297,9 +377,21 @@ class CustomerController extends Controller
             'generate_invoice' => 'boolean',
         ]);
 
+        \Log::info('addService() validation passed', [
+            'customer_id' => $customer->id,
+            'service_name' => $validated['name'],
+            'product_id' => $validated['product_id'],
+            'billing_cycle' => $validated['billing_cycle'],
+        ]);
+
         try {
             \DB::transaction(function () use ($validated, $customer) {
                 $product = \App\Models\Product::findOrFail($validated['product_id']);
+
+                \Log::info('addService() product found', [
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                ]);
 
                 // Build service_meta with credentials
                 $serviceMeta = [];
@@ -312,6 +404,15 @@ class CustomerController extends Controller
                 if (!empty($validated['ip_address'])) {
                     $serviceMeta['ip_address'] = $validated['ip_address'];
                 }
+
+                \Log::info('addService() creating service', [
+                    'user_id' => $customer->id,
+                    'product_id' => $product->id,
+                    'service_name' => $validated['name'],
+                    'status' => $validated['status'],
+                    'billing_cycle' => $validated['billing_cycle'],
+                    'next_due_date' => $validated['next_due_date'],
+                ]);
 
                 // Create service
                 $service = \App\Models\Service::create([
@@ -327,6 +428,13 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'],
                 ]);
 
+                \Log::info('addService() service created successfully', [
+                    'service_id' => $service->id,
+                    'customer_id' => $customer->id,
+                    'service_name' => $service->name,
+                    'product_name' => $product->name,
+                ]);
+
                 // Create invoice if requested (10 days prior to next_due_date)
                 if ($validated['generate_invoice']) {
                     $price = $this->getServicePrice($product, $validated['billing_cycle']);
@@ -337,14 +445,32 @@ class CustomerController extends Controller
                     $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                     $total = $subtotal + $tax;
 
+                    $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
+
+                    \Log::info('addService() creating invoice', [
+                        'customer_id' => $customer->id,
+                        'service_id' => $service->id,
+                        'next_due_date' => $validated['next_due_date'],
+                        'invoice_due_date' => $invoiceDueDate->toDateString(),
+                        'price' => $price,
+                        'subtotal' => $subtotal,
+                        'tax' => $tax,
+                        'total' => $total,
+                    ]);
+
                     $invoice = \App\Models\Invoice::create([
                         'user_id' => $customer->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
-                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10),
+                        'due_date' => $invoiceDueDate,
                         'subtotal' => $subtotal,
                         'tax' => $tax,
                         'total' => $total,
+                    ]);
+
+                    \Log::info('addService() invoice created', [
+                        'invoice_id' => $invoice->id,
+                        'invoice_number' => $invoice->invoice_number,
                     ]);
 
                     \App\Models\InvoiceItem::create([
@@ -357,13 +483,42 @@ class CustomerController extends Controller
                         'amount' => $price,
                     ]);
 
+                    \Log::info('addService() invoice item created', [
+                        'invoice_id' => $invoice->id,
+                        'service_id' => $service->id,
+                    ]);
+
                     $service->update(['invoice_id' => $invoice->id]);
+
+                    \Log::info('addService() service updated with invoice_id', [
+                        'service_id' => $service->id,
+                        'invoice_id' => $invoice->id,
+                    ]);
+                } else {
+                    \Log::info('addService() no invoice created - generate_invoice not requested', [
+                        'service_id' => $service->id,
+                    ]);
                 }
             });
+
+            \Log::info('addService() completed successfully', [
+                'customer_id' => $customer->id,
+                'service_name' => $validated['name'],
+            ]);
 
             return redirect()->route('admin.customers.show', $customer)
                 ->with('success', "Service {$validated['name']} added successfully.");
         } catch (\Exception $e) {
+            \Log::error('addService() failed with exception', [
+                'customer_id' => $customer->id,
+                'service_name' => $validated['name'] ?? 'unknown',
+                'error_message' => $e->getMessage(),
+                'error_code' => $e->getCode(),
+                'error_file' => $e->getFile(),
+                'error_line' => $e->getLine(),
+                'error_trace' => $e->getTraceAsString(),
+            ]);
+
             return back()->with('error', 'Failed to add service: ' . $e->getMessage());
         }
     }
