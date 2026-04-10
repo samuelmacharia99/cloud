@@ -1,8 +1,9 @@
-@props(['label', 'name', 'options' => [], 'value' => null, 'placeholder' => 'Select an option...', 'required' => false, 'disabled' => false, 'help' => null, 'error' => null])
+@props(['label', 'name', 'options' => [], 'value' => null, 'placeholder' => 'Select an option...', 'required' => false, 'disabled' => false, 'help' => null, 'error' => null, 'useOld' => true])
 
 @php
     $hasError = $errors->has($name) || $error;
     $errorMessage = $error ?? $errors->first($name);
+    $selectedValue = $useOld ? old($name, $value) : $value;
 @endphp
 
 <div class="space-y-2">
@@ -33,7 +34,7 @@
             <option value="">{{ $placeholder }}</option>
         @endif
         @foreach ($options as $key => $label)
-            <option value="{{ $key }}" @if (old($name, $value) == $key) selected @endif>
+            <option value="{{ $key }}" @if ($selectedValue == $key) selected @endif>
                 {{ $label }}
             </option>
         @endforeach

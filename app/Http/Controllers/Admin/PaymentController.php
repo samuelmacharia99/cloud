@@ -200,4 +200,94 @@ class PaymentController extends Controller
             $this->updateInvoiceStatus($payment->invoice);
         }
     }
+
+    /**
+     * Approve a manual payment submission.
+     * Marks payment as completed and triggers provisioning.
+     */
+    public function approveManual(Payment $payment)
+    {
+        // Guard: only allow approval of pending manual payments
+        if ($payment->payment_method !== 'manual' || $payment->status !== 'pending') {
+            return back()->with('error', 'This payment cannot be approved.');
+        }
+
+        try {
+            // Mark payment as completed
+            $payment->update([
+                'status'  => 'completed',
+                'paid_at' => now(),
+            ]);
+
+            // Update invoice and trigger provisioning
+            if ($payment->invoice) {
+                $this->updateInvoiceStatus($payment->invoice);
+            }
+
+            \Log::info('Manual payment approved', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $payment->invoice_id,
+                'approved_by' => auth()->id(),
+            ]);
+
+            return back()->with('success', 'Manual payment approved successfully. Services have been provisioned.');
+        } catch (\Exception $e) {
+            \Log::error('Manual payment approval error', [
+                'payment_id' => $payment->id,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to approve payment. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Reject a manual payment submission.
+     * Marks payment as failed with reason.
+     */
+    public function rejectManual(Request $request, Payment $payment)
+    {
+        // Guard: only allow rejection of pending manual payments
+        if ($payment->payment_method !== 'manual' || $payment->status !== 'pending') {
+            return back()->with('error', 'This payment cannot be rejected.');
+        }
+
+        $request->validate([
+            'rejection_reason' => 'required|string|max:500',
+        ]);
+
+        try {
+            // Store rejection reason in notes
+            $notes = json_decode($payment->notes, true) ?? [];
+            $notes['rejection_reason'] = $request->rejection_reason;
+            $notes['rejected_at'] = now()->toIso8601String();
+            $notes['rejected_by'] = auth()->user()->name;
+
+            // Mark payment as failed
+            $payment->update([
+                'status' => 'failed',
+                'notes'  => json_encode($notes),
+            ]);
+
+            // Send rejection notification to customer
+            \Notification::route('mail', $payment->user->email)
+                ->notify(new \App\Notifications\ManualPaymentRejected($payment));
+
+            \Log::info('Manual payment rejected', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $payment->invoice_id,
+                'reason'     => $request->rejection_reason,
+                'rejected_by' => auth()->id(),
+            ]);
+
+            return back()->with('success', 'Manual payment rejected. Customer has been notified.');
+        } catch (\Exception $e) {
+            \Log::error('Manual payment rejection error', [
+                'payment_id' => $payment->id,
+                'error'      => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to reject payment. ' . $e->getMessage());
+        }
+    }
 }

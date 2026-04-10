@@ -35,6 +35,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/invoices', \App\Http\Controllers\Admin\InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [\App\Http\Controllers\Admin\InvoiceController::class, 'download'])->name('admin.invoices.download');
         Route::resource('admin/payments', \App\Http\Controllers\Admin\PaymentController::class)->names('admin.payments');
+        Route::post('admin/payments/{payment}/approve-manual', [\App\Http\Controllers\Admin\PaymentController::class, 'approveManual'])->name('admin.payments.approve-manual');
+        Route::post('admin/payments/{payment}/reject-manual', [\App\Http\Controllers\Admin\PaymentController::class, 'rejectManual'])->name('admin.payments.reject-manual');
         Route::resource('admin/services', \App\Http\Controllers\Admin\ServiceController::class)->names('admin.services');
         Route::get('admin/services/create', [\App\Http\Controllers\Admin\ServiceController::class, 'create'])->name('admin.services.create');
         Route::post('admin/services', [\App\Http\Controllers\Admin\ServiceController::class, 'store'])->name('admin.services.store');
@@ -62,6 +64,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/settings/upload-file', [\App\Http\Controllers\Admin\SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [\App\Http\Controllers\Admin\SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [\App\Http\Controllers\Admin\SettingController::class, 'testSms'])->name('admin.settings.test-sms');
+
+        // Manual Payment Settings
+        Route::get('admin/manual-payment', [\App\Http\Controllers\Admin\ManualPaymentController::class, 'index'])->name('admin.manual-payment.index');
+        Route::post('admin/manual-payment', [\App\Http\Controllers\Admin\ManualPaymentController::class, 'update'])->name('admin.manual-payment.update');
 
         // Currency Management
         Route::get('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'index'])->name('admin.currencies.index');
@@ -121,6 +127,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/my/services/{service}', [\App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [\App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::post('/my/services/{service}/renew', [\App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
+        Route::get('/my/servers', [\App\Http\Controllers\Customer\ServerController::class, 'index'])->name('customer.servers.index');
+        Route::post('/my/servers/order', [\App\Http\Controllers\Customer\ServerController::class, 'order'])->name('customer.servers.order');
         Route::resource('my/orders', \App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
         Route::resource('my/invoices', \App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('my/invoices/{invoice}/download', [\App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
@@ -166,6 +174,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeCancel'])->name('customer.payment.stripe.cancel');
         Route::get('/invoices/{invoice}/payment/paypal/success', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalSuccess'])->name('customer.payment.paypal.success');
         Route::get('/invoices/{invoice}/payment/paypal/cancel', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalCancel'])->name('customer.payment.paypal.cancel');
+        Route::get('/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Customer\PaymentController::class, 'manualPaymentForm'])->name('customer.payment.manual-form');
+        Route::post('/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Customer\PaymentController::class, 'submitManualPayment'])->name('customer.payment.manual-submit');
+        Route::get('/payments/{payment}/submitted', [\App\Http\Controllers\Customer\PaymentController::class, 'manualPaymentSubmitted'])->name('customer.payment.manual-submitted');
 
         // Container management
         Route::get('my/services/{service}/container', [\App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');

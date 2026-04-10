@@ -66,8 +66,12 @@ class SettingController extends Controller
     public function index(Request $request)
     {
         $group = $request->get('group', 'general');
+
+        // Load ALL settings for all groups (so all tabs work with the same form)
+        $allKeys = collect($this->groups)->flatten()->toArray();
+        $settings = Setting::whereIn('key', $allKeys)->pluck('value', 'key');
+
         $keys = $this->groups[$group] ?? $this->groups['general'];
-        $settings = Setting::whereIn('key', $keys)->pluck('value', 'key');
         $groups = $this->groups;
         $currencies = Currency::active()->get();
 

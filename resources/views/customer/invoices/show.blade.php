@@ -147,7 +147,7 @@
 
             <!-- Payment Status & Actions -->
             <div class="border-t border-slate-200 dark:border-slate-700 pt-8">
-                @if ($invoice->status->value === 'paid')
+                @if ($invoice->status === 'paid')
                     <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                         <p class="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                             <svg class="w-5 h-5 inline mr-2" fill="currentColor" viewBox="0 0 20 20">

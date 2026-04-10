@@ -9,19 +9,19 @@ use Illuminate\Support\Facades\Log;
 
 class MpesaService implements PaymentGatewayInterface
 {
-    protected string $consumerKey;
-    protected string $consumerSecret;
-    protected string $businessShortCode;
-    protected string $passkey;
+    protected ?string $consumerKey;
+    protected ?string $consumerSecret;
+    protected ?string $businessShortCode;
+    protected ?string $passkey;
     protected bool $isProduction;
     protected string $baseUrl;
 
     public function __construct()
     {
-        $this->consumerKey = config('payment.mpesa.consumer_key');
-        $this->consumerSecret = config('payment.mpesa.consumer_secret');
-        $this->businessShortCode = config('payment.mpesa.business_short_code');
-        $this->passkey = config('payment.mpesa.pass_key');
+        $this->consumerKey = config('payment.mpesa.consumer_key') ?? '';
+        $this->consumerSecret = config('payment.mpesa.consumer_secret') ?? '';
+        $this->businessShortCode = config('payment.mpesa.business_short_code') ?? '';
+        $this->passkey = config('payment.mpesa.pass_key') ?? '';
         $this->isProduction = config('payment.mpesa.is_production', false);
         $this->baseUrl = $this->isProduction
             ? 'https://api.safaricom.co.ke'

@@ -9,15 +9,15 @@ use Illuminate\Support\Facades\Log;
 
 class PayPalService implements PaymentGatewayInterface
 {
-    protected string $clientId;
-    protected string $clientSecret;
+    protected ?string $clientId;
+    protected ?string $clientSecret;
     protected bool $isProduction;
     protected string $baseUrl;
 
     public function __construct()
     {
-        $this->clientId = config('payment.paypal.client_id');
-        $this->clientSecret = config('payment.paypal.client_secret');
+        $this->clientId = config('payment.paypal.client_id') ?? '';
+        $this->clientSecret = config('payment.paypal.client_secret') ?? '';
         $this->isProduction = config('payment.paypal.is_production', false);
         $this->baseUrl = $this->isProduction
             ? 'https://api.paypal.com'

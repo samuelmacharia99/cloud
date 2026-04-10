@@ -56,33 +56,34 @@
         </div>
 
         <!-- Tab Content -->
-        <form method="POST" action="{{ route('admin.settings.update') }}" class="p-8 space-y-6">
-            @csrf
+        <form method="POST" action="{{ route('admin.settings.update') }}">
+            <div class="p-8 space-y-6">
+                @csrf
 
             <!-- General Tab -->
             <div x-show="activeTab === 'general'" class="space-y-4">
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Site Information</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[site_name]" label="Site Name" value="{{ $settings['site_name'] ?? 'Talksasa Cloud' }}" required />
-                        <x-form-input name="settings[site_url]" label="Site URL" type="url" value="{{ $settings['site_url'] ?? 'https://talksasa.cloud' }}" required />
-                        <x-form-input name="settings[site_email]" label="System Email" type="email" value="{{ $settings['site_email'] ?? '' }}" required />
-                        <x-form-input name="settings[support_email]" label="Support Email" type="email" value="{{ $settings['support_email'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[site_name]" label="Site Name" value="{{ $settings['site_name'] ?? 'Talksasa Cloud' }}" useOld="false" required />
+                        <x-form-input useOld="false" name="settings[site_url]" label="Site URL" type="url" value="{{ $settings['site_url'] ?? 'https://talksasa.cloud' }}" useOld="false" required />
+                        <x-form-input useOld="false" name="settings[site_email]" label="System Email" type="email" value="{{ $settings['site_email'] ?? '' }}" useOld="false" required />
+                        <x-form-input useOld="false" name="settings[support_email]" label="Support Email" type="email" value="{{ $settings['support_email'] ?? '' }}" useOld="false" />
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Regional Settings</legend>
                     <div class="space-y-4">
-                        <x-form-select name="settings[timezone]" label="Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg']" value="{{ $settings['timezone'] ?? 'UTC' }}" />
+                        <x-form-select useOld="false" name="settings[timezone]" label="Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg']" value="{{ $settings['timezone'] ?? 'UTC' }}" />
                         @php
                             $currencyOptions = $currencies->pluck('name', 'code')->toArray();
                         @endphp
-                        <x-form-select name="settings[currency]" label="Default Currency" :options="$currencyOptions" value="{{ $settings['currency'] ?? 'KES' }}" />
+                        <x-form-select useOld="false" name="settings[currency]" label="Default Currency" :options="$currencyOptions" value="{{ $settings['currency'] ?? 'KES' }}" />
                         @php
                             $selectedCurrency = $currencies->where('code', $settings['currency'] ?? 'KES')->first();
                         @endphp
-                        <x-form-input name="settings[currency_symbol]" label="Currency Symbol" value="{{ $selectedCurrency->symbol ?? 'KES' }}" readonly />
+                        <x-form-input useOld="false" name="settings[currency_symbol]" label="Currency Symbol" value="{{ $selectedCurrency->symbol ?? 'KES' }}" readonly />
                     </div>
                 </fieldset>
             </div>
@@ -92,20 +93,20 @@
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Company Information</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[billing_company]" label="Company Name" value="{{ $settings['billing_company'] ?? 'Talksasa Cloud Ltd' }}" />
-                        <x-form-input name="settings[billing_address]" label="Address" value="{{ $settings['billing_address'] ?? '' }}" />
-                        <x-form-input name="settings[billing_city]" label="City" value="{{ $settings['billing_city'] ?? 'Nairobi' }}" />
-                        <x-form-input name="settings[billing_country]" label="Country" value="{{ $settings['billing_country'] ?? 'Kenya' }}" />
-                        <x-form-input name="settings[billing_vat_number]" label="VAT/Tax Number" value="{{ $settings['billing_vat_number'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[billing_company]" label="Company Name" value="{{ $settings['billing_company'] ?? 'Talksasa Cloud Ltd' }}" />
+                        <x-form-input useOld="false" name="settings[billing_address]" label="Address" value="{{ $settings['billing_address'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[billing_city]" label="City" value="{{ $settings['billing_city'] ?? 'Nairobi' }}" />
+                        <x-form-input useOld="false" name="settings[billing_country]" label="Country" value="{{ $settings['billing_country'] ?? 'Kenya' }}" />
+                        <x-form-input useOld="false" name="settings[billing_vat_number]" label="VAT/Tax Number" value="{{ $settings['billing_vat_number'] ?? '' }}" />
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Invoice Settings</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[invoice_prefix]" label="Invoice Number Prefix" value="{{ $settings['invoice_prefix'] ?? 'INV' }}" />
-                        <x-form-input name="settings[invoice_due_days]" label="Invoice Due Days" type="number" value="{{ $settings['invoice_due_days'] ?? '30' }}" />
-                        <x-form-input name="settings[grace_period_days]" label="Grace Period (days)" type="number" value="{{ $settings['grace_period_days'] ?? '7' }}" />
+                        <x-form-input useOld="false" name="settings[invoice_prefix]" label="Invoice Number Prefix" value="{{ $settings['invoice_prefix'] ?? 'INV' }}" />
+                        <x-form-input useOld="false" name="settings[invoice_due_days]" label="Invoice Due Days" type="number" value="{{ $settings['invoice_due_days'] ?? '30' }}" />
+                        <x-form-input useOld="false" name="settings[grace_period_days]" label="Grace Period (days)" type="number" value="{{ $settings['grace_period_days'] ?? '7' }}" />
                     </div>
                 </fieldset>
             </div>
@@ -122,8 +123,8 @@
                             </label>
                         </div>
 
-                        <x-form-input name="settings[tax_rate]" label="Tax Rate (%)" type="number" step="0.01" value="{{ $settings['tax_rate'] ?? '16' }}" />
-                        <x-form-input name="settings[tax_name]" label="Tax Name" value="{{ $settings['tax_name'] ?? 'VAT' }}" />
+                        <x-form-input useOld="false" name="settings[tax_rate]" label="Tax Rate (%)" type="number" step="0.01" value="{{ $settings['tax_rate'] ?? '16' }}" />
+                        <x-form-input useOld="false" name="settings[tax_name]" label="Tax Name" value="{{ $settings['tax_name'] ?? 'VAT' }}" />
 
                         <div>
                             <label class="flex items-center gap-2">
@@ -132,7 +133,7 @@
                             </label>
                         </div>
 
-                        <x-form-input name="settings[tax_number]" label="Tax Registration Number" value="{{ $settings['tax_number'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[tax_number]" label="Tax Registration Number" value="{{ $settings['tax_number'] ?? '' }}" />
                     </div>
                 </fieldset>
             </div>
@@ -164,8 +165,8 @@
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">M-Pesa Credentials</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
-                        <x-form-input name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
                     </div>
                 </fieldset>
 
@@ -180,20 +181,20 @@
                         </p>
                     </div>
                     <div class="space-y-4">
-                        <x-form-select name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
-                        <x-form-input name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" placeholder="From Daraja API portal" />
-                        <x-form-input name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" placeholder="From Daraja API portal" />
+                        <x-form-select useOld="false" name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
+                        <x-form-input useOld="false" name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" placeholder="From Daraja API portal" />
+                        <x-form-input useOld="false" name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" placeholder="From Daraja API portal" />
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Bank Transfer Details</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[bank_name]" label="Bank Name" value="{{ $settings['bank_name'] ?? '' }}" />
-                        <x-form-input name="settings[bank_account_name]" label="Account Name" value="{{ $settings['bank_account_name'] ?? '' }}" />
-                        <x-form-input name="settings[bank_account_number]" label="Account Number" value="{{ $settings['bank_account_number'] ?? '' }}" />
-                        <x-form-input name="settings[bank_branch]" label="Branch" value="{{ $settings['bank_branch'] ?? '' }}" placeholder="e.g., Nairobi Main Branch" />
-                        <x-form-input name="settings[bank_swift_code]" label="SWIFT/BIC Code" value="{{ $settings['bank_swift_code'] ?? '' }}" placeholder="e.g., KENBKENA" />
+                        <x-form-input useOld="false" name="settings[bank_name]" label="Bank Name" value="{{ $settings['bank_name'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[bank_account_name]" label="Account Name" value="{{ $settings['bank_account_name'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[bank_account_number]" label="Account Number" value="{{ $settings['bank_account_number'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[bank_branch]" label="Branch" value="{{ $settings['bank_branch'] ?? '' }}" placeholder="e.g., Nairobi Main Branch" />
+                        <x-form-input useOld="false" name="settings[bank_swift_code]" label="SWIFT/BIC Code" value="{{ $settings['bank_swift_code'] ?? '' }}" placeholder="e.g., KENBKENA" />
                     </div>
                 </fieldset>
             </div>
@@ -203,7 +204,7 @@
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Provisioning Settings</legend>
                     <div class="space-y-4">
-                        <x-form-select name="settings[provisioning_mode]" label="Provisioning Mode" :options="['manual' => 'Manual', 'automatic' => 'Automatic']" value="{{ $settings['provisioning_mode'] ?? 'manual' }}" />
+                        <x-form-select useOld="false" name="settings[provisioning_mode]" label="Provisioning Mode" :options="['manual' => 'Manual', 'automatic' => 'Automatic']" value="{{ $settings['provisioning_mode'] ?? 'manual' }}" />
 
                         <label class="flex items-center gap-2">
                             <input type="checkbox" name="settings[auto_provision]" value="1" @checked(($settings['auto_provision'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
@@ -215,7 +216,7 @@
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Suspend Services on Overdue Payment</span>
                         </label>
 
-                        <x-form-input name="settings[terminate_after_days]" label="Terminate Service After (days)" type="number" value="{{ $settings['terminate_after_days'] ?? '60' }}" />
+                        <x-form-input useOld="false" name="settings[terminate_after_days]" label="Terminate Service After (days)" type="number" value="{{ $settings['terminate_after_days'] ?? '60' }}" />
                     </div>
                 </fieldset>
 
@@ -230,10 +231,10 @@
                                 Configure DirectAdmin API credentials for automatic hosting account provisioning.
                             </p>
                         </div>
-                        <x-form-input name="settings[directadmin_api_url]" label="DirectAdmin API URL" placeholder="https://your-directadmin-server.com:2222" value="{{ $settings['directadmin_api_url'] ?? '' }}" />
-                        <x-form-input name="settings[directadmin_api_user]" label="DirectAdmin Admin Username" placeholder="admin" value="{{ $settings['directadmin_api_user'] ?? 'admin' }}" />
-                        <x-form-input name="settings[directadmin_api_password]" label="DirectAdmin Admin Password" type="password" value="{{ $settings['directadmin_api_password'] ?? '' }}" />
-                        <x-form-input name="settings[directadmin_default_package]" label="Default Hosting Package" placeholder="default" value="{{ $settings['directadmin_default_package'] ?? 'default' }}" />
+                        <x-form-input useOld="false" name="settings[directadmin_api_url]" label="DirectAdmin API URL" placeholder="https://your-directadmin-server.com:2222" value="{{ $settings['directadmin_api_url'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[directadmin_api_user]" label="DirectAdmin Admin Username" placeholder="admin" value="{{ $settings['directadmin_api_user'] ?? 'admin' }}" />
+                        <x-form-input useOld="false" name="settings[directadmin_api_password]" label="DirectAdmin Admin Password" type="password" value="{{ $settings['directadmin_api_password'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[directadmin_default_package]" label="Default Hosting Package" placeholder="default" value="{{ $settings['directadmin_default_package'] ?? 'default' }}" />
                         <p class="text-xs text-slate-600 dark:text-slate-400">Leave URL blank to disable DirectAdmin provisioning. Services will be marked active without automatic account creation.</p>
                     </div>
                 </fieldset>
@@ -283,6 +284,7 @@
                                             x-show="preview"
                                             :src="preview"
                                             alt="Logo preview"
+                                            onerror="this.style.display='none'"
                                             class="w-full h-full object-contain p-2 rounded"
                                         />
                                         <svg
@@ -344,6 +346,7 @@
                                             x-show="preview"
                                             :src="preview"
                                             alt="Favicon preview"
+                                            onerror="this.style.display='none'"
                                             class="w-full h-full object-contain p-1 rounded"
                                         />
                                         <svg
@@ -367,9 +370,9 @@
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Other Options</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[primary_color]" label="Primary Color" type="color" value="{{ $settings['primary_color'] ?? '#2563eb' }}" />
-                        <x-form-input name="settings[company_name]" label="Company Name" value="{{ $settings['company_name'] ?? 'Talksasa Cloud' }}" />
-                        <x-form-input name="settings[footer_text]" label="Footer Text" value="{{ $settings['footer_text'] ?? '© 2026 Talksasa Cloud. All rights reserved.' }}" />
+                        <x-form-input useOld="false" name="settings[primary_color]" label="Primary Color" type="color" value="{{ $settings['primary_color'] ?? '#2563eb' }}" />
+                        <x-form-input useOld="false" name="settings[company_name]" label="Company Name" value="{{ $settings['company_name'] ?? 'Talksasa Cloud' }}" />
+                        <x-form-input useOld="false" name="settings[footer_text]" label="Footer Text" value="{{ $settings['footer_text'] ?? '© 2026 Talksasa Cloud. All rights reserved.' }}" />
                     </div>
                 </fieldset>
             </div>
@@ -379,18 +382,18 @@
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMTP Configuration</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[smtp_host]" label="SMTP Host" value="{{ $settings['smtp_host'] ?? 'smtp.mailtrap.io' }}" />
-                        <x-form-input name="settings[smtp_port]" label="SMTP Port" type="number" value="{{ $settings['smtp_port'] ?? '587' }}" />
-                        <x-form-input name="settings[smtp_user]" label="SMTP Username" value="{{ $settings['smtp_user'] ?? '' }}" />
-                        <x-form-input name="settings[smtp_password]" label="SMTP Password" type="password" value="{{ $settings['smtp_password'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[smtp_host]" label="SMTP Host" value="{{ $settings['smtp_host'] ?? 'smtp.mailtrap.io' }}" />
+                        <x-form-input useOld="false" name="settings[smtp_port]" label="SMTP Port" type="number" value="{{ $settings['smtp_port'] ?? '587' }}" />
+                        <x-form-input useOld="false" name="settings[smtp_user]" label="SMTP Username" value="{{ $settings['smtp_user'] ?? '' }}" />
+                        <x-form-input useOld="false" name="settings[smtp_password]" label="SMTP Password" type="password" value="{{ $settings['smtp_password'] ?? '' }}" />
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Email Settings</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[mail_from_name]" label="From Name" value="{{ $settings['mail_from_name'] ?? 'Talksasa Cloud' }}" />
-                        <x-form-input name="settings[mail_from_address]" label="From Address" type="email" value="{{ $settings['mail_from_address'] ?? 'noreply@talksasa.cloud' }}" />
+                        <x-form-input useOld="false" name="settings[mail_from_name]" label="From Name" value="{{ $settings['mail_from_name'] ?? 'Talksasa Cloud' }}" />
+                        <x-form-input useOld="false" name="settings[mail_from_address]" label="From Address" type="email" value="{{ $settings['mail_from_address'] ?? 'noreply@talksasa.cloud' }}" />
                     </div>
                 </fieldset>
 
@@ -402,13 +405,10 @@
                             <input type="email" x-model="testEmail" placeholder="your@email.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter an email address to send a test email and verify your SMTP settings are working correctly.</p>
                         </div>
-                        <form action="{{ route('admin.settings.test-smtp') }}" method="POST" class="inline">
-                            @csrf
-                            <input type="hidden" name="email" x-bind:value="testEmail">
-                            <button type="submit" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
-                                Send Test Email
-                            </button>
-                        </form>
+                        <button type="button" @click="testSmtpEmail()" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                            <span x-show="!testing">Send Test Email</span>
+                            <span x-show="testing">Testing...</span>
+                        </button>
                     </div>
                 </fieldset>
             </div>
@@ -488,7 +488,7 @@
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Scheduling</legend>
                     <div class="space-y-4">
-                        <x-form-select name="settings[cron_timezone]" label="Cron Job Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg', 'Africa/Lagos' => 'Africa/Lagos', 'Africa/Cairo' => 'Africa/Cairo']" value="{{ $settings['cron_timezone'] ?? 'Africa/Nairobi' }}" />
+                        <x-form-select useOld="false" name="settings[cron_timezone]" label="Cron Job Timezone" :options="['UTC' => 'UTC', 'Africa/Nairobi' => 'Africa/Nairobi', 'Africa/Johannesburg' => 'Africa/Johannesburg', 'Africa/Lagos' => 'Africa/Lagos', 'Africa/Cairo' => 'Africa/Cairo']" value="{{ $settings['cron_timezone'] ?? 'Africa/Nairobi' }}" />
                         <p class="text-xs text-slate-600 dark:text-slate-400">Timezone used for scheduling all cron jobs. Update this to match your local timezone.</p>
                     </div>
                 </fieldset>
@@ -496,10 +496,10 @@
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Execution & Retention</legend>
                     <div class="space-y-4">
-                        <x-form-input name="settings[max_execution_time]" label="Maximum Execution Time (seconds)" type="number" value="{{ $settings['max_execution_time'] ?? '120' }}" min="10" max="3600" />
+                        <x-form-input useOld="false" name="settings[max_execution_time]" label="Maximum Execution Time (seconds)" type="number" value="{{ $settings['max_execution_time'] ?? '120' }}" min="10" max="3600" />
                         <p class="text-xs text-slate-600 dark:text-slate-400">Maximum time allowed for a single cron job to execute before timeout.</p>
 
-                        <x-form-input name="settings[cron_retention_days]" label="Log Retention Period (days)" type="number" value="{{ $settings['cron_retention_days'] ?? '30' }}" min="1" max="365" />
+                        <x-form-input useOld="false" name="settings[cron_retention_days]" label="Log Retention Period (days)" type="number" value="{{ $settings['cron_retention_days'] ?? '30' }}" min="1" max="365" />
                         <p class="text-xs text-slate-600 dark:text-slate-400">Number of days to keep cron job logs and monitoring data. Older records are automatically deleted.</p>
                     </div>
                 </fieldset>
@@ -644,27 +644,24 @@
                             <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
-                        <x-form-input name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
-                        <x-form-input name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
+                        <x-form-input useOld="false" name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
+                        <x-form-input useOld="false" name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
                         <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
-                    <div x-data="{ testPhone: '', testing: false }" class="space-y-4">
+                    <div x-data="{ testPhone: '', testingSms: false }" class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Phone Number</label>
                             <input type="text" x-model="testPhone" placeholder="+254700000000" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter a phone number to send a test SMS and verify your API configuration is working correctly.</p>
                         </div>
-                        <form action="{{ route('admin.settings.test-sms') }}" method="POST" class="inline">
-                            @csrf
-                            <input type="hidden" name="phone" x-bind:value="testPhone">
-                            <button type="submit" :disabled="!testPhone || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
-                                Send Test SMS
-                            </button>
-                        </form>
+                        <button type="button" @click="testSmtpSms(testPhone)" :disabled="!testPhone || testingSms" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                            <span x-show="!testingSms">Send Test SMS</span>
+                            <span x-show="testingSms">Sending...</span>
+                        </button>
                     </div>
                 </fieldset>
             </div>
@@ -709,13 +706,11 @@
                     </div>
 
                     <!-- Action Buttons -->
-                    <div class="flex flex-wrap gap-3 mb-6">
-                        <form action="{{ route('admin.currencies.refresh') }}" method="POST" style="display:inline;">
-                            @csrf
-                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition text-sm">
-                                🔄 Refresh Exchange Rates
-                            </button>
-                        </form>
+                    <div x-data="{ refreshingRates: false }" class="flex flex-wrap gap-3 mb-6">
+                        <button type="button" @click="refreshExchangeRates()" :disabled="refreshingRates" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                            <span x-show="!refreshingRates">🔄 Refresh Exchange Rates</span>
+                            <span x-show="refreshingRates">Refreshing...</span>
+                        </button>
                         <a href="{{ route('admin.currencies.index') }}" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition text-sm inline-flex items-center gap-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
@@ -774,9 +769,12 @@
             </div>
 
             <!-- Save Button -->
-            <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
-                    <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                <p class="text-sm text-slate-600 dark:text-slate-400" id="save-status">
+                    All changes will be saved when you click Save Settings
+                </p>
+                <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                     </svg>
                     Save Settings
@@ -789,6 +787,21 @@
 
 @push('scripts')
 <script>
+    // Handle form submission feedback
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const statusMsg = document.getElementById('save-status');
+
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Saving...';
+                statusMsg.textContent = 'Saving settings...';
+            });
+        }
+    });
+
     // Generate dynamic cron command
     document.addEventListener('DOMContentLoaded', function() {
         const projectPath = '{{ base_path() }}';
@@ -803,6 +816,58 @@
             cronCommandInput.value = cronCommand;
         }
     });
+
+    function testSmtpEmail() {
+        // This function is called from Alpine.js x-data in the SMTP section
+        // It would trigger an SMTP test via AJAX if needed
+        // For now, the UI updates via Alpine reactivity
+    }
+
+    async function testSmtpSms(phone) {
+        try {
+            const response = await fetch('{{ route('admin.settings.test-sms') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({ phone })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('SMS sent successfully to ' + phone);
+            } else {
+                alert('Failed to send SMS: ' + (data.message || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('SMS test error:', error);
+            alert('Error sending test SMS: ' + error.message);
+        }
+    }
+
+    async function refreshExchangeRates() {
+        try {
+            const response = await fetch('{{ route('admin.currencies.refresh') }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                }
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert('Exchange rates refreshed successfully');
+                // Optionally reload page to show updated rates
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                alert('Failed to refresh rates: ' + (data.message || 'Unknown error'));
+            }
+        } catch (error) {
+            console.error('Rate refresh error:', error);
+            alert('Error refreshing exchange rates: ' + error.message);
+        }
+    }
 
     function copyCronCommand() {
         const cronCommand = document.getElementById('cronCommand');

@@ -72,7 +72,7 @@ class PaymentController extends Controller
 
         // Validate request
         $request->validate([
-            'payment_method' => 'required|string|in:mpesa,stripe,paypal',
+            'payment_method' => 'required|string|in:mpesa,stripe,paypal,manual',
             'phone' => 'required_if:payment_method,mpesa|nullable|string',
         ]);
 
@@ -108,6 +108,11 @@ class PaymentController extends Controller
             // PayPal: Redirect to approval URL
             if ($request->payment_method === 'paypal') {
                 return redirect($result['approval_url']);
+            }
+
+            // Manual: Show form to collect payment details
+            if ($request->payment_method === 'manual') {
+                return redirect()->route('customer.payment.manual-form', ['invoice' => $invoice->id]);
             }
 
             return back()->with('error', 'Unknown payment method');
@@ -512,5 +517,69 @@ class PaymentController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Manual Payment: Show form to collect payment details
+     */
+    public function manualPaymentForm(Invoice $invoice)
+    {
+        abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        if ($invoice->status === 'paid') {
+            return redirect()->route('customer.invoices.show', $invoice)
+                ->with('info', 'This invoice has already been paid');
+        }
+
+        return view('customer.payment.manual-form', ['invoice' => $invoice]);
+    }
+
+    /**
+     * Manual Payment: Submit payment details for admin review
+     */
+    public function submitManualPayment(Request $request, Invoice $invoice)
+    {
+        abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        $validated = $request->validate([
+            'payment_reference' => 'nullable|string|max:100',
+            'bank_name'        => 'nullable|string|max:100',
+            'account_name'     => 'nullable|string|max:100',
+            'notes'            => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $gateway = PaymentGatewayFactory::make('manual');
+            $result = $gateway->initiate($invoice, array_merge($validated, [
+                'currency' => 'KES',
+            ]));
+
+            if ($result['success']) {
+                return redirect()->route('customer.payment.manual-submitted', [
+                    'payment' => $result['payment_id'],
+                ])->with('success', $result['message']);
+            }
+
+            return back()->with('error', $result['message'] ?? 'Failed to submit payment details');
+        } catch (\Exception $e) {
+            Log::error('Manual payment submission error', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to submit payment details. Please try again.');
+        }
+    }
+
+    /**
+     * Manual Payment: Show submission confirmation page
+     */
+    public function manualPaymentSubmitted(Payment $payment)
+    {
+        abort_if($payment->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        $payment->load('invoice');
+
+        return view('customer.payment.manual-submitted', ['payment' => $payment]);
     }
 }

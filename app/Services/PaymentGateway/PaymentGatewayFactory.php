@@ -18,6 +18,7 @@ class PaymentGatewayFactory
             'mpesa' => new MpesaService(),
             'stripe' => new StripeService(),
             'paypal' => new PayPalService(),
+            'manual' => new ManualPaymentService(),
             default => throw new InvalidArgumentException("Unsupported payment method: {$method}"),
         };
     }
@@ -56,6 +57,17 @@ class PaymentGatewayFactory
                 'icon' => 'globe',
                 'color' => 'blue',
                 'description' => 'Pay safely with your PayPal account',
+            ];
+        }
+
+        // Manual payment option (always available as fallback)
+        $manual = new ManualPaymentService();
+        if ($manual->isConfigured()) {
+            $gateways['manual'] = [
+                'label' => 'Manual Payment',
+                'icon' => 'document-text',
+                'color' => 'gray',
+                'description' => 'Submit payment details for manual processing and approval',
             ];
         }
 

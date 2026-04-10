@@ -1,8 +1,9 @@
-@props(['label', 'name', 'type' => 'text', 'value' => null, 'placeholder' => '', 'required' => false, 'readonly' => false, 'disabled' => false, 'help' => null, 'error' => null])
+@props(['label', 'name', 'type' => 'text', 'value' => null, 'placeholder' => '', 'required' => false, 'readonly' => false, 'disabled' => false, 'help' => null, 'error' => null, 'useOld' => true])
 
 @php
     $hasError = $errors->has($name) || $error;
     $errorMessage = $error ?? $errors->first($name);
+    $inputValue = $useOld ? old($name, $value) : $value;
 @endphp
 
 <div class="space-y-2">
@@ -19,7 +20,7 @@
         type="{{ $type }}"
         name="{{ $name }}"
         id="{{ $name }}"
-        value="{{ old($name, $value) }}"
+        value="{{ $inputValue }}"
         placeholder="{{ $placeholder }}"
         @if ($required) required @endif
         @if ($readonly) readonly @endif

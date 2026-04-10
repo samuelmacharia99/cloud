@@ -11,13 +11,13 @@ use Illuminate\Support\Facades\Log;
 
 class StripeService implements PaymentGatewayInterface
 {
-    protected string $apiKey;
-    protected string $publishableKey;
+    protected ?string $apiKey;
+    protected ?string $publishableKey;
 
     public function __construct()
     {
-        $this->apiKey = config('payment.stripe.secret_key');
-        $this->publishableKey = config('payment.stripe.publishable_key');
+        $this->apiKey = config('payment.stripe.secret_key') ?? '';
+        $this->publishableKey = config('payment.stripe.publishable_key') ?? '';
 
         if ($this->apiKey) {
             Stripe::setApiKey($this->apiKey);
