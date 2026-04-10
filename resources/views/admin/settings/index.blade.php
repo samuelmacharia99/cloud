@@ -139,111 +139,199 @@
             </div>
 
             <!-- Payment Methods Tab -->
-            <div x-show="activeTab === 'payment_methods'" class="space-y-4">
-                <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enabled Payment Methods</legend>
-                    <div class="space-y-3">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[mpesa_enabled]" value="1" @checked(($settings['mpesa_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">M-Pesa</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[card_enabled]" value="1" @checked(($settings['card_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Card Payments (Stripe)</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[bank_transfer_enabled]" value="1" @checked(($settings['bank_transfer_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Bank Transfer</span>
-                        </label>
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[manual_enabled]" value="1" @checked(($settings['manual_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Manual Payment Recording</span>
-                        </label>
-                    </div>
-                </fieldset>
-
-                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">M-Pesa Credentials</legend>
-                    <div class="space-y-4">
-                        <x-form-input useOld="false" name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
-                        <x-form-input useOld="false" name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
-                    </div>
-                </fieldset>
-
-                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">M-Pesa Daraja API</legend>
-                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                        <p class="text-sm text-blue-700 dark:text-blue-300">
-                            <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            <div x-show="activeTab === 'payment_methods'" x-data="{ expandedGateway: null }" class="space-y-2">
+                <!-- M-Pesa Gateway -->
+                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expandedGateway = expandedGateway === 'mpesa' ? null : 'mpesa'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            Obtain these credentials from M-Pesa Daraja API portal (developer.safaricom.co.ke).
-                        </p>
-                    </div>
-                    <div class="space-y-4">
-                        <x-form-select useOld="false" name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
-                        <x-form-input useOld="false" name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" placeholder="From Daraja API portal" />
-                        <x-form-input useOld="false" name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" placeholder="From Daraja API portal" />
-                    </div>
-                </fieldset>
-
-                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Bank Transfer Details</legend>
-                    <div class="space-y-4">
-                        <x-form-input useOld="false" name="settings[bank_name]" label="Bank Name" value="{{ $settings['bank_name'] ?? '' }}" />
-                        <x-form-input useOld="false" name="settings[bank_account_name]" label="Account Name" value="{{ $settings['bank_account_name'] ?? '' }}" />
-                        <x-form-input useOld="false" name="settings[bank_account_number]" label="Account Number" value="{{ $settings['bank_account_number'] ?? '' }}" />
-                        <x-form-input useOld="false" name="settings[bank_branch]" label="Branch" value="{{ $settings['bank_branch'] ?? '' }}" placeholder="e.g., Nairobi Main Branch" />
-                        <x-form-input useOld="false" name="settings[bank_swift_code]" label="SWIFT/BIC Code" value="{{ $settings['bank_swift_code'] ?? '' }}" placeholder="e.g., KENBKENA" />
-                    </div>
-                </fieldset>
-
-                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Manual Payment Bank Account</legend>
-                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                        <p class="text-sm text-blue-900 dark:text-blue-300">
-                            <strong>ℹ️ How this works:</strong> When customers select "Manual Payment" during checkout, they will see these bank details to make a transfer. After they submit the payment confirmation, an admin can review and approve it.
-                        </p>
-                    </div>
-                    <div class="space-y-4">
-                        <x-form-input useOld="false" name="settings[manual_bank_name]" label="Bank Name" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" />
-                        <x-form-input useOld="false" name="settings[manual_account_name]" label="Account Name (Company Name)" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" />
-                        <x-form-input useOld="false" name="settings[manual_account_number]" label="Account Number" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" />
-                        <x-form-input useOld="false" name="settings[manual_bank_branch]" label="Branch (Optional)" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" />
-                        <x-form-input useOld="false" name="settings[manual_bank_swift]" label="SWIFT/BIC Code (Optional)" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" />
-                    </div>
-
-                    <!-- Preview -->
-                    <div class="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
-                        <p class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Preview (How customers will see this):</p>
-                        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700 rounded-lg space-y-2 text-sm">
-                            <div>
-                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Bank Name</p>
-                                <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_bank_name'] ?: '(Not set)' }}</p>
+                            <div class="text-left">
+                                <h3 class="font-semibold text-slate-900 dark:text-white">M-Pesa</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Safaricom Mobile Money</p>
                             </div>
-                            <div>
-                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Name</p>
-                                <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_account_name'] ?: '(Not set)' }}</p>
-                            </div>
-                            <div>
-                                <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account Number</p>
-                                <p class="text-emerald-900 dark:text-emerald-200 font-bold font-mono">{{ $settings['manual_account_number'] ?: '(Not set)' }}</p>
-                            </div>
-                            @if ($settings['manual_bank_branch'])
-                                <div>
-                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Branch</p>
-                                    <p class="text-emerald-900 dark:text-emerald-200">{{ $settings['manual_bank_branch'] }}</p>
-                                </div>
-                            @endif
-                            @if ($settings['manual_bank_swift'])
-                                <div>
-                                    <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">SWIFT Code</p>
-                                    <p class="text-emerald-900 dark:text-emerald-200 font-mono">{{ $settings['manual_bank_swift'] }}</p>
-                                </div>
-                            @endif
                         </div>
+                        <svg :class="expandedGateway === 'mpesa' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                        </svg>
+                    </button>
+
+                    <div x-show="expandedGateway === 'mpesa'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
+                            @csrf
+                            <fieldset>
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable M-Pesa</legend>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[mpesa_enabled]" value="1" @checked(($settings['mpesa_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable M-Pesa payments</span>
+                                </label>
+                            </fieldset>
+
+                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shortcode & Passkey</legend>
+                                <div class="space-y-4">
+                                    <x-form-input useOld="false" name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
+                                    <x-form-input useOld="false" name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Daraja API Credentials</legend>
+                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Obtain from <a href="https://developer.safaricom.co.ke" target="_blank" class="underline">developer.safaricom.co.ke</a>
+                                    </p>
+                                </div>
+                                <div class="space-y-4">
+                                    <x-form-select useOld="false" name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
+                                    <x-form-input useOld="false" name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" />
+                                    <x-form-input useOld="false" name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" />
+                                </div>
+                            </fieldset>
+
+                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                                    Save M-Pesa Settings
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                </fieldset>
+                </div>
+
+                <!-- Stripe Gateway -->
+                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expandedGateway = expandedGateway === 'stripe' ? null : 'stripe'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10l6-3 6 3 6-3v11a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
+                            </svg>
+                            <div class="text-left">
+                                <h3 class="font-semibold text-slate-900 dark:text-white">Stripe</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Card Payments</p>
+                            </div>
+                        </div>
+                        <svg :class="expandedGateway === 'stripe' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                        </svg>
+                    </button>
+
+                    <div x-show="expandedGateway === 'stripe'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
+                            @csrf
+                            <fieldset>
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable Stripe</legend>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[card_enabled]" value="1" @checked(($settings['card_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable card payments via Stripe</span>
+                                </label>
+                            </fieldset>
+
+                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">API Key</legend>
+                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                                    <p class="text-sm text-blue-700 dark:text-blue-300">
+                                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                        </svg>
+                                        Obtain from <a href="https://dashboard.stripe.com" target="_blank" class="underline">dashboard.stripe.com</a>
+                                    </p>
+                                </div>
+                                <x-form-input useOld="false" name="settings[stripe_key]" label="Publishable Key" value="{{ $settings['stripe_key'] ?? '' }}" placeholder="pk_live_..." />
+                            </fieldset>
+
+                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                                    Save Stripe Settings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Manual Payment Gateway -->
+                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expandedGateway = expandedGateway === 'manual' ? null : 'manual'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            <div class="text-left">
+                                <h3 class="font-semibold text-slate-900 dark:text-white">Manual Payment</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Bank Transfer with Admin Review</p>
+                            </div>
+                        </div>
+                        <svg :class="expandedGateway === 'manual' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                        </svg>
+                    </button>
+
+                    <div x-show="expandedGateway === 'manual'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
+                            @csrf
+                            <fieldset>
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable Manual Payment</legend>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[manual_enabled]" value="1" @checked(($settings['manual_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable manual payment recording</span>
+                                </label>
+                            </fieldset>
+
+                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Bank Account Details</legend>
+                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                                    <p class="text-sm text-blue-900 dark:text-blue-300">
+                                        <strong>ℹ️ How this works:</strong> Customers will see these bank details during checkout. After they submit payment proof, an admin reviews and approves it.
+                                    </p>
+                                </div>
+                                <div class="space-y-4">
+                                    <x-form-input useOld="false" name="settings[manual_bank_name]" label="Bank Name" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" />
+                                    <x-form-input useOld="false" name="settings[manual_account_name]" label="Account Name" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" />
+                                    <x-form-input useOld="false" name="settings[manual_account_number]" label="Account Number" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" />
+                                    <x-form-input useOld="false" name="settings[manual_bank_branch]" label="Branch (Optional)" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" />
+                                    <x-form-input useOld="false" name="settings[manual_bank_swift]" label="SWIFT/BIC Code (Optional)" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" />
+                                </div>
+                            </fieldset>
+
+                            <!-- Preview -->
+                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Preview (How customers see this):</p>
+                                <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700 rounded-lg space-y-2 text-sm">
+                                    <div>
+                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Bank</p>
+                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_bank_name'] ?: '(Not set)' }}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account</p>
+                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_account_name'] ?: '(Not set)' }}</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Number</p>
+                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold font-mono">{{ $settings['manual_account_number'] ?: '(Not set)' }}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                                    Save Manual Payment Settings
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
 
             <!-- Provisioning Tab -->
