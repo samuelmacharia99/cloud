@@ -15,8 +15,13 @@ class ProfileController extends Controller
     /**
      * Display the user's profile form.
      */
-    public function edit(Request $request): View
+    public function edit(Request $request): View|RedirectResponse
     {
+        // Admins should use the dedicated admin profile page
+        if ($request->user()->is_admin) {
+            return Redirect::route('admin.profile.edit');
+        }
+
         return view('profile.edit', [
             'user' => $request->user(),
         ]);
