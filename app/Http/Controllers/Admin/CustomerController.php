@@ -86,7 +86,17 @@ class CustomerController extends Controller
 
         $products = \App\Models\Product::where('is_active', true)->orderBy('name')->get();
 
-        return view('admin.customers.show', compact('customer', 'products'));
+        // Prepare products for Alpine.js
+        $productsForJs = $products->map(function ($product) {
+            return [
+                'id' => $product->id,
+                'name' => $product->name,
+                'monthly_price' => $product->monthly_price,
+                'yearly_price' => $product->yearly_price,
+            ];
+        })->values()->toArray();
+
+        return view('admin.customers.show', compact('customer', 'products', 'productsForJs'));
     }
 
     public function edit(User $customer)

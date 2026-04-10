@@ -18,7 +18,7 @@
     productName: '',
     password_visible: false,
     selectedProduct: '',
-    products: @json($products->map(fn($p) => ['id' => $p->id, 'name' => $p->name, 'monthly_price' => $p->monthly_price, 'yearly_price' => $p->yearly_price])->values()),
+    products: @json($productsForJs),
 }">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
