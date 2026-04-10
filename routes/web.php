@@ -72,6 +72,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // Admin Profile
         Route::get('admin/profile', [\App\Http\Controllers\Admin\ProfileController::class, 'edit'])->name('admin.profile.edit');
         Route::patch('admin/profile', [\App\Http\Controllers\Admin\ProfileController::class, 'update'])->name('admin.profile.update');
+        Route::post('admin/profile/two-factor/enable', [\App\Http\Controllers\Admin\ProfileController::class, 'enableTwoFactor'])->name('admin.profile.two-factor.enable');
+        Route::post('admin/profile/two-factor/disable', [\App\Http\Controllers\Admin\ProfileController::class, 'disableTwoFactor'])->name('admin.profile.two-factor.disable');
+        Route::post('admin/profile/two-factor/regenerate-codes', [\App\Http\Controllers\Admin\ProfileController::class, 'regenerateRecoveryCodes'])->name('admin.profile.two-factor.regenerate-codes');
 
         // Currency Management
         Route::get('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'index'])->name('admin.currencies.index');

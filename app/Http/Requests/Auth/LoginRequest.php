@@ -55,6 +55,15 @@ class LoginRequest extends FormRequest
     }
 
     /**
+     * Check if the authenticated user has 2FA enabled
+     */
+    public function userHasTwoFactor(): bool
+    {
+        $user = \App\Models\User::where('email', $this->email)->first();
+        return $user && $user->two_factor_enabled && $user->phone;
+    }
+
+    /**
      * Ensure the login request is not rate limited.
      *
      * @throws ValidationException

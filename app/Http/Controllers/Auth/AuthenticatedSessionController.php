@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\User;
+use App\Services\TwoFactorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -22,9 +24,25 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request, TwoFactorService $twoFactorService): RedirectResponse
     {
         $request->authenticate();
+
+        $user = Auth::user();
+
+        // Check if user has 2FA enabled
+        if ($user->two_factor_enabled && $user->phone) {
+            // Send 2FA code
+            $twoFactorService->sendCode($user);
+
+            // Store the user ID in session for later verification
+            $request->session()->put('two_factor_user_id', $user->id);
+
+            // Log out temporarily (don't create session yet)
+            Auth::logout();
+
+            return redirect()->route('auth.two-factor.verify');
+        }
 
         $request->session()->regenerate();
 

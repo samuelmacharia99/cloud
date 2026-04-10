@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Helpers\PhoneHelper;
+use App\Services\TwoFactorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -97,6 +98,111 @@ class ProfileController extends Controller
 
             return redirect()->route('admin.profile.edit')
                 ->with('error', 'Failed to update profile. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Enable 2FA for the admin user
+     */
+    public function enableTwoFactor(Request $request, TwoFactorService $twoFactorService)
+    {
+        $admin = auth()->user();
+
+        // Check if admin has a phone number
+        if (!$admin->phone) {
+            return redirect()->route('admin.profile.edit')
+                ->with('error', 'Please set your phone number first before enabling 2FA.');
+        }
+
+        try {
+            $recoveryCodes = $twoFactorService->enable($admin);
+
+            \Log::info('Admin 2FA enabled', [
+                'admin_id' => $admin->id,
+                'admin_name' => $admin->name,
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('success', 'Two-factor authentication enabled successfully!')
+                ->with('recovery_codes', $recoveryCodes);
+        } catch (\Exception $e) {
+            \Log::error('Failed to enable 2FA', [
+                'admin_id' => $admin->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('error', 'Failed to enable 2FA. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Disable 2FA for the admin user
+     */
+    public function disableTwoFactor(Request $request, TwoFactorService $twoFactorService)
+    {
+        $request->validate([
+            'password' => 'required|current_password',
+        ]);
+
+        $admin = auth()->user();
+
+        try {
+            $twoFactorService->disable($admin);
+
+            \Log::info('Admin 2FA disabled', [
+                'admin_id' => $admin->id,
+                'admin_name' => $admin->name,
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('success', 'Two-factor authentication has been disabled.');
+        } catch (\Exception $e) {
+            \Log::error('Failed to disable 2FA', [
+                'admin_id' => $admin->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('error', 'Failed to disable 2FA. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Regenerate recovery codes
+     */
+    public function regenerateRecoveryCodes(Request $request, TwoFactorService $twoFactorService)
+    {
+        $request->validate([
+            'password' => 'required|current_password',
+        ]);
+
+        $admin = auth()->user();
+
+        if (!$admin->two_factor_enabled) {
+            return redirect()->route('admin.profile.edit')
+                ->with('error', '2FA is not enabled.');
+        }
+
+        try {
+            $recoveryCodes = $twoFactorService->enable($admin); // Re-enable to regenerate codes
+
+            \Log::info('Admin recovery codes regenerated', [
+                'admin_id' => $admin->id,
+                'admin_name' => $admin->name,
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('success', 'Recovery codes regenerated successfully!')
+                ->with('recovery_codes', $recoveryCodes);
+        } catch (\Exception $e) {
+            \Log::error('Failed to regenerate recovery codes', [
+                'admin_id' => $admin->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('admin.profile.edit')
+                ->with('error', 'Failed to regenerate recovery codes. ' . $e->getMessage());
         }
     }
 }
