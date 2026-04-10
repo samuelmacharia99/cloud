@@ -418,7 +418,7 @@
 
     <!-- Add Service Modal -->
     <div x-show="addServiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addServiceModal = false">
-    <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
         <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
             <button @click="addServiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
@@ -543,7 +543,7 @@
 
     <!-- Add Domain Modal -->
     <div x-show="addDomainModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addDomainModal = false">
-        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
+    <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
         <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Domain</h2>
             <button @click="addDomainModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
