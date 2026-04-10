@@ -9,7 +9,9 @@
 .idea
 /public/hot
 /public/storage
+/public/build
 /bootstrap/cache
+/storage/framework/views
 *.swp
 *.swo
 *~
