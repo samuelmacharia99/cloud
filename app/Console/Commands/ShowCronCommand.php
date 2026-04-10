@@ -17,9 +17,9 @@ class ShowCronCommand extends Command
         $logsPath = storage_path('logs/schedule.log');
 
         $cronCommand = sprintf(
-            '* * * * * %s %s schedule:run >> %s 2>&1',
+            '* * * * * www-data cd %s && %s artisan schedule:run >> %s 2>&1',
+            $basePath,
             $phpBinary,
-            $artisanPath,
             $logsPath
         );
 
@@ -42,11 +42,11 @@ class ShowCronCommand extends Command
         $this->newLine();
 
         $this->comment('📝 Instructions:');
-        $this->line('  1. SSH into your server');
-        $this->line('  2. Run: crontab -e');
+        $this->line('  1. SSH into your server as root');
+        $this->line('  2. Run: sudo crontab -u www-data -e');
         $this->line('  3. Copy the command above and paste it at the end of the crontab file');
         $this->line('  4. Save and exit the editor');
-        $this->line('  5. Verify with: crontab -l');
+        $this->line('  5. Verify with: sudo crontab -u www-data -l');
         $this->line('  6. Monitor logs: tail -f ' . $logsPath);
 
         $this->newLine();
