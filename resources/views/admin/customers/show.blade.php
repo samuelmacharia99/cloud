@@ -415,9 +415,8 @@
             <p class="text-slate-600 dark:text-slate-400">Full activity log coming soon.</p>
         </div>
     </div>
-</div>
 
-<!-- Add Service Modal -->
+    <!-- Add Service Modal -->
 <div x-show="addServiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addServiceModal = false">
     <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
         <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
@@ -629,6 +628,7 @@
                 </button>
             </div>
         </form>
+    </div>
     </div>
 </div>
 @endsection
