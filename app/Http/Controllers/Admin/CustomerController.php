@@ -237,7 +237,7 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'],
                 ]);
 
-                // Create invoice if next_due_date is provided
+                // Create invoice if next_due_date is provided (10 days prior)
                 if (!empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
                     $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
@@ -251,7 +251,7 @@ class CustomerController extends Controller
                         'user_id' => $customer->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
-                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date']),
+                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10),
                         'subtotal' => $subtotal,
                         'tax' => $tax,
                         'total' => $total,
@@ -327,7 +327,7 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'],
                 ]);
 
-                // Create invoice if requested
+                // Create invoice if requested (10 days prior to next_due_date)
                 if ($validated['generate_invoice']) {
                     $price = $this->getServicePrice($product, $validated['billing_cycle']);
                     $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
@@ -341,7 +341,7 @@ class CustomerController extends Controller
                         'user_id' => $customer->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
-                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date']),
+                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10),
                         'subtotal' => $subtotal,
                         'tax' => $tax,
                         'total' => $total,
