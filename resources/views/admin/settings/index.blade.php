@@ -897,7 +897,7 @@
         const logsPath = '{{ storage_path('logs/schedule.log') }}';
 
         // Build the robust cron command
-        const cronCommand = `* * * * * www-data cd ${projectPath} && ${phpBinary} artisan schedule:run >> ${logsPath} 2>&1`;
+        const cronCommand = `* * * * * www-data ${phpBinary} ${projectPath}/artisan schedule:run >> ${logsPath} 2>&1`;
 
         const cronCommandInput = document.getElementById('cronCommand');
         if (cronCommandInput) {

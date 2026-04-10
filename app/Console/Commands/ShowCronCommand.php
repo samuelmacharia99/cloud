@@ -17,9 +17,9 @@ class ShowCronCommand extends Command
         $logsPath = storage_path('logs/schedule.log');
 
         $cronCommand = sprintf(
-            '* * * * * www-data cd %s && %s artisan schedule:run >> %s 2>&1',
-            $basePath,
+            '* * * * * www-data %s %s/artisan schedule:run >> %s 2>&1',
             $phpBinary,
+            $basePath,
             $logsPath
         );
 
