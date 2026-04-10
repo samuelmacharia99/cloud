@@ -479,10 +479,10 @@
             </div>
 
             <!-- Payment Methods Tab -->
-            <div x-show="activeTab === 'payment_methods'" x-data="{ expandedGateway: null }" class="space-y-2">
+            <div x-show="activeTab === 'payment_methods'" class="space-y-2">
                 <!-- M-Pesa Gateway -->
-                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-                    <button @click="expandedGateway = expandedGateway === 'mpesa' ? null : 'mpesa'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                <div x-data="{ expanded: false }" class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expanded = !expanded" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
                         <div class="flex items-center gap-3">
                             <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -492,12 +492,12 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400">Safaricom Mobile Money</p>
                             </div>
                         </div>
-                        <svg :class="expandedGateway === 'mpesa' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg :class="expanded ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
                         </svg>
                     </button>
 
-                    <div x-show="expandedGateway === 'mpesa'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                    <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                         <form method="POST" action="<?php echo e(route('admin.settings.update')); ?>" class="space-y-4">
                             <?php echo csrf_field(); ?>
                             <fieldset>
@@ -629,7 +629,7 @@
                             </fieldset>
 
                             <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                                     Cancel
                                 </button>
                                 <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
@@ -641,8 +641,8 @@
                 </div>
 
                 <!-- Stripe Gateway -->
-                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-                    <button @click="expandedGateway = expandedGateway === 'stripe' ? null : 'stripe'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                <div x-data="{ expanded: false }" class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expanded = !expanded" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
                         <div class="flex items-center gap-3">
                             <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10l6-3 6 3 6-3v11a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>
@@ -652,12 +652,12 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400">Card Payments</p>
                             </div>
                         </div>
-                        <svg :class="expandedGateway === 'stripe' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg :class="expanded ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
                         </svg>
                     </button>
 
-                    <div x-show="expandedGateway === 'stripe'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                    <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                         <form method="POST" action="<?php echo e(route('admin.settings.update')); ?>" class="space-y-4">
                             <?php echo csrf_field(); ?>
                             <fieldset>
@@ -701,7 +701,7 @@
                             </fieldset>
 
                             <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                                     Cancel
                                 </button>
                                 <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
@@ -713,8 +713,8 @@
                 </div>
 
                 <!-- Manual Payment Gateway -->
-                <div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
-                    <button @click="expandedGateway = expandedGateway === 'manual' ? null : 'manual'" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                <div x-data="{ expanded: false }" class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+                    <button @click="expanded = !expanded" type="button" class="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
                         <div class="flex items-center gap-3">
                             <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -724,12 +724,12 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400">Bank Transfer with Admin Review</p>
                             </div>
                         </div>
-                        <svg :class="expandedGateway === 'manual' ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg :class="expanded ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
                         </svg>
                     </button>
 
-                    <div x-show="expandedGateway === 'manual'" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                    <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                         <form method="POST" action="<?php echo e(route('admin.settings.update')); ?>" class="space-y-4">
                             <?php echo csrf_field(); ?>
                             <fieldset>
@@ -871,7 +871,7 @@
                             </div>
 
                             <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expandedGateway = null" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                                     Cancel
                                 </button>
                                 <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
