@@ -124,11 +124,12 @@
                 <!-- Modal Content -->
                 <div class="p-6 space-y-6">
                     @php
-                        $bankName = \App\Models\Setting::getValue('manual_bank_name', '');
-                        $bankAccountName = \App\Models\Setting::getValue('manual_account_name', '');
-                        $bankAccountNumber = \App\Models\Setting::getValue('manual_account_number', '');
-                        $bankBranch = \App\Models\Setting::getValue('manual_bank_branch', '');
-                        $bankSwiftCode = \App\Models\Setting::getValue('manual_bank_swift', '');
+                        $paymentSettings = \App\Models\ManualPaymentSetting::getCurrent();
+                        $bankName = $paymentSettings->bank_name ?? '';
+                        $bankAccountName = $paymentSettings->account_name ?? '';
+                        $bankAccountNumber = $paymentSettings->account_number ?? '';
+                        $bankBranch = $paymentSettings->branch ?? '';
+                        $bankSwiftCode = $paymentSettings->swift_code ?? '';
                     @endphp
 
                     <!-- Where to Pay Section -->

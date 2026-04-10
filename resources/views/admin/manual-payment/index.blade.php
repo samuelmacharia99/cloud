@@ -171,7 +171,7 @@
 
             <!-- Submit Button -->
             <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                <a href="{{ route('admin.index') }}" class="px-6 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                <a href="{{ route('admin.settings.index') }}" class="px-6 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                     Cancel
                 </a>
                 <button type="submit" class="flex-1 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">

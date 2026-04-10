@@ -14,9 +14,21 @@ class ManualPaymentService implements PaymentGatewayInterface
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
         try {
+            $userId = auth()->id();
+            $user = auth()->user();
+
+            \Log::info('Manual payment initiation started', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'user_id' => $userId,
+                'user_name' => $user->name,
+                'amount' => $invoice->total,
+                'currency' => $customerData['currency'] ?? 'KES',
+            ]);
+
             // Create payment record with pending status
             $payment = Payment::create([
-                'user_id'              => auth()->id(),
+                'user_id'              => $userId,
                 'invoice_id'           => $invoice->id,
                 'amount'               => $invoice->total,
                 'currency'             => $customerData['currency'] ?? 'KES',
@@ -32,26 +44,58 @@ class ManualPaymentService implements PaymentGatewayInterface
                 ]),
             ]);
 
+            \Log::info('Manual payment record created', [
+                'payment_id' => $payment->id,
+                'transaction_reference' => $payment->transaction_reference,
+                'invoice_id' => $invoice->id,
+                'user_id' => $userId,
+                'amount' => $payment->amount,
+                'status' => $payment->status,
+            ]);
+
             // Send notification to admin about pending manual payment
             $adminEmail = \App\Models\Setting::getValue('admin_email', config('mail.from.address'));
             if ($adminEmail) {
                 try {
+                    \Log::debug('Sending manual payment notification email', [
+                        'payment_id' => $payment->id,
+                        'admin_email' => $adminEmail,
+                    ]);
+
                     \Illuminate\Support\Facades\Mail::send('emails.manual-payment-submitted', [
                         'payment'   => $payment,
                         'invoice'   => $invoice,
-                        'customer'  => auth()->user(),
+                        'customer'  => $user,
                     ], function ($m) use ($adminEmail, $invoice) {
                         $m->to($adminEmail)
                             ->subject("Manual Payment Submission - Invoice {$invoice->invoice_number}");
                     });
+
+                    \Log::info('Manual payment notification email sent successfully', [
+                        'payment_id' => $payment->id,
+                        'admin_email' => $adminEmail,
+                    ]);
                 } catch (\Exception $e) {
                     \Log::warning('Failed to send manual payment notification email', [
+                        'payment_id' => $payment->id,
                         'invoice_id' => $invoice->id,
+                        'admin_email' => $adminEmail,
                         'error' => $e->getMessage(),
                     ]);
                     // Don't fail the payment submission just because email failed
                 }
+            } else {
+                \Log::warning('No admin email configured for manual payment notification', [
+                    'payment_id' => $payment->id,
+                    'invoice_id' => $invoice->id,
+                ]);
             }
+
+            \Log::info('Manual payment initiation completed successfully', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $invoice->id,
+                'user_id' => $userId,
+            ]);
 
             return [
                 'success' => true,
@@ -62,7 +106,11 @@ class ManualPaymentService implements PaymentGatewayInterface
         } catch (\Exception $e) {
             \Log::error('Manual payment initiation failed', [
                 'invoice_id' => $invoice->id,
-                'error'      => $e->getMessage(),
+                'invoice_number' => $invoice->invoice_number,
+                'user_id' => auth()->id(),
+                'user_name' => auth()->user()->name,
+                'error' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
             ]);
 
             return [

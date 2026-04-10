@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\PhoneHelper;
 use App\Models\SmsLog;
 use Illuminate\Support\Facades\Http;
 
@@ -29,10 +30,10 @@ class SmsService
         $token = \App\Models\Setting::getValue('sms_api_token');
         $senderId = $senderId ?? \App\Models\Setting::getValue('sms_sender_id', 'TalksasaCloud');
 
-        // Ensure recipients is a string
-        if (is_array($recipients)) {
-            $recipients = implode(',', $recipients);
-        }
+        // Normalize recipients to array, normalize each phone, then rejoin
+        $recipientArray = is_array($recipients) ? $recipients : explode(',', $recipients);
+        $normalizedRecipients = array_map(fn($phone) => PhoneHelper::normalize(trim($phone)), $recipientArray);
+        $recipients = implode(',', $normalizedRecipients);
 
         try {
             $response = Http::withToken($token)->post($this->apiUrl, [

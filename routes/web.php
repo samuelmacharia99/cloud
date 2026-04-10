@@ -69,6 +69,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('admin/manual-payment', [\App\Http\Controllers\Admin\ManualPaymentController::class, 'index'])->name('admin.manual-payment.index');
         Route::post('admin/manual-payment', [\App\Http\Controllers\Admin\ManualPaymentController::class, 'update'])->name('admin.manual-payment.update');
 
+        // Admin Profile
+        Route::get('admin/profile', [\App\Http\Controllers\Admin\ProfileController::class, 'edit'])->name('admin.profile.edit');
+        Route::patch('admin/profile', [\App\Http\Controllers\Admin\ProfileController::class, 'update'])->name('admin.profile.update');
+
         // Currency Management
         Route::get('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'index'])->name('admin.currencies.index');
         Route::post('admin/currencies', [\App\Http\Controllers\Admin\CurrencyController::class, 'store'])->name('admin.currencies.store');

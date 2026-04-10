@@ -316,8 +316,11 @@ class CheckoutController extends Controller
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
 
+            // Get the invoice that was just created
+            $invoice = Invoice::where('user_id', $user->id)->latest()->first();
+
             return redirect()
-                ->route('customer.invoices.show', $order->id ? Invoice::where('user_id', $user->id)->latest()->first() : null)
+                ->route('customer.invoices.show', $invoice)
                 ->with('success', 'Order placed successfully! Please pay your invoice to activate services.');
         } catch (\Exception $e) {
             \Log::error("Checkout failed: {$e->getMessage()}");
@@ -686,8 +689,11 @@ class CheckoutController extends Controller
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
 
+            // Get the invoice that was just created
+            $invoice = Invoice::where('user_id', $user->id)->latest()->first();
+
             return redirect()
-                ->route('customer.invoices.show', Invoice::where('user_id', $user->id)->latest()->first())
+                ->route('customer.invoices.show', $invoice)
                 ->with('success', 'Account created and order placed! Please pay your invoice to activate services.');
         } catch (\Exception $e) {
             \Log::error("Checkout processing failed: {$e->getMessage()}");

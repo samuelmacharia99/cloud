@@ -49,6 +49,16 @@
             @endif
         </div>
 
+        <!-- Phone Number -->
+        <div>
+            <label for="phone" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Phone Number</label>
+            <input id="phone" type="text" name="phone" value="{{ old('phone', $user->phone) }}" placeholder="e.g., 0712345678 or +254712345678" autocomplete="tel" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+            <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Will be automatically normalized to 254XXXXXXXXX format</p>
+            @error('phone')
+                <p class="mt-2 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
         <!-- Save Button -->
         <div class="flex items-center gap-4">
             <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">

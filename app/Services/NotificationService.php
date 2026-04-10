@@ -234,4 +234,79 @@ class NotificationService
             }
         }
     }
+
+    /**
+     * Notify admin and customer about a new order placement.
+     * Admin receives SMS to all notification phones with order summary.
+     * Customer receives SMS with order confirmation and payment-specific instructions.
+     */
+    public function notifyNewOrder(\App\Models\Order $order, Invoice $invoice, string $paymentMethod = 'unknown'): void
+    {
+        // Notify all admins
+        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_new_order')) {
+            try {
+                $adminUsers = \App\Models\User::where('is_admin', true)
+                    ->whereNotNull('notification_phones')
+                    ->get();
+
+                Log::info('Notifying admins about new order', [
+                    'order_id' => $order->id,
+                    'order_number' => $order->order_number,
+                    'admin_count' => $adminUsers->count(),
+                ]);
+
+                foreach ($adminUsers as $admin) {
+                    if (!empty($admin->notification_phones) && is_array($admin->notification_phones)) {
+                        try {
+                            $adminMessage = 'New order #' . $order->order_number . ' from ' . $order->user->name . '. Payment: ' . ucfirst($paymentMethod) . '. Amount: KES ' . number_format($invoice->total, 0) . '.';
+
+                            $this->smsService->send($admin->notification_phones, $adminMessage);
+
+                            Log::info('Admin order notification SMS sent', [
+                                'order_id' => $order->id,
+                                'admin_id' => $admin->id,
+                                'admin_name' => $admin->name,
+                                'phone_count' => count($admin->notification_phones),
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send admin order notification SMS', [
+                                'order_id' => $order->id,
+                                'admin_id' => $admin->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to notify admins about new order', [
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Notify customer
+        if ($this->smsService->isConfigured() && $order->user->phone) {
+            try {
+                $customerMessage = match ($paymentMethod) {
+                    'manual' => 'Your order #' . $order->order_number . ' (KES ' . number_format($invoice->total, 0) . ') has been placed. Please complete your bank transfer. An admin will activate your service after payment verification.',
+                    default => 'Your order #' . $order->order_number . ' (KES ' . number_format($invoice->total, 0) . ') has been placed and payment is being processed. Service credentials will be emailed once provisioned.',
+                };
+
+                $this->smsService->send($order->user->phone, $customerMessage);
+
+                Log::info('Customer order notification SMS sent', [
+                    'order_id' => $order->id,
+                    'customer_id' => $order->user->id,
+                    'payment_method' => $paymentMethod,
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send customer order notification SMS', [
+                    'order_id' => $order->id,
+                    'customer_id' => $order->user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
 }

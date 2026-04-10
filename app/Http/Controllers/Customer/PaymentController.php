@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Customer;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Order;
 use App\Services\CreditService;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -90,6 +92,25 @@ class PaymentController extends Controller
 
             if (!$result['success']) {
                 return back()->with('error', $result['message'] ?? 'Payment initiation failed');
+            }
+
+            // Send order notification when payment method is initiated
+            try {
+                // Get the order for this invoice (orders are created alongside invoices)
+                $order = Order::where('user_id', $invoice->user_id)
+                    ->orderByDesc('created_at')
+                    ->first();
+
+                if ($order) {
+                    $notificationService = app(NotificationService::class);
+                    $notificationService->notifyNewOrder($order, $invoice, $request->payment_method);
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send new order notifications', [
+                    'invoice_id' => $invoice->id,
+                    'payment_method' => $request->payment_method,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             // M-Pesa: Show prompt message and redirect

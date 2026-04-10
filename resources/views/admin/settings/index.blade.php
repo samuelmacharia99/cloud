@@ -278,73 +278,11 @@
                     <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                         <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
                             @csrf
-                            <fieldset>
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable Manual Payment</legend>
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[manual_enabled]" value="1" @checked(($settings['manual_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable manual payment recording</span>
-                                </label>
-                            </fieldset>
-
-                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Bank Account Details</legend>
-                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                                    <p class="text-sm text-blue-900 dark:text-blue-300">
-                                        <strong>ℹ️ How this works:</strong> Customers will see these bank details during checkout. After they submit payment proof, an admin reviews and approves it.
-                                    </p>
-                                </div>
-                                <div class="space-y-4">
-                                    <div>
-                                        <label for="manual_bank_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Bank Name</label>
-                                        <input type="text" id="manual_bank_name" name="settings[manual_bank_name]" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
-                                    </div>
-                                    <div>
-                                        <label for="manual_account_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Account Name</label>
-                                        <input type="text" id="manual_account_name" name="settings[manual_account_name]" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
-                                    </div>
-                                    <div>
-                                        <label for="manual_account_number" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Account Number</label>
-                                        <input type="text" id="manual_account_number" name="settings[manual_account_number]" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
-                                    </div>
-                                    <div>
-                                        <label for="manual_bank_branch" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Branch (Optional)</label>
-                                        <input type="text" id="manual_bank_branch" name="settings[manual_bank_branch]" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
-                                    </div>
-                                    <div>
-                                        <label for="manual_bank_swift" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SWIFT/BIC Code (Optional)</label>
-                                        <input type="text" id="manual_bank_swift" name="settings[manual_bank_swift]" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
-                                    </div>
-                                </div>
-                            </fieldset>
-
-                            <!-- Preview -->
-                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <p class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Preview (How customers see this):</p>
-                                <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-700 rounded-lg space-y-2 text-sm">
-                                    <div>
-                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Bank</p>
-                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_bank_name'] ?: '(Not set)' }}</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Account</p>
-                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold">{{ $settings['manual_account_name'] ?: '(Not set)' }}</p>
-                                    </div>
-                                    <div>
-                                        <p class="text-emerald-700 dark:text-emerald-400 text-xs font-semibold uppercase">Number</p>
-                                        <p class="text-emerald-900 dark:text-emerald-200 font-bold font-mono">{{ $settings['manual_account_number'] ?: '(Not set)' }}</p>
-                                    </div>
-                                </div>
+                            <div class="p-4 bg-blue-50 dark:bg-blue-950/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
+                                <p class="text-sm text-blue-900 dark:text-blue-300">
+                                    <strong>💡 Manual Payment Settings:</strong> Configure manual payment bank details on the <a href="{{ route('admin.manual-payment.index') }}" class="underline font-semibold hover:text-blue-700">dedicated Manual Payment Settings page</a>.
+                                </p>
                             </div>
-
-                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                    Cancel
-                                </button>
-                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                    Save Manual Payment Settings
-                                </button>
-                            </div>
-                        </form>
                     </div>
                 </div>
             </div>

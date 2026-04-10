@@ -15,6 +15,7 @@ class User extends Authenticatable
         'email',
         'password',
         'phone',
+        'notification_phones',
         'company',
         'country',
         'address',
@@ -42,6 +43,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'is_reseller' => 'boolean',
+            'notification_phones' => 'array',
             'package_subscribed_at' => 'datetime',
         ];
     }

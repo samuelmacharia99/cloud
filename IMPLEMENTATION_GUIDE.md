@@ -20,6 +20,16 @@ A modern, scalable web hosting billing and provisioning platform built with Lara
 - MySQL/MariaDB
 - Eloquent ORM
 - Blade templating engine
+Landing Page: http://localhost:8000
+  - Login: http://localhost:8000/login                                                                                                                    
+  - Admin Dashboard: After login (automatic for admin)
+  - Customer Dashboard: After login (automatic for customer)                                                                                              
+                     Role   │        Email         │ Password │                                                                                                          
+  ├──────────┼──────────────────────┼──────────┤
+  │ Admin    │ admin@talksasa.cloud │ password │                                                                                                          
+  ├──────────┼──────────────────────┼──────────┤                                                                                                        
+  │ Customer │ john@example.com     │ password │                                                                                                          
+  └──────────┴──────────────────────┴──────────┘                                            
 
 **Frontend**
 - Blade (server-side templating)

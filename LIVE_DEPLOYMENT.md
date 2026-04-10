@@ -109,7 +109,7 @@ apt-get install -y mysql-server
 # Create database and user
 mysql -u root -p << 'EOF'
 CREATE DATABASE talksasa_cloud CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'talksasa'@'localhost' IDENTIFIED BY 'secure_password_here';
+CREATE USER 'talksasa'@'localhost' IDENTIFIED BY 'Trizah@@254';
 GRANT ALL PRIVILEGES ON talksasa_cloud.* TO 'talksasa'@'localhost';
 FLUSH PRIVILEGES;
 exit;
@@ -212,48 +212,8 @@ php artisan key:generate
 php artisan migrate --force
 
 # Seed initial data (optional)
-php artisan db:seed --class=DatabaseSeeder
+php artisan db:seed --class=
 ```
-
-### Troubleshooting: Foreign Key Constraint Error
-
-If you encounter this error:
-```
-SQLSTATE[HY000]: General error: 1824 Failed to open the referenced table 'order_items'
-```
-
-This means migrations are running in the wrong order. The `services` table is trying to reference `order_items` before it's created. Fix it:
-
-**Step 1: Fix the migration order**
-
-```bash
-cd /root/talksasa-cloud
-
-# Rename the migration file to run AFTER order_items is created
-mv database/migrations/2026_04_02_060404_add_fields_to_services_table.php \
-   database/migrations/2026_04_02_062100_add_fields_to_services_table.php
-```
-
-**Step 2: Clean up failed migrations from database**
-
-```bash
-mysql -u talksasa -p'Trizah@@254' talksasa_cloud << 'EOF'
-DELETE FROM migrations WHERE migration LIKE '%add_fields_to_services%';
-DELETE FROM migrations WHERE migration LIKE '%add_custom_options%';
-exit;
-EOF
-```
-
-**Step 3: Re-run migrations**
-
-```bash
-php artisan migrate --force
-```
-
-This will now run migrations in the correct order:
-1. Create `orders` table (2026_04_02_062026)
-2. Create `order_items` table (2026_04_02_062028)
-3. Add fields to `services` table (2026_04_02_062100) ✓
 
 ---
 
@@ -266,8 +226,8 @@ php artisan tinker
 # In Tinker, run:
 User::create([
     'name' => 'Admin Name',
-    'email' => 'admin@servers.talksasa.com',
-    'password' => bcrypt('secure_password_here'),
+    'email' => 'info@talksasa.com',
+    'password' => bcrypt('!talk!2022@sasa'),
     'is_admin' => true,
     'email_verified_at' => now(),
 ]);
