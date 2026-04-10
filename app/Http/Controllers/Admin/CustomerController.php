@@ -80,10 +80,13 @@ class CustomerController extends Controller
             'services.product',
             'invoices',
             'payments',
-            'tickets'
+            'tickets',
+            'domains'
         );
 
-        return view('admin.customers.show', compact('customer'));
+        $products = \App\Models\Product::where('is_active', true)->orderBy('name')->get();
+
+        return view('admin.customers.show', compact('customer', 'products'));
     }
 
     public function edit(User $customer)
@@ -174,5 +177,210 @@ class CustomerController extends Controller
 
         return redirect()->route('admin.customers.index')
             ->with('success', 'Exited customer view.');
+    }
+
+    /**
+     * Manually add a domain to a customer
+     */
+    public function addDomain(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'domain_name' => 'required|string|max:253',
+            'registered_at' => 'nullable|date',
+            'expires_at' => 'required|date',
+            'next_due_date' => 'nullable|date',
+            'status' => 'required|in:active,pending,expired,suspended',
+            'nameserver_1' => 'nullable|string|max:255',
+            'nameserver_2' => 'nullable|string|max:255',
+            'auto_renew' => 'boolean',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            \DB::transaction(function () use ($validated, $customer) {
+                // Parse domain name (e.g., example.co.ke → name=example, extension=.co.ke)
+                $domainName = $validated['domain_name'];
+                if (strpos($domainName, '.') !== false) {
+                    $parts = explode('.', $domainName, 2);
+                    $name = $parts[0];
+                    $extension = '.' . $parts[1];
+                } else {
+                    $name = $domainName;
+                    $extension = '.com';
+                }
+
+                // Create domain
+                $domain = \App\Models\Domain::create([
+                    'user_id' => $customer->id,
+                    'name' => $name,
+                    'extension' => $extension,
+                    'registered_at' => $validated['registered_at'],
+                    'expires_at' => $validated['expires_at'],
+                    'status' => $validated['status'],
+                    'nameserver_1' => $validated['nameserver_1'],
+                    'nameserver_2' => $validated['nameserver_2'],
+                    'auto_renew' => $validated['auto_renew'] ?? false,
+                    'notes' => $validated['notes'],
+                ]);
+
+                // Create invoice if next_due_date is provided
+                if (!empty($validated['next_due_date'])) {
+                    $price = 10.00; // Default domain renewal price
+                    $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
+                    $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
+
+                    $subtotal = $price;
+                    $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+                    $total = $subtotal + $tax;
+
+                    $invoice = \App\Models\Invoice::create([
+                        'user_id' => $customer->id,
+                        'invoice_number' => $this->generateInvoiceNumber(),
+                        'status' => 'unpaid',
+                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date']),
+                        'subtotal' => $subtotal,
+                        'tax' => $tax,
+                        'total' => $total,
+                    ]);
+
+                    \App\Models\InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'description' => "Domain renewal: {$domainName}",
+                        'quantity' => 1,
+                        'unit_price' => $price,
+                        'amount' => $price,
+                    ]);
+                }
+            });
+
+            return redirect()->route('admin.customers.show', $customer)
+                ->with('success', "Domain {$validated['domain_name']} added successfully.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to add domain: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Manually add a service to a customer
+     */
+    public function addService(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'name' => 'required|string|max:255',
+            'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
+            'status' => 'required|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
+            'username' => 'nullable|string|max:255',
+            'password' => 'nullable|string|max:255',
+            'ip_address' => 'nullable|string|max:45',
+            'next_due_date' => 'required|date',
+            'suspend_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:1000',
+            'generate_invoice' => 'boolean',
+        ]);
+
+        try {
+            \DB::transaction(function () use ($validated, $customer) {
+                $product = \App\Models\Product::findOrFail($validated['product_id']);
+
+                // Build service_meta with credentials
+                $serviceMeta = [];
+                if (!empty($validated['username'])) {
+                    $serviceMeta['username'] = $validated['username'];
+                }
+                if (!empty($validated['password'])) {
+                    $serviceMeta['password'] = $validated['password'];
+                }
+                if (!empty($validated['ip_address'])) {
+                    $serviceMeta['ip_address'] = $validated['ip_address'];
+                }
+
+                // Create service
+                $service = \App\Models\Service::create([
+                    'user_id' => $customer->id,
+                    'product_id' => $validated['product_id'],
+                    'name' => $validated['name'],
+                    'status' => $validated['status'],
+                    'billing_cycle' => $validated['billing_cycle'],
+                    'next_due_date' => $validated['next_due_date'],
+                    'suspend_date' => $validated['suspend_date'],
+                    'provisioning_driver_key' => $product->provisioning_driver_key,
+                    'service_meta' => !empty($serviceMeta) ? $serviceMeta : null,
+                    'notes' => $validated['notes'],
+                ]);
+
+                // Create invoice if requested
+                if ($validated['generate_invoice']) {
+                    $price = $this->getServicePrice($product, $validated['billing_cycle']);
+                    $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
+                    $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
+
+                    $subtotal = $price;
+                    $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+                    $total = $subtotal + $tax;
+
+                    $invoice = \App\Models\Invoice::create([
+                        'user_id' => $customer->id,
+                        'invoice_number' => $this->generateInvoiceNumber(),
+                        'status' => 'unpaid',
+                        'due_date' => \Carbon\Carbon::parse($validated['next_due_date']),
+                        'subtotal' => $subtotal,
+                        'tax' => $tax,
+                        'total' => $total,
+                    ]);
+
+                    \App\Models\InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'service_id' => $service->id,
+                        'product_id' => $product->id,
+                        'description' => $service->name,
+                        'quantity' => 1,
+                        'unit_price' => $price,
+                        'amount' => $price,
+                    ]);
+
+                    $service->update(['invoice_id' => $invoice->id]);
+                }
+            });
+
+            return redirect()->route('admin.customers.show', $customer)
+                ->with('success', "Service {$validated['name']} added successfully.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to add service: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get product price based on billing cycle
+     */
+    private function getServicePrice(\App\Models\Product $product, string $billingCycle): float
+    {
+        return match ($billingCycle) {
+            'monthly' => (float) $product->monthly_price,
+            'quarterly' => ((float) $product->monthly_price * 3),
+            'semi-annual' => ((float) $product->monthly_price * 6),
+            'annual' => (float) ($product->yearly_price ?? ((float) $product->monthly_price * 12)),
+            default => 0,
+        };
+    }
+
+    /**
+     * Generate unique invoice number
+     */
+    private function generateInvoiceNumber(): string
+    {
+        $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+        $date = now()->format('Ymd');
+        $count = \App\Models\Invoice::whereDate('created_at', now())->count() + 1;
+
+        return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
     }
 }

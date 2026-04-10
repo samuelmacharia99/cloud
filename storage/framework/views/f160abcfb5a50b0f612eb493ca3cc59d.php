@@ -1,16 +1,14 @@
-@extends('layouts.admin')
+<?php $__env->startSection('title', $customer->name); ?>
 
-@section('title', $customer->name)
-
-@section('breadcrumb')
+<?php $__env->startSection('breadcrumb'); ?>
 <div class="flex items-center gap-2 text-sm">
-    <a href="{{ route('admin.customers.index') }}" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Customers</a>
+    <a href="<?php echo e(route('admin.customers.index')); ?>" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Customers</a>
     <span class="text-slate-400 dark:text-slate-600">/</span>
-    <p class="text-slate-600 dark:text-slate-400 font-medium">{{ $customer->name }}</p>
+    <p class="text-slate-600 dark:text-slate-400 font-medium"><?php echo e($customer->name); ?></p>
 </div>
-@endsection
+<?php $__env->stopSection(); ?>
 
-@section('content')
+<?php $__env->startSection('content'); ?>
 <div class="space-y-6" x-data="{
     tab: 'overview',
     addServiceModal: false,
@@ -18,7 +16,7 @@
     productName: '',
     password_visible: false,
     selectedProduct: '',
-    products: @json($products->map(fn($p) => ['id' => $p->id, 'name' => $p->name, 'monthly_price' => $p->monthly_price, 'yearly_price' => $p->yearly_price])->values()),
+    products: <?php echo json_encode($products->map(fn($p) => ['id' => $p->id, 'name' => $p->name, 'monthly_price' => $p->monthly_price) ?>,
 }">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
@@ -26,24 +24,27 @@
             <div class="flex items-start gap-4">
                 <!-- Avatar -->
                 <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-xl font-semibold flex-shrink-0">
-                    {{ strtoupper(substr($customer->name, 0, 1)) }}
+                    <?php echo e(strtoupper(substr($customer->name, 0, 1))); ?>
+
                 </div>
 
                 <!-- Header info -->
                 <div>
-                    <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $customer->name }}</h1>
-                    <p class="text-slate-600 dark:text-slate-400 mt-1">{{ $customer->email }}</p>
+                    <h1 class="text-3xl font-bold text-slate-900 dark:text-white"><?php echo e($customer->name); ?></h1>
+                    <p class="text-slate-600 dark:text-slate-400 mt-1"><?php echo e($customer->email); ?></p>
 
                     <!-- Status badges -->
                     <div class="flex items-center gap-3 mt-3">
                         <!-- Account status -->
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $customer->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($customer->status === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
-                            {{ ucfirst($customer->status) }}
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <?php echo e($customer->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($customer->status === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400')); ?>">
+                            <?php echo e(ucfirst($customer->status)); ?>
+
                         </span>
 
                         <!-- Account type -->
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
-                            {{ !empty($customer->company) ? 'Company' : 'Individual' }}
+                            <?php echo e(!empty($customer->company) ? 'Company' : 'Individual'); ?>
+
                         </span>
                     </div>
                 </div>
@@ -51,15 +52,15 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2">
-                <a href="{{ route('admin.customers.edit', $customer) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+                <a href="<?php echo e(route('admin.customers.edit', $customer)); ?>" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Customer
                 </a>
                 <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
                     Create Invoice
                 </button>
-                <form action="{{ route('admin.customers.destroy', $customer) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this customer? This action cannot be undone.');">
-                    @csrf
-                    @method('DELETE')
+                <form action="<?php echo e(route('admin.customers.destroy', $customer)); ?>" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this customer? This action cannot be undone.');">
+                    <?php echo csrf_field(); ?>
+                    <?php echo method_field('DELETE'); ?>
                     <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm">
                         Delete Customer
                     </button>
@@ -103,40 +104,40 @@
                 <div class="space-y-4">
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Email Address</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->email }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->email); ?></p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Phone</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->phone ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->phone ?: '-'); ?></p>
                     </div>
-                    @if ($customer->company)
+                    <?php if($customer->company): ?>
                         <div>
                             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Company</p>
-                            <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->company }}</p>
+                            <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->company); ?></p>
                         </div>
-                    @endif
+                    <?php endif; ?>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Country</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->country ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->country ?: '-'); ?></p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Address</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->address ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->address ?: '-'); ?></p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">City</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->city ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->city ?: '-'); ?></p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Postal Code</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->postal_code ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->postal_code ?: '-'); ?></p>
                     </div>
-                    @if ($customer->vat_number)
+                    <?php if($customer->vat_number): ?>
                         <div>
                             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">VAT Number</p>
-                            <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->vat_number }}</p>
+                            <p class="text-sm text-slate-900 dark:text-white mt-1"><?php echo e($customer->vat_number); ?></p>
                         </div>
-                    @endif
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -148,15 +149,15 @@
                     <div class="space-y-4">
                         <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Member Since</p>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $customer->created_at->format('M d, Y') }}</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white"><?php echo e($customer->created_at->format('M d, Y')); ?></p>
                         </div>
                         <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Active Services</p>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $customer->services_count ?? 0 }}</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white"><?php echo e($customer->services_count ?? 0); ?></p>
                         </div>
                         <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Total Invoices</p>
-                            <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $customer->invoices_count ?? 0 }}</p>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white"><?php echo e($customer->invoices_count ?? 0); ?></p>
                         </div>
                         <div class="flex items-center justify-between">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Outstanding Balance</p>
@@ -166,12 +167,12 @@
                 </div>
 
                 <!-- Notes -->
-                @if ($customer->notes)
+                <?php if($customer->notes): ?>
                     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notes</h3>
-                        <p class="text-sm text-slate-600 dark:text-slate-400">{{ $customer->notes }}</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400"><?php echo e($customer->notes); ?></p>
                     </div>
-                @endif
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -191,7 +192,7 @@
         <!-- Services Section -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div class="overflow-x-auto">
-                @if ($customer->services->count() > 0)
+                <?php if($customer->services->count() > 0): ?>
                     <table class="w-full">
                         <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                             <tr>
@@ -204,33 +205,34 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                            @foreach ($customer->services as $service)
+                            <?php $__currentLoopData = $customer->services; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $service): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">{{ $service->name }}</td>
-                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->product->name ?? '-' }}</td>
-                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('-', ' ', $service->billing_cycle)) }}</td>
+                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium"><?php echo e($service->name); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($service->product->name ?? '-'); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e(ucfirst(str_replace('-', ' ', $service->billing_cycle))); ?></td>
                                     <td class="px-6 py-4">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                            @if($service->status === 'active') bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                            @elseif($service->status === 'suspended') bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                            @elseif($service->status === 'terminated') bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                            @else bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 @endif">
-                                            {{ ucfirst($service->status) }}
+                                            <?php if($service->status === 'active'): ?> bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                                            <?php elseif($service->status === 'suspended'): ?> bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                                            <?php elseif($service->status === 'terminated'): ?> bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                            <?php else: ?> bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 <?php endif; ?>">
+                                            <?php echo e(ucfirst($service->status)); ?>
+
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->next_due_date ? $service->next_due_date->format('M d, Y') : '-' }}</td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($service->next_due_date ? $service->next_due_date->format('M d, Y') : '-'); ?></td>
                                     <td class="px-6 py-4 text-right">
-                                        <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
+                                        <a href="<?php echo e(route('admin.services.show', $service)); ?>" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                     </td>
                                 </tr>
-                            @endforeach
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                         </tbody>
                     </table>
-                @else
+                <?php else: ?>
                     <div class="px-6 py-12 text-center">
                         <p class="text-slate-600 dark:text-slate-400">No services found.</p>
                     </div>
-                @endif
+                <?php endif; ?>
             </div>
         </div>
 
@@ -240,7 +242,7 @@
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Domains</h3>
             </div>
             <div class="overflow-x-auto">
-                @if ($customer->domains->count() > 0)
+                <?php if($customer->domains->count() > 0): ?>
                     <table class="w-full">
                         <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                             <tr>
@@ -252,31 +254,32 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                            @foreach ($customer->domains as $domain)
+                            <?php $__currentLoopData = $customer->domains; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $domain): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">{{ $domain->name }}{{ $domain->extension }}</td>
-                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $domain->registered_at ? $domain->registered_at->format('M d, Y') : '-' }}</td>
-                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $domain->expires_at ? $domain->expires_at->format('M d, Y') : '-' }}</td>
+                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium"><?php echo e($domain->name); ?><?php echo e($domain->extension); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($domain->registered_at ? $domain->registered_at->format('M d, Y') : '-'); ?></td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($domain->expires_at ? $domain->expires_at->format('M d, Y') : '-'); ?></td>
                                     <td class="px-6 py-4">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                            @if($domain->status === 'active') bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                            @elseif($domain->status === 'expired') bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                            @else bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 @endif">
-                                            {{ ucfirst($domain->status) }}
+                                            <?php if($domain->status === 'active'): ?> bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                                            <?php elseif($domain->status === 'expired'): ?> bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                            <?php else: ?> bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 <?php endif; ?>">
+                                            <?php echo e(ucfirst($domain->status)); ?>
+
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-right">
                                         <span class="text-slate-500 dark:text-slate-400 text-sm font-medium">-</span>
                                     </td>
                                 </tr>
-                            @endforeach
+                            <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                         </tbody>
                     </table>
-                @else
+                <?php else: ?>
                     <div class="px-6 py-12 text-center">
                         <p class="text-slate-600 dark:text-slate-400">No domains found.</p>
                     </div>
-                @endif
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -284,7 +287,7 @@
     <!-- Invoices Tab -->
     <div x-show="tab === 'invoices'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">
-            @if ($customer->invoices->count() > 0)
+            <?php if($customer->invoices->count() > 0): ?>
                 <table class="w-full">
                     <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                         <tr>
@@ -297,12 +300,12 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                        @foreach ($customer->invoices as $invoice)
+                        <?php $__currentLoopData = $customer->invoices; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $invoice): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ str_pad($invoice->id, 5, '0', STR_PAD_LEFT) }}</td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $invoice->created_at->format('M d, Y') }}</td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $invoice->due_at ? $invoice->due_at->format('M d, Y') : '-' }}</td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#<?php echo e(str_pad($invoice->id, 5, '0', STR_PAD_LEFT)); ?></td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($invoice->created_at->format('M d, Y')); ?></td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($invoice->due_at ? $invoice->due_at->format('M d, Y') : '-'); ?></td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">$<?php echo e(number_format($invoice->total, 2)); ?></td>
                                 <td class="px-6 py-4">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
                                         Draft
@@ -312,21 +315,21 @@
                                     <a href="#" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                 </td>
                             </tr>
-                        @endforeach
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                     </tbody>
                 </table>
-            @else
+            <?php else: ?>
                 <div class="px-6 py-12 text-center">
                     <p class="text-slate-600 dark:text-slate-400">No invoices found.</p>
                 </div>
-            @endif
+            <?php endif; ?>
         </div>
     </div>
 
     <!-- Payments Tab -->
     <div x-show="tab === 'payments'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">
-            @if ($customer->payments->count() > 0)
+            <?php if($customer->payments->count() > 0): ?>
                 <table class="w-full">
                     <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                         <tr>
@@ -338,11 +341,11 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                        @foreach ($customer->payments as $payment)
+                        <?php $__currentLoopData = $customer->payments; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $payment): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $payment->created_at->format('M d, Y') }}</td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }}</td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst($payment->gateway ?? 'Manual') }}</td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($payment->created_at->format('M d, Y')); ?></td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">$<?php echo e(number_format($payment->amount, 2)); ?></td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e(ucfirst($payment->gateway ?? 'Manual')); ?></td>
                                 <td class="px-6 py-4">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
                                         Completed
@@ -352,21 +355,21 @@
                                     <a href="#" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                 </td>
                             </tr>
-                        @endforeach
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                     </tbody>
                 </table>
-            @else
+            <?php else: ?>
                 <div class="px-6 py-12 text-center">
                     <p class="text-slate-600 dark:text-slate-400">No payments found.</p>
                 </div>
-            @endif
+            <?php endif; ?>
         </div>
     </div>
 
     <!-- Tickets Tab -->
     <div x-show="tab === 'tickets'" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">
-            @if ($customer->tickets->count() > 0)
+            <?php if($customer->tickets->count() > 0): ?>
                 <table class="w-full">
                     <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                         <tr>
@@ -379,10 +382,10 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                        @foreach ($customer->tickets as $ticket)
+                        <?php $__currentLoopData = $customer->tickets; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $ticket): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ str_pad($ticket->id, 4, '0', STR_PAD_LEFT) }}</td>
-                                <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">{{ $ticket->subject }}</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#<?php echo e(str_pad($ticket->id, 4, '0', STR_PAD_LEFT)); ?></td>
+                                <td class="px-6 py-4 text-sm text-slate-900 dark:text-white"><?php echo e($ticket->subject); ?></td>
                                 <td class="px-6 py-4 text-sm">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
                                         Normal
@@ -393,19 +396,19 @@
                                         Open
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $ticket->created_at->format('M d, Y') }}</td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400"><?php echo e($ticket->created_at->format('M d, Y')); ?></td>
                                 <td class="px-6 py-4 text-right">
                                     <a href="#" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                 </td>
                             </tr>
-                        @endforeach
+                        <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                     </tbody>
                 </table>
-            @else
+            <?php else: ?>
                 <div class="px-6 py-12 text-center">
                     <p class="text-slate-600 dark:text-slate-400">No tickets found.</p>
                 </div>
-            @endif
+            <?php endif; ?>
         </div>
     </div>
 
@@ -429,17 +432,17 @@
             </button>
         </div>
 
-        <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6">
-            @csrf
+        <form method="POST" action="<?php echo e(route('admin.customers.add-service', $customer)); ?>" class="p-6 space-y-6">
+            <?php echo csrf_field(); ?>
 
             <!-- Product Selection -->
             <div>
                 <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
                 <select id="product_id" name="product_id" x-model="selectedProduct" @change="productName = products.find(p => p.id == selectedProduct)?.name || ''" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
                     <option value="">Select a product</option>
-                    @foreach ($products as $product)
-                        <option value="{{ $product->id }}">{{ $product->name }}</option>
-                    @endforeach
+                    <?php $__currentLoopData = $products; $__env->addLoop($__currentLoopData); foreach($__currentLoopData as $product): $__env->incrementLoopIndices(); $loop = $__env->getLastLoop(); ?>
+                        <option value="<?php echo e($product->id); ?>"><?php echo e($product->name); ?></option>
+                    <?php endforeach; $__env->popLoop(); $loop = $__env->getLastLoop(); ?>
                 </select>
             </div>
 
@@ -554,8 +557,8 @@
             </button>
         </div>
 
-        <form method="POST" action="{{ route('admin.customers.add-domain', $customer) }}" class="p-6 space-y-6">
-            @csrf
+        <form method="POST" action="<?php echo e(route('admin.customers.add-domain', $customer)); ?>" class="p-6 space-y-6">
+            <?php echo csrf_field(); ?>
 
             <!-- Domain Name -->
             <div>
@@ -631,4 +634,6 @@
         </form>
     </div>
 </div>
-@endsection
+<?php $__env->stopSection(); ?>
+
+<?php echo $__env->make('layouts.admin', array_diff_key(get_defined_vars(), ['__data' => 1, '__path' => 1]))->render(); ?><?php /**PATH /home/zumi/php/road-map/talksasa-cloud/resources/views/admin/customers/show.blade.php ENDPATH**/ ?>

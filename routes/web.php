@@ -31,6 +31,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('admin')->group(function () {
         Route::resource('admin/customers', \App\Http\Controllers\Admin\CustomerController::class)->names('admin.customers');
         Route::post('admin/customers/{customer}/impersonate', [\App\Http\Controllers\Admin\CustomerController::class, 'impersonate'])->name('admin.customers.impersonate');
+        Route::post('admin/customers/{customer}/add-domain', [\App\Http\Controllers\Admin\CustomerController::class, 'addDomain'])->name('admin.customers.add-domain');
+        Route::post('admin/customers/{customer}/add-service', [\App\Http\Controllers\Admin\CustomerController::class, 'addService'])->name('admin.customers.add-service');
         Route::resource('admin/products', \App\Http\Controllers\Admin\ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', \App\Http\Controllers\Admin\InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [\App\Http\Controllers\Admin\InvoiceController::class, 'download'])->name('admin.invoices.download');
