@@ -11,15 +11,7 @@
 @endsection
 
 @section('content')
-<div class="space-y-6" x-data="{
-    tab: 'overview',
-    addServiceModal: false,
-    addDomainModal: false,
-    productName: '',
-    password_visible: false,
-    selectedProduct: '',
-    products: @json($productsForJs),
-}">
+<div class="space-y-6" x-data="initCustomerData()">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <div class="flex items-start justify-between">
@@ -631,4 +623,18 @@
         </div>
     </div>
 </div>
+
+<script>
+function initCustomerData() {
+    return {
+        tab: 'overview',
+        addServiceModal: false,
+        addDomainModal: false,
+        productName: '',
+        password_visible: false,
+        selectedProduct: '',
+        products: @json($productsForJs)
+    }
+}
+</script>
 @endsection
