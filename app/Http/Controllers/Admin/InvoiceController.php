@@ -5,8 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Models\Setting;
+use App\Models\Payment;
+use App\Models\Service;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentStatus;
+use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
 {
@@ -108,5 +114,121 @@ class InvoiceController extends Controller
     public function preview(Invoice $invoice)
     {
         return \App\Services\InvoicePdfService::stream($invoice);
+    }
+
+    /**
+     * Record a payment for an invoice.
+     */
+    public function addPayment(Request $request, Invoice $invoice)
+    {
+        $validated = $request->validate([
+            'amount'                => 'required|numeric|min:0.01',
+            'payment_method'        => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
+            'transaction_reference' => 'nullable|string|max:255',
+            'paid_at'               => 'nullable|date',
+            'notes'                 => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            \Log::info('Recording payment on invoice', [
+                'invoice_id' => $invoice->id,
+                'invoice_number' => $invoice->invoice_number,
+                'user_id' => $invoice->user_id,
+                'amount' => $validated['amount'],
+                'payment_method' => $validated['payment_method'],
+                'admin_id' => auth()->id(),
+                'admin_name' => auth()->user()->name,
+            ]);
+
+            // Create payment
+            $payment = Payment::create([
+                'user_id'                => $invoice->user_id,
+                'invoice_id'             => $invoice->id,
+                'amount'                 => $validated['amount'],
+                'currency'               => 'KES',
+                'payment_method'         => $validated['payment_method'],
+                'transaction_reference'  => $validated['transaction_reference'],
+                'status'                 => PaymentStatus::Completed->value,
+                'paid_at'                => $validated['paid_at'] ?? now(),
+                'notes'                  => $validated['notes'],
+            ]);
+
+            \Log::info('Payment record created', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $invoice->id,
+                'amount' => $payment->amount,
+            ]);
+
+            // Reconcile invoice status
+            $amountPaid = $invoice->payments()
+                ->where('status', PaymentStatus::Completed->value)
+                ->sum('amount');
+
+            $wasUnpaid = $invoice->status !== 'paid';
+
+            if ($amountPaid >= $invoice->total) {
+                $invoice->update([
+                    'status' => 'paid',
+                    'paid_date' => now(),
+                ]);
+
+                \Log::info('Invoice marked as paid', [
+                    'invoice_id' => $invoice->id,
+                    'total_paid' => $amountPaid,
+                    'invoice_total' => $invoice->total,
+                ]);
+
+                // Provision pending services if invoice just became paid
+                if ($wasUnpaid) {
+                    $this->provisionServices($invoice);
+                }
+            } else {
+                $invoice->update(['status' => 'unpaid']);
+
+                \Log::info('Invoice status set to unpaid', [
+                    'invoice_id' => $invoice->id,
+                    'total_paid' => $amountPaid,
+                    'invoice_total' => $invoice->total,
+                ]);
+            }
+
+            return redirect()->route('admin.invoices.show', $invoice)
+                ->with('success', "Payment of \${$validated['amount']} recorded successfully.");
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to record payment', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Failed to record payment. ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Provision services linked to the invoice.
+     */
+    private function provisionServices(Invoice $invoice): void
+    {
+        $provisioningService = new ProvisioningService();
+
+        // Find all pending services for this invoice
+        $services = Service::where('invoice_id', $invoice->id)
+            ->where('status', 'pending')
+            ->get();
+
+        foreach ($services as $service) {
+            try {
+                $provisioningService->provision($service);
+                \Log::info("Service provisioned after invoice payment", [
+                    'service_id' => $service->id,
+                    'invoice_id' => $invoice->id,
+                ]);
+            } catch (\Exception $e) {
+                \Log::error("Auto-provisioning failed for service {$service->id}: {$e->getMessage()}");
+            }
+        }
     }
 }

@@ -36,6 +36,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/products', \App\Http\Controllers\Admin\ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', \App\Http\Controllers\Admin\InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [\App\Http\Controllers\Admin\InvoiceController::class, 'download'])->name('admin.invoices.download');
+        Route::post('admin/invoices/{invoice}/payments', [\App\Http\Controllers\Admin\InvoiceController::class, 'addPayment'])->name('admin.invoices.add-payment');
         Route::resource('admin/payments', \App\Http\Controllers\Admin\PaymentController::class)->names('admin.payments');
         Route::post('admin/payments/{payment}/approve-manual', [\App\Http\Controllers\Admin\PaymentController::class, 'approveManual'])->name('admin.payments.approve-manual');
         Route::post('admin/payments/{payment}/reject-manual', [\App\Http\Controllers\Admin\PaymentController::class, 'rejectManual'])->name('admin.payments.reject-manual');

@@ -11,7 +11,7 @@
 @endsection
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="{ paymentModal: false }">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <div class="flex items-start justify-between">
@@ -138,13 +138,39 @@
 
             <!-- Payments -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Payments</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Payments</h2>
+                    @if(!in_array($invoice->status, ['paid', 'cancelled']))
+                    <button @click="paymentModal = true" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                        + Record Payment
+                    </button>
+                    @endif
+                </div>
+
+                <!-- Balance Summary -->
+                <div class="mb-4 p-3 bg-slate-50 dark:bg-slate-800 rounded-lg text-sm">
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Invoice Total</p>
+                            <p class="text-slate-900 dark:text-white font-semibold text-base mt-1">${{ number_format($invoice->total, 2) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Amount Paid</p>
+                            <p class="text-emerald-600 dark:text-emerald-400 font-semibold text-base mt-1">${{ number_format($invoice->getAmountPaid(), 2) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Remaining</p>
+                            <p class="text-amber-600 dark:text-amber-400 font-semibold text-base mt-1">${{ number_format($invoice->getAmountRemaining(), 2) }}</p>
+                        </div>
+                    </div>
+                </div>
+
                 @if ($invoice->payments->count() > 0)
                     <div class="space-y-3">
                         @foreach ($invoice->payments as $payment)
                             <div class="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg">
                                 <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }} via {{ ucfirst($payment->gateway) }}</p>
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }} via {{ ucfirst($payment->payment_method->value) }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->created_at->format('M d, Y') }}</p>
                                 </div>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -175,6 +201,90 @@
                     <p class="text-sm text-slate-600 dark:text-slate-400">{{ $invoice->notes }}</p>
                 </div>
             @endif
+
+            <!-- Record Payment Modal -->
+            <div x-show="paymentModal" class="fixed inset-0 bg-black/50 z-40 transition-opacity" @click="paymentModal = false" style="display: none;"></div>
+
+            <div x-show="paymentModal" class="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl z-50 transition-transform overflow-y-auto" style="display: none;">
+                <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-xl font-bold text-slate-900 dark:text-white">Record Payment</h3>
+                        <button @click="paymentModal = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <form method="POST" action="{{ route('admin.invoices.add-payment', $invoice) }}" class="p-6 space-y-4">
+                    @csrf
+
+                    <!-- Amount -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
+                        <input type="number"
+                               name="amount"
+                               step="0.01"
+                               value="{{ $invoice->getAmountRemaining() }}"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent"
+                               required>
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Remaining: ${{ number_format($invoice->getAmountRemaining(), 2) }}</p>
+                    </div>
+
+                    <!-- Payment Method -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Payment Method</label>
+                        <select name="payment_method"
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent"
+                                required>
+                            <option value="">Select a method...</option>
+                            <option value="mpesa">M-Pesa</option>
+                            <option value="stripe">Stripe</option>
+                            <option value="paypal">PayPal</option>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <!-- Transaction Reference -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Transaction Reference (Optional)</label>
+                        <input type="text"
+                               name="transaction_reference"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent"
+                               placeholder="e.g., TXN-12345">
+                    </div>
+
+                    <!-- Payment Date -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Payment Date (Optional)</label>
+                        <input type="date"
+                               name="paid_at"
+                               value="{{ now()->format('Y-m-d') }}"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent">
+                    </div>
+
+                    <!-- Notes -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Notes (Optional)</label>
+                        <textarea name="notes"
+                                  rows="3"
+                                  class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent"
+                                  placeholder="Add any notes about this payment..."></textarea>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button type="submit" class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
+                            Record Payment
+                        </button>
+                        <button type="button" @click="paymentModal = false" class="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-medium rounded-lg transition">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <!-- Sidebar -->
