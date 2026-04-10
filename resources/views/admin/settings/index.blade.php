@@ -294,11 +294,26 @@
                                     </p>
                                 </div>
                                 <div class="space-y-4">
-                                    <x-form-input useOld="false" name="settings[manual_bank_name]" label="Bank Name" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" />
-                                    <x-form-input useOld="false" name="settings[manual_account_name]" label="Account Name" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" />
-                                    <x-form-input useOld="false" name="settings[manual_account_number]" label="Account Number" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" />
-                                    <x-form-input useOld="false" name="settings[manual_bank_branch]" label="Branch (Optional)" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" />
-                                    <x-form-input useOld="false" name="settings[manual_bank_swift]" label="SWIFT/BIC Code (Optional)" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" />
+                                    <div>
+                                        <label for="manual_bank_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Bank Name</label>
+                                        <input type="text" id="manual_bank_name" name="settings[manual_bank_name]" value="{{ $settings['manual_bank_name'] ?? '' }}" placeholder="e.g., Equity Bank Kenya" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label for="manual_account_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Account Name</label>
+                                        <input type="text" id="manual_account_name" name="settings[manual_account_name]" value="{{ $settings['manual_account_name'] ?? '' }}" placeholder="e.g., Talksasa Cloud Limited" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label for="manual_account_number" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Account Number</label>
+                                        <input type="text" id="manual_account_number" name="settings[manual_account_number]" value="{{ $settings['manual_account_number'] ?? '' }}" placeholder="e.g., 0123456789" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label for="manual_bank_branch" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Branch (Optional)</label>
+                                        <input type="text" id="manual_bank_branch" name="settings[manual_bank_branch]" value="{{ $settings['manual_bank_branch'] ?? '' }}" placeholder="e.g., Westlands Branch" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label for="manual_bank_swift" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SWIFT/BIC Code (Optional)</label>
+                                        <input type="text" id="manual_bank_swift" name="settings[manual_bank_swift]" value="{{ $settings['manual_bank_swift'] ?? '' }}" placeholder="e.g., EQBLKENA" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white">
+                                    </div>
                                 </div>
                             </fieldset>
 
