@@ -183,10 +183,7 @@ class SettingController extends Controller
         $smsService = new \App\Services\SmsService();
         $result = $smsService->sendTest($request->input('phone'), $senderId);
 
-        if ($result['success']) {
-            return back()->with('success', $result['message']);
-        } else {
-            return back()->with('error', $result['message']);
-        }
+        // Return JSON response
+        return response()->json($result);
     }
 }

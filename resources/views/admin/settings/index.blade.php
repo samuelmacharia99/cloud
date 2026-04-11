@@ -729,6 +729,7 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
                     <div class="space-y-4">
                         <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="hidden" name="settings[sms_enabled]" value="0">
                             <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
