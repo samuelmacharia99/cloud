@@ -158,50 +158,42 @@
                     </button>
 
                     <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
-                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
-                            @csrf
-                            <fieldset>
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable M-Pesa</legend>
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[mpesa_enabled]" value="1" @checked(($settings['mpesa_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable M-Pesa payments</span>
-                                </label>
-                            </fieldset>
+                        <fieldset>
+                            <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable M-Pesa</legend>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="settings[mpesa_enabled]" value="1" @checked(($settings['mpesa_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable M-Pesa payments</span>
+                            </label>
+                        </fieldset>
 
-                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shortcode & Passkey</legend>
-                                <div class="space-y-4">
-                                    <x-form-input useOld="false" name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
-                                    <x-form-input useOld="false" name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
-                                </div>
-                            </fieldset>
-
-                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Daraja API Credentials</legend>
-                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                                    <p class="text-sm text-blue-700 dark:text-blue-300">
-                                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        </svg>
-                                        Obtain from <a href="https://developer.safaricom.co.ke" target="_blank" class="underline">developer.safaricom.co.ke</a>
-                                    </p>
-                                </div>
-                                <div class="space-y-4">
-                                    <x-form-select useOld="false" name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
-                                    <x-form-input useOld="false" name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" />
-                                    <x-form-input useOld="false" name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" />
-                                </div>
-                            </fieldset>
-
-                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                    Cancel
-                                </button>
-                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                    Save M-Pesa Settings
-                                </button>
+                        <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                            <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Shortcode & Passkey</legend>
+                            <div class="space-y-4">
+                                <x-form-input useOld="false" name="settings[mpesa_shortcode]" label="Shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" />
+                                <x-form-input useOld="false" name="settings[mpesa_passkey]" label="Passkey" type="password" value="{{ $settings['mpesa_passkey'] ?? '' }}" />
                             </div>
-                        </form>
+                        </fieldset>
+
+                        <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                            <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Daraja API Credentials</legend>
+                            <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                                <p class="text-sm text-blue-700 dark:text-blue-300">
+                                    <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                    Obtain from <a href="https://developer.safaricom.co.ke" target="_blank" class="underline">developer.safaricom.co.ke</a>
+                                </p>
+                            </div>
+                            <div class="space-y-4">
+                                <x-form-select useOld="false" name="settings[mpesa_environment]" label="Environment" :options="['sandbox' => 'Sandbox (Testing)', 'production' => 'Production']" value="{{ $settings['mpesa_environment'] ?? 'sandbox' }}" />
+                                <x-form-input useOld="false" name="settings[mpesa_consumer_key]" label="Consumer Key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" />
+                                <x-form-input useOld="false" name="settings[mpesa_consumer_secret]" label="Consumer Secret" type="password" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" />
+                            </div>
+                        </fieldset>
+
+                        <div class="text-sm text-slate-600 dark:text-slate-400">
+                            ℹ️ Changes will be saved when you click "Save Settings" at the bottom
+                        </div>
                     </div>
                 </div>
 
@@ -223,38 +215,30 @@
                     </button>
 
                     <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
-                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
-                            @csrf
-                            <fieldset>
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable Stripe</legend>
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[card_enabled]" value="1" @checked(($settings['card_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable card payments via Stripe</span>
-                                </label>
-                            </fieldset>
+                        <fieldset>
+                            <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Enable Stripe</legend>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="settings[card_enabled]" value="1" @checked(($settings['card_enabled'] ?? '1') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable card payments via Stripe</span>
+                            </label>
+                        </fieldset>
 
-                            <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                                <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">API Key</legend>
-                                <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
-                                    <p class="text-sm text-blue-700 dark:text-blue-300">
-                                        <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                        </svg>
-                                        Obtain from <a href="https://dashboard.stripe.com" target="_blank" class="underline">dashboard.stripe.com</a>
-                                    </p>
-                                </div>
-                                <x-form-input useOld="false" name="settings[stripe_key]" label="Publishable Key" value="{{ $settings['stripe_key'] ?? '' }}" placeholder="pk_live_..." />
-                            </fieldset>
-
-                            <div class="pt-4 border-t border-slate-200 dark:border-slate-800 flex gap-3">
-                                <button type="button" @click="expanded = false" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                    Cancel
-                                </button>
-                                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                    Save Stripe Settings
-                                </button>
+                        <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                            <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-3">API Key</legend>
+                            <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-4">
+                                <p class="text-sm text-blue-700 dark:text-blue-300">
+                                    <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                    Obtain from <a href="https://dashboard.stripe.com" target="_blank" class="underline">dashboard.stripe.com</a>
+                                </p>
                             </div>
-                        </form>
+                            <x-form-input useOld="false" name="settings[stripe_key]" label="Publishable Key" value="{{ $settings['stripe_key'] ?? '' }}" placeholder="pk_live_..." />
+                        </fieldset>
+
+                        <div class="text-sm text-slate-600 dark:text-slate-400">
+                            ℹ️ Changes will be saved when you click "Save Settings" at the bottom
+                        </div>
                     </div>
                 </div>
 
@@ -276,13 +260,11 @@
                     </button>
 
                     <div x-show="expanded" class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
-                        <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
-                            @csrf
-                            <div class="p-4 bg-blue-50 dark:bg-blue-950/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
-                                <p class="text-sm text-blue-900 dark:text-blue-300">
-                                    <strong>💡 Manual Payment Settings:</strong> Configure manual payment bank details on the <a href="{{ route('admin.manual-payment.index') }}" class="underline font-semibold hover:text-blue-700">dedicated Manual Payment Settings page</a>.
-                                </p>
-                            </div>
+                        <div class="p-4 bg-blue-50 dark:bg-blue-950/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg">
+                            <p class="text-sm text-blue-900 dark:text-blue-300">
+                                <strong>💡 Manual Payment Settings:</strong> Configure manual payment bank details on the <a href="{{ route('admin.manual-payment.index') }}" class="underline font-semibold hover:text-blue-700">dedicated Manual Payment Settings page</a>.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
