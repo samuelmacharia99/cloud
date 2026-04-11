@@ -723,7 +723,7 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enable SMS</legend>
                     <div class="space-y-3">
                         <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') @change="document.querySelector('input[name=\"settings[sms_enabled]\"]').value = $event.target.checked ? '1' : '0'" class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') @change="document.getElementById('sms_enabled_hidden').value = $event.target.checked ? '1' : '0'" class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
                     </div>
