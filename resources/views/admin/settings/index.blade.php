@@ -697,17 +697,23 @@
             </div>
 
             <!-- SMS Tab -->
+            <!-- Form fields always in DOM (never hidden with x-show) -->
+            <input type="hidden" name="settings[sms_enabled]" id="sms_enabled_hidden" value="{{ ($settings['sms_enabled'] ?? '0') == '1' ? '1' : '0' }}" style="display: none;">
+            <input type="hidden" name="settings[sms_api_token]" id="sms_token_hidden" value="{{ $settings['sms_api_token'] ?? '' }}" style="display: none;">
+            <input type="hidden" name="settings[sms_sender_id]" id="sms_sender_hidden" value="{{ $settings['sms_sender_id'] ?? '' }}" style="display: none;">
+
+            <!-- Display content shown only when SMS tab is active -->
             <div x-show="activeTab === 'sms'" class="space-y-4">
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS API Configuration</legend>
                     <div class="space-y-4">
                         <div>
-                            <label for="settings[sms_api_token]" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
-                            <input type="password" name="settings[sms_api_token]" id="settings[sms_api_token]" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <label for="sms_api_token_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
+                            <input type="password" id="sms_api_token_input" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" @input="document.getElementById('sms_token_hidden').value = $event.target.value" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <div>
-                            <label for="settings[sms_sender_id]" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
-                            <input type="text" name="settings[sms_sender_id]" id="settings[sms_sender_id]" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <label for="sms_sender_id_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
+                            <input type="text" id="sms_sender_id_input" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11" @input="document.getElementById('sms_sender_hidden').value = $event.target.value" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
@@ -717,7 +723,7 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enable SMS</legend>
                     <div class="space-y-3">
                         <label class="flex items-center gap-2">
-                            <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') @change="document.querySelector('input[name=\"settings[sms_enabled]\"]').value = $event.target.checked ? '1' : '0'" class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
                     </div>
