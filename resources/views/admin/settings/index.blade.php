@@ -716,31 +716,27 @@
 
             <!-- SMS Tab -->
             <div x-show="activeTab === 'sms'" class="space-y-4">
-                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-                    <p class="text-sm text-blue-700 dark:text-blue-300">
-                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
-                        </svg>
-                        Configure SMS notifications using the Talksasa Bulk SMS API.
-                    </p>
-                </div>
-
                 <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS Configuration</legend>
                     <div class="space-y-4">
-                        <label class="flex items-center gap-3 cursor-pointer">
-                            <input type="hidden" name="settings[sms_enabled]" value="0">
-                            <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
-                        </label>
                         <x-form-input useOld="false" name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
                         <x-form-input useOld="false" name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
-                        <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enable SMS</legend>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS</legend>
                     <div x-data="{ testPhone: '', testingSms: false }" class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Phone Number</label>
