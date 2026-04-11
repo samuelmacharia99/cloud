@@ -81,6 +81,9 @@ class SettingController extends Controller
     {
         $this->authorize('batchUpdate', Setting::class);
 
+        \Log::info('=== SETTINGS UPDATE START ===');
+        \Log::info('Raw request data', $request->all());
+
         $request->validate([
             'settings' => 'required|array',
             'settings.*' => 'string|max:5000',
@@ -88,9 +91,25 @@ class SettingController extends Controller
 
         $settings = $request->input('settings', []);
 
+        \Log::info('Settings array received', $settings);
+
+        // Log SMS settings specifically
+        $smsSettings = array_filter($settings, function($key) {
+            return strpos($key, 'sms') !== false;
+        }, ARRAY_FILTER_USE_KEY);
+        \Log::info('SMS Settings extracted from request:', $smsSettings);
+
         foreach ($settings as $key => $value) {
+            \Log::info("Setting key '$key' = '$value' (length: " . strlen($value) . ")");
             Setting::setValue($key, trim($value));
         }
+
+        // Verify they were saved
+        \Log::info('Verification after save:');
+        \Log::info('sms_enabled = ' . Setting::getValue('sms_enabled'));
+        \Log::info('sms_api_token = ' . Setting::getValue('sms_api_token'));
+        \Log::info('sms_sender_id = ' . Setting::getValue('sms_sender_id'));
+        \Log::info('=== SETTINGS UPDATE END ===');
 
         return back()->with('success', 'Settings saved successfully.');
     }
@@ -185,5 +204,20 @@ class SettingController extends Controller
 
         // Return JSON response
         return response()->json($result);
+    }
+
+    public function debugLog(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string',
+            'data' => 'nullable|array',
+        ]);
+
+        $message = $request->input('message');
+        $data = $request->input('data');
+
+        \Log::info("[CLIENT DEBUG] $message", (array) $data);
+
+        return response()->json(['success' => true]);
     }
 }

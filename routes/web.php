@@ -67,6 +67,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/settings/upload-file', [\App\Http\Controllers\Admin\SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [\App\Http\Controllers\Admin\SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [\App\Http\Controllers\Admin\SettingController::class, 'testSms'])->name('admin.settings.test-sms');
+        Route::post('admin/settings/debug-log', [\App\Http\Controllers\Admin\SettingController::class, 'debugLog'])->name('admin.settings.debug-log');
 
         // Manual Payment Settings
         Route::get('admin/manual-payment', [\App\Http\Controllers\Admin\ManualPaymentController::class, 'index'])->name('admin.manual-payment.index');

@@ -704,16 +704,26 @@
 
             <!-- Display content shown only when SMS tab is active -->
             <div x-show="activeTab === 'sms'" class="space-y-4">
+                <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+                    <p class="text-sm text-yellow-700 dark:text-yellow-300">
+                        <strong>Debug Mode:</strong> Check browser console (F12) for form submission details
+                    </p>
+                </div>
+
                 <fieldset>
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS API Configuration</legend>
                     <div class="space-y-4">
                         <div>
                             <label for="sms_api_token_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
-                            <input type="password" id="sms_api_token_input" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" @input="document.getElementById('sms_token_hidden').value = $event.target.value" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <input type="password" id="sms_api_token_input" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa"
+                                @input="syncSmsToken($event)"
+                                class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <div>
                             <label for="sms_sender_id_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
-                            <input type="text" id="sms_sender_id_input" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11" @input="document.getElementById('sms_sender_hidden').value = $event.target.value" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <input type="text" id="sms_sender_id_input" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11"
+                                @input="syncSmsSender($event)"
+                                class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
@@ -723,7 +733,9 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Enable SMS</legend>
                     <div class="space-y-3">
                         <label class="flex items-center gap-2">
-                            <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') @change="document.getElementById('sms_enabled_hidden').value = $event.target.checked ? '1' : '0'" class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                            <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1')
+                                @change="syncSmsEnabled($event)"
+                                class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
                     </div>
@@ -866,19 +878,132 @@
 
 @push('scripts')
 <script>
+    // ============= SMS DEBUG FUNCTIONS =============
+    window.smsDebugLog = function(message, data = null) {
+        const timestamp = new Date().toLocaleTimeString();
+        const logMessage = `[SMS DEBUG ${timestamp}] ${message}`;
+        console.log('%c' + logMessage, 'color: #FF6B6B; font-weight: bold;', data || '');
+
+        // Also log to server for permanent records
+        fetch('{{ route('admin.settings.debug-log') }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+            },
+            body: JSON.stringify({ message: logMessage, data: data })
+        }).catch(err => console.error('Failed to send debug log:', err));
+    };
+
+    window.syncSmsToken = function(event) {
+        const value = event.target.value;
+        const hiddenInput = document.getElementById('sms_token_hidden');
+        hiddenInput.value = value;
+        window.smsDebugLog('SMS Token sync:', { input: value, hiddenValue: hiddenInput.value });
+    };
+
+    window.syncSmsSender = function(event) {
+        const value = event.target.value;
+        const hiddenInput = document.getElementById('sms_sender_hidden');
+        hiddenInput.value = value;
+        window.smsDebugLog('SMS Sender sync:', { input: value, hiddenValue: hiddenInput.value });
+    };
+
+    window.syncSmsEnabled = function(event) {
+        const checked = event.target.checked;
+        const value = checked ? '1' : '0';
+        const hiddenInput = document.getElementById('sms_enabled_hidden');
+        hiddenInput.value = value;
+        window.smsDebugLog('SMS Enabled sync:', { checked: checked, hiddenValue: hiddenInput.value });
+    };
+
+    window.debugFormData = function() {
+        console.log('%c=== COMPREHENSIVE FORM DEBUG ===', 'color: #4A90E2; font-weight: bold; font-size: 14px;');
+
+        // Check visible inputs
+        window.smsDebugLog('Visible input values:', {
+            'sms_api_token_input': document.getElementById('sms_api_token_input')?.value || 'NOT FOUND',
+            'sms_sender_id_input': document.getElementById('sms_sender_id_input')?.value || 'NOT FOUND',
+            'sms_enabled_input': document.getElementById('sms_enabled_input')?.checked || 'NOT FOUND'
+        });
+
+        // Check hidden inputs
+        window.smsDebugLog('Hidden input values:', {
+            'sms_enabled_hidden': document.getElementById('sms_enabled_hidden')?.value || 'NOT FOUND',
+            'sms_token_hidden': document.getElementById('sms_token_hidden')?.value || 'NOT FOUND',
+            'sms_sender_hidden': document.getElementById('sms_sender_hidden')?.value || 'NOT FOUND'
+        });
+
+        // Check FormData
+        const form = document.querySelector('form');
+        const formData = new FormData(form);
+        const smsFields = {};
+
+        for (let [key, value] of formData.entries()) {
+            if (key.includes('sms')) {
+                smsFields[key] = value;
+            }
+        }
+
+        window.smsDebugLog('FormData SMS entries:', smsFields);
+
+        // Check if form is in DOM
+        window.smsDebugLog('Form validation:', {
+            'form_exists': !!form,
+            'form_method': form?.method || 'N/A',
+            'form_action': form?.action || 'N/A',
+            'form_children_count': form?.children.length || 0
+        });
+
+        return smsFields;
+    };
+
+    // ============= FORM SUBMISSION HANDLER =============
     // Handle form submission feedback
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
         if (form) {
             form.addEventListener('submit', function(e) {
+                window.smsDebugLog('=== FORM SUBMISSION TRIGGERED ===');
+
+                // Debug: Log all SMS fields before submission
+                const smsFieldsInForm = window.debugFormData();
+
+                // Verify SMS fields are present
+                const hasSmsEnabled = 'settings[sms_enabled]' in smsFieldsInForm;
+                const hasSmsToken = 'settings[sms_api_token]' in smsFieldsInForm;
+                const hasSmsSender = 'settings[sms_sender_id]' in smsFieldsInForm;
+
+                window.smsDebugLog('SMS Fields Present in FormData:', {
+                    'settings[sms_enabled]': hasSmsEnabled,
+                    'settings[sms_api_token]': hasSmsToken,
+                    'settings[sms_sender_id]': hasSmsSender
+                });
+
+                if (!hasSmsEnabled || !hasSmsToken || !hasSmsSender) {
+                    window.smsDebugLog('⚠️ WARNING: Some SMS fields are missing from FormData!');
+                }
+
                 const submitBtn = form.querySelector('button[type="submit"]');
                 const statusMsg = document.getElementById('save-status');
 
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Saving...';
                 statusMsg.textContent = 'Saving settings...';
+
+                window.smsDebugLog('Form submission UI updated');
             });
         }
+
+        window.smsDebugLog('✓ Page loaded - Debug mode active');
+        window.smsDebugLog('✓ Console logging enabled - watch for SMS field updates');
+
+        // Make debug functions available in console
+        console.log('%cSMS Debug Tools Available:', 'color: #27AE60; font-weight: bold;');
+        console.log('- window.debugFormData() - Check all form field values');
+        console.log('- window.syncSmsToken() - Manually sync token');
+        console.log('- window.syncSmsSender() - Manually sync sender');
+        console.log('- window.syncSmsEnabled() - Manually sync enabled checkbox');
     });
 
     // Generate dynamic cron command
