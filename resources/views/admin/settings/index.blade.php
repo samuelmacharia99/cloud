@@ -707,7 +707,7 @@
                         </div>
                         <div>
                             <label for="settings[sms_sender_id]" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
-                            <input type="text" name="settings[sms_sender_id]" id="settings[sms_sender_id]" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <input type="text" name="settings[sms_sender_id]" id="settings[sms_sender_id]" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
