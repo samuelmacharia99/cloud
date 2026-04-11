@@ -725,20 +725,33 @@
                     </p>
                 </div>
 
-                <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
-                    <div class="space-y-4">
-                        <label class="flex items-center gap-3 cursor-pointer">
-                            <input type="hidden" name="settings[sms_enabled]" value="0">
-                            <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
-                            <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
-                        </label>
-                        <x-form-input useOld="false" name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
-                        <x-form-input useOld="false" name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
-                        <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
-                    </div>
-                </fieldset>
+                <!-- SMS Configuration Form -->
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="space-y-4">
+                    @csrf
 
+                    <fieldset>
+                        <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">API Configuration</legend>
+                        <div class="space-y-4">
+                            <label class="flex items-center gap-3 cursor-pointer">
+                                <input type="hidden" name="settings[sms_enabled]" value="0">
+                                <input type="checkbox" name="settings[sms_enabled]" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1') class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
+                                <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
+                            </label>
+                            <x-form-input useOld="false" name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
+                            <x-form-input useOld="false" name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
+                            <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
+                        </div>
+                    </fieldset>
+
+                    <!-- Save Button -->
+                    <div class="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+                            Save Settings
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Test SMS Section -->
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
                     <div x-data="{ testPhone: '', testingSms: false }" class="space-y-4">
