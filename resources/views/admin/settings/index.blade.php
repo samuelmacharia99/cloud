@@ -699,11 +699,17 @@
             <!-- SMS Tab -->
             <div x-show="activeTab === 'sms'" class="space-y-4">
                 <fieldset>
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS Configuration</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS API Configuration</legend>
                     <div class="space-y-4">
-                        <x-form-input useOld="false" name="settings[sms_api_token]" label="API Token" type="password" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" />
-                        <x-form-input useOld="false" name="settings[sms_sender_id]" label="Sender ID" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" />
-                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
+                        <div>
+                            <label for="settings[sms_api_token]" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
+                            <input type="password" name="settings[sms_api_token]" id="settings[sms_api_token]" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                        </div>
+                        <div>
+                            <label for="settings[sms_sender_id]" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
+                            <input type="text" name="settings[sms_sender_id]" id="settings[sms_sender_id]" value="{{ $settings['sms_sender_id'] ?? 'TalksasaCloud' }}" maxlength="11" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                        </div>
+                        <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
                     </div>
                 </fieldset>
 
@@ -718,7 +724,7 @@
                 </fieldset>
 
                 <fieldset class="pt-4 border-t border-slate-200 dark:border-slate-800">
-                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS</legend>
+                    <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Test SMS Configuration</legend>
                     <div x-data="{ testPhone: '', testingSms: false }" class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Test Phone Number</label>
