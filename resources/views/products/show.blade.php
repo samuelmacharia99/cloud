@@ -22,11 +22,11 @@
             <div>
                 <div class="text-right">
                     <div class="flex items-baseline gap-1 justify-end">
-                        <span class="text-4xl font-bold text-slate-900">${{ number_format($product->price, 2) }}</span>
+                        <span class="text-4xl font-bold text-slate-900">KSH {{ number_format($product->price, 2) }}</span>
                         <span class="text-lg text-slate-600">/{{ ucfirst($product->billing_cycle) }}</span>
                     </div>
                     @if ($product->setup_fee > 0)
-                        <p class="text-sm text-slate-600 mt-2">Setup: ${{ number_format($product->setup_fee, 2) }}</p>
+                        <p class="text-sm text-slate-600 mt-2">Setup: KSH {{ number_format($product->setup_fee, 2) }}</p>
                     @endif
                 </div>
             </div>
@@ -71,11 +71,11 @@
         </div>
         <div class="bg-white rounded-2xl border border-slate-200 p-6">
             <p class="text-sm font-medium text-slate-600 uppercase">Recurring Price</p>
-            <p class="text-2xl font-bold text-slate-900 mt-2">${{ number_format($product->price, 2) }}</p>
+            <p class="text-2xl font-bold text-slate-900 mt-2">KSH {{ number_format($product->price, 2) }}</p>
         </div>
         <div class="bg-white rounded-2xl border border-slate-200 p-6">
             <p class="text-sm font-medium text-slate-600 uppercase">Setup Fee</p>
-            <p class="text-2xl font-bold text-slate-900 mt-2">${{ number_format($product->setup_fee ?? 0, 2) }}</p>
+            <p class="text-2xl font-bold text-slate-900 mt-2">KSH {{ number_format($product->setup_fee ?? 0, 2) }}</p>
         </div>
     </div>
 </div>

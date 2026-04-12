@@ -53,7 +53,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid Invoices</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">${{ number_format($unpaidInvoiceTotal, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($unpaidInvoiceTotal, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-amber-100 dark:bg-amber-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -69,7 +69,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Revenue</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">${{ number_format($totalRevenue, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($totalRevenue, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-violet-600 dark:text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,7 +104,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Overdue Invoices</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">${{ number_format($overdueInvoiceTotal, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($overdueInvoiceTotal, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,7 +120,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Pending Payments</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">${{ number_format($pendingPayments, 2) }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($pendingPayments, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,7 +306,7 @@
                                 <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->user?->name ?? 'Unknown' }}</p>
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() ?? 'Manual' }}</p>
                             </div>
-                            <p class="text-sm font-semibold text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }}</p>
+                            <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</p>
                         </div>
                     </div>
                 @empty
@@ -337,7 +337,7 @@
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invoice->user?->name ?? 'Unknown' }}</p>
                             </div>
                             <div class="text-right">
-                                <p class="text-sm font-semibold text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</p>
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                             </div>
                         </div>
                     </div>

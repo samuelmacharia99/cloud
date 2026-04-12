@@ -135,7 +135,7 @@
                                 </div>
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center font-medium">{{ $order->items_count }}</td>
-                            <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">${{ number_format($order->total, 2) }}</td>
+                            <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">KSH {{ number_format($order->total, 2) }}</td>
                             <td class="px-6 py-4 text-center">
                                 <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold
                                     @if($order->payment_status === 'paid')

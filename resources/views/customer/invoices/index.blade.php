@@ -33,7 +33,7 @@
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                     {{ $invoice->due_date ? $invoice->due_date->format('M d, Y') : '-' }}
                                 </td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white text-right">${{ number_format($invoice->total, 2) }}</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white text-right">KSH {{ number_format($invoice->total, 2) }}</td>
                                 <td class="px-6 py-4">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                                         @if($invoice->status === 'paid')

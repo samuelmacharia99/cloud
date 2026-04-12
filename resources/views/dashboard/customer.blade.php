@@ -57,7 +57,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding Balance</p>
-                    <p class="text-3xl font-bold {{ $outstandingBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">${{ number_format($outstandingBalance, 2) }}</p>
+                    <p class="text-3xl font-bold {{ $outstandingBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">KSH {{ number_format($outstandingBalance, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-lg {{ $outstandingBalance > 0 ? 'bg-amber-100 dark:bg-amber-950' : 'bg-emerald-100 dark:bg-emerald-950' }} flex items-center justify-center">
                     <svg class="w-6 h-6 {{ $outstandingBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -120,7 +120,7 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Due: {{ $invoice->due_date->format('M d, Y') }}</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="font-semibold text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</p>
+                                    <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                                     <x-status-badge :status="$invoice->status" type="invoice" />
                                 </div>
                             </div>
@@ -147,7 +147,7 @@
                                     <p class="font-medium text-slate-900 dark:text-white">{{ $service->product?->name ?? 'Service' }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400">Renewal: {{ $service->next_due_date?->format('M d, Y') ?? 'N/A' }}</p>
                                 </div>
-                                <p class="font-semibold text-slate-900 dark:text-white">${{ number_format($service->product?->price ?? 0, 2) }}</p>
+                                <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($service->product?->price ?? 0, 2) }}</p>
                             </div>
                         </div>
                     @empty

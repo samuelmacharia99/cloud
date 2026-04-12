@@ -37,27 +37,27 @@
                             @if ($pricing1)
                                 <div class="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center">
                                     <p class="text-xs text-slate-600 dark:text-slate-400">1 Year</p>
-                                    <p class="text-lg font-bold text-slate-900 dark:text-white">${{ number_format($pricing1->price, 2) }}</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($pricing1->price, 2) }}</p>
                                 </div>
                             @endif
                             @if ($pricing2)
                                 <div class="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center">
                                     <p class="text-xs text-slate-600 dark:text-slate-400">2 Years</p>
-                                    <p class="text-lg font-bold text-slate-900 dark:text-white">${{ number_format($pricing2->price, 2) }}</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($pricing2->price, 2) }}</p>
                                     <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">Save 5%</p>
                                 </div>
                             @endif
                             @if ($pricing3)
                                 <div class="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center">
                                     <p class="text-xs text-slate-600 dark:text-slate-400">3 Years</p>
-                                    <p class="text-lg font-bold text-slate-900 dark:text-white">${{ number_format($pricing3->price, 2) }}</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($pricing3->price, 2) }}</p>
                                     <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">Save 7%</p>
                                 </div>
                             @endif
                             @if ($pricing5)
                                 <div class="p-2 bg-slate-50 dark:bg-slate-800 rounded text-center">
                                     <p class="text-xs text-slate-600 dark:text-slate-400">5 Years</p>
-                                    <p class="text-lg font-bold text-slate-900 dark:text-white">${{ number_format($pricing5->price, 2) }}</p>
+                                    <p class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($pricing5->price, 2) }}</p>
                                     <p class="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">Save 10%</p>
                                 </div>
                             @endif

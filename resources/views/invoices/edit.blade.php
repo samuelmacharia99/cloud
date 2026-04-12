@@ -39,15 +39,15 @@
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <p class="text-sm text-slate-600">Subtotal</p>
-                    <p class="text-lg font-semibold text-slate-900">${{ number_format($invoice->subtotal, 2) }}</p>
+                    <p class="text-lg font-semibold text-slate-900">KSH {{ number_format($invoice->subtotal, 2) }}</p>
                 </div>
                 <div>
                     <p class="text-sm text-slate-600">Tax</p>
-                    <p class="text-lg font-semibold text-slate-900">${{ number_format($invoice->tax, 2) }}</p>
+                    <p class="text-lg font-semibold text-slate-900">KSH {{ number_format($invoice->tax, 2) }}</p>
                 </div>
                 <div class="col-span-2 border-t border-slate-200 pt-3">
                     <p class="text-sm text-slate-600">Total</p>
-                    <p class="text-2xl font-bold text-slate-900">${{ number_format($invoice->total, 2) }}</p>
+                    <p class="text-2xl font-bold text-slate-900">KSH {{ number_format($invoice->total, 2) }}</p>
                 </div>
             </div>
         </div>

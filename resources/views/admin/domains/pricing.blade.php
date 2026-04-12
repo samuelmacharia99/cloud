@@ -111,9 +111,9 @@
                                     </td>
                                     <td class="px-6 py-3 text-sm">
                                         @if ($retail)
-                                            <div class="font-bold text-slate-900 dark:text-white">${{ number_format($retail->price, 2) }}</div>
+                                            <div class="font-bold text-slate-900 dark:text-white">KSH {{ number_format($retail->price, 2) }}</div>
                                             @if ($retail->setup_fee > 0)
-                                                <span class="text-xs text-slate-600 dark:text-slate-400">+${{ number_format($retail->setup_fee, 2) }} setup</span>
+                                                <span class="text-xs text-slate-600 dark:text-slate-400">+KSH {{ number_format($retail->setup_fee, 2) }} setup</span>
                                             @endif
                                         @else
                                             <span class="text-slate-500 dark:text-slate-400">—</span>
@@ -121,9 +121,9 @@
                                     </td>
                                     <td class="px-6 py-3 text-sm">
                                         @if ($wholesale)
-                                            <div class="font-bold text-slate-900 dark:text-white">${{ number_format($wholesale->price, 2) }}</div>
+                                            <div class="font-bold text-slate-900 dark:text-white">KSH {{ number_format($wholesale->price, 2) }}</div>
                                             @if ($wholesale->setup_fee > 0)
-                                                <span class="text-xs text-slate-600 dark:text-slate-400">+${{ number_format($wholesale->setup_fee, 2) }} setup</span>
+                                                <span class="text-xs text-slate-600 dark:text-slate-400">+KSH {{ number_format($wholesale->setup_fee, 2) }} setup</span>
                                             @endif
                                         @else
                                             <span class="text-slate-500 dark:text-slate-400">—</span>
@@ -131,7 +131,7 @@
                                     </td>
                                     <td class="px-6 py-3 text-sm">
                                         @if ($retail && $wholesale)
-                                            <div class="font-bold text-emerald-600 dark:text-emerald-400">${{ number_format($retail->price - $wholesale->price, 2) }}</div>
+                                            <div class="font-bold text-emerald-600 dark:text-emerald-400">KSH {{ number_format($retail->price - $wholesale->price, 2) }}</div>
                                             <span class="text-xs text-slate-600 dark:text-slate-400">{{ round((($retail->price - $wholesale->price) / $wholesale->price) * 100, 1) }}%</span>
                                         @else
                                             <span class="text-slate-500 dark:text-slate-400">—</span>

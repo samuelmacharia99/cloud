@@ -71,7 +71,7 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invoice->user->email }}</p>
                                 </div>
                             </td>
-                            <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</td>
+                            <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {{ $invoice->due_date ? $invoice->due_date->format('M d, Y') : '-' }}
                             </td>

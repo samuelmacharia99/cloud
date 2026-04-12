@@ -65,9 +65,9 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
                                 </td>
                                 <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                <td class="py-3 px-3 text-right text-slate-900 dark:text-white">${{ number_format($item->unit_price, 2) }}</td>
+                                <td class="py-3 px-3 text-right text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
                                 <td class="py-3 px-3 text-slate-600 dark:text-slate-400">{{ $item->billing_cycle ? ucfirst($item->billing_cycle) : '-' }}</td>
-                                <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">${{ number_format($item->amount, 2) }}</td>
+                                <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -79,15 +79,15 @@
                 <div class="flex justify-end gap-16">
                     <div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Subtotal</p>
-                        <p class="font-medium text-slate-900 dark:text-white">${{ number_format($order->subtotal, 2) }}</p>
+                        <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($order->subtotal, 2) }}</p>
                     </div>
                     <div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Tax</p>
-                        <p class="font-medium text-slate-900 dark:text-white">${{ number_format($order->tax, 2) }}</p>
+                        <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($order->tax, 2) }}</p>
                     </div>
                     <div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Total</p>
-                        <p class="font-bold text-lg text-slate-900 dark:text-white">${{ number_format($order->total, 2) }}</p>
+                        <p class="font-bold text-lg text-slate-900 dark:text-white">KSH {{ number_format($order->total, 2) }}</p>
                     </div>
                 </div>
             </div>

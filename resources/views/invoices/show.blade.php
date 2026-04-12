@@ -63,8 +63,8 @@
                         <tr>
                             <td class="py-3 text-slate-900">{{ $item->description }}</td>
                             <td class="text-right py-3 text-slate-600">{{ $item->quantity }}</td>
-                            <td class="text-right py-3 text-slate-600">${{ number_format($item->unit_price, 2) }}</td>
-                            <td class="text-right py-3 font-medium text-slate-900">${{ number_format($item->amount, 2) }}</td>
+                            <td class="text-right py-3 text-slate-600">KSH {{ number_format($item->unit_price, 2) }}</td>
+                            <td class="text-right py-3 font-medium text-slate-900">KSH {{ number_format($item->amount, 2) }}</td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -76,17 +76,17 @@
             <div class="w-full md:w-64">
                 <div class="flex justify-between mb-3">
                     <span class="text-slate-600">Subtotal</span>
-                    <span class="text-slate-900">${{ number_format($invoice->subtotal, 2) }}</span>
+                    <span class="text-slate-900">KSH {{ number_format($invoice->subtotal, 2) }}</span>
                 </div>
                 @if ($invoice->tax > 0)
                     <div class="flex justify-between mb-3 pb-3 border-b border-slate-200">
                         <span class="text-slate-600">Tax</span>
-                        <span class="text-slate-900">${{ number_format($invoice->tax, 2) }}</span>
+                        <span class="text-slate-900">KSH {{ number_format($invoice->tax, 2) }}</span>
                     </div>
                 @endif
                 <div class="flex justify-between">
                     <span class="font-semibold text-slate-900">Total Due</span>
-                    <span class="text-2xl font-bold text-slate-900">${{ number_format($invoice->total, 2) }}</span>
+                    <span class="text-2xl font-bold text-slate-900">KSH {{ number_format($invoice->total, 2) }}</span>
                 </div>
             </div>
         </div>

@@ -32,7 +32,7 @@
                                 <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">{{ $order->order_number }}</td>
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->created_at->format('M d, Y') }}</td>
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->items_count ?? $order->items->count() }}</td>
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white text-right">${{ number_format($order->total, 2) }}</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white text-right">KSH {{ number_format($order->total, 2) }}</td>
                                 <td class="px-6 py-4">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
                                         @if($order->payment_status === 'paid')

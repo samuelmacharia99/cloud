@@ -176,13 +176,13 @@
                         @if ($service->product->monthly_price)
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-600 dark:text-slate-400">Monthly Price</span>
-                                <span class="text-slate-900 dark:text-white font-medium">${{ number_format($service->product->monthly_price, 2) }}</span>
+                                <span class="text-slate-900 dark:text-white font-medium">KSH {{ number_format($service->product->monthly_price, 2) }}</span>
                             </div>
                         @endif
                         @if ($service->product->yearly_price)
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-600 dark:text-slate-400">Yearly Price</span>
-                                <span class="text-slate-900 dark:text-white font-medium">${{ number_format($service->product->yearly_price, 2) }}</span>
+                                <span class="text-slate-900 dark:text-white font-medium">KSH {{ number_format($service->product->yearly_price, 2) }}</span>
                             </div>
                         @endif
                         <div class="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-700">
@@ -195,7 +195,7 @@
                 @if ($service->invoice)
                     <div class="bg-blue-50 dark:bg-blue-950 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                         <p class="text-sm text-blue-900 dark:text-blue-100">
-                            <strong>Invoice {{ str_pad($service->invoice->id, 5, '0', STR_PAD_LEFT) }}:</strong> ${{ number_format($service->invoice->total, 2) }} • Status: {{ ucfirst($service->invoice->status) }}
+                            <strong>Invoice {{ str_pad($service->invoice->id, 5, '0', STR_PAD_LEFT) }}:</strong> KSH {{ number_format($service->invoice->total, 2) }} • Status: {{ ucfirst($service->invoice->status) }}
                         </p>
                         <a href="{{ route('customer.invoices.index') }}" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 mt-2 inline-block">
                             View Invoice →

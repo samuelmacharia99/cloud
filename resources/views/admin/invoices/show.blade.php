@@ -66,7 +66,7 @@
                 <div class="grid grid-cols-2 gap-6">
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Invoice Amount</p>
-                        <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">${{ number_format($invoice->total, 2) }}</p>
+                        <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">KSH {{ number_format($invoice->total, 2) }}</p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Status</p>
@@ -109,8 +109,8 @@
                                             </div>
                                         </td>
                                         <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white">${{ number_format($item->unit_price, 2) }}</td>
-                                        <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">${{ number_format($item->amount, 2) }}</td>
+                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
+                                        <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -121,15 +121,15 @@
                         <div class="flex justify-end gap-16">
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Subtotal</p>
-                                <p class="font-medium text-slate-900 dark:text-white">${{ number_format($invoice->subtotal, 2) }}</p>
+                                <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->subtotal, 2) }}</p>
                             </div>
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Tax</p>
-                                <p class="font-medium text-slate-900 dark:text-white">${{ number_format($invoice->tax, 2) }}</p>
+                                <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->tax, 2) }}</p>
                             </div>
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Total</p>
-                                <p class="font-bold text-lg text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</p>
+                                <p class="font-bold text-lg text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                             </div>
                         </div>
                     </div>
@@ -152,15 +152,15 @@
                     <div class="grid grid-cols-3 gap-4">
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Invoice Total</p>
-                            <p class="text-slate-900 dark:text-white font-semibold text-base mt-1">${{ number_format($invoice->total, 2) }}</p>
+                            <p class="text-slate-900 dark:text-white font-semibold text-base mt-1">KSH {{ number_format($invoice->total, 2) }}</p>
                         </div>
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Amount Paid</p>
-                            <p class="text-emerald-600 dark:text-emerald-400 font-semibold text-base mt-1">${{ number_format($invoice->getAmountPaid(), 2) }}</p>
+                            <p class="text-emerald-600 dark:text-emerald-400 font-semibold text-base mt-1">KSH {{ number_format($invoice->getAmountPaid(), 2) }}</p>
                         </div>
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Remaining</p>
-                            <p class="text-amber-600 dark:text-amber-400 font-semibold text-base mt-1">${{ number_format($invoice->getAmountRemaining(), 2) }}</p>
+                            <p class="text-amber-600 dark:text-amber-400 font-semibold text-base mt-1">KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</p>
                         </div>
                     </div>
                 </div>
@@ -170,7 +170,7 @@
                         @foreach ($invoice->payments as $payment)
                             <div class="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg">
                                 <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">${{ number_format($payment->amount, 2) }} via {{ ucfirst($payment->payment_method->value) }}</p>
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }} via {{ ucfirst($payment->payment_method->value) }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->created_at->format('M d, Y') }}</p>
                                 </div>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -229,7 +229,7 @@
                                value="{{ $invoice->getAmountRemaining() }}"
                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-600 focus:border-transparent"
                                required>
-                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Remaining: ${{ number_format($invoice->getAmountRemaining(), 2) }}</p>
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Remaining: KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</p>
                     </div>
 
                     <!-- Payment Method -->

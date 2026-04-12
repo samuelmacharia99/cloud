@@ -57,7 +57,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Revenue</p>
-                    <p class="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">${{ number_format($totalRevenue, 2) }}</p>
+                    <p class="text-3xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">KSH {{ number_format($totalRevenue, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -73,7 +73,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Est. Commission</p>
-                    <p class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">${{ number_format($totalCommission, 2) }}</p>
+                    <p class="text-3xl font-bold text-purple-600 dark:text-purple-400 mt-2">KSH {{ number_format($totalCommission, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-lg bg-purple-100 dark:bg-purple-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,7 +134,7 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $invoice->user?->name ?? 'N/A' }}</p>
                                 </div>
                                 <div class="text-right">
-                                    <p class="font-semibold text-slate-900 dark:text-white">${{ number_format($invoice->total, 2) }}</p>
+                                    <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                                     <x-status-badge :status="$invoice->status" type="invoice" />
                                 </div>
                             </div>
@@ -243,7 +243,7 @@
             <div class="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950 dark:to-orange-950 rounded-xl border border-amber-200 dark:border-amber-800 p-6">
                 <h3 class="font-semibold text-slate-900 dark:text-white mb-2">Pending Payments</h3>
                 <p class="text-3xl font-bold text-amber-600 dark:text-amber-400">
-                    ${{ number_format($outstandingBalance, 2) }}
+                    KSH {{ number_format($outstandingBalance, 2) }}
                 </p>
                 <p class="text-sm text-amber-700 dark:text-amber-300 mt-2">
                     From unpaid customer invoices

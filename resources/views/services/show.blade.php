@@ -51,7 +51,7 @@
                 <div class="space-y-3">
                     <div>
                         <p class="text-xs text-slate-600 uppercase">Price</p>
-                        <p class="text-xl font-bold text-slate-900">${{ number_format($service->product->price, 2) }}</p>
+                        <p class="text-xl font-bold text-slate-900">KSH {{ number_format($service->product->price, 2) }}</p>
                     </div>
                     <div>
                         <p class="text-xs text-slate-600 uppercase">Billing</p>
@@ -60,7 +60,7 @@
                     @if ($service->product->setup_fee > 0)
                         <div>
                             <p class="text-xs text-slate-600 uppercase">Setup Fee</p>
-                            <p class="text-slate-900">${{ number_format($service->product->setup_fee, 2) }}</p>
+                            <p class="text-slate-900">KSH {{ number_format($service->product->setup_fee, 2) }}</p>
                         </div>
                     @endif
                 </div>

@@ -30,11 +30,11 @@
 
                     <div>
                         <div class="flex items-baseline gap-1">
-                            <span class="text-3xl font-bold text-slate-900">${{ number_format($product->price, 2) }}</span>
+                            <span class="text-3xl font-bold text-slate-900">KSH {{ number_format($product->price, 2) }}</span>
                             <span class="text-sm text-slate-600">/{{ ucfirst($product->billing_cycle) }}</span>
                         </div>
                         @if ($product->setup_fee > 0)
-                            <p class="text-sm text-slate-600 mt-1">Setup fee: ${{ number_format($product->setup_fee, 2) }}</p>
+                            <p class="text-sm text-slate-600 mt-1">Setup fee: KSH {{ number_format($product->setup_fee, 2) }}</p>
                         @endif
                     </div>
 

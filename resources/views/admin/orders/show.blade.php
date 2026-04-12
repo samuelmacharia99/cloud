@@ -106,7 +106,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Amount</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">${{ number_format($order->total, 2) }}</p>
+                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">KSH {{ number_format($order->total, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,9 +148,9 @@
                                             </div>
                                         </td>
                                         <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center font-medium">{{ $item->quantity }}</td>
-                                        <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">${{ number_format($item->unit_price, 2) }}</td>
+                                        <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">KSH {{ number_format($item->unit_price, 2) }}</td>
                                         <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center">{{ $item->billing_cycle ? ucfirst($item->billing_cycle) : '-' }}</td>
-                                        <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">${{ number_format($item->amount, 2) }}</td>
+                                        <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">KSH {{ number_format($item->amount, 2) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -163,15 +163,15 @@
                             <div class="w-full md:w-80 space-y-3">
                                 <div class="flex justify-between items-center">
                                     <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Subtotal</span>
-                                    <span class="text-sm font-semibold text-slate-900 dark:text-white">${{ number_format($order->subtotal, 2) }}</span>
+                                    <span class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($order->subtotal, 2) }}</span>
                                 </div>
                                 <div class="flex justify-between items-center">
                                     <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Tax</span>
-                                    <span class="text-sm font-semibold text-slate-900 dark:text-white">${{ number_format($order->tax, 2) }}</span>
+                                    <span class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($order->tax, 2) }}</span>
                                 </div>
                                 <div class="border-t border-slate-200 dark:border-slate-700 pt-3 flex justify-between items-center">
                                     <span class="font-semibold text-slate-900 dark:text-white">Total</span>
-                                    <span class="text-lg font-bold text-slate-900 dark:text-white">${{ number_format($order->total, 2) }}</span>
+                                    <span class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($order->total, 2) }}</span>
                                 </div>
                             </div>
                         </div>
