@@ -174,17 +174,17 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->created_at->format('M d, Y') }}</p>
                                 </div>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                    @if($payment->status === 'completed')
+                                    @if($payment->status->value === 'completed')
                                         bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                    @elseif($payment->status === 'pending')
+                                    @elseif($payment->status->value === 'pending')
                                         bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                    @elseif($payment->status === 'failed')
+                                    @elseif($payment->status->value === 'failed')
                                         bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                                     @else
                                         bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                                     @endif
                                 ">
-                                    {{ ucfirst($payment->status) }}
+                                    {{ ucfirst($payment->status->value) }}
                                 </span>
                             </div>
                         @endforeach
