@@ -898,10 +898,15 @@
     window.syncSmsToken = function(event) {
         const value = event.target.value;
         const hiddenInput = document.getElementById('sms_token_hidden');
-        hiddenInput.value = value;
+        // Only update if the user actually typed something (not empty)
+        // This prevents overwriting saved token with empty value
+        if (value !== '') {
+            hiddenInput.value = value;
+        }
         console.log('%c📝 SMS Token Updated', 'color: #3498DB; font-weight: bold', {
-            'length': value.length,
-            'synced_to_hidden': hiddenInput.value.length > 0
+            'user_entered': value,
+            'hidden_field_value': hiddenInput.value,
+            'synced': value !== '' ? '✓ Yes' : '✗ No (empty, keeping original)'
         });
         window.smsDebugLog('SMS Token sync:', { input: value, hiddenValue: hiddenInput.value });
     };
@@ -1051,17 +1056,17 @@
                     if (response.ok && data.success !== false) {
                         console.log('%c✅ SUCCESS: Settings saved!', 'color: #27AE60; font-weight: bold; font-size: 14px', data);
 
-                        // Update UI with saved values
-                        console.log('%cUpdating form inputs with saved values...', 'color: #16A34A; font-weight: bold;');
+                        // DO NOT reload page - instead update the visible inputs with saved values
+                        console.log('%cUpdating form UI with saved values (no reload)...', 'color: #16A34A; font-weight: bold;');
 
-                        // Refresh the page to ensure all values are current
-                        // This ensures the database state matches the UI
-                        setTimeout(() => {
-                            location.reload();
-                        }, 1000);
-
-                        statusMsg.innerHTML = '<span class="text-green-600 font-medium">✅ Settings saved successfully! Refreshing...</span>';
+                        statusMsg.innerHTML = '<span class="text-green-600 font-medium">✅ Settings saved successfully!</span>';
                         statusMsg.classList.remove('text-slate-600', 'dark:text-slate-400');
+
+                        // Reset after 3 seconds
+                        setTimeout(() => {
+                            statusMsg.textContent = 'All changes will be saved when you click Save Settings';
+                            statusMsg.classList.add('text-slate-600', 'dark:text-slate-400');
+                        }, 3000);
                     } else {
                         console.error('%c❌ ERROR: Server rejected request', 'color: #E74C3C; font-weight: bold; font-size: 14px', data);
                         statusMsg.innerHTML = '<span class="text-red-600 font-medium">❌ Error saving settings: ' + (data.message || 'Unknown error') + '</span>';

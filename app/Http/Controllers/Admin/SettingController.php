@@ -107,11 +107,21 @@ class SettingController extends Controller
         \Log::info('SMS Settings extracted from request:', $smsSettings);
 
         foreach ($settings as $key => $value) {
-            \Log::info("Setting key '$key' (type: " . gettype($value) . ", length: " . strlen((string)$value) . ")", [
+            $trimmedValue = trim((string)$value);
+            \Log::info("Setting key '$key' (type: " . gettype($value) . ", length: " . strlen($trimmedValue) . ")", [
                 'raw_value' => var_export($value, true),
-                'trimmed_value' => var_export(trim((string)$value), true),
+                'trimmed_value' => var_export($trimmedValue, true),
             ]);
-            Setting::setValue($key, trim((string)$value));
+
+            // Don't save empty values for sensitive settings (like API tokens)
+            // This prevents password fields from clearing saved credentials
+            $sensitiveFields = ['sms_api_token', 'smtp_password', 'mpesa_passkey', 'directadmin_api_password'];
+            if (in_array($key, $sensitiveFields) && empty($trimmedValue)) {
+                \Log::info("Skipping empty sensitive field: $key");
+                continue;
+            }
+
+            Setting::setValue($key, $trimmedValue);
         }
 
         // Verify they were saved
