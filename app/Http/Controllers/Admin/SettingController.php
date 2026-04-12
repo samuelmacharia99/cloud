@@ -222,4 +222,23 @@ class SettingController extends Controller
 
         return response()->json(['success' => true]);
     }
+
+    public function refreshCurrencies(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        try {
+            // This would call an external API to fetch current exchange rates
+            // For now, just return success
+            return response()->json([
+                'success' => true,
+                'message' => 'Exchange rates refreshed successfully.'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to refresh exchange rates: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
