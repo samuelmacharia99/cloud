@@ -83,7 +83,13 @@ class SettingController extends Controller
 
         \Log::info('=== SETTINGS UPDATE START ===');
         \Log::info('Request type: ' . ($request->wantsJson() ? 'AJAX/JSON' : 'Traditional Form'));
-        \Log::info('Raw request data', $request->all());
+        \Log::info('Request headers', [
+            'X-Requested-With' => $request->header('X-Requested-With'),
+            'Accept' => $request->header('Accept'),
+        ]);
+
+        $allData = $request->all();
+        \Log::info('Raw request data', $allData);
 
         $request->validate([
             'settings' => 'required|array',
@@ -101,15 +107,18 @@ class SettingController extends Controller
         \Log::info('SMS Settings extracted from request:', $smsSettings);
 
         foreach ($settings as $key => $value) {
-            \Log::info("Setting key '$key' = '$value' (length: " . strlen($value) . ")");
-            Setting::setValue($key, trim($value));
+            \Log::info("Setting key '$key' (type: " . gettype($value) . ", length: " . strlen((string)$value) . ")", [
+                'raw_value' => var_export($value, true),
+                'trimmed_value' => var_export(trim((string)$value), true),
+            ]);
+            Setting::setValue($key, trim((string)$value));
         }
 
         // Verify they were saved
         \Log::info('Verification after save:');
-        \Log::info('sms_enabled = ' . Setting::getValue('sms_enabled'));
-        \Log::info('sms_api_token = ' . Setting::getValue('sms_api_token'));
-        \Log::info('sms_sender_id = ' . Setting::getValue('sms_sender_id'));
+        \Log::info('sms_enabled = ' . var_export(Setting::getValue('sms_enabled'), true));
+        \Log::info('sms_api_token length = ' . strlen(Setting::getValue('sms_api_token')));
+        \Log::info('sms_sender_id = ' . var_export(Setting::getValue('sms_sender_id'), true));
         \Log::info('=== SETTINGS UPDATE END ===');
 
         // Return JSON for AJAX requests, redirect for traditional form submissions

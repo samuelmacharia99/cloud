@@ -15,7 +15,17 @@ class SmsService
         $enabled = \App\Models\Setting::getValue('sms_enabled');
         $token = \App\Models\Setting::getValue('sms_api_token');
 
-        return $enabled && !empty($token);
+        // Convert string "1"/"0" or "true"/"false" to boolean
+        $enabledBool = in_array($enabled, ['1', 'true', true], true);
+
+        \Log::info('SMS Service Configuration Check', [
+            'enabled_raw' => $enabled,
+            'enabled_bool' => $enabledBool,
+            'token_present' => !empty($token),
+            'is_configured' => $enabledBool && !empty($token)
+        ]);
+
+        return $enabledBool && !empty($token);
     }
 
     public function send(string|array $recipients, string $message, ?string $senderId = null): array

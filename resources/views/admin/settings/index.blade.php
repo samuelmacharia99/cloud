@@ -1017,11 +1017,17 @@
                     const formData = new FormData(form);
 
                     console.log('%cForm Data Collected:', 'color: #2ECC71; font-weight: bold;');
+                    const smsData = {};
                     for (let [key, value] of formData.entries()) {
                         if (key.includes('sms') || key.includes('token') || key.includes('sender')) {
-                            console.log(`  ${key}: ${value ? '✓ Set' : '✗ Empty'}`);
+                            smsData[key] = value;
+                            console.log(`  ${key}: ${value ? '✓ Set (' + (value.length > 20 ? value.substring(0, 20) + '...' : value) + ')' : '✗ Empty'}`);
                         }
                     }
+
+                    // Verify CSRF token is included
+                    const csrfToken = formData.get('_token');
+                    console.log('%cCSRF Token:', 'color: #9B59B6; font-weight: bold;', csrfToken ? '✓ Present' : '✗ Missing!');
 
                     // Submit via AJAX
                     const response = await fetch(form.action, {
@@ -1035,21 +1041,27 @@
 
                     console.log('%cServer Response:', 'color: #E74C3C; font-weight: bold;', {
                         'status': response.status,
-                        'ok': response.ok
+                        'ok': response.ok,
+                        'statusText': response.statusText
                     });
 
                     const data = await response.json();
+                    console.log('%cServer Response Data:', 'color: #3498DB; font-weight: bold;', data);
 
                     if (response.ok && data.success !== false) {
                         console.log('%c✅ SUCCESS: Settings saved!', 'color: #27AE60; font-weight: bold; font-size: 14px', data);
-                        statusMsg.innerHTML = '<span class="text-green-600 font-medium">✅ Settings saved successfully!</span>';
-                        statusMsg.classList.remove('text-slate-600', 'dark:text-slate-400');
 
-                        // Reset after 3 seconds
+                        // Update UI with saved values
+                        console.log('%cUpdating form inputs with saved values...', 'color: #16A34A; font-weight: bold;');
+
+                        // Refresh the page to ensure all values are current
+                        // This ensures the database state matches the UI
                         setTimeout(() => {
-                            statusMsg.textContent = 'All changes will be saved when you click Save Settings';
-                            statusMsg.classList.add('text-slate-600', 'dark:text-slate-400');
-                        }, 3000);
+                            location.reload();
+                        }, 1000);
+
+                        statusMsg.innerHTML = '<span class="text-green-600 font-medium">✅ Settings saved successfully! Refreshing...</span>';
+                        statusMsg.classList.remove('text-slate-600', 'dark:text-slate-400');
                     } else {
                         console.error('%c❌ ERROR: Server rejected request', 'color: #E74C3C; font-weight: bold; font-size: 14px', data);
                         statusMsg.innerHTML = '<span class="text-red-600 font-medium">❌ Error saving settings: ' + (data.message || 'Unknown error') + '</span>';
