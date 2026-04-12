@@ -42,6 +42,8 @@ class SettingController extends Controller
         ],
         'notifications' => [
             'notify_new_order', 'notify_payment', 'notify_service_suspend', 'notify_ticket',
+            'notify_invoice_generated', 'notify_invoice_reminder', 'notify_invoice_overdue',
+            'notify_service_activated', 'notify_service_terminated', 'notify_domain_expiry',
         ],
         'cron' => [
             'cron_timezone', 'cron_retention_days', 'max_execution_time',
@@ -81,16 +83,6 @@ class SettingController extends Controller
     {
         $this->authorize('batchUpdate', Setting::class);
 
-        \Log::info('=== SETTINGS UPDATE START ===');
-        \Log::info('Request type: ' . ($request->wantsJson() ? 'AJAX/JSON' : 'Traditional Form'));
-        \Log::info('Request headers', [
-            'X-Requested-With' => $request->header('X-Requested-With'),
-            'Accept' => $request->header('Accept'),
-        ]);
-
-        $allData = $request->all();
-        \Log::info('Raw request data', $allData);
-
         $request->validate([
             'settings' => 'required|array',
             'settings.*' => 'string|max:5000',
@@ -98,49 +90,26 @@ class SettingController extends Controller
 
         $settings = $request->input('settings', []);
 
-        \Log::info('Settings array received', $settings);
-
-        // Log SMS settings specifically
-        $smsSettings = array_filter($settings, function($key) {
-            return strpos($key, 'sms') !== false;
-        }, ARRAY_FILTER_USE_KEY);
-        \Log::info('SMS Settings extracted from request:', $smsSettings);
+        // Don't save empty values for sensitive settings (like API tokens)
+        // This prevents password fields from clearing saved credentials when left blank
+        $sensitiveFields = ['sms_api_token', 'smtp_password', 'mpesa_passkey', 'directadmin_api_password', 'stripe_key'];
 
         foreach ($settings as $key => $value) {
             $trimmedValue = trim((string)$value);
-            \Log::info("Setting key '$key' (type: " . gettype($value) . ", length: " . strlen($trimmedValue) . ")", [
-                'raw_value' => var_export($value, true),
-                'trimmed_value' => var_export($trimmedValue, true),
-            ]);
 
-            // Don't save empty values for sensitive settings (like API tokens)
-            // This prevents password fields from clearing saved credentials
-            $sensitiveFields = ['sms_api_token', 'smtp_password', 'mpesa_passkey', 'directadmin_api_password'];
+            // Skip empty sensitive fields
             if (in_array($key, $sensitiveFields) && empty($trimmedValue)) {
-                \Log::info("Skipping empty sensitive field: $key");
                 continue;
             }
 
             Setting::setValue($key, $trimmedValue);
         }
 
-        // Verify they were saved
-        \Log::info('Verification after save:');
-        \Log::info('sms_enabled = ' . var_export(Setting::getValue('sms_enabled'), true));
-        \Log::info('sms_api_token length = ' . strlen(Setting::getValue('sms_api_token')));
-        \Log::info('sms_sender_id = ' . var_export(Setting::getValue('sms_sender_id'), true));
-        \Log::info('=== SETTINGS UPDATE END ===');
-
         // Return JSON for AJAX requests, redirect for traditional form submissions
         if ($request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
             return response()->json([
                 'success' => true,
-                'message' => 'Settings saved successfully.',
-                'saved_at' => now()->format('Y-m-d H:i:s'),
-                'settings' => [
-                    'sms_enabled' => Setting::getValue('sms_enabled'),
-                    'sms_sender_id' => Setting::getValue('sms_sender_id'),
-                ]
+                'message' => 'Settings saved successfully.'
             ]);
         }
 
