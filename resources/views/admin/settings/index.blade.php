@@ -714,10 +714,24 @@
                     <legend class="text-sm font-semibold text-slate-900 dark:text-white mb-4">SMS API Configuration</legend>
                     <div class="space-y-4">
                         <div>
-                            <label for="sms_api_token_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
+                            <div class="flex items-center justify-between mb-2">
+                                <label for="sms_api_token_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300">API Token</label>
+                                @if($settings['sms_api_token'] ?? false)
+                                    <span class="inline-flex items-center gap-1 px-2 py-1 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 text-xs rounded-full font-medium">
+                                        ✓ Configured
+                                    </span>
+                                @endif
+                            </div>
                             <input type="password" id="sms_api_token_input" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa"
                                 @input="window.syncSmsToken($event)"
                                 class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                @if($settings['sms_api_token'] ?? false)
+                                    ✓ A token is already configured. Leave blank if you don't want to change it.
+                                @else
+                                    Enter your SMS API bearer token from Talksasa.
+                                @endif
+                            </p>
                         </div>
                         <div>
                             <label for="sms_sender_id_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
