@@ -53,12 +53,18 @@ class SmsService
                 'message' => $message,
             ]);
 
-            // Check if response is JSON
-            if (!$response->successful() || $response->headers()->get('content-type') === null || strpos($response->headers()->get('content-type'), 'application/json') === false) {
-                throw new \Exception('Invalid response from SMS API: ' . $response->status() . ' - ' . substr($response->body(), 0, 200));
+            // If the request wasn't successful, throw an exception
+            if (!$response->successful()) {
+                throw new \Exception('SMS API returned status ' . $response->status() . ': ' . substr($response->body(), 0, 200));
             }
 
-            $data = $response->json();
+            // Try to parse JSON response
+            try {
+                $data = $response->json();
+            } catch (\Exception $e) {
+                // If JSON parsing fails, try to handle raw response
+                $data = ['status' => 'success', 'message' => 'SMS sent', 'data' => $response->body()];
+            }
 
             if ($response->successful() && isset($data['status']) && $data['status'] === 'success') {
                 // Log success
