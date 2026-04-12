@@ -475,7 +475,7 @@
                             <input type="email" x-model="testEmail" placeholder="your@email.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter an email address to send a test email and verify your SMTP settings are working correctly.</p>
                         </div>
-                        <button type="button" @click="testSmtpEmail()" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                        <button type="button" @click="window.testSmtpEmail()" :disabled="!testEmail || testing" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
                             <span x-show="!testing">Send Test Email</span>
                             <span x-show="testing">Testing...</span>
                         </button>
@@ -716,13 +716,13 @@
                         <div>
                             <label for="sms_api_token_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
                             <input type="password" id="sms_api_token_input" value="{{ $settings['sms_api_token'] ?? '' }}" placeholder="Bearer token from Talksasa"
-                                @input="syncSmsToken($event)"
+                                @input="window.syncSmsToken($event)"
                                 class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <div>
                             <label for="sms_sender_id_input" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Sender ID</label>
                             <input type="text" id="sms_sender_id_input" value="{{ $settings['sms_sender_id'] ?? '' }}" placeholder="e.g., TalksasaCloud (max 11 chars)" maxlength="11"
-                                @input="syncSmsSender($event)"
+                                @input="window.syncSmsSender($event)"
                                 class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:placeholder-slate-500 dark:focus:border-blue-400 dark:focus:ring-blue-400" />
                         </div>
                         <p class="text-xs text-slate-600 dark:text-slate-400">Sender ID must be 11 characters or less. This will appear as the SMS sender name.</p>
@@ -734,7 +734,7 @@
                     <div class="space-y-3">
                         <label class="flex items-center gap-2">
                             <input type="checkbox" id="sms_enabled_input" value="1" @checked(($settings['sms_enabled'] ?? '0') == '1')
-                                @change="syncSmsEnabled($event)"
+                                @change="window.syncSmsEnabled($event)"
                                 class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500">
                             <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                         </label>
@@ -749,7 +749,7 @@
                             <input type="text" x-model="testPhone" placeholder="+254700000000" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter a phone number to send a test SMS and verify your API configuration is working correctly.</p>
                         </div>
-                        <button type="button" @click="testSmtpSms(testPhone)" :disabled="!testPhone || testingSms" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                        <button type="button" @click="window.testSmtpSms(testPhone)" :disabled="!testPhone || testingSms" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
                             <span x-show="!testingSms">Send Test SMS</span>
                             <span x-show="testingSms">Sending...</span>
                         </button>
@@ -798,7 +798,7 @@
 
                     <!-- Action Buttons -->
                     <div x-data="{ refreshingRates: false }" class="flex flex-wrap gap-3 mb-6">
-                        <button type="button" @click="refreshExchangeRates()" :disabled="refreshingRates" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
+                        <button type="button" @click="window.refreshExchangeRates()" :disabled="refreshingRates" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg font-medium transition text-sm">
                             <span x-show="!refreshingRates">🔄 Refresh Exchange Rates</span>
                             <span x-show="refreshingRates">Refreshing...</span>
                         </button>
