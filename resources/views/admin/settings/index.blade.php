@@ -899,6 +899,10 @@
         const value = event.target.value;
         const hiddenInput = document.getElementById('sms_token_hidden');
         hiddenInput.value = value;
+        console.log('%c📝 SMS Token Updated', 'color: #3498DB; font-weight: bold', {
+            'length': value.length,
+            'synced_to_hidden': hiddenInput.value.length > 0
+        });
         window.smsDebugLog('SMS Token sync:', { input: value, hiddenValue: hiddenInput.value });
     };
 
@@ -906,6 +910,11 @@
         const value = event.target.value;
         const hiddenInput = document.getElementById('sms_sender_hidden');
         hiddenInput.value = value;
+        console.log('%c📝 SMS Sender ID Updated', 'color: #3498DB; font-weight: bold', {
+            'value': value,
+            'length': value.length,
+            'synced_to_hidden': hiddenInput.value === value
+        });
         window.smsDebugLog('SMS Sender sync:', { input: value, hiddenValue: hiddenInput.value });
     };
 
@@ -914,6 +923,11 @@
         const value = checked ? '1' : '0';
         const hiddenInput = document.getElementById('sms_enabled_hidden');
         hiddenInput.value = value;
+        console.log('%c✓ SMS Enabled Updated', 'color: #27AE60; font-weight: bold', {
+            'enabled': checked,
+            'hidden_value': hiddenInput.value,
+            'synced': hiddenInput.value === value
+        });
         window.smsDebugLog('SMS Enabled sync:', { checked: checked, hiddenValue: hiddenInput.value });
     };
 
@@ -959,51 +973,106 @@
     };
 
     // ============= FORM SUBMISSION HANDLER =============
-    // Handle form submission feedback
+    // Handle form submission via AJAX (no page reload)
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
         if (form) {
-            form.addEventListener('submit', function(e) {
-                window.smsDebugLog('=== FORM SUBMISSION TRIGGERED ===');
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault(); // Prevent default form submission
+
+                console.log('%c=== FORM SUBMISSION STARTED ===', 'color: #FF6B6B; font-weight: bold; font-size: 14px');
 
                 // Debug: Log all SMS fields before submission
                 const smsFieldsInForm = window.debugFormData();
+                console.log('%cSMS Fields in FormData:', 'color: #4A90E2; font-weight: bold;', smsFieldsInForm);
 
                 // Verify SMS fields are present
                 const hasSmsEnabled = 'settings[sms_enabled]' in smsFieldsInForm;
                 const hasSmsToken = 'settings[sms_api_token]' in smsFieldsInForm;
                 const hasSmsSender = 'settings[sms_sender_id]' in smsFieldsInForm;
 
-                window.smsDebugLog('SMS Fields Present in FormData:', {
-                    'settings[sms_enabled]': hasSmsEnabled,
-                    'settings[sms_api_token]': hasSmsToken,
-                    'settings[sms_sender_id]': hasSmsSender
+                console.log('%cField Validation:', 'color: #9B59B6; font-weight: bold;', {
+                    'sms_enabled': hasSmsEnabled,
+                    'sms_api_token': hasSmsToken,
+                    'sms_sender_id': hasSmsSender,
+                    'all_present': (hasSmsEnabled && hasSmsToken && hasSmsSender)
                 });
 
                 if (!hasSmsEnabled || !hasSmsToken || !hasSmsSender) {
-                    window.smsDebugLog('⚠️ WARNING: Some SMS fields are missing from FormData!');
+                    console.warn('%c⚠️ WARNING: Some SMS fields are missing!', 'color: #F39C12; font-weight: bold');
                 }
 
                 const submitBtn = form.querySelector('button[type="submit"]');
                 const statusMsg = document.getElementById('save-status');
+                const originalBtnHtml = submitBtn.innerHTML;
 
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<svg class="w-5 h-5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg> Saving...';
                 statusMsg.textContent = 'Saving settings...';
 
-                window.smsDebugLog('Form submission UI updated');
+                console.log('%cUI Updated - Starting AJAX submission', 'color: #3498DB');
+
+                try {
+                    // Collect all form data
+                    const formData = new FormData(form);
+
+                    console.log('%cForm Data Collected:', 'color: #2ECC71; font-weight: bold;');
+                    for (let [key, value] of formData.entries()) {
+                        if (key.includes('sms') || key.includes('token') || key.includes('sender')) {
+                            console.log(`  ${key}: ${value ? '✓ Set' : '✗ Empty'}`);
+                        }
+                    }
+
+                    // Submit via AJAX
+                    const response = await fetch(form.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    console.log('%cServer Response:', 'color: #E74C3C; font-weight: bold;', {
+                        'status': response.status,
+                        'ok': response.ok
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success !== false) {
+                        console.log('%c✅ SUCCESS: Settings saved!', 'color: #27AE60; font-weight: bold; font-size: 14px', data);
+                        statusMsg.innerHTML = '<span class="text-green-600 font-medium">✅ Settings saved successfully!</span>';
+                        statusMsg.classList.remove('text-slate-600', 'dark:text-slate-400');
+
+                        // Reset after 3 seconds
+                        setTimeout(() => {
+                            statusMsg.textContent = 'All changes will be saved when you click Save Settings';
+                            statusMsg.classList.add('text-slate-600', 'dark:text-slate-400');
+                        }, 3000);
+                    } else {
+                        console.error('%c❌ ERROR: Server rejected request', 'color: #E74C3C; font-weight: bold; font-size: 14px', data);
+                        statusMsg.innerHTML = '<span class="text-red-600 font-medium">❌ Error saving settings: ' + (data.message || 'Unknown error') + '</span>';
+                    }
+                } catch (error) {
+                    console.error('%c❌ AJAX Error:', 'color: #C0392B; font-weight: bold; font-size: 14px', error);
+                    statusMsg.innerHTML = '<span class="text-red-600 font-medium">❌ Error: ' + error.message + '</span>';
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnHtml;
+                    console.log('%c=== FORM SUBMISSION COMPLETED ===', 'color: #FF6B6B; font-weight: bold; font-size: 14px');
+                }
             });
         }
 
-        window.smsDebugLog('✓ Page loaded - Debug mode active');
-        window.smsDebugLog('✓ Console logging enabled - watch for SMS field updates');
-
-        // Make debug functions available in console
-        console.log('%cSMS Debug Tools Available:', 'color: #27AE60; font-weight: bold;');
-        console.log('- window.debugFormData() - Check all form field values');
-        console.log('- window.syncSmsToken() - Manually sync token');
-        console.log('- window.syncSmsSender() - Manually sync sender');
-        console.log('- window.syncSmsEnabled() - Manually sync enabled checkbox');
+        console.log('%c=== SETTINGS PAGE LOADED ===', 'color: #2ECC71; font-weight: bold; font-size: 16px');
+        console.log('%cDebug mode is ACTIVE - All form changes are logged', 'color: #F39C12; font-weight: bold');
+        console.log('%cAvailable functions:', 'color: #3498DB; font-weight: bold');
+        console.log('  window.debugFormData() - View all form field values');
+        console.log('  window.syncSmsToken(event) - Manually sync API token');
+        console.log('  window.syncSmsSender(event) - Manually sync Sender ID');
+        console.log('  window.syncSmsEnabled(event) - Manually sync Enable checkbox');
+        console.log('%cWatch the console as you fill out the SMS form to see real-time updates!', 'color: #9B59B6');
     });
 
     // Generate dynamic cron command

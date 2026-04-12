@@ -82,6 +82,7 @@ class SettingController extends Controller
         $this->authorize('batchUpdate', Setting::class);
 
         \Log::info('=== SETTINGS UPDATE START ===');
+        \Log::info('Request type: ' . ($request->wantsJson() ? 'AJAX/JSON' : 'Traditional Form'));
         \Log::info('Raw request data', $request->all());
 
         $request->validate([
@@ -110,6 +111,19 @@ class SettingController extends Controller
         \Log::info('sms_api_token = ' . Setting::getValue('sms_api_token'));
         \Log::info('sms_sender_id = ' . Setting::getValue('sms_sender_id'));
         \Log::info('=== SETTINGS UPDATE END ===');
+
+        // Return JSON for AJAX requests, redirect for traditional form submissions
+        if ($request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return response()->json([
+                'success' => true,
+                'message' => 'Settings saved successfully.',
+                'saved_at' => now()->format('Y-m-d H:i:s'),
+                'settings' => [
+                    'sms_enabled' => Setting::getValue('sms_enabled'),
+                    'sms_sender_id' => Setting::getValue('sms_sender_id'),
+                ]
+            ]);
+        }
 
         return back()->with('success', 'Settings saved successfully.');
     }
