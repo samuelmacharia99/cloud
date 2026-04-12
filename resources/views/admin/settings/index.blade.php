@@ -105,9 +105,6 @@
     </div>
 </div>
 @endsection
-
-@endsection
-
 @push('scripts')
 <script>
     async function submitForm(form) {
