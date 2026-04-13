@@ -88,9 +88,9 @@
                                                     class="rounded border-slate-300 dark:border-slate-600 focus:ring-blue-500"
                                                 >
                                                 <div class="flex-1 min-w-0">
-                                                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ customer.name }}</p>
-                                                    <p class="text-xs text-slate-600 dark:text-slate-400 truncate">{{ customer.email }}</p>
-                                                    <p class="text-xs text-slate-500 dark:text-slate-500">{{ customer.phone }}</p>
+                                                    <p class="text-sm font-medium text-slate-900 dark:text-white" x-text="customer.name"></p>
+                                                    <p class="text-xs text-slate-600 dark:text-slate-400 truncate" x-text="customer.email"></p>
+                                                    <p class="text-xs text-slate-500 dark:text-slate-500" x-text="customer.phone"></p>
                                                 </div>
                                             </label>
                                         </div>
