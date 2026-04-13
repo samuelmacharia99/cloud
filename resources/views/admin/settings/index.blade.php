@@ -675,31 +675,126 @@
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
+                    <!-- Status -->
+                    @if($cronValidation['valid'])
+                        <div class="bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 p-4 rounded-lg flex items-start gap-3">
+                            <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                            <div>
+                                <p class="font-medium text-emerald-900 dark:text-emerald-300">{{ $cronValidation['message'] }}</p>
+                                @if($cronStats)
+                                    <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">
+                                        {{ $cronStats['enabled_jobs'] }} job(s) enabled •
+                                        {{ $cronStats['recent_runs_24h'] }} run(s) in last 24h
+                                        @if($cronStats['recent_failures_24h'] > 0)
+                                            • ⚠️ {{ $cronStats['recent_failures_24h'] }} failure(s)
+                                        @endif
+                                    </p>
+                                @endif
+                            </div>
+                        </div>
+                    @else
+                        <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 p-4 rounded-lg">
+                            <p class="font-medium text-red-900 dark:text-red-300">⚠️ Configuration Issues</p>
+                            <ul class="text-sm text-red-800 dark:text-red-400 mt-2 space-y-1">
+                                @foreach($cronValidation['errors'] as $error)
+                                    <li>• {{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Scheduled Tasks</legend>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Scheduled Tasks Configuration</legend>
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Cron Timezone</label>
-                                <input type="text" name="settings[cron_timezone]" value="{{ $settings['cron_timezone'] ?? 'UTC' }}" placeholder="UTC" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="settings[cron_timezone]" value="{{ $settings['cron_timezone'] ?? 'UTC' }}" placeholder="e.g., Africa/Nairobi, UTC" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Timezone for scheduling cron jobs (IANA timezone format)</p>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Log Retention (Days)</label>
-                                <input type="number" name="settings[cron_retention_days]" value="{{ $settings['cron_retention_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="number" name="settings[cron_retention_days]" value="{{ $settings['cron_retention_days'] ?? '30' }}" min="1" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Older cron job logs will be automatically deleted</p>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Max Execution Time (Seconds)</label>
-                                <input type="number" name="settings[max_execution_time]" value="{{ $settings['max_execution_time'] ?? '300' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="number" name="settings[max_execution_time]" value="{{ $settings['max_execution_time'] ?? '300' }}" min="30" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Maximum time a single cron job can run (prevents hung processes)</p>
                             </div>
                         </div>
                     </fieldset>
 
                     <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Setup Instructions</legend>
-                        <div class="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg">
-                            <p class="text-sm text-slate-700 dark:text-slate-300 mb-3">Add the following line to your server's crontab to enable scheduled tasks:</p>
-                            <code class="block bg-slate-900 text-slate-100 p-3 rounded text-xs overflow-x-auto">* * * * * cd {{ base_path() }} && php artisan schedule:run >> /dev/null 2>&1</code>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Cron Setup Instructions</legend>
+                        <div class="space-y-4">
+                            <p class="text-sm text-slate-700 dark:text-slate-300">
+                                Add one of the following commands to your server's crontab to enable scheduled tasks. Use <code class="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-xs">crontab -e</code> to edit.
+                            </p>
+
+                            <!-- Default Command -->
+                            <div x-data="{ copied: false }" class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                                <div class="flex items-start justify-between gap-3 mb-3">
+                                    <div>
+                                        <p class="font-medium text-slate-900 dark:text-white">Recommended</p>
+                                        <p class="text-sm text-slate-600 dark:text-slate-400">Suppresses output for clean logs</p>
+                                    </div>
+                                    <button type="button" @click="navigator.clipboard.writeText('{{ $cronCommand }}'); copied = true; setTimeout(() => copied = false, 2000)"
+                                            class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-xs font-medium transition-colors flex items-center gap-2 whitespace-nowrap">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                        </svg>
+                                        <span x-text="copied ? 'Copied!' : 'Copy'" class="text-xs"></span>
+                                    </button>
+                                </div>
+                                <code class="block bg-slate-900 text-emerald-400 p-3 rounded text-xs overflow-x-auto font-mono break-all">{{ $cronCommand }}</code>
+                            </div>
+
+                            <!-- All Options -->
+                            <details class="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                                <summary class="cursor-pointer font-medium text-slate-900 dark:text-white flex items-center gap-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                    View other options
+                                </summary>
+                                <div class="mt-4 space-y-3">
+                                    @foreach($cronCommandOptions as $key => $option)
+                                        @if($key !== 'default')
+                                            <div x-data="{ copied: false }" class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-800">
+                                                <div class="flex items-start justify-between gap-3 mb-3">
+                                                    <div>
+                                                        <p class="font-medium text-slate-900 dark:text-white">{{ $option['label'] }}</p>
+                                                        <p class="text-sm text-slate-600 dark:text-slate-400">{{ $option['description'] }}</p>
+                                                    </div>
+                                                    <button type="button" @click="navigator.clipboard.writeText('{{ addslashes($option['command']) }}'); copied = true; setTimeout(() => copied = false, 2000)"
+                                                            class="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded text-xs font-medium transition-colors flex items-center gap-2 whitespace-nowrap">
+                                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                                        </svg>
+                                                        <span x-text="copied ? 'Copied!' : 'Copy'"></span>
+                                                    </button>
+                                                </div>
+                                                <code class="block bg-slate-900 text-emerald-400 p-3 rounded text-xs overflow-x-auto font-mono break-all">{{ $option['command'] }}</code>
+                                            </div>
+                                        @endif
+                                    @endforeach
+                                </div>
+                            </details>
+
+                            <!-- Help Text -->
+                            <div class="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 p-3 rounded-lg text-sm text-blue-900 dark:text-blue-300">
+                                <p class="font-medium mb-2">💡 How to add to crontab:</p>
+                                <ol class="list-decimal list-inside space-y-1 text-xs">
+                                    <li>SSH into your server</li>
+                                    <li>Run <code class="bg-blue-100 dark:bg-blue-900 px-1 rounded">crontab -e</code></li>
+                                    <li>Paste the command and save</li>
+                                    <li>Run <code class="bg-blue-100 dark:bg-blue-900 px-1 rounded">crontab -l</code> to verify</li>
+                                </ol>
+                            </div>
                         </div>
                     </fieldset>
 
@@ -709,7 +804,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
-                            Save Cron
+                            Save Cron Settings
                         </button>
                     </div>
                 </form>

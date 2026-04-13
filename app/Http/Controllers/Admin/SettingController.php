@@ -76,7 +76,16 @@ class SettingController extends Controller
         $groups = $this->groups;
         $currencies = Currency::active()->get();
 
-        return view('admin.settings.index', compact('group', 'settings', 'keys', 'groups', 'currencies'));
+        // Get cron helper data for the cron tab
+        $cronCommand = getCronCommand();
+        $cronCommandOptions = getCronCommandOptions();
+        $cronValidation = \App\Helpers\CronHelper::validateCronSetup();
+        $cronStats = \App\Helpers\CronHelper::getCronStats();
+
+        return view('admin.settings.index', compact(
+            'group', 'settings', 'keys', 'groups', 'currencies',
+            'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats'
+        ));
     }
 
     public function update(Request $request)

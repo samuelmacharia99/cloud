@@ -1,6 +1,23 @@
 <?php
 
 use App\Helpers\CurrencyHelper;
+use App\Helpers\CronHelper;
+
+/**
+ * Generate the dynamic cron command for the current environment
+ */
+function getCronCommand(?string $outputFile = null): string
+{
+    return CronHelper::generateCronCommand($outputFile);
+}
+
+/**
+ * Get all cron command options for different scenarios
+ */
+function getCronCommandOptions(): array
+{
+    return CronHelper::getCronCommandOptions();
+}
 
 /**
  * Get the selected/default currency for the system
