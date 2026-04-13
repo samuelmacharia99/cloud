@@ -181,21 +181,26 @@ class CronHelper
             return [];
         }
 
-        $jobs = \App\Models\CronJob::with('latestLog')->get();
+        try {
+            $jobs = \App\Models\CronJob::with('latestLog')->get();
 
-        $totalJobs = $jobs->count();
-        $enabledJobs = $jobs->where('enabled', true)->count();
-        $recentRuns = \App\Models\CronJobLog::where('created_at', '>=', now()->subHours(24))->count();
-        $recentFailures = \App\Models\CronJobLog::where('created_at', '>=', now()->subHours(24))
-            ->where('status', 'failed')
-            ->count();
+            $totalJobs = $jobs->count();
+            $enabledJobs = $jobs->where('enabled', true)->count();
+            $recentRuns = \App\Models\CronJobLog::where('started_at', '>=', now()->subHours(24))->count();
+            $recentFailures = \App\Models\CronJobLog::where('started_at', '>=', now()->subHours(24))
+                ->where('status', 'failed')
+                ->count();
 
-        return [
-            'total_jobs' => $totalJobs,
-            'enabled_jobs' => $enabledJobs,
-            'recent_runs_24h' => $recentRuns,
-            'recent_failures_24h' => $recentFailures,
-            'health_status' => $recentFailures === 0 ? 'healthy' : 'warning',
-        ];
+            return [
+                'total_jobs' => $totalJobs,
+                'enabled_jobs' => $enabledJobs,
+                'recent_runs_24h' => $recentRuns,
+                'recent_failures_24h' => $recentFailures,
+                'health_status' => $recentFailures === 0 ? 'healthy' : 'warning',
+            ];
+        } catch (\Exception $e) {
+            // If table doesn't exist yet, return empty stats
+            return [];
+        }
     }
 }

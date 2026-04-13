@@ -77,10 +77,18 @@ class SettingController extends Controller
         $currencies = Currency::active()->get();
 
         // Get cron helper data for the cron tab
-        $cronCommand = getCronCommand();
-        $cronCommandOptions = getCronCommandOptions();
-        $cronValidation = \App\Helpers\CronHelper::validateCronSetup();
-        $cronStats = \App\Helpers\CronHelper::getCronStats();
+        try {
+            $cronCommand = getCronCommand();
+            $cronCommandOptions = getCronCommandOptions();
+            $cronValidation = \App\Helpers\CronHelper::validateCronSetup();
+            $cronStats = \App\Helpers\CronHelper::getCronStats();
+        } catch (\Exception $e) {
+            // Fallback if cron system has issues
+            $cronCommand = getCronCommand();
+            $cronCommandOptions = getCronCommandOptions();
+            $cronValidation = ['valid' => false, 'message' => 'Unable to load cron configuration', 'errors' => [$e->getMessage()]];
+            $cronStats = [];
+        }
 
         return view('admin.settings.index', compact(
             'group', 'settings', 'keys', 'groups', 'currencies',
