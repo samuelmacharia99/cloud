@@ -6,6 +6,8 @@ use App\Models\Invoice;
 use App\Models\Domain;
 use App\Models\Service;
 use App\Models\Payment;
+use App\Models\Ticket;
+use App\Models\TicketReply;
 use App\Mail\InvoiceGeneratedMail;
 use App\Mail\InvoiceReminderMail;
 use App\Mail\InvoiceOverdueMail;
@@ -14,8 +16,11 @@ use App\Mail\ServiceActivatedMail;
 use App\Mail\ServiceSuspendedMail;
 use App\Mail\ServiceTerminatedMail;
 use App\Mail\DomainExpiryMail;
+use App\Mail\TicketCreatedMail;
+use App\Mail\TicketRepliedMail;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class NotificationService
 {
@@ -307,6 +312,142 @@ class NotificationService
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Notify about a new support ticket creation
+     * - Sends email to ticket owner
+     * - For reseller's customer tickets, notifies the reseller
+     * - For non-reseller customers, notifies admin
+     */
+    public function notifyTicketCreated(Ticket $ticket): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_ticket')) {
+            return;
+        }
+
+        try {
+            // Always send to ticket owner (the customer who created it)
+            Mail::to($ticket->user->email)->send(new TicketCreatedMail($ticket));
+            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'sent');
+
+            Log::info('Ticket creation notification sent to customer', [
+                'ticket_id' => $ticket->id,
+                'customer_id' => $ticket->user->id,
+            ]);
+        } catch (\Exception $e) {
+            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'failed', $e->getMessage());
+            Log::error('Failed to send ticket creation notification', [
+                'ticket_id' => $ticket->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Notify admin about new ticket via SMS if configured
+        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_ticket')) {
+            try {
+                $adminUsers = \App\Models\User::where('is_admin', true)
+                    ->whereNotNull('notification_phones')
+                    ->get();
+
+                foreach ($adminUsers as $admin) {
+                    if (!empty($admin->notification_phones) && is_array($admin->notification_phones)) {
+                        try {
+                            $message = 'New support ticket #' . $ticket->id . ' from ' . $ticket->user->name . '. Priority: ' . ucfirst($ticket->priority) . '. Title: ' . Str::limit($ticket->title, 50);
+                            $this->smsService->send($admin->notification_phones, $message);
+
+                            Log::info('Ticket creation SMS sent to admin', [
+                                'ticket_id' => $ticket->id,
+                                'admin_id' => $admin->id,
+                            ]);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send ticket creation SMS to admin', [
+                                'ticket_id' => $ticket->id,
+                                'admin_id' => $admin->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to notify admins about ticket creation', [
+                    'ticket_id' => $ticket->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Notify about a new reply to a support ticket
+     * - If staff replies, send to ticket owner
+     * - If customer replies, send to assigned staff or admin
+     */
+    public function notifyTicketReplied(Ticket $ticket, TicketReply $reply): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_ticket')) {
+            return;
+        }
+
+        try {
+            if ($reply->is_staff_reply) {
+                // Staff replied - notify ticket owner
+                Mail::to($ticket->user->email)->send(new TicketRepliedMail($ticket, $reply));
+                $this->logEmail($ticket->user->email, 'Re: Support Ticket #' . $ticket->id, 'sent');
+
+                Log::info('Ticket reply notification sent to customer', [
+                    'ticket_id' => $ticket->id,
+                    'reply_id' => $reply->id,
+                ]);
+
+                // Also notify customer via SMS if configured
+                if ($this->smsService->isConfigured() && $ticket->user->phone) {
+                    try {
+                        $message = 'New reply to your support ticket #' . $ticket->id . '. Status: ' . ucfirst(str_replace('_', ' ', $ticket->status)) . '. Check your email or log in to view.';
+                        $this->smsService->send($ticket->user->phone, $message);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send ticket reply SMS to customer', [
+                            'ticket_id' => $ticket->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            } else {
+                // Customer replied - notify assigned staff or admins
+                $notifyUser = $ticket->assignee ?? \App\Models\User::where('is_admin', true)->first();
+
+                if ($notifyUser) {
+                    Mail::to($notifyUser->email)->send(new TicketRepliedMail($ticket, $reply));
+                    $this->logEmail($notifyUser->email, 'Customer Reply: Support Ticket #' . $ticket->id, 'sent');
+
+                    Log::info('Ticket reply notification sent to staff', [
+                        'ticket_id' => $ticket->id,
+                        'reply_id' => $reply->id,
+                        'staff_id' => $notifyUser->id,
+                    ]);
+
+                    // Notify via SMS if staff has notification phones
+                    if ($this->smsService->isConfigured() && $notifyUser->notification_phones && is_array($notifyUser->notification_phones)) {
+                        try {
+                            $message = 'Customer reply to ticket #' . $ticket->id . '. Title: ' . Str::limit($ticket->title, 50);
+                            $this->smsService->send($notifyUser->notification_phones, $message);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send ticket reply SMS to staff', [
+                                'ticket_id' => $ticket->id,
+                                'staff_id' => $notifyUser->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to send ticket reply notification', [
+                'ticket_id' => $ticket->id,
+                'reply_id' => $reply->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

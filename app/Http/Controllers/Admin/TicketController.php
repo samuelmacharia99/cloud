@@ -215,9 +215,8 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        // TODO: Implement notification using NotificationService
-        // Check if notify_ticket setting is enabled
-        // Send email to admin or relevant reseller
+        $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+        $notificationService->notifyTicketCreated($ticket);
     }
 
     /**
@@ -225,7 +224,10 @@ class TicketController extends Controller
      */
     private function notifyTicketReplied(Ticket $ticket): void
     {
-        // TODO: Implement notification using NotificationService
-        // Send email to ticket owner
+        $latestReply = $ticket->replies()->latest()->first();
+        if ($latestReply) {
+            $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+            $notificationService->notifyTicketReplied($ticket, $latestReply);
+        }
     }
 }
