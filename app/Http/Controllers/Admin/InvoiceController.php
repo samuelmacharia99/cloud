@@ -117,6 +117,38 @@ class InvoiceController extends Controller
     }
 
     /**
+     * Delete an invoice
+     */
+    public function destroy(Invoice $invoice)
+    {
+        // Delete associated invoice items first
+        $invoice->items()->delete();
+
+        // Delete associated payments
+        $invoice->payments()->delete();
+
+        // Delete the invoice
+        $invoice->delete();
+
+        return redirect()->route('admin.invoices.index')
+            ->with('success', 'Invoice deleted successfully.');
+    }
+
+    /**
+     * Mark invoice as paid
+     */
+    public function markAsPaid(Request $request, Invoice $invoice)
+    {
+        $invoice->update([
+            'status' => 'paid',
+            'paid_date' => $request->input('paid_date', now()),
+        ]);
+
+        return redirect()->back()
+            ->with('success', 'Invoice marked as paid successfully.');
+    }
+
+    /**
      * Record a payment for an invoice.
      */
     public function addPayment(Request $request, Invoice $invoice)

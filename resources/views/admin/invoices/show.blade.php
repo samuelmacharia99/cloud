@@ -42,7 +42,7 @@
             </div>
 
             <!-- Action buttons -->
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" x-data="{ deleteConfirm: false }">
                 <a href="{{ route('admin.invoices.download', $invoice) }}" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
                     <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
@@ -52,6 +52,37 @@
                 <a href="{{ route('admin.invoices.edit', $invoice) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Invoice
                 </a>
+                @if($invoice->status !== 'paid')
+                <form action="{{ route('admin.invoices.mark-paid', $invoice) }}" method="POST" class="inline">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
+                        Mark as Paid
+                    </button>
+                </form>
+                @endif
+                <button @click="deleteConfirm = true" class="px-4 py-2 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900 font-medium rounded-lg transition text-sm">
+                    Delete
+                </button>
+
+                <!-- Delete Confirmation Modal -->
+                <div x-show="deleteConfirm" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="deleteConfirm = false">
+                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 max-w-md">
+                        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Delete Invoice?</h3>
+                        <p class="text-slate-600 dark:text-slate-400 mb-6">Are you sure you want to delete this invoice? This action cannot be undone.</p>
+                        <div class="flex gap-3 justify-end">
+                            <button @click="deleteConfirm = false" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition">
+                                Cancel
+                            </button>
+                            <form action="{{ route('admin.invoices.destroy', $invoice) }}" method="POST" class="inline">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
+                                    Delete Invoice
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
