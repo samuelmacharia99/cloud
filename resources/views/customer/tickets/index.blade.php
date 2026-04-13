@@ -1,27 +1,95 @@
-@extends('layouts.customer')
+@extends('layouts.app')
 
-@section('title', 'My Support Tickets')
+@section('title', 'Support Tickets')
 
 @section('content')
-<div class="space-y-6">
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Support Tickets</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Get help from our support team.</p>
-        </div>
-        <button class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            Open Ticket
-        </button>
-    </div>
+<div class="py-12">
+    <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
+        <div class="space-y-6">
+            <!-- Header -->
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Support Tickets</h1>
+                    <p class="mt-2 text-gray-600 dark:text-gray-400">View and manage your support tickets</p>
+                </div>
+                <a href="{{ route('customer.tickets.create') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-medium transition-colors">
+                    Create Ticket
+                </a>
+            </div>
 
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
-        <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
-        </svg>
-        <p class="text-slate-600 dark:text-slate-400">Your support tickets will appear here</p>
+            <!-- Tickets Table -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">ID</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Title</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Priority</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Replies</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Created</th>
+                                <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                            @forelse($query as $ticket)
+                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                <td class="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">#{{ $ticket->id }}</td>
+                                <td class="px-6 py-4">
+                                    <a href="{{ route('customer.tickets.show', $ticket) }}" class="text-blue-600 hover:text-blue-700 font-medium">
+                                        {{ Str::limit($ticket->title, 40) }}
+                                    </a>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="px-3 py-1 rounded-full text-xs font-semibold
+                                        @if($ticket->status === 'open') bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200
+                                        @elseif($ticket->status === 'in_progress') bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200
+                                        @elseif($ticket->status === 'on_hold') bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200
+                                        @else bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200
+                                        @endif">
+                                        {{ ucfirst(str_replace('_', ' ', $ticket->status)) }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="px-3 py-1 rounded-full text-xs font-semibold
+                                        @if($ticket->priority === 'urgent') bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200
+                                        @elseif($ticket->priority === 'high') bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200
+                                        @elseif($ticket->priority === 'medium') bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200
+                                        @else bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200
+                                        @endif">
+                                        {{ ucfirst($ticket->priority) }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                                    {{ $ticket->replies->count() }}
+                                </td>
+                                <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                                    {{ $ticket->created_at->format('M d, Y') }}
+                                </td>
+                                <td class="px-6 py-4 text-sm">
+                                    <a href="{{ route('customer.tickets.show', $ticket) }}" class="text-blue-600 hover:text-blue-700 font-medium">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            @empty
+                            <tr>
+                                <td colspan="7" class="px-6 py-8 text-center text-gray-600 dark:text-gray-400">
+                                    No tickets found. <a href="{{ route('customer.tickets.create') }}" class="text-blue-600 hover:text-blue-700 font-medium">Create one now</a>
+                                </td>
+                            </tr>
+                            @endforelse
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+                    {{ $query->links() }}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 @endsection

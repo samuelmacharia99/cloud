@@ -129,8 +129,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/services/{service}/container/migrate', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
         Route::post('admin/nodes/{node}/migrate-containers', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'migrateNode'])->name('admin.nodes.migrate-containers');
 
-        // Placeholder routes for future implementation
-        Route::get('/tickets', fn() => view('admin.tickets.index'))->name('tickets.index');
+        // Admin Ticket Management
+        Route::resource('admin/tickets', \App\Http\Controllers\Admin\TicketController::class)->names('tickets');
+        Route::post('admin/tickets/{ticket}/reply', [\App\Http\Controllers\Admin\TicketController::class, 'reply'])->name('tickets.reply');
+        Route::patch('admin/tickets/{ticket}/status', [\App\Http\Controllers\Admin\TicketController::class, 'updateStatus'])->name('tickets.updateStatus');
+        Route::patch('admin/tickets/{ticket}/assign', [\App\Http\Controllers\Admin\TicketController::class, 'assign'])->name('tickets.assign');
     });
 
     // Customer-only routes
@@ -202,7 +205,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('my/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');
 
         Route::get('/my/domains/available', fn() => view('customer.domains.available', ['extensions' => \App\Models\DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
-        Route::get('/my/tickets', fn() => view('customer.tickets.index'))->name('customer.tickets.index');
+
+        // Customer Ticket Management
+        Route::resource('my/tickets', \App\Http\Controllers\Customer\TicketController::class)
+            ->only(['index', 'show', 'create', 'store'])->names('customer.tickets');
+        Route::post('my/tickets/{ticket}/reply', [\App\Http\Controllers\Customer\TicketController::class, 'reply'])->name('customer.tickets.reply');
+        Route::patch('my/tickets/{ticket}/close', [\App\Http\Controllers\Customer\TicketController::class, 'close'])->name('customer.tickets.close');
     });
 
     // Profile (accessible to all authenticated users)
