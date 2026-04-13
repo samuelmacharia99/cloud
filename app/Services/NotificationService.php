@@ -38,12 +38,13 @@ class NotificationService
         return !empty(\App\Models\Setting::getValue('smtp_host', ''));
     }
 
-    private function logEmail(string $to, string $subject, string $status, ?string $error = null): void
+    private function logEmail(string $to, string $subject, string $status, ?string $error = null, ?string $body = null): void
     {
         try {
             \App\Models\Email::create([
                 'recipient' => $to,
                 'subject' => $subject,
+                'body' => $body ?? '',
                 'status' => $status,
                 'response' => $error,
                 'sent_by' => null,
@@ -330,14 +331,14 @@ class NotificationService
         try {
             // Always send to ticket owner (the customer who created it)
             Mail::to($ticket->user->email)->send(new TicketCreatedMail($ticket));
-            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'sent');
+            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'sent', null, $ticket->description);
 
             Log::info('Ticket creation notification sent to customer', [
                 'ticket_id' => $ticket->id,
                 'customer_id' => $ticket->user->id,
             ]);
         } catch (\Exception $e) {
-            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'failed', $e->getMessage());
+            $this->logEmail($ticket->user->email, 'Support Ticket #' . $ticket->id . ' Created', 'failed', $e->getMessage(), $ticket->description);
             Log::error('Failed to send ticket creation notification', [
                 'ticket_id' => $ticket->id,
                 'error' => $e->getMessage(),
@@ -394,7 +395,7 @@ class NotificationService
             if ($reply->is_staff_reply) {
                 // Staff replied - notify ticket owner
                 Mail::to($ticket->user->email)->send(new TicketRepliedMail($ticket, $reply));
-                $this->logEmail($ticket->user->email, 'Re: Support Ticket #' . $ticket->id, 'sent');
+                $this->logEmail($ticket->user->email, 'Re: Support Ticket #' . $ticket->id, 'sent', null, $reply->message);
 
                 Log::info('Ticket reply notification sent to customer', [
                     'ticket_id' => $ticket->id,
@@ -419,7 +420,7 @@ class NotificationService
 
                 if ($notifyUser) {
                     Mail::to($notifyUser->email)->send(new TicketRepliedMail($ticket, $reply));
-                    $this->logEmail($notifyUser->email, 'Customer Reply: Support Ticket #' . $ticket->id, 'sent');
+                    $this->logEmail($notifyUser->email, 'Customer Reply: Support Ticket #' . $ticket->id, 'sent', null, $reply->message);
 
                     Log::info('Ticket reply notification sent to staff', [
                         'ticket_id' => $ticket->id,

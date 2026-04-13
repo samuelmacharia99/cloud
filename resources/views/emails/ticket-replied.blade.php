@@ -1,25 +1,26 @@
-<x-mail::message>
-# New Reply to Your Support Ticket
+@extends('emails._layout')
 
-Hello {{ $ticket->user->name }},
+@section('content')
+<h1>New Reply to Your Support Ticket</h1>
 
-There is a new reply to your support ticket **#{{ $ticket->id }}**.
+<p>Hello {{ $ticket->user->name }},</p>
 
-**Ticket:** {{ $ticket->title }}
+<p>There is a new reply to your support ticket #{{ $ticket->id }}.</p>
 
-**New Reply from {{ $reply->user->name }}:**
-{{ $reply->message }}
+<h2>Ticket: {{ $ticket->title }}</h2>
+<p><strong>Ticket Status:</strong> {{ ucfirst(str_replace('_', ' ', $ticket->status)) }}</p>
 
-**Ticket Status:** {{ ucfirst(str_replace('_', ' ', $ticket->status)) }}
+<h2>Reply from {{ $reply->user->name }}</h2>
+<p style="white-space: pre-wrap; word-wrap: break-word;">{{ $reply->message }}</p>
 
-<x-mail::button :url="route('customer.tickets.show', $ticket)">
-View Full Ticket
-</x-mail::button>
+<p style="color: #666; font-size: 12px; margin-top: 20px;">
+    <em>Replied on: {{ $reply->created_at->format('F d, Y H:i') }}</em>
+</p>
 
-You can reply to this ticket by logging into your account and visiting the Support Tickets section.
+<p>You can view the full ticket conversation and reply by logging into your account and visiting the Support Tickets section.</p>
 
-Thank you!
+<p><a href="{{ route('customer.tickets.show', $ticket) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Full Ticket</a></p>
 
-Best regards,<br>
-{{ config('app.name') }} Support Team
-</x-mail::message>
+<p>Thank you!<br>
+{{ config('app.name') }} Support Team</p>
+@endsection
