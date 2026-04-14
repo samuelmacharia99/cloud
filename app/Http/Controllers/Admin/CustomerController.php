@@ -538,6 +538,80 @@ class CustomerController extends Controller
     }
 
     /**
+     * Convert a customer to a reseller
+     */
+    public function convertToReseller(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'reseller_package_id' => 'nullable|exists:reseller_packages,id',
+        ]);
+
+        $customer->update([
+            'is_reseller' => true,
+            'reseller_package_id' => $validated['reseller_package_id'] ?? null,
+            'package_subscribed_at' => now(),
+        ]);
+
+        return redirect()->route('admin.customers.index')
+            ->with('success', "Customer '{$customer->name}' has been converted to a reseller successfully.");
+    }
+
+    /**
+     * Transfer a customer's services and domains to another reseller
+     */
+    public function transferToReseller(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'target_reseller_id' => 'required|exists:users,id',
+        ]);
+
+        $targetReseller = User::findOrFail($validated['target_reseller_id']);
+
+        // Ensure target is a reseller
+        if (!$targetReseller->is_reseller) {
+            return back()->with('error', 'Target user is not a reseller.');
+        }
+
+        // Ensure they're not the same user
+        if ($customer->id === $targetReseller->id) {
+            return back()->with('error', 'Cannot transfer to the same reseller.');
+        }
+
+        try {
+            \DB::transaction(function () use ($customer, $targetReseller) {
+                // Transfer all services
+                \App\Models\Service::where('user_id', $customer->id)
+                    ->update(['user_id' => $targetReseller->id]);
+
+                // Transfer all domains
+                \App\Models\Domain::where('user_id', $customer->id)
+                    ->update(['user_id' => $targetReseller->id]);
+
+                // Transfer all invoices
+                \App\Models\Invoice::where('user_id', $customer->id)
+                    ->update(['user_id' => $targetReseller->id]);
+
+                // Transfer all payments
+                \App\Models\Payment::where('user_id', $customer->id)
+                    ->update(['user_id' => $targetReseller->id]);
+            });
+
+            return redirect()->route('admin.customers.index')
+                ->with('success', "All services, domains, and invoices for '{$customer->name}' have been transferred to '{$targetReseller->name}' successfully.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to transfer customer: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Generate unique invoice number
      */
     private function generateInvoiceNumber(): string

@@ -33,6 +33,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/customers/{customer}/impersonate', [\App\Http\Controllers\Admin\CustomerController::class, 'impersonate'])->name('admin.customers.impersonate');
         Route::post('admin/customers/{customer}/add-domain', [\App\Http\Controllers\Admin\CustomerController::class, 'addDomain'])->name('admin.customers.add-domain');
         Route::post('admin/customers/{customer}/add-service', [\App\Http\Controllers\Admin\CustomerController::class, 'addService'])->name('admin.customers.add-service');
+        Route::post('admin/customers/{customer}/convert-to-reseller', [\App\Http\Controllers\Admin\CustomerController::class, 'convertToReseller'])->name('admin.customers.convert-to-reseller');
+        Route::post('admin/customers/{customer}/transfer-to-reseller', [\App\Http\Controllers\Admin\CustomerController::class, 'transferToReseller'])->name('admin.customers.transfer-to-reseller');
         Route::resource('admin/products', \App\Http\Controllers\Admin\ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', \App\Http\Controllers\Admin\InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [\App\Http\Controllers\Admin\InvoiceController::class, 'download'])->name('admin.invoices.download');
