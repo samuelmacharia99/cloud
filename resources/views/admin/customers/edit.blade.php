@@ -119,18 +119,88 @@
                     </div>
 
                     <!-- Password -->
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(leave blank to keep current)</span></label>
-                        <input type="password" id="password" name="password" placeholder="Enter a new password (optional)" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror">
+                    <div x-data="{ showPassword: false, passwordStrength: 0 }">
+                        <div class="flex items-center justify-between mb-2">
+                            <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white">Password <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(leave blank to keep current)</span></label>
+                            <button type="button" @click="
+                                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+                                let password = '';
+                                for (let i = 0; i < 16; i++) {
+                                    password += chars.charAt(Math.floor(Math.random() * chars.length));
+                                }
+                                document.getElementById('password').value = password;
+                                document.getElementById('password_confirmation').value = password;
+
+                                // Calculate password strength
+                                let strength = 0;
+                                if (password.length >= 8) strength++;
+                                if (password.length >= 12) strength++;
+                                if (/[a-z]/.test(password)) strength++;
+                                if (/[A-Z]/.test(password)) strength++;
+                                if (/[0-9]/.test(password)) strength++;
+                                if (/[!@#$%^&*]/.test(password)) strength++;
+                                passwordStrength = strength;
+                            " class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
+                                🔄 Generate
+                            </button>
+                        </div>
+                        <div class="relative">
+                            <input
+                                :type="showPassword ? 'text' : 'password'"
+                                id="password"
+                                name="password"
+                                placeholder="Enter a new password (optional)"
+                                class="w-full px-4 py-2 pr-10 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror">
+                            <button type="button" @click="showPassword = !showPassword" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                <svg x-show="!showPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                <svg x-show="showPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-4.753 4.753m4.753-4.753L3.596 3.596m16.807 16.807L6.404 6.404m9.596 9.596a3 3 0 10-4.242-4.242m4.242 4.242L9.172 9.172"/>
+                                </svg>
+                            </button>
+                        </div>
                         @error('password')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
+                        <!-- Password Strength Indicator -->
+                        <div class="mt-2 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                            <div
+                                class="h-full transition-all"
+                                :class="{
+                                    'w-1/6 bg-red-500': passwordStrength === 1,
+                                    'w-2/6 bg-orange-500': passwordStrength === 2,
+                                    'w-3/6 bg-yellow-500': passwordStrength === 3,
+                                    'w-4/6 bg-lime-500': passwordStrength === 4,
+                                    'w-5/6 bg-emerald-500': passwordStrength === 5,
+                                    'w-full bg-emerald-600': passwordStrength >= 6,
+                                    'w-0': passwordStrength === 0
+                                }">
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Confirm Password -->
-                    <div>
+                    <div x-data="{ showConfirmPassword: false }">
                         <label for="password_confirmation" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Confirm Password</label>
-                        <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm new password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                        <div class="relative">
+                            <input
+                                :type="showConfirmPassword ? 'text' : 'password'"
+                                id="password_confirmation"
+                                name="password_confirmation"
+                                placeholder="Confirm new password"
+                                class="w-full px-4 py-2 pr-10 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                            <button type="button" @click="showConfirmPassword = !showConfirmPassword" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                                <svg x-show="!showConfirmPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                <svg x-show="showConfirmPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-4.753 4.753m4.753-4.753L3.596 3.596m16.807 16.807L6.404 6.404m9.596 9.596a3 3 0 10-4.242-4.242m4.242 4.242L9.172 9.172"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- VAT Number -->
