@@ -1,6 +1,6 @@
-@extends('layouts.customer')
+@extends('layouts.reseller')
 
-@section('title', 'Reseller Package')
+@section('title', 'My Package')
 
 @section('content')
 <div class="space-y-6">

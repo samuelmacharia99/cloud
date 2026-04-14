@@ -31,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\CheckAdminRole::class,
             'customer' => \App\Http\Middleware\CheckCustomerRole::class,
+            'reseller' => \App\Http\Middleware\CheckResellerRole::class,
             'reseller.limits' => \App\Http\Middleware\EnforceResellerLimits::class,
         ]);
     })

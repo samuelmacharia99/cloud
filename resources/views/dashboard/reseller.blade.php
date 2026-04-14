@@ -1,4 +1,4 @@
-@extends('layouts.customer')
+@extends('layouts.reseller')
 
 @section('title', 'Reseller Dashboard')
 
@@ -10,6 +10,12 @@
             <div>
                 <h1 class="text-3xl font-bold">Welcome back, {{ auth()->user()->name }}</h1>
                 <p class="text-purple-100 mt-2">Manage your services, customers, and commissions.</p>
+                <a href="{{ route('reseller.customers.index') }}" class="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition text-sm font-medium">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.856-1.487M15 10h.01M10 10a4 4 0 11-8 0 4 4 0 018 0zM9 20H3v-2a6 6 0 0112 0v2z"/>
+                    </svg>
+                    Manage Customers
+                </a>
             </div>
             <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-100 dark:bg-emerald-950">
                 <div class="w-2 h-2 rounded-full bg-emerald-600"></div>

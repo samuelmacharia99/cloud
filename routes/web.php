@@ -139,6 +139,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('admin/tickets/{ticket}/assign', [\App\Http\Controllers\Admin\TicketController::class, 'assign'])->name('tickets.assign');
     });
 
+    // Reseller-only routes
+    Route::middleware('reseller')->group(function () {
+        Route::resource('reseller/customers', \App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
+        Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
+        Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
+    });
+
     // Customer-only routes
     Route::middleware('customer')->group(function () {
         Route::get('/my/services', [\App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
@@ -152,10 +159,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('my/invoices/{invoice}/download', [\App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
         Route::get('my/invoices/{invoice}/preview', [\App\Http\Controllers\Customer\InvoiceController::class, 'preview'])->name('customer.invoices.preview');
         Route::resource('my/payments', \App\Http\Controllers\Customer\PaymentController::class)->only(['index', 'show'])->names('customer.payments');
-
-        // Reseller package management (no enforcement on these routes)
-        Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
-        Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
 
         // Shopping experience
         Route::get('/select-techstack', [\App\Http\Controllers\Customer\ServiceBrowserController::class, 'selectTechstack'])->name('customer.select-techstack');

@@ -25,6 +25,7 @@ class User extends Authenticatable
         'notes',
         'is_admin',
         'is_reseller',
+        'reseller_id',
         'status',
         'email_verified_at',
         'reseller_package_id',
@@ -83,6 +84,16 @@ class User extends Authenticatable
     public function resellerPackage()
     {
         return $this->belongsTo(ResellerPackage::class, 'reseller_package_id');
+    }
+
+    public function reseller()
+    {
+        return $this->belongsTo(User::class, 'reseller_id');
+    }
+
+    public function customers()
+    {
+        return $this->hasMany(User::class, 'reseller_id');
     }
 
     public function credits()
