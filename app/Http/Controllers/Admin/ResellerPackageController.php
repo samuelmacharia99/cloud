@@ -44,15 +44,15 @@ class ResellerPackageController extends Controller
             ->with('success', "Package '{$validated['name']}' created successfully.");
     }
 
-    public function edit(ResellerPackage $package)
+    public function edit(ResellerPackage $reseller_package)
     {
-        return view('admin.reseller-packages.edit', compact('package'));
+        return view('admin.reseller-packages.edit', ['package' => $reseller_package]);
     }
 
-    public function update(Request $request, ResellerPackage $package)
+    public function update(Request $request, ResellerPackage $reseller_package)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:reseller_packages,name,' . $package->id,
+            'name' => 'required|string|max:255|unique:reseller_packages,name,' . $reseller_package->id,
             'description' => 'nullable|string|max:1000',
             'billing_cycle' => 'required|in:monthly,annually',
             'storage_space' => 'required|integer|min:1|max:10000',
@@ -61,16 +61,16 @@ class ResellerPackageController extends Controller
             'active' => 'boolean',
         ]);
 
-        $package->update($validated);
+        $reseller_package->update($validated);
 
         return redirect()->route('admin.reseller-packages.index')
             ->with('success', "Package '{$validated['name']}' updated successfully.");
     }
 
-    public function destroy(ResellerPackage $package)
+    public function destroy(ResellerPackage $reseller_package)
     {
-        $name = $package->name;
-        $package->delete();
+        $name = $reseller_package->name;
+        $reseller_package->delete();
 
         return redirect()->route('admin.reseller-packages.index')
             ->with('success', "Package '{$name}' deleted successfully.");
