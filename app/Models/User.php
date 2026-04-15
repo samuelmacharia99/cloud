@@ -96,6 +96,16 @@ class User extends Authenticatable
         return $this->hasMany(User::class, 'reseller_id');
     }
 
+    public function resellerProducts()
+    {
+        return $this->hasMany(ResellerProduct::class, 'reseller_id');
+    }
+
+    public function resellerDomainPricing()
+    {
+        return $this->hasMany(ResellerDomainPricing::class, 'reseller_id');
+    }
+
     public function credits()
     {
         return $this->hasMany(Credit::class);

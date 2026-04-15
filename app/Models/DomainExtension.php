@@ -37,6 +37,11 @@ class DomainExtension extends Model
         return $this->hasMany(Domain::class, 'extension', 'extension');
     }
 
+    public function resellerPricing()
+    {
+        return $this->hasMany(ResellerDomainPricing::class, 'domain_extension_id');
+    }
+
     public function getRetailPricing($periodYears)
     {
         return $this->pricing()

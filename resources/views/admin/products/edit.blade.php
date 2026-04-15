@@ -134,6 +134,36 @@
                         @enderror
                     </div>
 
+                    <!-- Wholesale Pricing Section -->
+                    <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Wholesale Rate (for Resellers)</p>
+
+                        <!-- Wholesale Monthly Price -->
+                        <div class="mb-4">
+                            <label for="wholesale_monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Wholesale Monthly <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
+                                <input type="number" id="wholesale_monthly_price" name="wholesale_monthly_price" value="{{ old('wholesale_monthly_price', $product->wholesale_monthly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('wholesale_monthly_price') border-red-500 @enderror">
+                            </div>
+                            @error('wholesale_monthly_price')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Wholesale Yearly Price -->
+                        <div>
+                            <label for="wholesale_yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Wholesale Yearly <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
+                            <div class="relative">
+                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
+                                <input type="number" id="wholesale_yearly_price" name="wholesale_yearly_price" value="{{ old('wholesale_yearly_price', $product->wholesale_yearly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('wholesale_yearly_price') border-red-500 @enderror">
+                            </div>
+                            @error('wholesale_yearly_price')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Set these so resellers can calculate their markup and margin.</p>
+                        </div>
+                    </div>
+
                     <!-- Setup Fee -->
                     <div>
                         <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
