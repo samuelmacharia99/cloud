@@ -11,16 +11,32 @@ use App\Models\Currency;
 class ServerController extends Controller
 {
     /**
+     * Show server type selection modal
+     */
+    public function selectType()
+    {
+        return view('customer.servers.select-type');
+    }
+
+    /**
      * Show customer's servers and available server products
      */
-    public function index()
+    public function index(Request $request)
     {
+        $selectedType = $request->query('type'); // vps or dedicated_server
+
         // Load user's server services
         $services = auth()->user()->services()
             ->with('product')
             ->get()
-            ->filter(function ($service) {
-                return $service->product && Product::isServerType($service->product->type);
+            ->filter(function ($service) use ($selectedType) {
+                if (!$service->product || !Product::isServerType($service->product->type)) {
+                    return false;
+                }
+                if ($selectedType && $service->product->type !== $selectedType) {
+                    return false;
+                }
+                return true;
             })
             ->sortByDesc('created_at')
             ->values();
@@ -37,6 +53,13 @@ class ServerController extends Controller
             ->orderBy('monthly_price')
             ->get();
 
+        // Filter products by type if selected
+        if ($selectedType === 'vps') {
+            $dedicatedProducts = collect();
+        } elseif ($selectedType === 'dedicated_server') {
+            $vpsProducts = collect();
+        }
+
         // Get currency information
         $currencyCode = Setting::getValue('currency', 'KES');
         $currency = Currency::where('code', $currencyCode)
@@ -48,7 +71,8 @@ class ServerController extends Controller
             'services',
             'vpsProducts',
             'dedicatedProducts',
-            'currencySymbol'
+            'currencySymbol',
+            'selectedType'
         ));
     }
 

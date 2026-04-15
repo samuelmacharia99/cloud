@@ -155,6 +155,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/my/services/{service}', [\App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [\App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::post('/my/services/{service}/renew', [\App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
+        Route::get('/my/servers-select', [\App\Http\Controllers\Customer\ServerController::class, 'selectType'])->name('customer.servers.select-type');
         Route::get('/my/servers', [\App\Http\Controllers\Customer\ServerController::class, 'index'])->name('customer.servers.index');
         Route::post('/my/servers/order', [\App\Http\Controllers\Customer\ServerController::class, 'order'])->name('customer.servers.order');
         Route::resource('my/orders', \App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
