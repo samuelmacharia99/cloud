@@ -113,12 +113,12 @@
 
                 <!-- Action Buttons -->
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-3" x-data="{ showCancelModal: false }">
-                    @if ($service->status->value !== 'terminated' && $service->status->value !== 'cancelled')
+                    @if ($service->status !== 'terminated' && $service->status !== 'cancelled')
                         <button @click="showCancelModal = true" class="px-4 py-2 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900 font-medium rounded-lg transition text-sm">
                             Cancel Service
                         </button>
                     @endif
-                    @if ($service->status->value === 'active')
+                    @if ($service->status === 'active')
                         <form action="{{ route('customer.services.renew', $service) }}" method="POST" onsubmit="return confirm('Are you sure you want to renew this service? An invoice will be created.');">
                             @csrf
                             <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
