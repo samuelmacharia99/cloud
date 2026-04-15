@@ -3,16 +3,117 @@
 @section('title', 'My Servers')
 
 @section('content')
-<div class="space-y-6" x-data="{ open: false, step: 1, serverType: null }">
+<div class="space-y-6" x-data="{
+    open: false,
+    step: 1,
+    serverType: null,
+    showTypeSelector: {{ $selectedType ? 'false' : 'true' }},
+    selectType(type) {
+        window.location.href = '{{ route('customer.servers.index') }}?type=' + type;
+    }
+}">
     <!-- Header -->
     <div class="flex justify-between items-center">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Servers</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage your VPS and dedicated servers</p>
+            <div class="flex items-center gap-3 mt-1">
+                <p class="text-slate-600 dark:text-slate-400">
+                    @if($selectedType)
+                        Viewing <strong>{{ App\Models\Product::typeLabel($selectedType) }}</strong> servers
+                    @else
+                        View and manage your VPS and dedicated servers
+                    @endif
+                </p>
+                @if($selectedType)
+                    <a href="{{ route('customer.servers.index') }}" class="text-xs px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full hover:bg-slate-300 dark:hover:bg-slate-600 transition">
+                        Clear Filter
+                    </a>
+                @endif
+            </div>
         </div>
         <button @click="open = true" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
             Order Server
         </button>
+    </div>
+
+    <!-- Type Selection Modal (shows if no type selected) -->
+    <div x-show="showTypeSelector" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" style="display: none;">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-2xl w-full mx-4 p-8 md:p-12">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h2 class="text-3xl font-bold text-slate-900 dark:text-white mb-2">Select Server Type</h2>
+                <p class="text-slate-600 dark:text-slate-400">Choose the type of server you'd like to view or purchase</p>
+            </div>
+
+            <!-- Options Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- VPS Option -->
+                <button @click="selectType('vps')" class="group relative overflow-hidden rounded-xl border-2 border-slate-200 dark:border-slate-700 p-8 text-center text-left transition-all hover:border-blue-500 dark:hover:border-blue-400 hover:shadow-lg dark:hover:bg-slate-800/50">
+                    <div class="relative z-10">
+                        <!-- Icon -->
+                        <div class="flex justify-start mb-6">
+                            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-900/50 transition">
+                                <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <!-- Title -->
+                        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">VPS Server</h3>
+
+                        <!-- Description -->
+                        <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                            Virtual Private Servers with dedicated resources. Perfect for applications requiring more power and flexibility.
+                        </p>
+
+                        <!-- Arrow -->
+                        <div class="flex items-center gap-2 text-blue-600 font-medium mt-4">
+                            <span>View VPS Servers</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Background gradient -->
+                    <div class="absolute inset-0 bg-gradient-to-br from-blue-50 to-transparent dark:from-blue-900/10 dark:to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                </button>
+
+                <!-- Dedicated Server Option -->
+                <button @click="selectType('dedicated_server')" class="group relative overflow-hidden rounded-xl border-2 border-slate-200 dark:border-slate-700 p-8 text-center text-left transition-all hover:border-purple-500 dark:hover:border-purple-400 hover:shadow-lg dark:hover:bg-slate-800/50">
+                    <div class="relative z-10">
+                        <!-- Icon -->
+                        <div class="flex justify-start mb-6">
+                            <div class="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-lg flex items-center justify-center group-hover:bg-purple-200 dark:group-hover:bg-purple-900/50 transition">
+                                <svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                                </svg>
+                            </div>
+                        </div>
+
+                        <!-- Title -->
+                        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Dedicated Server</h3>
+
+                        <!-- Description -->
+                        <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                            Entire servers dedicated to your business. Maximum performance and control for demanding applications.
+                        </p>
+
+                        <!-- Arrow -->
+                        <div class="flex items-center gap-2 text-purple-600 font-medium mt-4">
+                            <span>View Dedicated Servers</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <!-- Background gradient -->
+                    <div class="absolute inset-0 bg-gradient-to-br from-purple-50 to-transparent dark:from-purple-900/10 dark:to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- Servers Grid or Empty State -->

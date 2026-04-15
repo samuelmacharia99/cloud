@@ -11,14 +11,6 @@ use App\Models\Currency;
 class ServerController extends Controller
 {
     /**
-     * Show server type selection modal
-     */
-    public function selectType()
-    {
-        return view('customer.servers.select-type');
-    }
-
-    /**
      * Show customer's servers and available server products
      */
     public function index(Request $request)
