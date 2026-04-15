@@ -139,13 +139,46 @@ class InvoiceController extends Controller
      */
     public function markAsPaid(Request $request, Invoice $invoice)
     {
-        $invoice->update([
-            'status' => 'paid',
-            'paid_date' => $request->input('paid_date', now()),
-        ]);
+        try {
+            \DB::transaction(function () use ($request, $invoice) {
+                // Create a payment record for the full invoice amount
+                Payment::create([
+                    'user_id' => $invoice->user_id,
+                    'invoice_id' => $invoice->id,
+                    'amount' => $invoice->total,
+                    'currency' => 'KES',
+                    'payment_method' => 'manual',
+                    'transaction_reference' => 'Manual payment - Admin marked as paid',
+                    'status' => 'completed',
+                    'paid_at' => $request->input('paid_date', now()),
+                    'notes' => 'Marked as paid by admin',
+                ]);
 
-        return redirect()->back()
-            ->with('success', 'Invoice marked as paid successfully.');
+                // Update invoice status
+                $invoice->update([
+                    'status' => 'paid',
+                    'paid_date' => $request->input('paid_date', now()),
+                ]);
+
+                \Log::info('Invoice marked as paid by admin', [
+                    'invoice_id' => $invoice->id,
+                    'invoice_number' => $invoice->invoice_number,
+                    'amount' => $invoice->total,
+                    'admin_id' => auth()->id(),
+                ]);
+            });
+
+            return redirect()->back()
+                ->with('success', 'Invoice marked as paid successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Failed to mark invoice as paid', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->back()
+                ->with('error', 'Failed to mark invoice as paid: ' . $e->getMessage());
+        }
     }
 
     /**
