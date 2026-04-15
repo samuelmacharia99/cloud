@@ -20,7 +20,7 @@ return new class extends Migration
             $table->boolean('enabled')->default(true);
             $table->timestamps();
 
-            $table->unique(['reseller_id', 'domain_extension_id', 'period_years']);
+            $table->unique(['reseller_id', 'domain_extension_id', 'period_years'], 'rdp_reseller_ext_period_unique');
             $table->foreign('reseller_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('domain_extension_id')->references('id')->on('domain_extensions')->onDelete('cascade');
         });
