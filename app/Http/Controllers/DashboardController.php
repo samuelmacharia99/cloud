@@ -148,9 +148,8 @@ class DashboardController extends Controller
         $suspendedServices = $managedServices->where('status', 'suspended')->count();
         $totalServices = $managedServices->count();
 
-        // Revenue from managed services (invoices tied to these services)
-        $managedServiceIds = $managedServices->pluck('id');
-        $managedInvoices = Invoice::whereIn('service_id', $managedServiceIds)->get();
+        // Revenue from managed services (invoices for customers managed by this reseller)
+        $managedInvoices = Invoice::whereIn('user_id', $customerIds)->get();
         $paidInvoices = $managedInvoices->where('status', 'paid');
         $totalRevenue = $paidInvoices->sum('total');
         $unpaidInvoices = $managedInvoices->where('status', 'unpaid');
