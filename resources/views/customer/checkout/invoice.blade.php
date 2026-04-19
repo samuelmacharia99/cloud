@@ -32,11 +32,11 @@
                             <div class="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                                 <div class="flex-1">
                                     <p class="font-medium text-slate-900 dark:text-white">{{ $item->description }}</p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Qty: {{ $item->quantity }}</p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Qty: {{ $item->quantity }} × {{ $currencyCode }} {{ number_format($item->unit_price, 2) }}</p>
                                 </div>
                                 <div class="text-right">
                                     <p class="font-semibold text-slate-900 dark:text-white">
-                                        {{ $currencyCode }} {{ number_format($item->total, 2) }}
+                                        {{ $currencyCode }} {{ number_format($item->amount, 2) }}
                                     </p>
                                 </div>
                             </div>
@@ -142,8 +142,30 @@ function handlePayment(invoiceId) {
         return;
     }
 
-    // Redirect to payment method page
-    window.location.href = `{{ route('customer.payment.initiate', '') }}/${invoiceId}?method=${paymentMethod}`;
+    // Disable button while processing
+    const btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+
+    // Create form and submit
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/invoices/${invoiceId}/pay`;
+
+    const tokenInput = document.createElement('input');
+    tokenInput.type = 'hidden';
+    tokenInput.name = '_token';
+    tokenInput.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    const methodInput = document.createElement('input');
+    methodInput.type = 'hidden';
+    methodInput.name = 'payment_method';
+    methodInput.value = paymentMethod;
+
+    form.appendChild(tokenInput);
+    form.appendChild(methodInput);
+    document.body.appendChild(form);
+    form.submit();
 }
 </script>
 @endsection

@@ -174,6 +174,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/my/domains', [\App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
         Route::get('/my/domains/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferForm'])->name('customer.domains.transfer-form');
         Route::post('/my/domains/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'processTransfer'])->name('customer.domains.process-transfer');
+        Route::get('/my/domains/transfer/checkout', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferCheckout'])->name('customer.domains.transfer-checkout');
+        Route::post('/my/domains/transfer/checkout/confirm', [\App\Http\Controllers\Customer\DomainController::class, 'confirmTransferCheckout'])->name('customer.domains.transfer-checkout-confirm');
         Route::get('/my/domains/{domain}/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferDetails'])->name('customer.domains.transfer-details');
         Route::post('/my/domains/{domain}/transfer/cancel', [\App\Http\Controllers\Customer\DomainController::class, 'cancelTransfer'])->name('customer.domains.cancel-transfer');
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');

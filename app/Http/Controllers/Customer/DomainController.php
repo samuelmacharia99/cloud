@@ -7,8 +7,12 @@ use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
+use App\Models\Setting;
+use App\Models\Currency;
 use App\Services\DomainTransferService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 
 class DomainController extends Controller
@@ -42,7 +46,12 @@ class DomainController extends Controller
      */
     public function showTransferForm()
     {
-        return view('customer.domains.transfer-form');
+        $extensions = DomainExtension::where('enabled', true)
+            ->select('id', 'extension', 'transfer_price', 'description')
+            ->orderBy('extension')
+            ->get();
+
+        return view('customer.domains.transfer-form', compact('extensions'));
     }
 
     /**
@@ -52,7 +61,11 @@ class DomainController extends Controller
     {
         $validated = $request->validate([
             'domain_name' => 'required|string|regex:/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i',
-            'extension' => 'required|string|in:.com,.net,.org,.io,.co,.uk,.de,.fr,.ca',
+            'extension' => [
+                'required',
+                'string',
+                Rule::in(DomainExtension::where('enabled', true)->pluck('extension')),
+            ],
             'epp_code' => 'required|string|min:5',
             'old_registrar' => 'required|string|min:2',
             'old_registrar_url' => 'nullable|url',
@@ -63,7 +76,7 @@ class DomainController extends Controller
             $extension = DomainExtension::where('extension', $validated['extension'])->firstOrFail();
             $transferPrice = (float) $extension->transfer_price ?? 0;
 
-            // Create transfer request
+            // Create transfer request (but don't create invoice yet)
             $domain = DomainTransferService::createTransferRequest(
                 auth()->user(),
                 $validated['domain_name'],
@@ -73,31 +86,21 @@ class DomainController extends Controller
                 $validated['old_registrar_url'] ?? null
             );
 
-            // Create invoice for the domain transfer
-            $invoice = Invoice::create([
-                'user_id' => auth()->id(),
-                'invoice_number' => 'INV-' . strtoupper(uniqid()),
-                'status' => 'pending',
-                'due_date' => now()->addDays(7),
-                'subtotal' => $transferPrice,
-                'tax' => 0,
-                'total' => $transferPrice,
+            // Store transfer details in session for checkout confirmation
+            session([
+                'transfer_checkout' => [
+                    'domain_id' => $domain->id,
+                    'domain_name' => "{$domain->name}{$domain->extension}",
+                    'transfer_price' => $transferPrice,
+                    'extension_id' => $extension->id,
+                ]
             ]);
 
-            // Add invoice item for domain transfer
-            InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'description' => "Domain Transfer: {$domain->name}{$domain->extension}",
-                'quantity' => 1,
-                'unit_price' => $transferPrice,
-                'total' => $transferPrice,
-            ]);
-
-            // Redirect to checkout
+            // Redirect to checkout confirmation page
             return response()->json([
                 'success' => true,
                 'message' => 'Domain transfer request created. Proceed to checkout.',
-                'redirect' => route('customer.checkout.show', ['invoice_id' => $invoice->id]),
+                'redirect' => route('customer.domains.transfer-checkout'),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -150,5 +153,96 @@ class DomainController extends Controller
 
         return redirect()->back()
             ->with('error', 'Failed to cancel domain transfer');
+    }
+
+    /**
+     * Show domain transfer checkout page
+     */
+    public function showTransferCheckout()
+    {
+        $transferCheckout = session('transfer_checkout');
+
+        abort_if(!$transferCheckout, 404, 'Transfer not found');
+
+        // Get domain and extension for verification
+        $domain = Domain::findOrFail($transferCheckout['domain_id']);
+        abort_if($domain->user_id !== auth()->id(), 403);
+
+        // Calculate totals
+        $subtotal = $transferCheckout['transfer_price'];
+        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+        $total = $subtotal + $tax;
+
+        // Get currency info
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
+        return view('customer.domains.transfer-checkout', [
+            'domain' => $domain,
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'taxEnabled' => $taxEnabled,
+            'taxRate' => $taxRate,
+            'total' => $total,
+            'currency' => $currency,
+            'currencyCode' => $currencyCode,
+        ]);
+    }
+
+    /**
+     * Confirm domain transfer checkout and create invoice
+     */
+    public function confirmTransferCheckout(Request $request)
+    {
+        $request->validate([
+            'agree_terms' => 'required|accepted',
+        ]);
+
+        $transferCheckout = session('transfer_checkout');
+        abort_if(!$transferCheckout, 404, 'Transfer not found');
+
+        try {
+            // Get domain and verify ownership
+            $domain = Domain::findOrFail($transferCheckout['domain_id']);
+            abort_if($domain->user_id !== auth()->id(), 403);
+
+            // Create invoice and invoice item within a transaction
+            $invoice = DB::transaction(function () use ($domain, $transferCheckout) {
+                $transferPrice = $transferCheckout['transfer_price'];
+
+                // Create invoice
+                $invoice = Invoice::create([
+                    'user_id' => auth()->id(),
+                    'invoice_number' => 'INV-' . strtoupper(uniqid()),
+                    'status' => 'unpaid',
+                    'due_date' => now()->addDays(7),
+                    'subtotal' => $transferPrice,
+                    'tax' => 0,
+                    'total' => $transferPrice,
+                ]);
+
+                // Create invoice item
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'description' => "Domain Transfer: {$domain->name}{$domain->extension}",
+                    'quantity' => 1,
+                    'unit_price' => $transferPrice,
+                    'amount' => $transferPrice,
+                ]);
+
+                return $invoice;
+            }, 2);
+
+            // Clear session
+            session()->forget('transfer_checkout');
+
+            // Redirect to invoice payment page
+            return redirect()->route('customer.checkout.show', ['invoice_id' => $invoice->id])
+                ->with('success', 'Order confirmed. Please select a payment method.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
     }
 }

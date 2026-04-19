@@ -47,22 +47,27 @@
                 <input type="text" name="domain_name" placeholder="example" required
                     class="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                <select name="extension" required
+                <select name="extension" id="extension" required
                     class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
                     <option value="">Select TLD</option>
-                    <option value=".com">.com</option>
-                    <option value=".net">.net</option>
-                    <option value=".org">.org</option>
-                    <option value=".io">.io</option>
-                    <option value=".co">.co</option>
-                    <option value=".uk">.uk</option>
-                    <option value=".de">.de</option>
-                    <option value=".fr">.fr</option>
-                    <option value=".ca">.ca</option>
+                    @foreach ($extensions as $ext)
+                        <option value="{{ $ext->extension }}"
+                                data-price="{{ $ext->transfer_price }}"
+                                {{ old('extension') == $ext->extension ? 'selected' : '' }}>
+                            {{ $ext->extension }}
+                        </option>
+                    @endforeach
                 </select>
             </div>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Enter your domain without the extension (e.g., "mycompany" for mycompany.com)</p>
+        </div>
+
+        <!-- Transfer Cost Display -->
+        <div id="transfer-cost-box" class="hidden p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+            <p class="text-sm font-medium text-blue-900 dark:text-blue-100">Transfer Cost:
+                <span id="transfer-cost-value" class="font-bold">—</span>
+            </p>
         </div>
 
         <!-- EPP Code -->
@@ -144,6 +149,22 @@
 
 @push('scripts')
 <script>
+// Handle extension selection and display transfer cost
+document.getElementById('extension').addEventListener('change', function () {
+    const selected = this.options[this.selectedIndex];
+    const price = parseFloat(selected.dataset.price || 0);
+    const box = document.getElementById('transfer-cost-box');
+    const display = document.getElementById('transfer-cost-value');
+
+    if (this.value) {
+        display.textContent = 'KSH ' + price.toFixed(2);
+        box.classList.remove('hidden');
+    } else {
+        box.classList.add('hidden');
+    }
+});
+
+// Handle form submission
 document.getElementById('transferForm').addEventListener('submit', async function(e) {
     e.preventDefault();
 

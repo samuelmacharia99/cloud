@@ -28,7 +28,7 @@ class DomainTransferService
             ->first();
 
         if ($existing) {
-            throw new \Exception("Domain {$domainName}.{$extension} already exists in your account");
+            throw new \Exception("Domain {$domainName}{$extension} already exists in your account");
         }
 
         // Create domain transfer record
@@ -43,6 +43,7 @@ class DomainTransferService
             'old_registrar' => $oldRegistrar,
             'old_registrar_url' => $oldRegistrarUrl,
             'transfer_notes' => "Transfer initiated on " . now()->format('Y-m-d H:i:s'),
+            'expires_at' => null,
         ]);
 
         // Log the transfer request
