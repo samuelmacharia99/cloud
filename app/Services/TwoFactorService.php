@@ -80,17 +80,29 @@ class TwoFactorService
 
             // Send SMS
             $message = "Your Talksasa Cloud login code is: {$code}. Valid for 5 minutes. Do not share this code.";
-            $this->smsService->send($user->phone, $message);
+            $smsResult = $this->smsService->send($user->phone, $message);
 
-            Log::info('2FA code sent to user', [
-                'user_id' => $user->id,
-                'phone' => substr($user->phone, -4),
-            ]);
-
-            return true;
+            // Log with SMS delivery status
+            if ($smsResult['success'] ?? false) {
+                Log::info('2FA code sent to user', [
+                    'user_id' => $user->id,
+                    'phone' => substr($user->phone, -4),
+                    'code_length' => strlen($code),
+                    'sms_success' => true,
+                ]);
+                return true;
+            } else {
+                Log::error('2FA SMS delivery failed', [
+                    'user_id' => $user->id,
+                    'phone' => substr($user->phone, -4),
+                    'sms_message' => $smsResult['message'] ?? 'Unknown error',
+                ]);
+                return false;
+            }
         } catch (\Exception $e) {
             Log::error('Failed to send 2FA code', [
                 'user_id' => $user->id,
+                'phone' => substr($user->phone, -4),
                 'error' => $e->getMessage(),
             ]);
             return false;

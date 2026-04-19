@@ -31,6 +31,10 @@ class SmsService
     public function send(string|array $recipients, string $message, ?string $senderId = null): array
     {
         if (!$this->isConfigured()) {
+            \Log::error('SMS service not configured', [
+                'sms_enabled' => \App\Models\Setting::getValue('sms_enabled'),
+                'token_set' => !empty(\App\Models\Setting::getValue('sms_api_token')),
+            ]);
             return [
                 'success' => false,
                 'message' => 'SMS service is not configured.',
@@ -44,6 +48,13 @@ class SmsService
         $recipientArray = is_array($recipients) ? $recipients : explode(',', $recipients);
         $normalizedRecipients = array_map(fn($phone) => PhoneHelper::normalize(trim($phone)), $recipientArray);
         $recipients = implode(',', $normalizedRecipients);
+
+        \Log::info('Attempting to send SMS', [
+            'recipients' => $recipients,
+            'sender_id' => $senderId,
+            'message_length' => strlen($message),
+            'api_url' => $this->apiUrl,
+        ]);
 
         try {
             $response = Http::withToken($token)->post($this->apiUrl, [
@@ -107,7 +118,15 @@ class SmsService
                 ];
             }
         } catch (\Exception $e) {
-            // Log exception
+            // Log exception with full details
+            \Log::error('SMS send exception', [
+                'error' => $e->getMessage(),
+                'code' => $e->getCode(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'recipients' => $recipients,
+            ]);
+
             $recipientArray = explode(',', $recipients);
             foreach ($recipientArray as $recipient) {
                 SmsLog::create([
@@ -116,7 +135,7 @@ class SmsService
                     'sender_id' => $senderId,
                     'status' => 'failed',
                     'response' => $e->getMessage(),
-                    'sent_by' => auth()->id(),
+                    'sent_by' => auth()->id() ?? 0,
                     'created_at' => now(),
                 ]);
             }
