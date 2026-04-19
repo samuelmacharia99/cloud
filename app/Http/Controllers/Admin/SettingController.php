@@ -354,27 +354,61 @@ class SettingController extends Controller
                 : 'https://sandbox.safaricom.co.ke';
 
             // Step 1: Get access token
+            \Log::info('M-Pesa URL registration starting', [
+                'environment' => $environment,
+                'base_url' => $baseUrl,
+                'shortcode' => $shortcode,
+            ]);
+
             $tokenResponse = \Illuminate\Support\Facades\Http::withBasicAuth($consumerKey, $consumerSecret)
                 ->timeout(30)
+                ->retry(2, 1000)
                 ->get("{$baseUrl}/oauth/v1/generate?grant_type=client_credentials");
 
+            \Log::info('M-Pesa token response', [
+                'status' => $tokenResponse->status(),
+                'successful' => $tokenResponse->successful(),
+            ]);
+
             if (!$tokenResponse->successful()) {
+                $errorDesc = $tokenResponse->json()['error_description'] ?? 'Unknown error';
+                \Log::error('M-Pesa authentication failed', [
+                    'status' => $tokenResponse->status(),
+                    'response' => $tokenResponse->body(),
+                ]);
                 return response()->json([
                     'success' => false,
-                    'message' => 'Failed to authenticate with M-Pesa: ' . ($tokenResponse->json()['error_description'] ?? 'Unknown error')
+                    'message' => 'Failed to authenticate with M-Pesa: ' . $errorDesc
                 ]);
             }
 
             $accessToken = $tokenResponse->json()['access_token'] ?? null;
             if (empty($accessToken)) {
+                \Log::error('M-Pesa no access token', [
+                    'response' => $tokenResponse->json(),
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'No access token received from M-Pesa'
                 ]);
             }
 
-            // Step 2: Register URLs
-            $callbackUrl = route('payment.mpesa.callback');
+            // Step 2: Generate callback URL - Use environment variable if available for production
+            $siteUrl = Setting::getValue('site_url', config('app.url'));
+            $callbackUrl = $siteUrl . '/webhooks/mpesa/callback';
+
+            // Ensure HTTPS for production
+            if ($isProduction && !str_starts_with($callbackUrl, 'https://')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Production environment requires HTTPS URLs. Current URL: ' . $callbackUrl
+                ]);
+            }
+
+            \Log::info('M-Pesa callback URL', [
+                'url' => $callbackUrl,
+                'environment' => $environment,
+            ]);
 
             $registerPayload = [
                 'ShortCode' => $shortcode,
@@ -383,13 +417,26 @@ class SettingController extends Controller
                 'ValidationURL' => $callbackUrl,
             ];
 
+            \Log::info('M-Pesa registration payload', [
+                'shortcode' => $shortcode,
+                'response_type' => $responseType,
+                'callback_url' => $callbackUrl,
+            ]);
+
             $registerResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
                 ->timeout(30)
+                ->retry(2, 1000)
                 ->post("{$baseUrl}/mpesa/c2b/v2/registerurl", $registerPayload);
+
+            \Log::info('M-Pesa registration response', [
+                'status' => $registerResponse->status(),
+                'successful' => $registerResponse->successful(),
+                'body' => $registerResponse->body(),
+            ]);
 
             $responseData = $registerResponse->json();
 
-            if ($registerResponse->successful()) {
+            if ($registerResponse->successful() && $registerResponse->status() === 200) {
                 $successMessage = $responseData['ResponseDescription'] ?? 'URLs registered successfully';
 
                 // Log successful registration
@@ -398,6 +445,7 @@ class SettingController extends Controller
                     'shortcode' => $shortcode,
                     'response_type' => $responseType,
                     'response_code' => $responseData['ResponseCode'] ?? null,
+                    'callback_url' => $callbackUrl,
                 ]);
 
                 return response()->json([
@@ -412,19 +460,22 @@ class SettingController extends Controller
 
             \Log::warning('M-Pesa URL registration failed', [
                 'environment' => $environment,
+                'http_status' => $registerResponse->status(),
                 'response_code' => $responseData['ResponseCode'] ?? null,
                 'response_description' => $errorMessage,
+                'full_response' => $registerResponse->json(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => $errorMessage,
+                'message' => $errorMessage . ' (HTTP ' . $registerResponse->status() . ')',
             ]);
 
         } catch (\Exception $e) {
             \Log::error('M-Pesa URL registration exception', [
                 'error' => $e->getMessage(),
                 'environment' => $request->input('environment'),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
