@@ -265,11 +265,50 @@
                                 <input type="password" name="mpesa_passkey" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Callback URL</label>
-                                <div class="px-4 py-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600">
-                                    <p class="text-sm text-slate-700 dark:text-slate-300 break-all">{{ route('payment.mpesa.callback') }}</p>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Read-only – already registered with Safaricom</p>
+                            <!-- URL Registration Section -->
+                            <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-4">
+                                <div>
+                                    <h4 class="font-semibold text-amber-900 dark:text-amber-100 mb-3">Callback URLs Registration</h4>
+                                    <p class="text-xs text-amber-800 dark:text-amber-200 mb-4">Register these URLs with Safaricom Daraja API depending on your environment:</p>
+                                </div>
+
+                                <!-- Sandbox URL -->
+                                <div>
+                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Sandbox Callback URL</label>
+                                    <div class="flex gap-2 items-center">
+                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300" />
+                                        <button type="button" @click="copyToClipboard('{{ route('payment.mpesa.callback') }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">Use this for sandbox testing</p>
+                                </div>
+
+                                <!-- Production URL -->
+                                <div>
+                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Production Callback URL</label>
+                                    <div class="flex gap-2 items-center">
+                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300" />
+                                        <button type="button" @click="copyToClipboard('{{ route('payment.mpesa.callback') }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">Use this for production transactions</p>
+                                </div>
+
+                                <!-- Registration Instructions -->
+                                <div class="bg-white dark:bg-slate-900 rounded p-3 border border-amber-200 dark:border-amber-800">
+                                    <p class="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">How to register:</p>
+                                    <ol class="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                                        <li>Log in to Safaricom Daraja API portal</li>
+                                        <li>Go to your app settings</li>
+                                        <li>Paste the appropriate URL above into "Confirmation URL" field</li>
+                                        <li>Save your settings</li>
+                                    </ol>
                                 </div>
                             </div>
 
@@ -564,6 +603,19 @@
                                 this.testing.mpesa = false;
                                 setTimeout(() => { this.status.mpesa = null; }, 5000);
                             }
+                        },
+
+                        copyToClipboard(text) {
+                            navigator.clipboard.writeText(text).then(() => {
+                                // Show feedback
+                                const toast = document.createElement('div');
+                                toast.className = 'fixed bottom-4 right-4 px-4 py-2 bg-green-600 text-white rounded-lg text-sm';
+                                toast.textContent = 'URL copied to clipboard!';
+                                document.body.appendChild(toast);
+                                setTimeout(() => toast.remove(), 2000);
+                            }).catch(err => {
+                                console.error('Failed to copy:', err);
+                            });
                         }
                     };
                 }
