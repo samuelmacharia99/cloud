@@ -71,6 +71,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/settings/test-smtp', [\App\Http\Controllers\Admin\SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [\App\Http\Controllers\Admin\SettingController::class, 'testSms'])->name('admin.settings.test-sms');
         Route::post('admin/settings/test-mpesa', [\App\Http\Controllers\Admin\SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
+        Route::post('admin/settings/register-mpesa-urls', [\App\Http\Controllers\Admin\SettingController::class, 'registerMpesaUrls'])->name('admin.settings.register-mpesa-urls');
         Route::post('admin/settings/debug-log', [\App\Http\Controllers\Admin\SettingController::class, 'debugLog'])->name('admin.settings.debug-log');
         Route::post('admin/settings/refresh-currencies', [\App\Http\Controllers\Admin\SettingController::class, 'refreshCurrencies'])->name('admin.settings.refresh-currencies');
 

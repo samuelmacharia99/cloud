@@ -266,49 +266,115 @@
                             </div>
 
                             <!-- URL Registration Section -->
-                            <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-4">
+                            <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-4" x-data="{ showDetails: false }">
                                 <div>
-                                    <h4 class="font-semibold text-amber-900 dark:text-amber-100 mb-3">Callback URLs Registration</h4>
-                                    <p class="text-xs text-amber-800 dark:text-amber-200 mb-4">Register these URLs with Safaricom Daraja API depending on your environment:</p>
+                                    <h4 class="font-semibold text-amber-900 dark:text-amber-100 mb-3">🔗 Callback URLs Registration with Safaricom</h4>
+                                    <p class="text-xs text-amber-800 dark:text-amber-200">Automatically register callback URLs with Safaricom M-Pesa API</p>
                                 </div>
 
-                                <!-- Sandbox URL -->
+                                <!-- Callback URL Display -->
                                 <div>
-                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Sandbox Callback URL</label>
+                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Your Callback URL</label>
                                     <div class="flex gap-2 items-center">
-                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300" />
+                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 font-mono" />
                                         <button type="button" @click="copyToClipboard('{{ route('payment.mpesa.callback') }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                                             </svg>
                                         </button>
                                     </div>
-                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">Use this for sandbox testing</p>
                                 </div>
 
-                                <!-- Production URL -->
+                                <!-- Environment Selection -->
                                 <div>
-                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Production Callback URL</label>
-                                    <div class="flex gap-2 items-center">
-                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300" />
-                                        <button type="button" @click="copyToClipboard('{{ route('payment.mpesa.callback') }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                            </svg>
-                                        </button>
+                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">📍 Target Environment</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
+                                            <input type="radio" name="register_environment" value="sandbox" checked class="rounded" />
+                                            <span class="text-xs text-amber-900 dark:text-amber-100">🧪 Sandbox (Test)</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
+                                            <input type="radio" name="register_environment" value="production" class="rounded" />
+                                            <span class="text-xs text-amber-900 dark:text-amber-100">🚀 Production (Live)</span>
+                                        </label>
                                     </div>
-                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">Use this for production transactions</p>
                                 </div>
 
-                                <!-- Registration Instructions -->
-                                <div class="bg-white dark:bg-slate-900 rounded p-3 border border-amber-200 dark:border-amber-800">
-                                    <p class="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">How to register:</p>
-                                    <ol class="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
-                                        <li>Log in to Safaricom Daraja API portal</li>
-                                        <li>Go to your app settings</li>
-                                        <li>Paste the appropriate URL above into "Confirmation URL" field</li>
-                                        <li>Save your settings</li>
-                                    </ol>
+                                <!-- Response Type Selection -->
+                                <div>
+                                    <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">⚡ Response Type (if URL unreachable)</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
+                                            <input type="radio" name="register_response_type" value="Completed" checked class="rounded" />
+                                            <span class="text-xs text-amber-900 dark:text-amber-100">✅ Auto-Complete</span>
+                                        </label>
+                                        <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
+                                            <input type="radio" name="register_response_type" value="Cancelled" class="rounded" />
+                                            <span class="text-xs text-amber-900 dark:text-amber-100">❌ Auto-Cancel</span>
+                                        </label>
+                                    </div>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                                        If Safaricom can't reach your URL, it will either <strong>auto-complete</strong> (safer) or <strong>auto-cancel</strong> the payment.
+                                    </p>
+                                </div>
+
+                                <!-- Warnings -->
+                                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3">
+                                    <p class="text-xs text-red-700 dark:text-red-300 font-medium">⚠️ Important Notes:</p>
+                                    <ul class="text-xs text-red-600 dark:text-red-400 mt-2 space-y-1 list-disc list-inside">
+                                        <li><strong>Sandbox:</strong> Can register multiple times (safe for testing)</li>
+                                        <li><strong>Production:</strong> Can only register ONCE - choose wisely!</li>
+                                        <li><strong>HTTPS Required:</strong> Production URLs must use HTTPS</li>
+                                        <li><strong>Public Access:</strong> URLs must be accessible from the internet</li>
+                                    </ul>
+                                </div>
+
+                                <!-- Registration Button -->
+                                <button type="button" @click="registerMpesaUrls()" :disabled="registering.mpesa" class="w-full px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50 flex items-center justify-center gap-2">
+                                    <span x-show="!registering.mpesa">
+                                        <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                        </svg>
+                                        Register URLs with Safaricom
+                                    </span>
+                                    <span x-show="registering.mpesa" class="inline-flex items-center gap-2">
+                                        <svg class="animate-spin h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Registering...
+                                    </span>
+                                </button>
+
+                                <!-- Status Message -->
+                                <p x-show="status.registration" :class="status.registration?.type === 'success' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20'" class="text-sm mt-3 p-3 rounded-lg" x-text="status.registration?.message"></p>
+
+                                <!-- Additional Info Toggle -->
+                                <button type="button" @click="showDetails = !showDetails" class="text-xs text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-200 mt-2">
+                                    <span x-show="!showDetails">ℹ️ Show additional information</span>
+                                    <span x-show="showDetails">ℹ️ Hide additional information</span>
+                                </button>
+
+                                <!-- Additional Information -->
+                                <div x-show="showDetails" x-transition class="bg-white dark:bg-slate-800 rounded p-3 border border-amber-200 dark:border-amber-800 space-y-2">
+                                    <div>
+                                        <p class="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">📋 What this does:</p>
+                                        <ol class="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                                            <li>Authenticates with Safaricom using your Consumer Key & Secret</li>
+                                            <li>Registers your callback URL as the Confirmation URL</li>
+                                            <li>Enables M-Pesa C2B (Customer to Business) payments</li>
+                                            <li>Payments will be routed to your system automatically</li>
+                                        </ol>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">🔍 Current Settings:</p>
+                                        <table class="text-xs text-slate-600 dark:text-slate-400 w-full">
+                                            <tr><td class="font-medium">Paybill #:</td><td>{{ $settings['mpesa_shortcode'] ?? 'Not configured' }}</td></tr>
+                                            <tr><td class="font-medium">Environment:</td><td>{{ ucfirst($settings['mpesa_environment'] ?? 'sandbox') }}</td></tr>
+                                            <tr><td class="font-medium">Consumer Key:</td><td>{{ !empty($settings['mpesa_consumer_key']) ? '✓ Configured' : '✗ Missing' }}</td></tr>
+                                            <tr><td class="font-medium">Consumer Secret:</td><td>{{ !empty($settings['mpesa_consumer_secret']) ? '✓ Configured' : '✗ Missing' }}</td></tr>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
 
@@ -531,7 +597,8 @@
                     return {
                         saving: { mpesa: false, stripe: false, paypal: false, bank: false },
                         testing: { mpesa: false },
-                        status: { mpesa: null, stripe: null, paypal: null, bank: null },
+                        registering: { mpesa: false },
+                        status: { mpesa: null, stripe: null, paypal: null, bank: null, registration: null },
 
                         async saveMpesa(form) {
                             await this.saveForm(form, 'mpesa');
@@ -607,7 +674,6 @@
 
                         copyToClipboard(text) {
                             navigator.clipboard.writeText(text).then(() => {
-                                // Show feedback
                                 const toast = document.createElement('div');
                                 toast.className = 'fixed bottom-4 right-4 px-4 py-2 bg-green-600 text-white rounded-lg text-sm';
                                 toast.textContent = 'URL copied to clipboard!';
@@ -616,6 +682,64 @@
                             }).catch(err => {
                                 console.error('Failed to copy:', err);
                             });
+                        },
+
+                        async registerMpesaUrls() {
+                            this.registering.mpesa = true;
+
+                            // Get selected environment and response type from form
+                            const environment = document.querySelector('input[name="register_environment"]:checked')?.value || 'sandbox';
+                            const responseType = document.querySelector('input[name="register_response_type"]:checked')?.value || 'Completed';
+
+                            // Confirm production registration
+                            if (environment === 'production') {
+                                if (!confirm('⚠️ WARNING: You are registering URLs for PRODUCTION!\n\n' +
+                                    'This will enable LIVE M-Pesa transactions.\n' +
+                                    'You can only register once in production.\n\n' +
+                                    'Make sure:\n✅ Your system is ready for live payments\n✅ Your SSL certificate is valid\n✅ Your URLs are publicly accessible\n\n' +
+                                    'Response Type: ' + responseType + '\n\n' +
+                                    'Continue?')) {
+                                    this.registering.mpesa = false;
+                                    return;
+                                }
+                            }
+
+                            try {
+                                const response = await fetch('{{ route("admin.settings.register-mpesa-urls") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    },
+                                    body: JSON.stringify({
+                                        environment: environment,
+                                        response_type: responseType
+                                    })
+                                });
+
+                                const data = await response.json();
+
+                                this.status.registration = {
+                                    type: data.success ? 'success' : 'error',
+                                    message: data.message
+                                };
+
+                                if (data.success) {
+                                    // Keep success message visible longer
+                                    setTimeout(() => { this.status.registration = null; }, 5000);
+                                } else {
+                                    setTimeout(() => { this.status.registration = null; }, 4000);
+                                }
+                            } catch (error) {
+                                this.status.registration = {
+                                    type: 'error',
+                                    message: 'Registration failed: ' + error.message
+                                };
+                                setTimeout(() => { this.status.registration = null; }, 4000);
+                            } finally {
+                                this.registering.mpesa = false;
+                            }
                         }
                     };
                 }

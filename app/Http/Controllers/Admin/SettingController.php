@@ -323,4 +323,114 @@ class SettingController extends Controller
             ]);
         }
     }
+
+    public function registerMpesaUrls(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $request->validate([
+            'environment' => 'required|in:sandbox,production',
+            'response_type' => 'required|in:Completed,Cancelled',
+        ]);
+
+        try {
+            $environment = $request->input('environment');
+            $responseType = $request->input('response_type');
+
+            $consumerKey = Setting::getValue('mpesa_consumer_key', '');
+            $consumerSecret = Setting::getValue('mpesa_consumer_secret', '');
+            $shortcode = Setting::getValue('mpesa_shortcode', '');
+
+            if (empty($consumerKey) || empty($consumerSecret) || empty($shortcode)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'M-Pesa credentials or shortcode not configured.'
+                ]);
+            }
+
+            $isProduction = $environment === 'production';
+            $baseUrl = $isProduction
+                ? 'https://api.safaricom.co.ke'
+                : 'https://sandbox.safaricom.co.ke';
+
+            // Step 1: Get access token
+            $tokenResponse = \Illuminate\Support\Facades\Http::withBasicAuth($consumerKey, $consumerSecret)
+                ->timeout(30)
+                ->get("{$baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+
+            if (!$tokenResponse->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to authenticate with M-Pesa: ' . ($tokenResponse->json()['error_description'] ?? 'Unknown error')
+                ]);
+            }
+
+            $accessToken = $tokenResponse->json()['access_token'] ?? null;
+            if (empty($accessToken)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No access token received from M-Pesa'
+                ]);
+            }
+
+            // Step 2: Register URLs
+            $callbackUrl = route('payment.mpesa.callback');
+
+            $registerPayload = [
+                'ShortCode' => $shortcode,
+                'ResponseType' => $responseType,
+                'ConfirmationURL' => $callbackUrl,
+                'ValidationURL' => $callbackUrl,
+            ];
+
+            $registerResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
+                ->timeout(30)
+                ->post("{$baseUrl}/mpesa/c2b/v2/registerurl", $registerPayload);
+
+            $responseData = $registerResponse->json();
+
+            if ($registerResponse->successful()) {
+                $successMessage = $responseData['ResponseDescription'] ?? 'URLs registered successfully';
+
+                // Log successful registration
+                \Log::info('M-Pesa URLs registered successfully', [
+                    'environment' => $environment,
+                    'shortcode' => $shortcode,
+                    'response_type' => $responseType,
+                    'response_code' => $responseData['ResponseCode'] ?? null,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $successMessage,
+                    'environment' => $environment,
+                    'callback_url' => $callbackUrl,
+                ]);
+            }
+
+            $errorMessage = $responseData['ResponseDescription'] ?? 'Failed to register URLs';
+
+            \Log::warning('M-Pesa URL registration failed', [
+                'environment' => $environment,
+                'response_code' => $responseData['ResponseCode'] ?? null,
+                'response_description' => $errorMessage,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $errorMessage,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('M-Pesa URL registration exception', [
+                'error' => $e->getMessage(),
+                'environment' => $request->input('environment'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Registration failed: ' . $e->getMessage()
+            ]);
+        }
+    }
 }
