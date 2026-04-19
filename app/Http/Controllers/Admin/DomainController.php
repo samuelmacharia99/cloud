@@ -137,20 +137,54 @@ class DomainController extends Controller
             'extension' => 'required|string|unique:domain_extensions,extension',
             'description' => 'nullable|string',
             'registrar' => 'required|string',
+            'registration_price' => 'required|numeric|min:0',
+            'renewal_price' => 'required|numeric|min:0',
+            'registration_price_wholesale' => 'required|numeric|min:0',
+            'renewal_price_wholesale' => 'required|numeric|min:0',
+            'transfer_price' => 'nullable|numeric|min:0',
             'dns_management' => 'nullable|boolean',
             'auto_renewal' => 'nullable|boolean',
-            'transfer_price' => 'nullable|numeric|min:0',
         ]);
 
+        // Set checkbox values and defaults
         $validated['dns_management'] = $request->has('dns_management');
         $validated['auto_renewal'] = $request->has('auto_renewal');
         $validated['enabled'] = true;
         $validated['transfer_price'] = $validated['transfer_price'] ?? 0;
 
-        DomainExtension::create($validated);
+        // Create the domain extension
+        $extension = DomainExtension::create($validated);
+
+        // Auto-populate pricing for each period
+        $periods = [1, 2, 3, 5, 10];
+        foreach ($periods as $period) {
+            // Retail pricing
+            DomainPricing::create([
+                'domain_extension_id' => $extension->id,
+                'period_years' => $period,
+                'tier' => 'retail',
+                'price' => $validated['registration_price'] * $period,
+                'renewal_price' => $validated['renewal_price'] * $period,
+                'setup_fee' => 0,
+                'renewal_setup_fee' => 0,
+                'enabled' => true,
+            ]);
+
+            // Wholesale pricing
+            DomainPricing::create([
+                'domain_extension_id' => $extension->id,
+                'period_years' => $period,
+                'tier' => 'wholesale',
+                'price' => $validated['registration_price_wholesale'] * $period,
+                'renewal_price' => $validated['renewal_price_wholesale'] * $period,
+                'setup_fee' => 0,
+                'renewal_setup_fee' => 0,
+                'enabled' => true,
+            ]);
+        }
 
         return redirect()->route('admin.domains.pricing')
-            ->with('success', 'Domain extension added successfully.');
+            ->with('success', 'Domain extension added successfully with pricing for all periods.');
     }
 
     public function show(Domain $domain)

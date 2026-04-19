@@ -218,6 +218,98 @@
                     @error('registrar')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
                 </div>
 
+                <!-- Retail Pricing Section -->
+                <div class="border-2 border-emerald-200 dark:border-emerald-800 rounded-lg p-4 space-y-3">
+                    <h4 class="font-semibold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-xs font-bold text-emerald-700 dark:text-emerald-300">$</span>
+                        Retail (Customer)
+                    </h4>
+
+                    <div>
+                        <label for="registration_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration Price <span class="text-red-600">*</span></label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input
+                                type="number"
+                                id="registration_price"
+                                name="registration_price"
+                                placeholder="0.00"
+                                value="{{ old('registration_price') }}"
+                                step="0.01"
+                                min="0"
+                                required
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Base price for registering a new domain</p>
+                        @error('registration_price')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div>
+                        <label for="renewal_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Price <span class="text-red-600">*</span></label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input
+                                type="number"
+                                id="renewal_price"
+                                name="renewal_price"
+                                placeholder="0.00"
+                                value="{{ old('renewal_price') }}"
+                                step="0.01"
+                                min="0"
+                                required
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Annual renewal price for existing domains</p>
+                        @error('renewal_price')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
+                    </div>
+                </div>
+
+                <!-- Wholesale Pricing Section -->
+                <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
+                    <h4 class="font-semibold text-slate-900 dark:text-white text-sm flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center text-xs font-bold text-blue-700 dark:text-blue-300">$</span>
+                        Wholesale (Reseller)
+                    </h4>
+
+                    <div>
+                        <label for="registration_price_wholesale" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration Price <span class="text-red-600">*</span></label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input
+                                type="number"
+                                id="registration_price_wholesale"
+                                name="registration_price_wholesale"
+                                placeholder="0.00"
+                                value="{{ old('registration_price_wholesale') }}"
+                                step="0.01"
+                                min="0"
+                                required
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Wholesale registration price for resellers</p>
+                        @error('registration_price_wholesale')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
+                    </div>
+
+                    <div>
+                        <label for="renewal_price_wholesale" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Price <span class="text-red-600">*</span></label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input
+                                type="number"
+                                id="renewal_price_wholesale"
+                                name="renewal_price_wholesale"
+                                placeholder="0.00"
+                                value="{{ old('renewal_price_wholesale') }}"
+                                step="0.01"
+                                min="0"
+                                required
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Wholesale renewal price for resellers</p>
+                        @error('renewal_price_wholesale')<p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>@enderror
+                    </div>
+                </div>
+
                 <div>
                     <label for="transfer_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Transfer Price</label>
                     <div class="flex items-center gap-2">
