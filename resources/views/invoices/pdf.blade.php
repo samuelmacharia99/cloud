@@ -293,8 +293,8 @@
                 @endif
             </div>
             <div class="header-right">
-                <h2 style="color: {{ $invoice->status->value === 'paid' ? '#22c55e' : '#f59e0b' }};">
-                    {{ strtoupper($invoice->status->value) }}
+                <h2 style="color: {{ $invoice->status === 'paid' ? '#22c55e' : '#f59e0b' }};">
+                    {{ strtoupper($invoice->status) }}
                 </h2>
                 <div class="invoice-meta">
                     <strong>Invoice #:</strong>

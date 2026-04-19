@@ -21,7 +21,7 @@
     </tr>
     <tr>
         <td><strong>Order Status:</strong></td>
-        <td>{{ ucfirst($order->status->value) }}</td>
+        <td>{{ ucfirst($order->status) }}</td>
     </tr>
 </table>
 
