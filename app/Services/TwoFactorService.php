@@ -152,11 +152,18 @@ class TwoFactorService
      */
     public function verifyRecoveryCode(User $user, string $code): bool
     {
-        if (!$user->two_factor_enabled || !$user->two_factor_recovery_codes) {
+        if (!$user->two_factor_enabled) {
             return false;
         }
 
+        // Recovery codes must exist and be a non-empty array
         $recoveryCodes = $user->two_factor_recovery_codes;
+        if (!is_array($recoveryCodes) || count($recoveryCodes) === 0) {
+            Log::warning('No recovery codes available', [
+                'user_id' => $user->id,
+            ]);
+            return false;
+        }
 
         // Check if recovery code exists
         if (!in_array($code, $recoveryCodes)) {
@@ -167,13 +174,14 @@ class TwoFactorService
         }
 
         // Remove the used recovery code
-        $recoveryCodes = array_filter($recoveryCodes, fn($c) => $c !== $code);
+        $recoveryCodes = array_values(array_filter($recoveryCodes, fn($c) => $c !== $code));
 
+        // Update user with remaining recovery codes
         $user->update([
-            'two_factor_recovery_codes' => array_values($recoveryCodes),
+            'two_factor_recovery_codes' => $recoveryCodes,
         ]);
 
-        Log::info('Recovery code used', [
+        Log::info('Recovery code used successfully', [
             'user_id' => $user->id,
             'codes_remaining' => count($recoveryCodes),
         ]);
