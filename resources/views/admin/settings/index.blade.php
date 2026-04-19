@@ -326,7 +326,29 @@
                                         <li><strong>Production:</strong> Can only register ONCE - choose wisely!</li>
                                         <li><strong>HTTPS Required:</strong> Production URLs must use HTTPS</li>
                                         <li><strong>Public Access:</strong> URLs must be accessible from the internet</li>
+                                        <li><strong>Paybill Format:</strong> Must be numeric (e.g., 123456)</li>
                                     </ul>
+                                </div>
+
+                                <!-- Troubleshooting -->
+                                <div class="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded p-3 space-y-2">
+                                    <p class="text-xs text-orange-700 dark:text-orange-300 font-medium">🔧 Troubleshooting HTTP 400 Errors:</p>
+                                    <div class="text-xs text-orange-600 dark:text-orange-400 space-y-2">
+                                        <div>
+                                            <p class="font-medium">Error 400.003.02 - Validation Error</p>
+                                            <ul class="list-disc list-inside space-y-1 ml-2">
+                                                <li>Paybill number must be <strong>numeric only</strong> (no letters/symbols)</li>
+                                                <li>Callback URL must be <strong>valid HTTPS</strong> and publicly accessible</li>
+                                                <li>Check that your domain's <strong>SSL certificate is valid</strong></li>
+                                                <li>Ensure <strong>firewall/VPN allows</strong> outbound to Safaricom</li>
+                                                <li>Try <strong>pinging your callback URL</strong> from the internet</li>
+                                            </ul>
+                                        </div>
+                                        <div>
+                                            <p class="font-medium">Testing Callback URL Accessibility</p>
+                                            <code class="block text-xs bg-white dark:bg-slate-900 p-2 rounded mt-1 overflow-auto">curl -v {{ route('payment.mpesa.callback') }}</code>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Registration Button -->

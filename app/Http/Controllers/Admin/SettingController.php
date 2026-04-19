@@ -410,8 +410,24 @@ class SettingController extends Controller
                 'environment' => $environment,
             ]);
 
+            // Validate callback URL format
+            if (!filter_var($callbackUrl, FILTER_VALIDATE_URL)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid callback URL format: ' . $callbackUrl
+                ]);
+            }
+
+            // Ensure URL is properly formatted
+            if (!str_starts_with($callbackUrl, 'https://') && !str_starts_with($callbackUrl, 'http://')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Callback URL must start with http:// or https://'
+                ]);
+            }
+
             $registerPayload = [
-                'ShortCode' => $shortcode,
+                'ShortCode' => (string) $shortcode,
                 'ResponseType' => $responseType,
                 'ConfirmationURL' => $callbackUrl,
                 'ValidationURL' => $callbackUrl,
@@ -419,8 +435,10 @@ class SettingController extends Controller
 
             \Log::info('M-Pesa registration payload', [
                 'shortcode' => $shortcode,
+                'shortcode_type' => gettype($shortcode),
                 'response_type' => $responseType,
                 'callback_url' => $callbackUrl,
+                'payload' => json_encode($registerPayload),
             ]);
 
             $registerResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
@@ -457,18 +475,30 @@ class SettingController extends Controller
             }
 
             $errorMessage = $responseData['ResponseDescription'] ?? 'Failed to register URLs';
+            $errorCode = $responseData['errorCode'] ?? $responseData['ResponseCode'] ?? null;
+
+            // Provide helpful debugging info for common errors
+            $debugInfo = '';
+            if ($errorCode === '400.003.02') {
+                $debugInfo = ' - Validation error. Check: 1) ShortCode format (should be numeric), 2) URL format (must be valid HTTPS), 3) URL accessibility (must be publicly reachable)';
+            } elseif ($errorCode === '400.003.01') {
+                $debugInfo = ' - Invalid request format. Check request payload structure.';
+            }
 
             \Log::warning('M-Pesa URL registration failed', [
                 'environment' => $environment,
                 'http_status' => $registerResponse->status(),
-                'response_code' => $responseData['ResponseCode'] ?? null,
+                'response_code' => $errorCode,
                 'response_description' => $errorMessage,
-                'full_response' => $registerResponse->json(),
+                'shortcode' => $shortcode,
+                'callback_url' => $callbackUrl,
+                'full_response' => $registerResponse->body(),
+                'response_json' => $registerResponse->json(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => $errorMessage . ' (HTTP ' . $registerResponse->status() . ')',
+                'message' => $errorMessage . ' (Code: ' . $errorCode . ')' . $debugInfo,
             ]);
 
         } catch (\Exception $e) {
