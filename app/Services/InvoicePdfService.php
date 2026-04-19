@@ -12,12 +12,15 @@ class InvoicePdfService
      */
     public static function generate(Invoice $invoice): \Barryvdh\DomPDF\PDF
     {
-        $invoice->load('user', 'items.product');
+        $invoice->load('user', 'items.product', 'payments', 'credits');
+
+        $amountRemaining = max(0, $invoice->total - $invoice->getAmountPaid() - $invoice->getAppliedCredits());
 
         $pdf = Pdf::loadView('invoices.pdf', [
             'invoice' => $invoice,
             'user' => $invoice->user,
             'items' => $invoice->items,
+            'amountRemaining' => $amountRemaining,
             'company' => [
                 'name' => \App\Models\Setting::getValue('company_name', 'Talksasa Cloud'),
                 'address' => \App\Models\Setting::getValue('company_address', ''),
@@ -31,8 +34,8 @@ class InvoicePdfService
         // Set options for better rendering
         $pdf->setPaper('a4');
         $pdf->setOption('isHtml5ParserEnabled', true);
-        $pdf->setOption('isPhpEnabled', true);
-        $pdf->setOption('isRemoteEnabled', true);
+        $pdf->setOption('isPhpEnabled', false);
+        $pdf->setOption('isRemoteEnabled', false);
 
         return $pdf;
     }

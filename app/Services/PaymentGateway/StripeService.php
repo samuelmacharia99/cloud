@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Setting;
 use Stripe\Stripe;
 use Stripe\Checkout\Session;
 use Stripe\PaymentIntent;
@@ -16,8 +17,8 @@ class StripeService implements PaymentGatewayInterface
 
     public function __construct()
     {
-        $this->apiKey = config('payment.stripe.secret_key') ?? '';
-        $this->publishableKey = config('payment.stripe.publishable_key') ?? '';
+        $this->apiKey = Setting::getValue('stripe_secret_key', '');
+        $this->publishableKey = Setting::getValue('stripe_publishable_key', '');
 
         if ($this->apiKey) {
             Stripe::setApiKey($this->apiKey);
@@ -228,6 +229,8 @@ class StripeService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return !empty($this->apiKey) && !empty($this->publishableKey);
+        return Setting::getValue('stripe_enabled') == '1'
+            && !empty($this->apiKey)
+            && !empty($this->publishableKey);
     }
 }

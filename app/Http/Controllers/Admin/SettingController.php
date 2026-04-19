@@ -24,9 +24,15 @@ class SettingController extends Controller
             'tax_enabled', 'tax_rate', 'tax_name', 'tax_inclusive', 'tax_number',
         ],
         'payment_methods' => [
+            // M-Pesa
             'mpesa_enabled', 'mpesa_shortcode', 'mpesa_passkey',
             'mpesa_consumer_key', 'mpesa_consumer_secret', 'mpesa_environment',
-            'card_enabled', 'stripe_key',
+            // Stripe
+            'stripe_enabled', 'stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret',
+            // PayPal
+            'paypal_enabled', 'paypal_client_id', 'paypal_client_secret',
+            'paypal_webhook_id', 'paypal_environment',
+            // Bank Transfer
             'bank_transfer_enabled', 'bank_name', 'bank_account_name', 'bank_account_number',
             'bank_branch', 'bank_swift_code',
         ],
@@ -76,6 +82,9 @@ class SettingController extends Controller
         $groups = $this->groups;
         $currencies = Currency::active()->get();
 
+        // Load SMS templates for the notifications tab
+        $smsTemplates = \App\Models\SmsTemplate::all()->keyBy('event_key');
+
         // Get cron helper data for the cron tab
         try {
             $cronCommand = getCronCommand();
@@ -90,9 +99,17 @@ class SettingController extends Controller
             $cronStats = [];
         }
 
+        // Gateway status for auto-expand in payment methods tab
+        $gatewayStatus = [
+            'mpesa' => Setting::getValue('mpesa_enabled') == '1' && !empty(Setting::getValue('mpesa_consumer_key')),
+            'stripe' => Setting::getValue('stripe_enabled') == '1' && !empty(Setting::getValue('stripe_secret_key')),
+            'paypal' => Setting::getValue('paypal_enabled') == '1' && !empty(Setting::getValue('paypal_client_id')),
+        ];
+
         return view('admin.settings.index', compact(
-            'group', 'settings', 'keys', 'groups', 'currencies',
-            'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats'
+            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplates',
+            'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
+            'gatewayStatus'
         ));
     }
 
@@ -109,7 +126,11 @@ class SettingController extends Controller
 
         // Don't save empty values for sensitive settings (like API tokens)
         // This prevents password fields from clearing saved credentials when left blank
-        $sensitiveFields = ['sms_api_token', 'smtp_password', 'mpesa_passkey', 'directadmin_api_password', 'stripe_key'];
+        $sensitiveFields = [
+            'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret',
+            'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
+            'paypal_client_secret',
+        ];
 
         foreach ($settings as $key => $value) {
             $trimmedValue = trim((string)$value);
@@ -256,6 +277,50 @@ class SettingController extends Controller
                 'success' => false,
                 'message' => 'Failed to refresh exchange rates: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function testMpesa(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        try {
+            $consumerKey = Setting::getValue('mpesa_consumer_key', '');
+            $consumerSecret = Setting::getValue('mpesa_consumer_secret', '');
+            $isProduction = Setting::getValue('mpesa_environment', 'sandbox') === 'production';
+            $baseUrl = $isProduction
+                ? 'https://api.safaricom.co.ke'
+                : 'https://sandbox.safaricom.co.ke';
+
+            if (empty($consumerKey) || empty($consumerSecret)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'M-Pesa credentials not configured.'
+                ]);
+            }
+
+            $response = \Illuminate\Support\Facades\Http::withBasicAuth($consumerKey, $consumerSecret)
+                ->get("{$baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+
+            if ($response->successful()) {
+                $token = $response->json()['access_token'] ?? null;
+                return response()->json([
+                    'success' => true,
+                    'message' => 'M-Pesa connection successful.',
+                    'environment' => $isProduction ? 'production' : 'sandbox',
+                    'token_preview' => $token ? substr($token, 0, 10) . '...' : null,
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to connect to M-Pesa: ' . ($response->json()['error_description'] ?? 'Unknown error')
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Test failed: ' . $e->getMessage()
+            ]);
         }
     }
 }

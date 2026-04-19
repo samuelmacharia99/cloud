@@ -397,11 +397,10 @@
                     <td>Total Due</td>
                     <td>Ksh {{ number_format($invoice->total, 2) }}</td>
                 </tr>
-                @php $remaining = $invoice->getAmountRemaining(); @endphp
-                @if($remaining > 0)
+                @if($amountRemaining > 0)
                     <tr class="subtotal">
                         <td>Balance Due</td>
-                        <td>Ksh {{ number_format($remaining, 2) }}</td>
+                        <td>Ksh {{ number_format($amountRemaining, 2) }}</td>
                     </tr>
                 @endif
             </table>

@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -18,11 +19,11 @@ class MpesaService implements PaymentGatewayInterface
 
     public function __construct()
     {
-        $this->consumerKey = config('payment.mpesa.consumer_key') ?? '';
-        $this->consumerSecret = config('payment.mpesa.consumer_secret') ?? '';
-        $this->businessShortCode = config('payment.mpesa.business_short_code') ?? '';
-        $this->passkey = config('payment.mpesa.pass_key') ?? '';
-        $this->isProduction = config('payment.mpesa.is_production', false);
+        $this->consumerKey = Setting::getValue('mpesa_consumer_key', '');
+        $this->consumerSecret = Setting::getValue('mpesa_consumer_secret', '');
+        $this->businessShortCode = Setting::getValue('mpesa_shortcode', '');
+        $this->passkey = Setting::getValue('mpesa_passkey', '');
+        $this->isProduction = Setting::getValue('mpesa_environment', 'sandbox') === 'production';
         $this->baseUrl = $this->isProduction
             ? 'https://api.safaricom.co.ke'
             : 'https://sandbox.safaricom.co.ke';
@@ -312,9 +313,10 @@ class MpesaService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return !empty($this->consumerKey) &&
-               !empty($this->consumerSecret) &&
-               !empty($this->businessShortCode) &&
-               !empty($this->passkey);
+        return Setting::getValue('mpesa_enabled') == '1'
+            && !empty($this->consumerKey)
+            && !empty($this->consumerSecret)
+            && !empty($this->businessShortCode)
+            && !empty($this->passkey);
     }
 }

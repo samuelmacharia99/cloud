@@ -30,12 +30,24 @@ class NotificationService
 
     private function settingEnabled(string $key): bool
     {
-        return \App\Models\Setting::getValue($key, 'true') === 'true';
+        $value = \App\Models\Setting::getValue($key, 'true');
+        return in_array($value, ['1', 'true', true], true);
     }
 
     private function smtpConfigured(): bool
     {
         return !empty(\App\Models\Setting::getValue('smtp_host', ''));
+    }
+
+    private function renderTemplate(string $eventKey, array $data, string $fallback): string
+    {
+        try {
+            $template = \App\Models\SmsTemplate::where('event_key', $eventKey)->first();
+            return $template ? $template->render($data) : $fallback;
+        } catch (\Exception $e) {
+            Log::warning('Failed to load SMS template for event: ' . $eventKey, ['error' => $e->getMessage()]);
+            return $fallback;
+        }
     }
 
     private function logEmail(string $to, string $subject, string $status, ?string $error = null, ?string $body = null): void
@@ -71,7 +83,14 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $invoice->user->phone && $this->settingEnabled('notify_invoice_generated')) {
             try {
-                $this->smsService->send($invoice->user->phone, 'Invoice ' . $invoice->invoice_number . ' has been generated. Amount due: Ksh ' . number_format($invoice->total, 0) . '. Pay online at: ' . url('/'));
+                $message = $this->renderTemplate('invoice_generated', [
+                    'customer_name' => $invoice->user->name,
+                    'invoice_number' => $invoice->invoice_number,
+                    'amount' => 'Ksh ' . number_format($invoice->total, 2),
+                    'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Invoice ' . $invoice->invoice_number . ' has been generated. Amount due: Ksh ' . number_format($invoice->total, 0) . '. Pay online at: ' . url('/'));
+                $this->smsService->send($invoice->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice generated SMS', ['error' => $e->getMessage()]);
             }
@@ -94,7 +113,14 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $invoice->user->phone && $this->settingEnabled('notify_invoice_reminder')) {
             try {
-                $message = $daysBefore <= 0 ? 'URGENT: Invoice ' . $invoice->invoice_number . ' is due today!' : 'Reminder: Invoice ' . $invoice->invoice_number . ' is due in ' . $daysBefore . ' days.';
+                $fallback = $daysBefore <= 0 ? 'URGENT: Invoice ' . $invoice->invoice_number . ' is due today!' : 'Reminder: Invoice ' . $invoice->invoice_number . ' is due in ' . $daysBefore . ' days.';
+                $message = $this->renderTemplate('invoice_reminder', [
+                    'invoice_number' => $invoice->invoice_number,
+                    'amount' => 'Ksh ' . number_format($invoice->total, 2),
+                    'days_before' => (string) $daysBefore,
+                    'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], $fallback);
                 $this->smsService->send($invoice->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice reminder SMS', ['error' => $e->getMessage()]);
@@ -118,7 +144,13 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $invoice->user->phone && $this->settingEnabled('notify_invoice_overdue')) {
             try {
-                $this->smsService->send($invoice->user->phone, 'URGENT: Invoice ' . $invoice->invoice_number . ' is now overdue. Immediate payment required to avoid service suspension.');
+                $message = $this->renderTemplate('invoice_overdue', [
+                    'customer_name' => $invoice->user->name,
+                    'invoice_number' => $invoice->invoice_number,
+                    'amount' => 'Ksh ' . number_format($invoice->total, 2),
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'URGENT: Invoice ' . $invoice->invoice_number . ' is now overdue. Immediate payment required to avoid service suspension.');
+                $this->smsService->send($invoice->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice overdue SMS', ['error' => $e->getMessage()]);
             }
@@ -141,7 +173,13 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $payment->invoice->user->phone && $this->settingEnabled('notify_payment')) {
             try {
-                $this->smsService->send($payment->invoice->user->phone, 'Payment of Ksh ' . number_format($payment->amount, 0) . ' received for invoice ' . $payment->invoice->invoice_number . '. Thank you!');
+                $message = $this->renderTemplate('payment_received', [
+                    'customer_name' => $payment->invoice->user->name,
+                    'amount' => 'Ksh ' . number_format($payment->amount, 2),
+                    'invoice_number' => $payment->invoice->invoice_number,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Payment of Ksh ' . number_format($payment->amount, 0) . ' received for invoice ' . $payment->invoice->invoice_number . '. Thank you!');
+                $this->smsService->send($payment->invoice->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send payment received SMS', ['error' => $e->getMessage()]);
             }
@@ -164,7 +202,12 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_service_activated')) {
             try {
-                $this->smsService->send($service->user->phone, 'Your service "' . $service->name . '" is now active and ready to use. Log in to your dashboard for details.');
+                $message = $this->renderTemplate('service_activated', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Your service "' . $service->name . '" is now active and ready to use. Log in to your dashboard for details.');
+                $this->smsService->send($service->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send service activated SMS', ['error' => $e->getMessage()]);
             }
@@ -187,7 +230,12 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_service_suspend')) {
             try {
-                $this->smsService->send($service->user->phone, 'Your service "' . $service->name . '" has been suspended due to overdue payment. Pay now to restore service.');
+                $message = $this->renderTemplate('service_suspended', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Your service "' . $service->name . '" has been suspended due to overdue payment. Pay now to restore service.');
+                $this->smsService->send($service->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send service suspended SMS', ['error' => $e->getMessage()]);
             }
@@ -210,7 +258,12 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_service_terminated')) {
             try {
-                $this->smsService->send($service->user->phone, 'Your service "' . $service->name . '" has been terminated. Contact support if you wish to restore it.');
+                $message = $this->renderTemplate('service_terminated', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Your service "' . $service->name . '" has been terminated. Contact support if you wish to restore it.');
+                $this->smsService->send($service->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send service terminated SMS', ['error' => $e->getMessage()]);
             }
@@ -233,7 +286,13 @@ class NotificationService
 
         if ($this->smsService->isConfigured() && $domain->user->phone && $this->settingEnabled('notify_domain_expiry')) {
             try {
-                $message = $daysUntilExpiry <= 0 ? 'URGENT: Your domain ' . $domain->name . ' has expired!' : 'Your domain ' . $domain->name . ' expires in ' . $daysUntilExpiry . ' days. Renew now!';
+                $fallback = $daysUntilExpiry <= 0 ? 'URGENT: Your domain ' . $domain->name . ' has expired!' : 'Your domain ' . $domain->name . ' expires in ' . $daysUntilExpiry . ' days. Renew now!';
+                $message = $this->renderTemplate('domain_expiry', [
+                    'customer_name' => $domain->user->name,
+                    'domain_name' => $domain->name,
+                    'days_until_expiry' => (string) $daysUntilExpiry,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], $fallback);
                 $this->smsService->send($domain->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send domain expiry SMS', ['error' => $e->getMessage()]);

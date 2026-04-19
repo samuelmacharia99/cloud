@@ -603,4 +603,40 @@ class PaymentController extends Controller
 
         return view('customer.payment.manual-submitted', ['payment' => $payment]);
     }
+
+    /**
+     * M-Pesa: Poll payment status (AJAX)
+     */
+    public function mpesaStatus(Request $request, Invoice $invoice)
+    {
+        abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        $request->validate([
+            'checkout_request_id' => 'required|string',
+        ]);
+
+        try {
+            $checkoutRequestId = $request->input('checkout_request_id');
+
+            $gateway = PaymentGatewayFactory::make('mpesa');
+            $result = $gateway->verify($checkoutRequestId);
+
+            return response()->json([
+                'status' => $result['status'] ?? 'pending',
+                'success' => $result['success'] ?? false,
+                'message' => $result['message'] ?? 'Awaiting payment confirmation',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('M-Pesa status poll error', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'pending',
+                'success' => false,
+                'message' => 'Unable to check payment status',
+            ]);
+        }
+    }
 }

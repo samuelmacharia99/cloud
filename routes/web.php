@@ -70,6 +70,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/settings/upload-file', [\App\Http\Controllers\Admin\SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [\App\Http\Controllers\Admin\SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [\App\Http\Controllers\Admin\SettingController::class, 'testSms'])->name('admin.settings.test-sms');
+        Route::post('admin/settings/test-mpesa', [\App\Http\Controllers\Admin\SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
         Route::post('admin/settings/debug-log', [\App\Http\Controllers\Admin\SettingController::class, 'debugLog'])->name('admin.settings.debug-log');
         Route::post('admin/settings/refresh-currencies', [\App\Http\Controllers\Admin\SettingController::class, 'refreshCurrencies'])->name('admin.settings.refresh-currencies');
 
@@ -95,6 +96,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         // SMS Notifications
         Route::get('admin/sms', [\App\Http\Controllers\Admin\SmsController::class, 'index'])->name('admin.sms.index');
         Route::post('admin/sms/send', [\App\Http\Controllers\Admin\SmsController::class, 'send'])->name('admin.sms.send');
+
+        // SMS Templates (AJAX)
+        Route::put('admin/sms-templates/{smsTemplate}', [\App\Http\Controllers\Admin\SmsTemplateController::class, 'update'])->name('admin.sms-templates.update');
+        Route::post('admin/sms-templates/{smsTemplate}/reset', [\App\Http\Controllers\Admin\SmsTemplateController::class, 'reset'])->name('admin.sms-templates.reset');
 
         // Email Logs
         Route::get('admin/emails', [\App\Http\Controllers\Admin\EmailController::class, 'index'])->name('admin.emails.index');
@@ -195,6 +200,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
         Route::post('/invoices/{invoice}/pay', [\App\Http\Controllers\Customer\PaymentController::class, 'initiate'])->name('customer.payment.initiate');
         Route::get('/invoices/{invoice}/pay/mpesa/verify', [\App\Http\Controllers\Customer\PaymentController::class, 'verifyMpesa'])->name('customer.payment.verify-mpesa');
+        Route::get('/invoices/{invoice}/pay/mpesa/status', [\App\Http\Controllers\Customer\PaymentController::class, 'mpesaStatus'])->name('customer.payment.mpesa-status');
         Route::get('/invoices/{invoice}/payment/success', [\App\Http\Controllers\Customer\PaymentController::class, 'success'])->name('customer.payment.success');
         Route::get('/invoices/{invoice}/payment/stripe/success', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeSuccess'])->name('customer.payment.stripe.success');
         Route::get('/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeCancel'])->name('customer.payment.stripe.cancel');

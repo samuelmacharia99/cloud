@@ -206,141 +206,368 @@
             </div>
 
             <!-- Tab: Payment Methods -->
-            <div x-show="activeTab === 'payment_methods'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
-                    @csrf
+            <div x-show="activeTab === 'payment_methods'" class="space-y-6" x-data="paymentGateways()">
+                <!-- M-Pesa Card -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" x-data="{ open: {{ $gatewayStatus['mpesa'] ? 'true' : 'false' }} }">
+                    <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 dark:from-slate-800 to-blue-50/50 dark:to-slate-900 cursor-pointer" @click="open = !open">
+                        <div class="flex items-center gap-4 flex-1">
+                            <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">M-Pesa (Daraja API)</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">Mobile payment via Safaricom</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            @if($gatewayStatus['mpesa'])
+                                <span class="px-3 py-1 rounded-full bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 text-xs font-medium">ACTIVE ✓</span>
+                            @endif
+                            <svg :class="open ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        </div>
+                    </div>
 
-                    <!-- M-Pesa Section -->
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">M-Pesa</legend>
-                        <div class="space-y-4">
+                    <div x-show="open" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <form @submit.prevent="saveMpesa($el)" class="space-y-4">
                             <div>
-                                <input type="hidden" name="settings[mpesa_enabled]" value="0">
+                                <input type="hidden" name="enabled_hidden" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[mpesa_enabled]" value="1" @checked(($settings['mpesa_enabled'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Enable M-Pesa</span>
+                                    <input type="checkbox" name="mpesa_enabled" value="1" @checked(($settings['mpesa_enabled'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable M-Pesa payments</span>
                                 </label>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Short Code</label>
-                                <input type="text" name="settings[mpesa_shortcode]" value="{{ $settings['mpesa_shortcode'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Pass Key</label>
-                                @if($settings['mpesa_passkey'] ?? false)
-                                    <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
-                                @endif
-                                <input type="password" name="settings[mpesa_passkey]" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['mpesa_passkey'] ?? false)
-                                        A pass key is configured. Leave blank to keep it.
-                                    @else
-                                        Enter your M-Pesa pass key
-                                    @endif
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Consumer Key</label>
-                                <input type="text" name="settings[mpesa_consumer_key]" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Consumer Secret</label>
-                                <input type="text" name="settings[mpesa_consumer_secret]" value="{{ $settings['mpesa_consumer_secret'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Environment</label>
-                                <select name="settings[mpesa_environment]" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                <select name="mpesa_environment" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
                                     <option value="sandbox" @selected(($settings['mpesa_environment'] ?? 'sandbox') === 'sandbox')>Sandbox</option>
                                     <option value="production" @selected(($settings['mpesa_environment'] ?? 'sandbox') === 'production')>Production</option>
                                 </select>
                             </div>
-                        </div>
-                    </fieldset>
 
-                    <!-- Card/Stripe Section -->
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Card Payments (Stripe)</legend>
-                        <div class="space-y-4">
                             <div>
-                                <input type="hidden" name="settings[card_enabled]" value="0">
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Paybill Number</label>
+                                <input type="text" name="mpesa_shortcode" value="{{ $settings['mpesa_shortcode'] ?? '' }}" placeholder="123456" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Consumer Key</label>
+                                <input type="text" name="mpesa_consumer_key" value="{{ $settings['mpesa_consumer_key'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Consumer Secret (masked)</label>
+                                <input type="password" name="mpesa_consumer_secret" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Passkey (masked)</label>
+                                <input type="password" name="mpesa_passkey" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Callback URL</label>
+                                <div class="px-4 py-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-600">
+                                    <p class="text-sm text-slate-700 dark:text-slate-300 break-all">{{ route('payment.mpesa.callback') }}</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Read-only – already registered with Safaricom</p>
+                                </div>
+                            </div>
+
+                            <div class="flex gap-3 pt-4">
+                                <button type="button" @click="testMpesa()" :disabled="testing.mpesa" class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!testing.mpesa">Test Connection</span>
+                                    <span x-show="testing.mpesa" class="inline-flex items-center gap-2">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Testing...
+                                    </span>
+                                </button>
+                                <button type="submit" :disabled="saving.mpesa" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!saving.mpesa">Save M-Pesa Settings</span>
+                                    <span x-show="saving.mpesa" class="inline-flex items-center justify-center gap-2 w-full">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Saving...
+                                    </span>
+                                </button>
+                            </div>
+                            <p x-show="status.mpesa" :class="status.mpesa?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.mpesa?.message"></p>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Stripe Card -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" x-data="{ open: {{ $gatewayStatus['stripe'] ? 'true' : 'false' }} }">
+                    <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-purple-50 dark:from-slate-800 to-purple-50/50 dark:to-slate-900 cursor-pointer" @click="open = !open">
+                        <div class="flex items-center gap-4 flex-1">
+                            <svg class="w-6 h-6 text-purple-600" fill="currentColor" viewBox="0 0 24 24"><path d="M23.014 12.233c0 6.14-4.934 11.167-11.014 11.167C5.933 23.4 1 18.373 1 12.233c0-6.14 4.933-11.167 11.014-11.167 6.08 0 11.014 5.027 11.014 11.167zm-6.49 1.134H7.28V10.85h9.244v2.517z"/></svg>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Stripe</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">Credit & debit card payments</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            @if($gatewayStatus['stripe'])
+                                <span class="px-3 py-1 rounded-full bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 text-xs font-medium">ACTIVE ✓</span>
+                            @endif
+                            <svg :class="open ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div x-show="open" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <form @submit.prevent="saveStripe($el)" class="space-y-4">
+                            <div>
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[card_enabled]" value="1" @checked(($settings['card_enabled'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Enable Card Payments</span>
+                                    <input type="checkbox" name="stripe_enabled" value="1" @checked(($settings['stripe_enabled'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable Stripe payments</span>
                                 </label>
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Stripe API Key</label>
-                                @if($settings['stripe_key'] ?? false)
-                                    <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
-                                @endif
-                                <input type="password" name="settings[stripe_key]" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['stripe_key'] ?? false)
-                                        A key is configured. Leave blank to keep it.
-                                    @else
-                                        Enter your Stripe API key
-                                    @endif
-                                </p>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Secret Key (masked)</label>
+                                <input type="password" name="stripe_secret_key" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Publishable Key</label>
+                                <input type="text" name="stripe_publishable_key" value="{{ $settings['stripe_publishable_key'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Webhook Secret (masked)</label>
+                                <input type="password" name="stripe_webhook_secret" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div class="flex gap-3 pt-4">
+                                <button type="submit" :disabled="saving.stripe" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!saving.stripe">Save Stripe Settings</span>
+                                    <span x-show="saving.stripe" class="inline-flex items-center justify-center gap-2 w-full">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Saving...
+                                    </span>
+                                </button>
+                            </div>
+                            <p x-show="status.stripe" :class="status.stripe?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.stripe?.message"></p>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- PayPal Card -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" x-data="{ open: {{ $gatewayStatus['paypal'] ? 'true' : 'false' }} }">
+                    <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-yellow-50 dark:from-slate-800 to-yellow-50/50 dark:to-slate-900 cursor-pointer" @click="open = !open">
+                        <div class="flex items-center gap-4 flex-1">
+                            <svg class="w-6 h-6 text-yellow-600" fill="currentColor" viewBox="0 0 24 24"><path d="M9.343 17.657c0-1.328 2.686-2.404 6-2.404s6 1.076 6 2.404m0-6c0 1.328-2.686 2.404-6 2.404s-6-1.076-6-2.404m0-6c0 1.328 2.686 2.404 6 2.404s6-1.076 6-2.404M3 5.657c0-1.328 2.686-2.404 6-2.404s6 1.076 6 2.404v10c0 1.328-2.686 2.404-6 2.404s-6-1.076-6-2.404V5.657z"/></svg>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">PayPal</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">PayPal wallet & balance payments</p>
                             </div>
                         </div>
-                    </fieldset>
+                        <div class="flex items-center gap-3">
+                            @if($gatewayStatus['paypal'])
+                                <span class="px-3 py-1 rounded-full bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 text-xs font-medium">ACTIVE ✓</span>
+                            @endif
+                            <svg :class="open ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        </div>
+                    </div>
 
-                    <!-- Bank Transfer Section -->
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Bank Transfer</legend>
-                        <div class="space-y-4">
+                    <div x-show="open" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <form @submit.prevent="savePayPal($el)" class="space-y-4">
                             <div>
-                                <input type="hidden" name="settings[bank_transfer_enabled]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[bank_transfer_enabled]" value="1" @checked(($settings['bank_transfer_enabled'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Enable Bank Transfer</span>
+                                    <input type="checkbox" name="paypal_enabled" value="1" @checked(($settings['paypal_enabled'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable PayPal payments</span>
+                                </label>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Environment</label>
+                                <select name="paypal_environment" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                    <option value="sandbox" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'sandbox')>Sandbox</option>
+                                    <option value="production" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'production')>Production</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Client ID</label>
+                                <input type="text" name="paypal_client_id" value="{{ $settings['paypal_client_id'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Client Secret (masked)</label>
+                                <input type="password" name="paypal_client_secret" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Webhook ID</label>
+                                <input type="text" name="paypal_webhook_id" value="{{ $settings['paypal_webhook_id'] ?? '' }}" placeholder="Optional: webhook listener ID" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+
+                            <div class="flex gap-3 pt-4">
+                                <button type="submit" :disabled="saving.paypal" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!saving.paypal">Save PayPal Settings</span>
+                                    <span x-show="saving.paypal" class="inline-flex items-center justify-center gap-2 w-full">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Saving...
+                                    </span>
+                                </button>
+                            </div>
+                            <p x-show="status.paypal" :class="status.paypal?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.paypal?.message"></p>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Bank Transfer Card -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden" x-data="{ open: false }">
+                    <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-green-50 dark:from-slate-800 to-green-50/50 dark:to-slate-900 cursor-pointer" @click="open = !open">
+                        <div class="flex items-center gap-4 flex-1">
+                            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h10m4 0a1 1 0 01-1 1H4a1 1 0 01-1-1m0 0a1 1 0 011-1h16a1 1 0 011 1m0 0v2a2 2 0 01-2 2H5a2 2 0 01-2-2v-2m0-5V7a2 2 0 012-2h14a2 2 0 012 2v3"/></svg>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Bank Transfer</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">Direct bank account details</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            @if($settings['bank_transfer_enabled'] ?? false)
+                                <span class="px-3 py-1 rounded-full bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 text-xs font-medium">ACTIVE ✓</span>
+                            @endif
+                            <svg :class="open ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div x-show="open" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <form @submit.prevent="saveBank($el)" class="space-y-4">
+                            <div>
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="bank_transfer_enabled" value="1" @checked(($settings['bank_transfer_enabled'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable bank transfer payments</span>
                                 </label>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Bank Name</label>
-                                <input type="text" name="settings[bank_name]" value="{{ $settings['bank_name'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="bank_name" value="{{ $settings['bank_name'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Account Name</label>
-                                <input type="text" name="settings[bank_account_name]" value="{{ $settings['bank_account_name'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="bank_account_name" value="{{ $settings['bank_account_name'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Account Number</label>
-                                <input type="text" name="settings[bank_account_number]" value="{{ $settings['bank_account_number'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="bank_account_number" value="{{ $settings['bank_account_number'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Branch</label>
-                                <input type="text" name="settings[bank_branch]" value="{{ $settings['bank_branch'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="bank_branch" value="{{ $settings['bank_branch'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SWIFT Code</label>
-                                <input type="text" name="settings[bank_swift_code]" value="{{ $settings['bank_swift_code'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="bank_swift_code" value="{{ $settings['bank_swift_code'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
-                        </div>
-                    </fieldset>
 
-                    <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                        <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
-                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            Save Payment Methods
-                        </button>
+                            <div class="flex gap-3 pt-4">
+                                <button type="submit" :disabled="saving.bank" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!saving.bank">Save Bank Settings</span>
+                                    <span x-show="saving.bank" class="inline-flex items-center justify-center gap-2 w-full">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Saving...
+                                    </span>
+                                </button>
+                            </div>
+                            <p x-show="status.bank" :class="status.bank?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.bank?.message"></p>
+                        </form>
                     </div>
-                </form>
+                </div>
             </div>
+
+            <script>
+                function paymentGateways() {
+                    return {
+                        saving: { mpesa: false, stripe: false, paypal: false, bank: false },
+                        testing: { mpesa: false },
+                        status: { mpesa: null, stripe: null, paypal: null, bank: null },
+
+                        async saveMpesa(form) {
+                            await this.saveForm(form, 'mpesa');
+                        },
+                        async saveStripe(form) {
+                            await this.saveForm(form, 'stripe');
+                        },
+                        async savePayPal(form) {
+                            await this.saveForm(form, 'paypal');
+                        },
+                        async saveBank(form) {
+                            await this.saveForm(form, 'bank');
+                        },
+
+                        async saveForm(form, gateway) {
+                            this.saving[gateway] = true;
+                            const formData = new FormData(form);
+                            const settings = {};
+
+                            formData.forEach((value, key) => {
+                                if (key !== 'enabled_hidden') {
+                                    settings[key] = value;
+                                }
+                            });
+
+                            try {
+                                const response = await fetch('{{ route("admin.settings.update") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    },
+                                    body: JSON.stringify({ settings })
+                                });
+
+                                if (response.ok) {
+                                    this.status[gateway] = { type: 'success', message: 'Settings saved successfully!' };
+                                } else {
+                                    this.status[gateway] = { type: 'error', message: 'Failed to save settings' };
+                                }
+                            } catch (error) {
+                                this.status[gateway] = { type: 'error', message: 'Error: ' + error.message };
+                            } finally {
+                                this.saving[gateway] = false;
+                                setTimeout(() => { this.status[gateway] = null; }, 3000);
+                            }
+                        },
+
+                        async testMpesa() {
+                            this.testing.mpesa = true;
+                            try {
+                                const response = await fetch('{{ route("admin.settings.test-mpesa") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    }
+                                });
+
+                                const data = await response.json();
+                                this.status.mpesa = {
+                                    type: data.success ? 'success' : 'error',
+                                    message: data.message + (data.environment ? ` (${data.environment})` : '')
+                                };
+                            } catch (error) {
+                                this.status.mpesa = { type: 'error', message: 'Test failed: ' + error.message };
+                            } finally {
+                                this.testing.mpesa = false;
+                                setTimeout(() => { this.status.mpesa = null; }, 5000);
+                            }
+                        }
+                    };
+                }
+            </script>
 
             <!-- Tab: Provisioning -->
             <div x-show="activeTab === 'provisioning'" class="space-y-6">
@@ -569,17 +796,18 @@
             </div>
 
             <!-- Tab: Notifications -->
-            <div x-show="activeTab === 'notifications'" class="space-y-6">
+            <div x-show="activeTab === 'notifications'" class="space-y-6" x-data="smsTemplates()">
+                <!-- Notification Triggers Form -->
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notification Settings</legend>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Notification Triggers</legend>
                         <div class="space-y-3">
                             <div>
                                 <input type="hidden" name="settings[notify_new_order]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_new_order]" value="1" @checked(($settings['notify_new_order'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_new_order]" value="1" @checked(($settings['notify_new_order'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">New Order</span>
                                 </label>
                             </div>
@@ -587,7 +815,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_payment]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_payment]" value="1" @checked(($settings['notify_payment'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_payment]" value="1" @checked(($settings['notify_payment'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Payment Received</span>
                                 </label>
                             </div>
@@ -595,7 +823,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_service_suspend]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_service_suspend]" value="1" @checked(($settings['notify_service_suspend'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_service_suspend]" value="1" @checked(($settings['notify_service_suspend'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Service Suspended</span>
                                 </label>
                             </div>
@@ -603,7 +831,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_ticket]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">New Ticket</span>
                                 </label>
                             </div>
@@ -611,7 +839,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_invoice_generated]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_invoice_generated]" value="1" @checked(($settings['notify_invoice_generated'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_invoice_generated]" value="1" @checked(($settings['notify_invoice_generated'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Invoice Generated</span>
                                 </label>
                             </div>
@@ -619,7 +847,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_invoice_reminder]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_invoice_reminder]" value="1" @checked(($settings['notify_invoice_reminder'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_invoice_reminder]" value="1" @checked(($settings['notify_invoice_reminder'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Invoice Reminder</span>
                                 </label>
                             </div>
@@ -627,7 +855,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_invoice_overdue]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_invoice_overdue]" value="1" @checked(($settings['notify_invoice_overdue'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_invoice_overdue]" value="1" @checked(($settings['notify_invoice_overdue'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Invoice Overdue</span>
                                 </label>
                             </div>
@@ -635,7 +863,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_service_activated]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_service_activated]" value="1" @checked(($settings['notify_service_activated'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_service_activated]" value="1" @checked(($settings['notify_service_activated'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Service Activated</span>
                                 </label>
                             </div>
@@ -643,7 +871,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_service_terminated]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_service_terminated]" value="1" @checked(($settings['notify_service_terminated'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_service_terminated]" value="1" @checked(($settings['notify_service_terminated'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Service Terminated</span>
                                 </label>
                             </div>
@@ -651,7 +879,7 @@
                             <div>
                                 <input type="hidden" name="settings[notify_domain_expiry]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[notify_domain_expiry]" value="1" @checked(($settings['notify_domain_expiry'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[notify_domain_expiry]" value="1" @checked(($settings['notify_domain_expiry'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Domain Expiry</span>
                                 </label>
                             </div>
@@ -664,10 +892,106 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
-                            Save Notifications
+                            Save Notification Triggers
                         </button>
                     </div>
                 </form>
+
+                <!-- SMS Message Templates -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-2">SMS Message Templates</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Customize SMS messages sent for each event. Use {variable} placeholders which will be replaced with actual values. Each message is limited to 320 characters.</p>
+
+                        <div class="space-y-6">
+                            @foreach([
+                                'new_order' => ['title' => 'New Order', 'desc' => 'Sent to admin and customer when an order is placed'],
+                                'payment_received' => ['title' => 'Payment Received', 'desc' => 'Sent to customer when payment is confirmed'],
+                                'invoice_generated' => ['title' => 'Invoice Generated', 'desc' => 'Sent to customer when a new invoice is created'],
+                                'invoice_reminder' => ['title' => 'Invoice Reminder', 'desc' => 'Sent before invoice is due'],
+                                'invoice_overdue' => ['title' => 'Invoice Overdue', 'desc' => 'Sent when invoice becomes overdue'],
+                                'service_activated' => ['title' => 'Service Activated', 'desc' => 'Sent when service is activated'],
+                                'service_suspended' => ['title' => 'Service Suspended', 'desc' => 'Sent when service is suspended'],
+                                'service_terminated' => ['title' => 'Service Terminated', 'desc' => 'Sent when service is terminated'],
+                                'domain_expiry' => ['title' => 'Domain Expiry', 'desc' => 'Sent before domain expires'],
+                                'ticket_created' => ['title' => 'Support Ticket', 'desc' => 'Sent when a support ticket is created'],
+                            ] as $eventKey => $eventInfo)
+                                @php
+                                    $template = $smsTemplates[$eventKey] ?? null;
+                                    if (!$template) continue;
+                                @endphp
+                                <div x-data="{ body: @js($template->body), chars: {{ strlen($template->body) }} }" class="border border-slate-200 dark:border-slate-700 rounded-lg p-6 space-y-4">
+                                    <!-- Header -->
+                                    <div class="flex items-start justify-between">
+                                        <div>
+                                            <h3 class="font-semibold text-slate-900 dark:text-white">{{ $eventInfo['title'] }}</h3>
+                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $eventInfo['desc'] }}</p>
+                                        </div>
+                                        <span class="inline-block px-2 py-1 rounded text-xs font-medium {{ $template->recipient_type === 'both' ? 'bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-200' : ($template->recipient_type === 'admin' ? 'bg-orange-100 dark:bg-orange-900 text-orange-900 dark:text-orange-200' : 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-200') }}">
+                                            {{ ucfirst($template->recipient_type) }}
+                                        </span>
+                                    </div>
+
+                                    <!-- Available Variables -->
+                                    @if($template->available_variables && count($template->available_variables) > 0)
+                                        <div class="space-y-2">
+                                            <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase">Available Variables:</p>
+                                            <div class="flex flex-wrap gap-2">
+                                                @foreach($template->available_variables as $var)
+                                                    <button type="button" @click="body = body + '{{{ $var }}}'; chars = body.length" class="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-xs transition-colors font-mono">
+                                                        {{{ $var }}}
+                                                    </button>
+                                                @endforeach
+                                            </div>
+                                        </div>
+                                    @endif
+
+                                    <!-- Message Body -->
+                                    <div class="space-y-2">
+                                        <div class="flex items-center justify-between">
+                                            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Message</label>
+                                            <span class="text-xs text-slate-500 dark:text-slate-400"><span x-text="chars"></span>/320</span>
+                                        </div>
+                                        <textarea x-model="body" @input="chars = body.length" maxlength="320" rows="3" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white resize-none"></textarea>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">Character count: {{ count($template->available_variables) > 0 ? 'Approx. (variables will be replaced)' : 'Exact' }}</p>
+                                    </div>
+
+                                    <!-- Recipient Type -->
+                                    <div class="space-y-2">
+                                        <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Send To</label>
+                                        <select @change="$dispatch('recipient-changed')" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" data-event="{{ $eventKey }}">
+                                            <option value="customer" @selected($template->recipient_type === 'customer')>Customer Only</option>
+                                            <option value="admin" @selected($template->recipient_type === 'admin')>Admin Only</option>
+                                            <option value="both" @selected($template->recipient_type === 'both')>Both Customer & Admin</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Actions -->
+                                    <div class="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">
+                                        <button type="button" @click="saveTemplate({{ $template->id }}, $el)" :disabled="saving[{{ $template->id }}]" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2 text-sm">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                            </svg>
+                                            <span x-show="!saving[{{ $template->id }}]">Save Template</span>
+                                            <span x-show="saving[{{ $template->id }}]" class="flex items-center gap-2">
+                                                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Saving...
+                                            </span>
+                                        </button>
+                                        <button type="button" @click="resetTemplate({{ $template->id }}, '{{ route('admin.sms-templates.reset', $template->id) }}')" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition-colors text-sm">
+                                            Reset to Default
+                                        </button>
+                                        <div class="flex-1"></div>
+                                        <div x-show="status[{{ $template->id }}]" :class="status[{{ $template->id }}]?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm font-medium" x-text="status[{{ $template->id }}]?.msg"></div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </fieldset>
+                </div>
             </div>
 
             <!-- Tab: Cron -->
@@ -1004,6 +1328,93 @@
         } catch (error) {
             alert('Error: ' + error.message);
         }
+    }
+
+    // SMS Templates Manager
+    function smsTemplates() {
+        return {
+            saving: {},
+            status: {},
+
+            async saveTemplate(templateId, container) {
+                const recipientSelect = container.querySelector('select');
+                const textarea = container.querySelector('textarea');
+
+                if (!textarea.value.trim()) {
+                    this.setStatus(templateId, 'error', 'Message cannot be empty');
+                    return;
+                }
+
+                this.saving[templateId] = true;
+
+                try {
+                    const response = await fetch(`{{ route('admin.sms-templates.update', '') }}/${templateId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            body: textarea.value,
+                            recipient_type: recipientSelect.value,
+                        }),
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        this.setStatus(templateId, 'success', '✅ ' + data.message);
+                        setTimeout(() => {
+                            this.status[templateId] = null;
+                        }, 3000);
+                    } else {
+                        this.setStatus(templateId, 'error', '❌ ' + (data.message || 'Error saving'));
+                    }
+                } catch (error) {
+                    this.setStatus(templateId, 'error', '❌ Error: ' + error.message);
+                } finally {
+                    this.saving[templateId] = false;
+                }
+            },
+
+            async resetTemplate(templateId, url) {
+                if (!confirm('Reset this template to the default message?')) {
+                    return;
+                }
+
+                this.saving[templateId] = true;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        this.setStatus(templateId, 'success', '✅ ' + data.message);
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        this.setStatus(templateId, 'error', '❌ ' + (data.message || 'Error resetting'));
+                    }
+                } catch (error) {
+                    this.setStatus(templateId, 'error', '❌ Error: ' + error.message);
+                } finally {
+                    this.saving[templateId] = false;
+                }
+            },
+
+            setStatus(templateId, type, msg) {
+                this.status[templateId] = { type, msg };
+            }
+        };
     }
 </script>
 @endsection

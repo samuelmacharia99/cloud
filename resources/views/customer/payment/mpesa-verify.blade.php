@@ -86,14 +86,23 @@ function mpesaVerify() {
             this.checking = true;
 
             try {
-                // This would call a backend endpoint to check payment status
-                // For now, we wait for the webhook callback
-                // In a real implementation, you'd poll the M-Pesa API
+                const res = await fetch(`{{ route('customer.payment.mpesa-status', $invoice) }}?checkout_request_id=${this.checkoutRequestId}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
 
-                // Simulate checking...
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                const data = await res.json();
+
+                if (data.status === 'completed') {
+                    window.location.href = '{{ route("customer.payment.success", $invoice) }}';
+                } else if (data.status === 'failed') {
+                    window.location.href = '{{ route("customer.payment.select-method", $invoice) }}?error=payment_failed';
+                }
+                // 'pending' → keep polling
             } catch (error) {
-                console.error('Payment check failed:', error);
+                console.error('Payment status check failed:', error);
             } finally {
                 this.checking = false;
             }

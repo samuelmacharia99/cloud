@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -16,9 +17,9 @@ class PayPalService implements PaymentGatewayInterface
 
     public function __construct()
     {
-        $this->clientId = config('payment.paypal.client_id') ?? '';
-        $this->clientSecret = config('payment.paypal.client_secret') ?? '';
-        $this->isProduction = config('payment.paypal.is_production', false);
+        $this->clientId = Setting::getValue('paypal_client_id', '');
+        $this->clientSecret = Setting::getValue('paypal_client_secret', '');
+        $this->isProduction = Setting::getValue('paypal_environment', 'sandbox') === 'production';
         $this->baseUrl = $this->isProduction
             ? 'https://api.paypal.com'
             : 'https://api.sandbox.paypal.com';
@@ -343,6 +344,8 @@ class PayPalService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return !empty($this->clientId) && !empty($this->clientSecret);
+        return Setting::getValue('paypal_enabled') == '1'
+            && !empty($this->clientId)
+            && !empty($this->clientSecret);
     }
 }

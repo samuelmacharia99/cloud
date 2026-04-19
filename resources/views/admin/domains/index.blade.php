@@ -159,11 +159,15 @@
                                 {{ $domain->registered_at ? $domain->registered_at->format('M d, Y') : '—' }}
                             </td>
                             <td class="px-6 py-4 text-sm">
-                                <span class="font-medium {{ $domain->daysUntilExpiry() < 30 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }}">
-                                    {{ $domain->expires_at->format('M d, Y') }}
-                                </span>
-                                @if ($domain->daysUntilExpiry() < 30)
-                                    <p class="text-xs text-red-600 dark:text-red-400">{{ $domain->daysUntilExpiry() }} days</p>
+                                @if($domain->expires_at)
+                                    <span class="font-medium {{ $domain->daysUntilExpiry() < 30 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }}">
+                                        {{ $domain->expires_at->format('M d, Y') }}
+                                    </span>
+                                    @if ($domain->daysUntilExpiry() < 30)
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ $domain->daysUntilExpiry() }} days</p>
+                                    @endif
+                                @else
+                                    <span class="text-slate-500 dark:text-slate-400">—</span>
                                 @endif
                             </td>
                             <td class="px-6 py-4 text-right">
