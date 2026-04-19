@@ -378,6 +378,59 @@
                                 </div>
                             </div>
 
+                            <!-- Test Payment Simulation (Sandbox only) -->
+                            @if(($settings['mpesa_environment'] ?? 'sandbox') === 'sandbox')
+                            <div class="bg-blue-50 dark:bg-blue-900/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-4 mt-4">
+                                <div>
+                                    <h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-2">🧪 Test Payment (Sandbox Only)</h4>
+                                    <p class="text-xs text-blue-800 dark:text-blue-200 mb-4">Simulate a customer payment to test your callback URL registration</p>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-2">Phone Number</label>
+                                        <input type="text" id="test_phone" placeholder="254712345678" x-model="testPayment.phone" class="w-full px-3 py-2 text-sm rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                        <p class="text-xs text-blue-700 dark:text-blue-300 mt-1">Format: 254XXXXXXXXX or 0XXXXXXXXX</p>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-medium text-blue-900 dark:text-blue-100 mb-2">Amount (KES)</label>
+                                        <input type="number" id="test_amount" placeholder="100" x-model.number="testPayment.amount" min="1" max="999999" class="w-full px-3 py-2 text-sm rounded-lg border border-blue-300 dark:border-blue-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                        <p class="text-xs text-blue-700 dark:text-blue-300 mt-1">Minimum: 1 KES</p>
+                                    </div>
+                                </div>
+
+                                <button type="button" @click="simulateMpesaPayment()" :disabled="simulating.mpesa" class="w-full px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50 flex items-center justify-center gap-2">
+                                    <span x-show="!simulating.mpesa">
+                                        <svg class="w-5 h-5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M7.172 7.172A4 4 0 1014.828 14.828"/>
+                                        </svg>
+                                        Send Test Payment
+                                    </span>
+                                    <span x-show="simulating.mpesa" class="inline-flex items-center gap-2">
+                                        <svg class="animate-spin h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Simulating...
+                                    </span>
+                                </button>
+
+                                <p x-show="status.simulation" :class="status.simulation?.type === 'success' ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20' : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20'" class="text-sm p-3 rounded-lg" x-text="status.simulation?.message"></p>
+
+                                <div class="bg-white dark:bg-slate-800 rounded p-3 border border-blue-200 dark:border-blue-800">
+                                    <p class="text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">📝 How to test:</p>
+                                    <ol class="text-xs text-slate-600 dark:text-slate-400 space-y-1 list-decimal list-inside">
+                                        <li>Enter a test phone number (use sandbox test numbers)</li>
+                                        <li>Enter a test amount</li>
+                                        <li>Click "Send Test Payment"</li>
+                                        <li>Check your callback URL logs to verify M-Pesa sent the payment notification</li>
+                                        <li>Verify that your payment webhook handler processed it correctly</li>
+                                    </ol>
+                                </div>
+                            </div>
+                            @endif
+
                             <div class="flex gap-3 pt-4">
                                 <button type="button" @click="testMpesa()" :disabled="testing.mpesa" class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium transition disabled:opacity-50">
                                     <span x-show="!testing.mpesa">Test Connection</span>
@@ -598,7 +651,9 @@
                         saving: { mpesa: false, stripe: false, paypal: false, bank: false },
                         testing: { mpesa: false },
                         registering: { mpesa: false },
-                        status: { mpesa: null, stripe: null, paypal: null, bank: null, registration: null },
+                        simulating: { mpesa: false },
+                        status: { mpesa: null, stripe: null, paypal: null, bank: null, registration: null, simulation: null },
+                        testPayment: { phone: '', amount: 100 },
 
                         async saveMpesa(form) {
                             await this.saveForm(form, 'mpesa');
@@ -739,6 +794,51 @@
                                 setTimeout(() => { this.status.registration = null; }, 4000);
                             } finally {
                                 this.registering.mpesa = false;
+                            }
+                        },
+
+                        async simulateMpesaPayment() {
+                            if (!this.testPayment.phone || !this.testPayment.amount) {
+                                alert('Please enter both phone number and amount');
+                                return;
+                            }
+
+                            this.simulating.mpesa = true;
+
+                            try {
+                                const response = await fetch('{{ route("admin.settings.simulate-mpesa-payment") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    },
+                                    body: JSON.stringify({
+                                        phone_number: this.testPayment.phone,
+                                        amount: this.testPayment.amount
+                                    })
+                                });
+
+                                const data = await response.json();
+
+                                this.status.simulation = {
+                                    type: data.success ? 'success' : 'error',
+                                    message: data.message + (data.note ? '\n\n' + data.note : '')
+                                };
+
+                                if (data.success) {
+                                    setTimeout(() => { this.status.simulation = null; }, 6000);
+                                } else {
+                                    setTimeout(() => { this.status.simulation = null; }, 4000);
+                                }
+                            } catch (error) {
+                                this.status.simulation = {
+                                    type: 'error',
+                                    message: 'Simulation failed: ' + error.message
+                                };
+                                setTimeout(() => { this.status.simulation = null; }, 4000);
+                            } finally {
+                                this.simulating.mpesa = false;
                             }
                         }
                     };

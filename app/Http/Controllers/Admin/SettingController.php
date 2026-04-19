@@ -484,4 +484,132 @@ class SettingController extends Controller
             ]);
         }
     }
+
+    public function simulateMpesaPayment(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $request->validate([
+            'phone_number' => 'required|string|min:10',
+            'amount' => 'required|numeric|min:1|max:999999',
+        ]);
+
+        try {
+            $environment = Setting::getValue('mpesa_environment', 'sandbox');
+            $consumerKey = Setting::getValue('mpesa_consumer_key', '');
+            $consumerSecret = Setting::getValue('mpesa_consumer_secret', '');
+            $shortcode = Setting::getValue('mpesa_shortcode', '');
+
+            if (empty($consumerKey) || empty($consumerSecret) || empty($shortcode)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'M-Pesa credentials or shortcode not configured.'
+                ]);
+            }
+
+            if ($environment !== 'sandbox') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Simulation only works in sandbox environment for safety.'
+                ]);
+            }
+
+            $baseUrl = 'https://sandbox.safaricom.co.ke';
+
+            // Step 1: Get access token
+            $tokenResponse = \Illuminate\Support\Facades\Http::withBasicAuth($consumerKey, $consumerSecret)
+                ->timeout(30)
+                ->get("{$baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+
+            if (!$tokenResponse->successful()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to authenticate: ' . ($tokenResponse->json()['error_description'] ?? 'Unknown error')
+                ]);
+            }
+
+            $accessToken = $tokenResponse->json()['access_token'] ?? null;
+            if (empty($accessToken)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No access token received'
+                ]);
+            }
+
+            // Step 2: Sanitize phone number
+            $phone = preg_replace('/\D/', '', $request->input('phone_number'));
+            if (strlen($phone) === 9) {
+                $phone = '254' . $phone;
+            } elseif (strlen($phone) === 10 && $phone[0] === '0') {
+                $phone = '254' . substr($phone, 1);
+            } elseif (substr($phone, 0, 3) !== '254') {
+                $phone = '254' . $phone;
+            }
+
+            // Step 3: Simulate payment
+            $simulatePayload = [
+                'ShortCode' => $shortcode,
+                'CommandID' => 'CustomerPayBillOnline',
+                'Amount' => (int) $request->input('amount'),
+                'Msisdn' => $phone,
+                'BillRefNumber' => 'TEST' . time(),
+            ];
+
+            \Log::info('M-Pesa payment simulation', [
+                'shortcode' => $shortcode,
+                'phone' => $phone,
+                'amount' => $request->input('amount'),
+            ]);
+
+            $simulateResponse = \Illuminate\Support\Facades\Http::withToken($accessToken)
+                ->timeout(30)
+                ->post("{$baseUrl}/mpesa/c2b/v2/simulate", $simulatePayload);
+
+            \Log::info('M-Pesa simulation response', [
+                'status' => $simulateResponse->status(),
+                'body' => $simulateResponse->body(),
+            ]);
+
+            $responseData = $simulateResponse->json();
+
+            if ($simulateResponse->successful() && $simulateResponse->status() === 200) {
+                $message = $responseData['ResponseDescription'] ?? 'Payment simulation initiated';
+
+                \Log::info('M-Pesa payment simulation successful', [
+                    'response_code' => $responseData['ResponseCode'] ?? null,
+                    'message' => $message,
+                ]);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'transaction_id' => $responseData['ConversationID'] ?? null,
+                    'note' => 'Check your callback URL logs to verify the payment callback was received.',
+                ]);
+            }
+
+            $errorMessage = $responseData['ResponseDescription'] ?? 'Simulation failed';
+
+            \Log::warning('M-Pesa simulation failed', [
+                'status' => $simulateResponse->status(),
+                'response' => $responseData,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $errorMessage,
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('M-Pesa simulation exception', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Simulation failed: ' . $e->getMessage()
+            ]);
+        }
+    }
 }
