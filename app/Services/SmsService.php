@@ -57,12 +57,15 @@ class SmsService
         ]);
 
         try {
-            $response = Http::withToken($token)->post($this->apiUrl, [
-                'recipient' => $recipients,
-                'sender_id' => $senderId,
-                'type' => 'plain',
-                'message' => $message,
-            ]);
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->asJson()
+                ->post($this->apiUrl, [
+                    'recipient' => $recipients,
+                    'sender_id' => $senderId,
+                    'type' => 'plain',
+                    'message' => $message,
+                ]);
 
             // If the request wasn't successful, throw an exception
             if (!$response->successful()) {
