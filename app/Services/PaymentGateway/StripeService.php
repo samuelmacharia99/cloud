@@ -151,6 +151,14 @@ class StripeService implements PaymentGatewayInterface
     }
 
     /**
+     * Handle Stripe webhook callback
+     */
+    public function handleCallback(array $data): array
+    {
+        return $this->handleWebhook($data);
+    }
+
+    /**
      * Handle Stripe webhook
      */
     public function handleWebhook(array $data): array

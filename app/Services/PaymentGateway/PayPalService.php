@@ -233,6 +233,14 @@ class PayPalService implements PaymentGatewayInterface
     }
 
     /**
+     * Handle PayPal webhook callback
+     */
+    public function handleCallback(array $data): array
+    {
+        return $this->handleWebhook($data);
+    }
+
+    /**
      * Handle PayPal webhook
      */
     public function handleWebhook(array $data): array
