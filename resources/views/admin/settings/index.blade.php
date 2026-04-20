@@ -713,13 +713,18 @@
                                     body: JSON.stringify({ settings })
                                 });
 
+                                const data = await response.json();
+
                                 if (response.ok) {
                                     this.status[gateway] = { type: 'success', message: 'Settings saved successfully!' };
                                 } else {
-                                    this.status[gateway] = { type: 'error', message: 'Failed to save settings' };
+                                    const errorMsg = data.message || data.errors || 'Failed to save settings';
+                                    this.status[gateway] = { type: 'error', message: errorMsg };
+                                    console.error('Settings save error:', { status: response.status, data });
                                 }
                             } catch (error) {
                                 this.status[gateway] = { type: 'error', message: 'Error: ' + error.message };
+                                console.error('Settings save exception:', error);
                             } finally {
                                 this.saving[gateway] = false;
                                 setTimeout(() => { this.status[gateway] = null; }, 3000);
