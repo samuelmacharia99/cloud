@@ -116,7 +116,7 @@ class PaymentController extends Controller
             // M-Pesa: Show prompt message and redirect
             if ($request->payment_method === 'mpesa') {
                 return redirect()->route('customer.payment.verify-mpesa', [
-                    'invoice_id' => $invoice->id,
+                    'invoice' => $invoice,
                     'checkout_request_id' => $result['checkout_request_id'],
                 ])->with('success', $result['message']);
             }
@@ -177,7 +177,7 @@ class PaymentController extends Controller
                     $this->processPaymentCompletion($payment, $invoice);
                 }
 
-                return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
+                return redirect()->route('customer.payment.success', ['invoice' => $invoice])
                     ->with('success', 'Payment received successfully!');
             }
 
@@ -238,7 +238,7 @@ class PaymentController extends Controller
                 // Process completion (handles overpayments and provisioning)
                 $this->processPaymentCompletion($payment, $invoice);
 
-                return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
+                return redirect()->route('customer.payment.success', ['invoice' => $invoice])
                     ->with('success', 'Payment received successfully!');
             }
 
@@ -307,7 +307,7 @@ class PaymentController extends Controller
                 // Process completion (handles overpayments and provisioning)
                 $this->processPaymentCompletion($payment, $invoice);
 
-                return redirect()->route('customer.payment.success', ['invoice_id' => $invoice->id])
+                return redirect()->route('customer.payment.success', ['invoice' => $invoice])
                     ->with('success', 'Payment received successfully!');
             }
 
