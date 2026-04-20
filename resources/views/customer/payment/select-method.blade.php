@@ -51,91 +51,79 @@
             </div>
         @endif
 
-        <div class="space-y-6">
-            <!-- M-Pesa Premium Card (if available) -->
-            @if (isset($availableGateways['mpesa']))
-                <button type="button" @click="selectedMethod = 'mpesa'" class="group relative w-full overflow-hidden rounded-2xl border-2 transition-all duration-300 p-8 text-center" :class="selectedMethod === 'mpesa' ? 'border-green-500 dark:border-green-400 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-slate-800 dark:to-slate-900 shadow-2xl' : 'border-green-300 dark:border-green-700 bg-gradient-to-br from-white to-green-50/30 dark:from-slate-900 dark:to-slate-900 hover:border-green-400 dark:hover:border-green-600 hover:shadow-xl'">
-                    <!-- Animated background gradient -->
-                    <div class="absolute inset-0 bg-gradient-to-r from-green-400/0 via-green-400/5 to-green-400/0 animate-pulse"></div>
+        <!-- Payment Methods Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            @foreach ($availableGateways as $method => $gateway)
+                <button type="button" @click="selectedMethod = '{{ $method }}'; @if($method === 'manual') showManualModal = true @endif" class="relative group overflow-hidden rounded-lg border-2 transition-all duration-300 p-4 text-center hover:shadow-lg" :class="selectedMethod === '{{ $method }}' ? (selectedMethod === 'mpesa' ? 'border-green-500 dark:border-green-400 bg-green-50 dark:bg-slate-800 shadow-lg' : (selectedMethod === 'stripe' ? 'border-purple-500 dark:border-purple-400 bg-purple-50 dark:bg-slate-800 shadow-lg' : 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-slate-800 shadow-lg')) : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'">
 
-                    <!-- Recommended Badge with Glow -->
-                    <div class="absolute -top-2 right-6 flex items-center gap-2">
-                        <div class="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full text-white text-xs font-bold">
-                            <span class="relative flex h-2 w-2">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                <span class="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    <!-- Glow effect for mpesa when selected -->
+                    @if ($method === 'mpesa')
+                        <div class="absolute inset-0 bg-gradient-to-br from-green-400/0 to-green-400/0" :class="selectedMethod === 'mpesa' ? 'from-green-400/10' : ''"></div>
+                        <div class="absolute -top-1 -right-1 z-20" x-show="selectedMethod === 'mpesa'">
+                            <span class="relative flex h-3 w-3">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                             </span>
-                            RECOMMENDED
+                        </span>
                         </div>
-                    </div>
-
-                    <!-- M-Pesa Badge -->
-                    <div class="flex justify-center mb-6 relative z-10">
-                        <div class="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-lg group-hover:shadow-2xl transition-all">
-                            <span class="text-white font-black text-4xl tracking-tight">M</span>
-                        </div>
-                    </div>
-
-                    <!-- Label and Description -->
-                    <h3 class="text-2xl font-bold text-slate-900 dark:text-white mb-2 relative z-10">{{ $availableGateways['mpesa']['label'] }}</h3>
-                    <p class="text-base text-slate-600 dark:text-slate-400 mb-6 relative z-10">{{ $availableGateways['mpesa']['description'] }}</p>
-
-                    <!-- Benefits -->
-                    <div class="flex flex-wrap gap-3 justify-center mb-6 relative z-10">
-                        <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            Instant
-                        </span>
-                        <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            Secure
-                        </span>
-                        <span class="inline-flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            No Fees
-                        </span>
-                    </div>
-
-                    <!-- Phone Input (visible when selected) -->
-                    <div x-show="selectedMethod === 'mpesa'" class="mt-6 pt-6 border-t border-green-200 dark:border-green-800 relative z-10" x-transition>
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Enter Your M-PESA Phone Number</label>
-                        <input type="tel" id="mpesaPhone" placeholder="0712345678" class="w-full px-4 py-3 border-2 border-green-300 dark:border-green-700 rounded-lg text-base bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-200 dark:focus:ring-green-900 transition-all" required x-model="mpesaPhoneNumber">
-                    </div>
-                </button>
-            @endif
-
-            <!-- Other Payment Methods -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                @foreach ($availableGateways as $method => $gateway)
-                    @if ($method !== 'mpesa')
-                        <button type="button" @click="selectedMethod = '{{ $method }}'; @if($method === 'manual') showManualModal = true @endif" class="group overflow-hidden rounded-xl border-2 transition-all duration-300 p-6 text-center hover:shadow-lg" :class="selectedMethod === '{{ $method }}' ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-lg' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'">
-                            <!-- Icon -->
-                            <div class="text-3xl mb-3 flex justify-center">
-                                @if ($method === 'stripe')
-                                    <svg class="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M13 17h8v2h-8v-2zm0-5h8v2h-8v-2zm0-5h8v2h-8V7zM3 17h8v2H3v-2zm0-5h8v2H3v-2zm0-5h8v2H3V7z"/>
-                                    </svg>
-                                @else
-                                    <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/>
-                                    </svg>
-                                @endif
-                            </div>
-
-                            <!-- Label -->
-                            <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">{{ $gateway['label'] }}</h3>
-
-                            <!-- Description -->
-                            <p class="text-sm text-slate-600 dark:text-slate-400">{{ $gateway['description'] }}</p>
-                        </button>
                     @endif
-                @endforeach
+
+                    <!-- Badge -->
+                    @if ($method === 'mpesa')
+                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl mb-2 mx-auto">
+                            <span class="text-white font-black text-lg">M</span>
+                        </div>
+                    @elseif ($method === 'stripe')
+                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl mb-2 mx-auto">
+                            <span class="text-white font-bold text-lg">S</span>
+                        </div>
+                    @elseif ($method === 'paypal')
+                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl mb-2 mx-auto">
+                            <span class="text-white font-bold text-lg">P</span>
+                        </div>
+                    @else
+                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl mb-2 mx-auto">
+                            <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                            </svg>
+                        </div>
+                    @endif
+
+                    <!-- Label -->
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white">{{ $gateway['label'] }}</h3>
+
+                    @if ($method === 'mpesa')
+                        <p class="text-xs text-green-700 dark:text-green-300 font-medium mt-1">Recommended</p>
+                    @endif
+                </button>
+            @endforeach
+        </div>
+
+        <!-- Input Section (appears when method selected) -->
+        <div x-show="selectedMethod !== null && selectedMethod !== 'manual'" class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-800/50" x-transition>
+
+            <!-- M-Pesa Input -->
+            <div x-show="selectedMethod === 'mpesa'" class="space-y-4" x-transition>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">M-PESA Payment</h3>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Enter your M-PESA phone number to receive the payment prompt</p>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Phone Number</label>
+                    <input type="tel" id="mpesaPhone" placeholder="0712345678 or 254712345678" class="w-full px-4 py-3 border-2 border-green-300 dark:border-green-700 rounded-lg text-base bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-green-500 focus:ring-2 focus:ring-green-200 dark:focus:ring-green-900/50 transition-all placeholder-slate-400 dark:placeholder-slate-500" required x-model="mpesaPhoneNumber">
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Format: 0712345678 or 254712345678</p>
+                </div>
+            </div>
+
+            <!-- Stripe Input -->
+            <div x-show="selectedMethod === 'stripe'" class="space-y-4" x-transition>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Stripe Payment</h3>
+                <p class="text-sm text-slate-600 dark:text-slate-400">You'll be redirected to Stripe's secure checkout</p>
+            </div>
+
+            <!-- PayPal Input -->
+            <div x-show="selectedMethod === 'paypal'" class="space-y-4" x-transition>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">PayPal Payment</h3>
+                <p class="text-sm text-slate-600 dark:text-slate-400">You'll be redirected to PayPal's secure checkout</p>
             </div>
         </div>
 
