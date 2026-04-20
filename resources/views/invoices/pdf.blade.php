@@ -642,7 +642,7 @@
                             @foreach($invoice->payments->where('status', 'completed') as $payment)
                                 <tr>
                                     <td>{{ $payment->paid_at?->format('M d, Y') ?? 'N/A' }}</td>
-                                    <td>{{ ucfirst((string)$payment->payment_method) }}</td>
+                                    <td>{{ ucfirst($payment->payment_method->value ?? $payment->payment_method) }}</td>
                                     <td>{{ $payment->transaction_reference ?? '—' }}</td>
                                     <td class="amount">{{ $currencySymbol }} {{ number_format($payment->amount, 2) }}</td>
                                 </tr>
