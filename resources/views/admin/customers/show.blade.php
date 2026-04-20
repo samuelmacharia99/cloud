@@ -46,7 +46,7 @@
                 <a href="{{ route('admin.customers.edit', $customer) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Customer
                 </a>
-                <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
+                <button @click="createInvoiceModal = true" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
                     Create Invoice
                 </button>
                 <form action="{{ route('admin.customers.destroy', $customer) }}" method="POST" class="inline" onsubmit="return confirm('Are you sure you want to delete this customer? This action cannot be undone.');">
@@ -622,6 +622,129 @@
         </form>
         </div>
     </div>
+
+    <!-- Create Invoice Modal -->
+    <div x-show="createInvoiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="createInvoiceModal = false">
+        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
+            <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create Invoice for {{ $customer->name }}</h2>
+                <button @click="createInvoiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <form method="POST" action="{{ route('admin.customers.create-invoice', $customer) }}" class="p-6 space-y-6">
+                @csrf
+
+                <!-- Status -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
+                    <select name="status" required class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        <option value="unpaid">Send Invoice (Unpaid)</option>
+                        <option value="draft">Draft</option>
+                    </select>
+                </div>
+
+                <!-- Due Date -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Due Date</label>
+                    <input type="date" name="due_date" value="{{ now()->addDays(7)->format('Y-m-d') }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                </div>
+
+                <!-- Tax Rate -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tax Rate (%)</label>
+                    <input type="number" name="tax_rate" x-model="taxRate" min="0" max="100" step="0.01" value="0" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                </div>
+
+                <!-- Line Items Header -->
+                <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Line Items</h3>
+
+                    <!-- Line Items List -->
+                    <template x-for="(item, index) in invoiceItems" :key="index">
+                        <div class="grid grid-cols-12 gap-2 mb-3">
+                            <input
+                                type="text"
+                                :name="`items[${index}][description]`"
+                                x-model="item.description"
+                                placeholder="Product or service name"
+                                required
+                                class="col-span-6 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                            />
+                            <input
+                                type="number"
+                                :name="`items[${index}][quantity]`"
+                                x-model="item.quantity"
+                                min="0.01"
+                                step="0.01"
+                                required
+                                class="col-span-2 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                            />
+                            <input
+                                type="number"
+                                :name="`items[${index}][unit_price]`"
+                                x-model="item.unit_price"
+                                min="0"
+                                step="0.01"
+                                placeholder="0.00"
+                                required
+                                class="col-span-3 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                            />
+                            <button
+                                type="button"
+                                @click="removeInvoiceItem(index)"
+                                x-show="invoiceItems.length > 1"
+                                class="col-span-1 px-2 py-2.5 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 font-medium text-sm transition"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    </template>
+
+                    <!-- Add Line Item Button -->
+                    <button
+                        type="button"
+                        @click="addInvoiceItem()"
+                        class="mt-4 w-full px-4 py-2.5 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-medium transition text-sm"
+                    >
+                        + Add Line Item
+                    </button>
+                </div>
+
+                <!-- Totals -->
+                <div class="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-2 text-right">
+                    <div class="text-slate-700 dark:text-slate-300">
+                        Subtotal: <span class="font-semibold" x-text="fmt(invoiceSubtotal())"></span>
+                    </div>
+                    <div x-show="taxRate > 0" class="text-slate-700 dark:text-slate-300">
+                        Tax (<span x-text="taxRate"></span>%): <span class="font-semibold" x-text="fmt(invoiceTax())"></span>
+                    </div>
+                    <div class="text-lg font-bold text-slate-900 dark:text-white pt-2 border-t border-slate-200 dark:border-slate-700">
+                        Total: <span x-text="fmt(invoiceTotal())"></span>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Notes (Optional)</label>
+                    <textarea name="notes" rows="3" placeholder="Add any additional notes to the invoice..." class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"></textarea>
+                </div>
+
+                <!-- Submit Buttons -->
+                <div class="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
+                    <button type="button" @click="createInvoiceModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                        Cancel
+                    </button>
+                    <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                        Create Invoice
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -630,10 +753,32 @@ function initCustomerData() {
         tab: 'overview',
         addServiceModal: false,
         addDomainModal: false,
+        createInvoiceModal: false,
         productName: '',
         password_visible: false,
         selectedProduct: '',
-        products: @json($productsForJs)
+        products: @json($productsForJs),
+        invoiceItems: [{ description: '', quantity: 1, unit_price: '' }],
+        taxRate: 0,
+
+        addInvoiceItem() {
+            this.invoiceItems.push({ description: '', quantity: 1, unit_price: '' });
+        },
+        removeInvoiceItem(i) {
+            if (this.invoiceItems.length > 1) this.invoiceItems.splice(i, 1);
+        },
+        invoiceSubtotal() {
+            return this.invoiceItems.reduce((s, it) => s + (parseFloat(it.quantity||0) * parseFloat(it.unit_price||0)), 0);
+        },
+        invoiceTax() {
+            return this.invoiceSubtotal() * (parseFloat(this.taxRate||0) / 100);
+        },
+        invoiceTotal() {
+            return this.invoiceSubtotal() + this.invoiceTax();
+        },
+        fmt(v) {
+            return 'Ksh ' + parseFloat(v||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
     }
 }
 </script>

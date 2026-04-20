@@ -612,6 +612,78 @@ class CustomerController extends Controller
     }
 
     /**
+     * Create a custom invoice for a customer with line items
+     */
+    public function createInvoice(Request $request, User $customer)
+    {
+        $this->authorize('batchUpdate', \App\Models\Invoice::class);
+
+        $validated = $request->validate([
+            'status' => 'required|in:draft,unpaid',
+            'due_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:2000',
+            'tax_rate' => 'nullable|numeric|min:0|max:100',
+            'items' => 'required|array|min:1',
+            'items.*.description' => 'required|string|max:500',
+            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.unit_price' => 'required|numeric|min:0',
+        ]);
+
+        try {
+            $invoice = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $customer) {
+                // Calculate totals
+                $subtotal = 0;
+                foreach ($validated['items'] as $item) {
+                    $subtotal += floatval($item['quantity']) * floatval($item['unit_price']);
+                }
+
+                $taxRate = floatval($validated['tax_rate'] ?? 0);
+                $taxAmount = $subtotal * ($taxRate / 100);
+                $total = $subtotal + $taxAmount;
+
+                // Generate invoice number
+                $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+                $year = now()->format('Y');
+                $count = \App\Models\Invoice::whereYear('created_at', $year)->count() + 1;
+                $invoiceNumber = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+
+                // Create invoice
+                $invoice = \App\Models\Invoice::create([
+                    'user_id' => $customer->id,
+                    'invoice_number' => $invoiceNumber,
+                    'status' => $validated['status'],
+                    'subtotal' => $subtotal,
+                    'tax' => $taxAmount,
+                    'total' => $total,
+                    'due_date' => $validated['due_date'] ?? now()->addDays(7),
+                    'notes' => $validated['notes'] ?? null,
+                ]);
+
+                // Create line items (custom items with no product_id or service_id)
+                foreach ($validated['items'] as $item) {
+                    $itemAmount = floatval($item['quantity']) * floatval($item['unit_price']);
+                    \App\Models\InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'description' => $item['description'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'],
+                        'amount' => $itemAmount,
+                    ]);
+                }
+
+                return $invoice;
+            });
+
+            return redirect()->route('admin.invoices.show', $invoice)
+                ->with('success', 'Custom invoice created successfully.');
+        } catch (\Exception $e) {
+            return back()
+                ->with('error', 'Failed to create invoice: ' . $e->getMessage())
+                ->withInput();
+        }
+    }
+
+    /**
      * Generate unique invoice number
      */
     private function generateInvoiceNumber(): string
