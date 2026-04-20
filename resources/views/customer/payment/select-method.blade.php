@@ -70,8 +70,8 @@
 
                     <!-- Badge -->
                     @if ($method === 'mpesa')
-                        <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl mb-2 mx-auto">
-                            <span class="text-white font-black text-lg">M</span>
+                        <div class="inline-flex items-center justify-center w-14 h-14 rounded-xl mb-2 mx-auto overflow-hidden bg-white dark:bg-slate-800 p-2">
+                            <img src="/storage/branding/logo/M-PESA-logo-2.png" alt="M-PESA" class="w-full h-full object-contain">
                         </div>
                     @elseif ($method === 'stripe')
                         <div class="inline-flex items-center justify-center w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl mb-2 mx-auto">
