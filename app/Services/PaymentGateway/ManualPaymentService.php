@@ -122,6 +122,17 @@ class ManualPaymentService implements PaymentGatewayInterface
     }
 
     /**
+     * Handle callback (not applicable for manual payments).
+     */
+    public function handleCallback(array $data): array
+    {
+        return [
+            'success' => false,
+            'message' => 'Manual payments do not use callbacks',
+        ];
+    }
+
+    /**
      * Verify a manual payment (not applicable - admin approves instead).
      */
     public function verify(string $transactionReference): array
