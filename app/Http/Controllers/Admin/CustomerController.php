@@ -616,7 +616,6 @@ class CustomerController extends Controller
      */
     public function createInvoice(Request $request, User $customer)
     {
-        $this->authorize('batchUpdate', \App\Models\Invoice::class);
 
         $validated = $request->validate([
             'status' => 'required|in:draft,unpaid',
