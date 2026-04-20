@@ -324,7 +324,7 @@ class MpesaService implements PaymentGatewayInterface
      */
     private function buildCallbackUrl(): string
     {
-        return rtrim($this->siteUrl, '/') . '/webhooks/mpesa/callback';
+        return rtrim($this->siteUrl, '/') . '/webhooks/c2b';
     }
 
     /**

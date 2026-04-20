@@ -20,7 +20,8 @@ Route::get('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutControlle
 Route::post('/domain-checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'processPublic'])->name('checkout.process.public');
 
 // Payment webhooks (public, no authentication required)
-Route::post('/webhooks/mpesa/callback', [\App\Http\Controllers\Customer\PaymentController::class, 'mpesaCallback'])->name('payment.mpesa.callback');
+Route::post('/webhooks/c2b', [\App\Http\Controllers\Customer\PaymentController::class, 'mpesaCallback'])->name('payment.mpesa.callback');
+Route::post('/webhooks/mpesa/callback', [\App\Http\Controllers\Customer\PaymentController::class, 'mpesaCallback'])->name('payment.mpesa.callback.legacy');
 Route::post('/webhooks/stripe', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
 Route::post('/webhooks/paypal', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
 
