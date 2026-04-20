@@ -169,11 +169,25 @@ class InvoicePdfService
         }
 
         try {
+            // Strip domain from full URLs (e.g., http://localhost:8000/storage/... → /storage/...)
+            if (str_starts_with($logoUrl, 'http://') || str_starts_with($logoUrl, 'https://')) {
+                $parsed = parse_url($logoUrl);
+                $logoUrl = $parsed['path'] ?? '';
+            }
+
             $logoPath = ltrim($logoUrl, '/');
 
             // Convert /storage/... to storage/app/public/...
             if (str_starts_with($logoPath, 'storage/')) {
                 $diskPath = str_replace('storage/', 'storage/app/public/', $logoPath);
+            } elseif (file_exists(public_path($logoPath))) {
+                // Try public folder first
+                $fullPath = public_path($logoPath);
+                if (file_exists($fullPath)) {
+                    $mime = mime_content_type($fullPath);
+                    $data = file_get_contents($fullPath);
+                    return 'data:' . $mime . ';base64,' . base64_encode($data);
+                }
             } else {
                 $diskPath = $logoPath;
             }
@@ -181,6 +195,7 @@ class InvoicePdfService
             $fullPath = base_path($diskPath);
 
             if (!file_exists($fullPath)) {
+                \Log::warning('Logo file not found', ['path' => $fullPath, 'original_url' => $logoUrl]);
                 return null;
             }
 
@@ -189,7 +204,7 @@ class InvoicePdfService
 
             return 'data:' . $mime . ';base64,' . base64_encode($data);
         } catch (\Exception $e) {
-            \Log::warning('Failed to convert logo to base64', ['error' => $e->getMessage()]);
+            \Log::warning('Failed to convert logo to base64', ['error' => $e->getMessage(), 'url' => $logoUrl]);
             return null;
         }
     }
