@@ -18,6 +18,11 @@ interface PaymentGatewayInterface
     public function verify(string $transactionReference): array;
 
     /**
+     * Handle webhook callback from payment gateway
+     */
+    public function handleCallback(array $data): array;
+
+    /**
      * Get payment method name
      */
     public function getMethod(): string;

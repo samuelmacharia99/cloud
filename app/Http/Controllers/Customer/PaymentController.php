@@ -369,10 +369,10 @@ class PaymentController extends Controller
                 }
             }
 
-            return response()->json($result);
+            return response('', 200);
         } catch (\Exception $e) {
             Log::error('M-Pesa callback error', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false], 500);
+            return response('', 200);
         }
     }
 

@@ -240,7 +240,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/security/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions'])->name('profile.logout-other-sessions');
 });
 
-// M-Pesa callback (public, no auth required)
-Route::post('/mpesa/callback', [\App\Http\Controllers\Customer\MpesaController::class, 'callback'])->name('mpesa.callback');
-
 require __DIR__.'/auth.php';

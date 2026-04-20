@@ -5,8 +5,11 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Enums\PaymentStatus;
+use App\Enums\InvoiceStatus;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 
 class MpesaService implements PaymentGatewayInterface
 {
@@ -16,14 +19,16 @@ class MpesaService implements PaymentGatewayInterface
     protected ?string $passkey;
     protected bool $isProduction;
     protected string $baseUrl;
+    protected string $siteUrl;
 
     public function __construct()
     {
         $this->consumerKey = Setting::getValue('mpesa_consumer_key', '');
         $this->consumerSecret = Setting::getValue('mpesa_consumer_secret', '');
-        $this->businessShortCode = Setting::getValue('mpesa_shortcode', '');
+        $this->businessShortCode = (string) Setting::getValue('mpesa_shortcode', '');
         $this->passkey = Setting::getValue('mpesa_passkey', '');
         $this->isProduction = Setting::getValue('mpesa_environment', 'sandbox') === 'production';
+        $this->siteUrl = Setting::getValue('site_url', 'http://localhost:8000');
         $this->baseUrl = $this->isProduction
             ? 'https://api.safaricom.co.ke'
             : 'https://sandbox.safaricom.co.ke';
@@ -35,36 +40,36 @@ class MpesaService implements PaymentGatewayInterface
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
         try {
-            // Get access token
+            $phone = $this->sanitizePhone($customerData['phone'] ?? '');
             $token = $this->getAccessToken();
+
             if (!$token) {
                 throw new \Exception('Failed to get M-Pesa access token');
             }
 
-            // Generate timestamp
             $timestamp = now()->format('YmdHis');
+            $password = base64_encode($this->businessShortCode . $this->passkey . $timestamp);
 
-            // Generate password
-            $password = base64_encode(
-                $this->businessShortCode . $this->passkey . $timestamp
-            );
-
-            // Prepare request
             $payload = [
                 'BusinessShortCode' => $this->businessShortCode,
                 'Password' => $password,
                 'Timestamp' => $timestamp,
                 'TransactionType' => 'CustomerPayBillOnline',
                 'Amount' => (int) ceil($invoice->total),
-                'PartyA' => $this->sanitizePhoneNumber($customerData['phone'] ?? ''),
+                'PartyA' => $phone,
                 'PartyB' => $this->businessShortCode,
-                'PhoneNumber' => $this->sanitizePhoneNumber($customerData['phone'] ?? ''),
-                'CallBackURL' => route('payment.mpesa.callback'),
+                'PhoneNumber' => $phone,
+                'CallBackURL' => $this->buildCallbackUrl(),
                 'AccountReference' => $invoice->invoice_number,
                 'TransactionDesc' => "Invoice {$invoice->invoice_number}",
             ];
 
-            // Make request to M-Pesa
+            Log::info('M-Pesa STK Push Request', [
+                'invoice_id' => $invoice->id,
+                'phone' => $phone,
+                'callback_url' => $this->buildCallbackUrl(),
+            ]);
+
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$token}",
             ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
@@ -72,14 +77,14 @@ class MpesaService implements PaymentGatewayInterface
             if (!$response->successful()) {
                 Log::error('M-Pesa STK Push failed', [
                     'invoice_id' => $invoice->id,
+                    'status_code' => $response->status(),
                     'response' => $response->json(),
                 ]);
-                throw new \Exception('M-Pesa request failed: ' . $response->json()['errorMessage'] ?? 'Unknown error');
+                throw new \Exception('M-Pesa request failed: ' . ($response->json()['errorMessage'] ?? 'Unknown error'));
             }
 
             $data = $response->json();
 
-            // Store pending payment
             Payment::create([
                 'user_id' => $invoice->user_id,
                 'invoice_id' => $invoice->id,
@@ -114,7 +119,7 @@ class MpesaService implements PaymentGatewayInterface
     }
 
     /**
-     * Verify M-Pesa payment (called from callback or query)
+     * Verify M-Pesa payment via STK push query
      */
     public function verify(string $transactionReference): array
     {
@@ -125,9 +130,7 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $timestamp = now()->format('YmdHis');
-            $password = base64_encode(
-                $this->businessShortCode . $this->passkey . $timestamp
-            );
+            $password = base64_encode($this->businessShortCode . $this->passkey . $timestamp);
 
             $payload = [
                 'BusinessShortCode' => $this->businessShortCode,
@@ -136,11 +139,20 @@ class MpesaService implements PaymentGatewayInterface
                 'CheckoutRequestID' => $transactionReference,
             ];
 
+            Log::info('M-Pesa STK Query Request', [
+                'checkout_request_id' => $transactionReference,
+            ]);
+
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$token}",
             ])->post("{$this->baseUrl}/mpesa/stkpushquery/v1/query", $payload);
 
             if (!$response->successful()) {
+                Log::error('M-Pesa query request failed', [
+                    'checkout_request_id' => $transactionReference,
+                    'status_code' => $response->status(),
+                    'response' => $response->json(),
+                ]);
                 return [
                     'success' => false,
                     'status' => 'pending',
@@ -149,18 +161,19 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $data = $response->json();
+            Log::info('M-Pesa query response', [
+                'checkout_request_id' => $transactionReference,
+                'result_code' => $data['ResultCode'] ?? null,
+            ]);
 
-            // Response codes: 0 = successful, 1032 = request timeout, others = various errors
-            $isSuccessful = ($data['ResponseCode'] ?? null) === '0';
+            $resultCode = $data['ResultCode'] ?? null;
+            $isSuccessful = $resultCode === '0';
 
             return [
                 'success' => $isSuccessful,
                 'status' => $isSuccessful ? 'completed' : 'pending',
-                'amount' => $data['CallbackMetadata']['Item'][0]['Value'] ?? null,
-                'receipt' => $data['CallbackMetadata']['Item'][1]['Value'] ?? null,
-                'timestamp' => $data['CallbackMetadata']['Item'][3]['Value'] ?? null,
-                'phone' => $data['CallbackMetadata']['Item'][4]['Value'] ?? null,
-                'response_code' => $data['ResponseCode'] ?? null,
+                'response_code' => $resultCode,
+                'message' => $data['ResultDesc'] ?? 'No message',
             ];
         } catch (\Exception $e) {
             Log::error('M-Pesa verify failed', [
@@ -187,17 +200,20 @@ class MpesaService implements PaymentGatewayInterface
 
             $checkoutRequestId = $stkCallback['CheckoutRequestID'] ?? null;
             $resultCode = $stkCallback['ResultCode'] ?? null;
-            $callbackMetadata = $stkCallback['CallbackMetadata'] ?? [];
 
-            // Find payment by transaction reference
+            Log::info('M-Pesa Callback Received', [
+                'checkout_request_id' => $checkoutRequestId,
+                'result_code' => $resultCode,
+            ]);
+
             $payment = Payment::where('transaction_reference', $checkoutRequestId)->first();
             if (!$payment) {
+                Log::warning('M-Pesa payment not found', ['checkout_request_id' => $checkoutRequestId]);
                 return ['success' => false, 'message' => 'Payment not found'];
             }
 
-            // Check result code (0 = success)
             if ($resultCode == 0) {
-                // Payment successful
+                $callbackMetadata = $stkCallback['CallbackMetadata'] ?? [];
                 $items = $callbackMetadata['Item'] ?? [];
                 $mpesaAmount = null;
                 $mpesaReceipt = null;
@@ -216,9 +232,8 @@ class MpesaService implements PaymentGatewayInterface
                     }
                 }
 
-                // Update payment
                 $payment->update([
-                    'status' => 'completed',
+                    'status' => PaymentStatus::Completed->value,
                     'paid_at' => now(),
                     'notes' => json_encode([
                         'mpesa_receipt' => $mpesaReceipt,
@@ -228,8 +243,14 @@ class MpesaService implements PaymentGatewayInterface
                     ]),
                 ]);
 
-                // Update invoice
-                $payment->invoice->update(['status' => 'paid']);
+                if ($payment->invoice) {
+                    $payment->invoice->update(['status' => InvoiceStatus::Paid->value]);
+                }
+
+                Log::info('M-Pesa payment completed', [
+                    'payment_id' => $payment->id,
+                    'invoice_id' => $payment->invoice_id,
+                ]);
 
                 return [
                     'success' => true,
@@ -237,13 +258,17 @@ class MpesaService implements PaymentGatewayInterface
                     'payment_id' => $payment->id,
                 ];
             } else {
-                // Payment failed
                 $payment->update([
-                    'status' => 'failed',
+                    'status' => PaymentStatus::Failed->value,
                     'notes' => json_encode([
                         'result_code' => $resultCode,
                         'result_desc' => $stkCallback['ResultDesc'] ?? 'Unknown error',
                     ]),
+                ]);
+
+                Log::info('M-Pesa payment failed', [
+                    'payment_id' => $payment->id,
+                    'result_desc' => $stkCallback['ResultDesc'] ?? 'Unknown error',
                 ]);
 
                 return [
@@ -254,7 +279,7 @@ class MpesaService implements PaymentGatewayInterface
         } catch (\Exception $e) {
             Log::error('M-Pesa callback processing failed', [
                 'error' => $e->getMessage(),
-                'data' => $data,
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
@@ -265,33 +290,228 @@ class MpesaService implements PaymentGatewayInterface
     }
 
     /**
-     * Get M-Pesa access token
+     * Get M-Pesa access token (cached for 55 minutes)
      */
     private function getAccessToken(): ?string
     {
-        try {
-            $response = Http::withBasicAuth($this->consumerKey, $this->consumerSecret)
-                ->get("{$this->baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+        return Cache::remember('mpesa_access_token', 55 * 60, function () {
+            try {
+                $response = Http::withBasicAuth($this->consumerKey, $this->consumerSecret)
+                    ->get("{$this->baseUrl}/oauth/v1/generate?grant_type=client_credentials");
 
-            if ($response->successful()) {
-                return $response->json()['access_token'] ?? null;
+                if ($response->successful()) {
+                    Log::info('M-Pesa token generated successfully', [
+                        'environment' => $this->isProduction ? 'production' : 'sandbox',
+                    ]);
+                    return $response->json()['access_token'] ?? null;
+                }
+
+                Log::error('Failed to get M-Pesa access token', [
+                    'status_code' => $response->status(),
+                    'response' => $response->json(),
+                ]);
+
+                return null;
+            } catch (\Exception $e) {
+                Log::error('M-Pesa token generation failed', ['error' => $e->getMessage()]);
+                return null;
+            }
+        });
+    }
+
+    /**
+     * Build callback URL using configured site_url (avoids route() issues behind proxies)
+     */
+    private function buildCallbackUrl(): string
+    {
+        return rtrim($this->siteUrl, '/') . '/webhooks/mpesa/callback';
+    }
+
+    /**
+     * Test M-Pesa connection
+     */
+    public function testConnection(): array
+    {
+        try {
+            $token = $this->getAccessToken();
+            if (!$token) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to get access token',
+                    'environment' => $this->isProduction ? 'production' : 'sandbox',
+                ];
             }
 
-            Log::error('Failed to get M-Pesa access token', [
+            return [
+                'success' => true,
+                'message' => 'Connection successful',
+                'environment' => $this->isProduction ? 'production' : 'sandbox',
+                'token_preview' => substr($token, 0, 10) . '...',
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Connection test failed: ' . $e->getMessage(),
+                'environment' => $this->isProduction ? 'production' : 'sandbox',
+            ];
+        }
+    }
+
+    /**
+     * Register callback URLs with Safaricom
+     */
+    public function registerCallbackUrls(string $responseType = 'Completed'): array
+    {
+        try {
+            if ($this->isProduction && !str_starts_with($this->siteUrl, 'https')) {
+                return [
+                    'success' => false,
+                    'message' => 'Production environment requires HTTPS callback URL',
+                ];
+            }
+
+            $token = $this->getAccessToken();
+            if (!$token) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to get access token for URL registration',
+                ];
+            }
+
+            $callbackUrl = $this->buildCallbackUrl();
+
+            $payload = [
+                'ShortCode' => (string) $this->businessShortCode,
+                'ResponseType' => $responseType,
+                'ConfirmationURL' => $callbackUrl,
+                'ValidationURL' => $callbackUrl,
+            ];
+
+            Log::info('M-Pesa URL Registration Request', [
+                'shortcode' => (string) $this->businessShortCode,
+                'callback_url' => $callbackUrl,
+                'environment' => $this->isProduction ? 'production' : 'sandbox',
+            ]);
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+            ])->post("{$this->baseUrl}/mpesa/c2b/v2/registerurl", $payload);
+
+            Log::info('M-Pesa URL Registration Response', [
+                'status_code' => $response->status(),
                 'response' => $response->json(),
             ]);
 
-            return null;
+            if (!$response->successful()) {
+                $responseBody = $response->json();
+                $errorCode = $responseBody['errorCode'] ?? $response->status();
+                $errorMsg = $responseBody['errorMessage'] ?? 'Unknown error';
+
+                $hint = '';
+                if ($errorCode === '400.003.02' || $errorCode === 400) {
+                    $hint = ' (Validation error: check shortcode format, ensure callback URL is publicly accessible and HTTPS for production)';
+                }
+
+                return [
+                    'success' => false,
+                    'message' => "Registration failed: {$errorMsg}{$hint}",
+                    'error_code' => $errorCode,
+                    'response' => $responseBody,
+                ];
+            }
+
+            $result = $response->json();
+
+            return [
+                'success' => true,
+                'message' => 'URLs registered successfully',
+                'response' => $result,
+            ];
         } catch (\Exception $e) {
-            Log::error('M-Pesa token generation failed', ['error' => $e->getMessage()]);
-            return null;
+            Log::error('M-Pesa URL registration failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'URL registration failed: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Simulate M-Pesa payment (sandbox only)
+     */
+    public function simulatePayment(string $phone, float $amount): array
+    {
+        try {
+            if ($this->isProduction) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment simulation is only available in sandbox environment',
+                ];
+            }
+
+            $token = $this->getAccessToken();
+            if (!$token) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to get access token',
+                ];
+            }
+
+            $phone = $this->sanitizePhone($phone);
+
+            $payload = [
+                'CommandID' => 'CustomerPayBillOnline',
+                'Amount' => (int) $amount,
+                'Msisdn' => $phone,
+                'ShortCode' => (string) $this->businessShortCode,
+            ];
+
+            Log::info('M-Pesa Simulate Payment Request', [
+                'phone' => $phone,
+                'amount' => $amount,
+            ]);
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+            ])->post("{$this->baseUrl}/mpesa/c2b/v2/simulate", $payload);
+
+            Log::info('M-Pesa Simulate Payment Response', [
+                'status_code' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            if (!$response->successful()) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment simulation failed: ' . ($response->json()['errorMessage'] ?? 'Unknown error'),
+                    'response' => $response->json(),
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Payment simulation sent. Check phone for M-Pesa prompt.',
+                'response' => $response->json(),
+            ];
+        } catch (\Exception $e) {
+            Log::error('M-Pesa payment simulation failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Payment simulation failed: ' . $e->getMessage(),
+            ];
         }
     }
 
     /**
      * Sanitize phone number to required format (254xxxxxxxxx)
      */
-    private function sanitizePhoneNumber(string $phone): string
+    private function sanitizePhone(string $phone): string
     {
         $phone = preg_replace('/\D/', '', $phone);
 
@@ -313,7 +533,8 @@ class MpesaService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return Setting::getValue('mpesa_enabled') == '1'
+        $enabled = Setting::getValue('mpesa_enabled');
+        return in_array($enabled, ['1', 'true', true], true)
             && !empty($this->consumerKey)
             && !empty($this->consumerSecret)
             && !empty($this->businessShortCode)

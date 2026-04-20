@@ -38,7 +38,7 @@ class SettingSeeder extends Seeder
             ['key' => 'tax_number', 'value' => 'P051234567Y', 'description' => 'Tax registration number'],
 
             // Payment method settings
-            ['key' => 'mpesa_enabled', 'value' => 'true', 'description' => 'Enable M-Pesa payments'],
+            ['key' => 'mpesa_enabled', 'value' => '1', 'description' => 'Enable M-Pesa payments'],
             ['key' => 'mpesa_shortcode', 'value' => '123456', 'description' => 'M-Pesa merchant shortcode'],
             ['key' => 'mpesa_passkey', 'value' => 'bfb279f9aa9bdbcf158e97dd1a2c6f6d', 'description' => 'M-Pesa API passkey'],
             ['key' => 'mpesa_consumer_key', 'value' => '', 'description' => 'M-Pesa Daraja API consumer key'],
