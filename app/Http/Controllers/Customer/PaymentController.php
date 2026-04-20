@@ -457,6 +457,17 @@ class PaymentController extends Controller
         // Mark invoice as paid
         $invoice->update(['status' => 'paid']);
 
+        // Send payment received notification
+        try {
+            $notificationService = app(NotificationService::class);
+            $notificationService->notifyPaymentReceived($payment);
+        } catch (\Exception $e) {
+            Log::error('Failed to send payment received notification', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         // Trigger service provisioning
         $this->provisionServices($invoice);
     }
@@ -605,7 +616,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * M-Pesa: Poll payment status (AJAX)
+     * M-Pesa: Poll payment status (AJAX) and update if completed
      */
     public function mpesaStatus(Request $request, Invoice $invoice)
     {
@@ -620,6 +631,35 @@ class PaymentController extends Controller
 
             $gateway = PaymentGatewayFactory::make('mpesa');
             $result = $gateway->verify($checkoutRequestId);
+
+            // If payment is confirmed, update the database and process completion
+            if ($result['success'] && $result['status'] === 'completed') {
+                $payment = Payment::where('transaction_reference', $checkoutRequestId)->first();
+
+                if ($payment && $payment->status !== 'completed') {
+                    // Update payment status
+                    $payment->update([
+                        'status' => 'completed',
+                        'paid_at' => now(),
+                    ]);
+
+                    Log::info('M-Pesa payment confirmed via polling', [
+                        'payment_id' => $payment->id,
+                        'invoice_id' => $invoice->id,
+                        'checkout_request_id' => $checkoutRequestId,
+                    ]);
+
+                    // Process completion (handles overpayments, invoice update, and provisioning)
+                    try {
+                        $this->processPaymentCompletion($payment, $invoice);
+                    } catch (\Exception $e) {
+                        Log::error('Payment completion processing failed', [
+                            'payment_id' => $payment->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
 
             return response()->json([
                 'status' => $result['status'] ?? 'pending',
