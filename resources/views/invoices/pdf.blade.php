@@ -490,7 +490,7 @@
                     </div>
                 </div>
                 <div class="header-right">
-                    <div class="invoice-title">TAX INVOICE</div>
+                    <div class="invoice-title">INVOICE</div>
                     <div class="invoice-meta">
                         <div><span class="label">Invoice #</span></div>
                         <div style="font-family: monospace; font-weight: bold; font-size: 14px; margin-bottom: 12px;">{{ $invoice->invoice_number }}</div>
