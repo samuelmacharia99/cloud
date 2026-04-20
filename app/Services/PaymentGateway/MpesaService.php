@@ -540,4 +540,26 @@ class MpesaService implements PaymentGatewayInterface
             && !empty($this->businessShortCode)
             && !empty($this->passkey);
     }
+
+    /**
+     * Get comprehensive diagnostic information
+     */
+    public function getDiagnostics(): array
+    {
+        return [
+            'configured' => $this->isConfigured(),
+            'environment' => $this->isProduction ? 'production' : 'sandbox',
+            'base_url' => $this->baseUrl,
+            'site_url' => $this->siteUrl,
+            'callback_url' => $this->buildCallbackUrl(),
+            'credentials_present' => [
+                'consumer_key' => !empty($this->consumerKey),
+                'consumer_secret' => !empty($this->consumerSecret),
+                'business_shortcode' => !empty($this->businessShortCode),
+                'passkey' => !empty($this->passkey),
+            ],
+            'shortcode' => $this->businessShortCode,
+            'enabled' => Setting::getValue('mpesa_enabled'),
+        ];
+    }
 }

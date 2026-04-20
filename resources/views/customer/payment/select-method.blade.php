@@ -36,7 +36,7 @@
     </div>
 
     <!-- Payment Methods -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="{ selectedMethod: null, showManualModal: false }">
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="{ selectedMethod: null, showManualModal: false, mpesaPhoneNumber: '' }">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Select Payment Method</h2>
 
         @if (session('success'))
@@ -80,7 +80,7 @@
                     @if ($method === 'mpesa')
                         <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700" x-show="selectedMethod === '{{ $method }}'">
                             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-PESA Phone Number</label>
-                            <input type="tel" name="phone" id="mpesaPhone" placeholder="0712345678" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required>
+                            <input type="tel" id="mpesaPhone" placeholder="0712345678" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required x-model="mpesaPhoneNumber">
                         </div>
                     @endif
                 </button>
@@ -92,9 +92,10 @@
             <form id="paymentForm" method="POST" action="{{ route('customer.payment.initiate', $invoice) }}" x-show="selectedMethod !== 'manual'">
                 @csrf
                 <input type="hidden" name="payment_method" x-bind:value="selectedMethod">
-                <input type="hidden" name="phone" id="phoneInput" x-bind:value="selectedMethod === 'mpesa' ? document.getElementById('mpesaPhone')?.value : null">
+                <!-- Pass the phone number from Alpine.js reactive variable -->
+                <input type="hidden" name="phone" x-bind:value="mpesaPhoneNumber">
 
-                <button type="submit" :disabled="!selectedMethod" :class="selectedMethod ? 'bg-blue-600 hover:bg-blue-700' : 'opacity-50 cursor-not-allowed bg-slate-400'" class="flex-1 px-6 py-3 text-white rounded-lg font-semibold transition">
+                <button type="submit" :disabled="!selectedMethod || (selectedMethod === 'mpesa' && !mpesaPhoneNumber)" :class="selectedMethod && !(selectedMethod === 'mpesa' && !mpesaPhoneNumber) ? 'bg-blue-600 hover:bg-blue-700' : 'opacity-50 cursor-not-allowed bg-slate-400'" class="flex-1 px-6 py-3 text-white rounded-lg font-semibold transition">
                     Continue to Payment
                 </button>
             </form>
