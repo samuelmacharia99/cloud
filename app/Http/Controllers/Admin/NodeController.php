@@ -301,4 +301,36 @@ class NodeController extends Controller
             'message' => 'Heartbeat recorded.',
         ]);
     }
+
+    public function syncDirectAdminPackages(Node $node)
+    {
+        if ($node->type !== 'directadmin') {
+            return back()->with('error', 'This node is not a DirectAdmin server.');
+        }
+
+        try {
+            $service = new \App\Services\Provisioning\DirectAdminService($node);
+
+            if (!$service->isConfigured()) {
+                return back()->with('error', 'DirectAdmin API is not configured for this node.');
+            }
+
+            $result = $service->syncPackages();
+
+            $message = "Synced: {$result['synced']}, Updated: {$result['updated']}";
+
+            if ($result['failed'] > 0) {
+                $message .= ", Failed: {$result['failed']}";
+                return back()->with('warning', $message);
+            }
+
+            if ($result['synced'] + $result['updated'] === 0) {
+                return back()->with('info', 'No packages to sync.');
+            }
+
+            return back()->with('success', $message);
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to sync packages: ' . $e->getMessage());
+        }
+    }
 }

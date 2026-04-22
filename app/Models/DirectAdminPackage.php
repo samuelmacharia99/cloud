@@ -22,6 +22,7 @@ class DirectAdminPackage extends Model
         'num_subdomains',
         'features',
         'is_active',
+        'node_id',
     ];
 
     protected $casts = [
@@ -41,8 +42,17 @@ class DirectAdminPackage extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function node()
+    {
+        return $this->belongsTo(Node::class);
+    }
+
     public function getDisplayNameAttribute(): string
     {
-        return "{$this->name} ({$this->disk_quota}GB)";
+        $name = "{$this->name} ({$this->disk_quota}GB)";
+        if ($this->node_id && $this->node) {
+            $name .= " - {$this->node->name}";
+        }
+        return $name;
     }
 }

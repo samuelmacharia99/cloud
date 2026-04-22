@@ -69,6 +69,11 @@ class Node extends Model
         return $this->hasOne(NodeMonitoring::class, 'node_id')->latest('recorded_at');
     }
 
+    public function directAdminPackages()
+    {
+        return $this->hasMany(DirectAdminPackage::class);
+    }
+
     // Helper Methods
     public function isMonitored(): bool
     {
