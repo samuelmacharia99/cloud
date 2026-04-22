@@ -20,7 +20,7 @@
 
     <!-- Form -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
-        <form method="POST" action="{{ route('admin.products.store') }}" class="space-y-8" x-data="{ name: '{{ old('name') }}' }">
+        <form method="POST" action="{{ route('admin.products.store') }}" class="space-y-8" x-data="{ name: '{{ old('name') }}', productType: '{{ old('type', '') }}' }" @change="productType = document.getElementById('type').value">
             @csrf
 
             <!-- Two-column layout -->
@@ -66,7 +66,7 @@
                     <!-- Type -->
                     <div>
                         <label for="type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type</label>
-                        <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="$nextTick(() => {})">
+                        <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="productType = $el.value">
                             <option value="">Select a type...</option>
                             <option value="shared_hosting" @selected(old('type') === 'shared_hosting')>Shared Hosting</option>
                             <option value="container_hosting" @selected(old('type') === 'container_hosting')>Container Hosting</option>
@@ -81,7 +81,7 @@
                     </div>
 
                     <!-- Container Template (conditional - only for container hosting) -->
-                    <div x-show="document.getElementById('type').value === 'container_hosting'">
+                    <div x-show="productType === 'container_hosting'">
                         <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Container Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for container hosting)</span></label>
                         <select id="container_template_id" name="container_template_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('container_template_id') border-red-500 @enderror">
                             <option value="">Select a container template...</option>
@@ -91,6 +91,21 @@
                         </select>
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select which container template this package is for (PHP, Node.js, Python, etc.)</p>
                         @error('container_template_id')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- DirectAdmin Package (conditional - only for shared hosting) -->
+                    <div x-show="productType === 'shared_hosting'">
+                        <label for="direct_admin_package_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Package <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for shared hosting)</span></label>
+                        <select id="direct_admin_package_id" name="direct_admin_package_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('direct_admin_package_id') border-red-500 @enderror">
+                            <option value="">Select a DirectAdmin package...</option>
+                            @foreach(\App\Models\DirectAdminPackage::where('is_active', true)->orderBy('disk_quota')->get() as $package)
+                                <option value="{{ $package->id }}" @selected(old('direct_admin_package_id') == $package->id)>{{ $package->name }} ({{ $package->disk_quota }}GB disk, {{ $package->num_domains }} domains)</option>
+                            @endforeach
+                        </select>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select the DirectAdmin package that will be provisioned for this shared hosting product. Package resources will be used for all customers on this plan.</p>
+                        @error('direct_admin_package_id')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
@@ -131,8 +146,8 @@
                         @enderror
                     </div>
 
-                    <!-- Wholesale Pricing Section -->
-                    <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <!-- Wholesale Pricing Section (hidden for shared hosting) -->
+                    <div x-show="productType !== 'shared_hosting'" class="pt-4 border-t border-slate-200 dark:border-slate-700">
                         <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Wholesale Rate (for Resellers)</p>
 
                         <!-- Wholesale Monthly Price -->
@@ -196,8 +211,8 @@
                 </div>
             </div>
 
-            <!-- Resource Limits (Full width) - Hide for VPS/Dedicated Server -->
-            <div x-show="document.getElementById('type').value !== 'vps' && document.getElementById('type').value !== 'dedicated_server'">
+            <!-- Resource Limits (Full width) - Hide for VPS/Dedicated Server and Shared Hosting -->
+            <div x-show="productType !== 'vps' && productType !== 'dedicated_server' && productType !== 'shared_hosting'">
                 <label for="resource_limits" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Resource Limits <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(JSON format, optional)</span></label>
                 <textarea id="resource_limits" name="resource_limits" rows="4" placeholder='{"cpu": "2", "memory": "2GB", "disk": "20GB"}' class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono resize-none">{{ is_array(old('resource_limits')) ? json_encode(old('resource_limits')) : old('resource_limits') }}</textarea>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter valid JSON or leave blank</p>
@@ -207,7 +222,7 @@
             </div>
 
             <!-- Container Overage Billing (conditional) -->
-            <div x-show="'{{ old('type', '') }}'.includes('container')" class="border-t border-slate-200 dark:border-slate-800 pt-6">
+            <div x-show="productType === 'container_hosting'" class="border-t border-slate-200 dark:border-slate-800 pt-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container Overage Billing</h3>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Enable Overage -->
@@ -240,7 +255,7 @@
             </div>
 
             <!-- Server Configuration (VPS / Dedicated Server) -->
-            <div x-show="document.getElementById('type').value === 'vps' || document.getElementById('type').value === 'dedicated_server'" class="border-t border-slate-200 dark:border-slate-800 pt-6">
+            <div x-show="productType === 'vps' || productType === 'dedicated_server'" class="border-t border-slate-200 dark:border-slate-800 pt-6">
                 <div class="space-y-4 mb-4">
                     <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Server Configuration</h3>
                     <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">

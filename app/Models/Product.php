@@ -26,6 +26,7 @@ class Product extends Model
         'provisioning_driver_key',
         'resource_limits',
         'container_template_id',
+        'direct_admin_package_id',
         'cpu_overage_rate',
         'ram_overage_rate',
         'overage_enabled',
@@ -74,6 +75,11 @@ class Product extends Model
     public function containerTemplate()
     {
         return $this->belongsTo(ContainerTemplate::class);
+    }
+
+    public function directAdminPackage()
+    {
+        return $this->belongsTo(DirectAdminPackage::class);
     }
 
     /**
