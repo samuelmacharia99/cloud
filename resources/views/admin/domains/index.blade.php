@@ -178,6 +178,13 @@
                                     <a href="{{ route('admin.domains.edit', $domain) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
                                         Edit
                                     </a>
+                                    <form action="{{ route('admin.domains.destroy', $domain) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this domain? This action cannot be undone.');">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">
+                                            Delete
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>

@@ -222,4 +222,13 @@ class DomainController extends Controller
         return redirect()->route('admin.domains.show', $domain)
             ->with('success', 'Domain updated successfully.');
     }
+
+    public function destroy(Domain $domain)
+    {
+        $domainName = $domain->name;
+        $domain->delete();
+
+        return redirect()->route('admin.domains.index')
+            ->with('success', "Domain '{$domainName}' has been deleted successfully.");
+    }
 }
