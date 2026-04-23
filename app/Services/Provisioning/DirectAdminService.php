@@ -216,14 +216,30 @@ class DirectAdminService
                 ->throw();
 
             $packages = [];
+            $responseData = null;
 
             if ($response->ok()) {
-                $data = $response->json();
+                $responseData = $response->json();
 
-                if (isset($data['packages']) && is_array($data['packages'])) {
-                    foreach ($data['packages'] as $packageName => $packageData) {
+                Log::debug('DirectAdmin API response', [
+                    'node_id' => $this->node?->id,
+                    'response_keys' => array_keys($responseData),
+                    'full_response' => json_encode($responseData),
+                ]);
+
+                if (isset($responseData['packages']) && is_array($responseData['packages'])) {
+                    foreach ($responseData['packages'] as $packageName => $packageData) {
                         $packages[] = $this->parsePackageData($packageName, $packageData);
                     }
+                } else {
+                    // API responded but no 'packages' key
+                    $errorMsg = 'API response does not contain packages key. Response keys: ' . implode(', ', array_keys($responseData ?? []));
+                    Log::warning('DirectAdmin API no packages in response', [
+                        'node_id' => $this->node?->id,
+                        'response' => $responseData,
+                    ]);
+                    session()->flash('last_da_error', $errorMsg);
+                    return [];
                 }
             }
 
