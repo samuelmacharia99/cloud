@@ -234,13 +234,17 @@ class DirectAdminService
 
             return $packages;
         } catch (\Exception $e) {
+            $errorMsg = $e->getMessage();
             Log::error('Failed to fetch DirectAdmin packages', [
                 'node_id' => $this->node?->id,
-                'error' => $e->getMessage(),
+                'error' => $errorMsg,
                 'api_url' => $this->apiUrl,
             ]);
 
-            // Return empty array with error context
+            // Store error in session for display
+            session()->flash('last_da_error', $errorMsg);
+
+            // Return empty array
             return [];
         }
     }
@@ -332,7 +336,14 @@ class DirectAdminService
         $result = ['synced' => 0, 'updated' => 0, 'failed' => 0, 'errors' => []];
 
         if (empty($packages)) {
-            $result['errors'][] = 'No packages retrieved from DirectAdmin server';
+            // Check if there was a specific error from the API call
+            $lastError = session('last_da_error');
+            if ($lastError) {
+                $result['errors'][] = "DirectAdmin API Error: $lastError";
+                session()->forget('last_da_error');
+            } else {
+                $result['errors'][] = 'No packages retrieved from DirectAdmin server (no packages defined on server)';
+            }
             Log::warning('No packages synced from DirectAdmin', ['node_id' => $this->node?->id]);
             return $result;
         }
