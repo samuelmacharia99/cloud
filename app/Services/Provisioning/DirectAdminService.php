@@ -210,7 +210,9 @@ class DirectAdminService
         try {
             $response = Http::timeout(30)
                 ->withBasicAuth($this->username, $this->password)
-                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER")
+                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+                    'json' => 'yes',
+                ])
                 ->throw();
 
             $packages = [];
@@ -226,9 +228,9 @@ class DirectAdminService
                     return [];
                 }
 
-                // Check if response is HTML (error/login page) instead of form-encoded data
+                // Check if response is HTML (error/login page) instead of JSON
                 if (stripos($body, '<!DOCTYPE') !== false || stripos($body, '<html') !== false) {
-                    Log::warning('DirectAdmin API returned HTML instead of data', [
+                    Log::warning('DirectAdmin API returned HTML instead of JSON', [
                         'node_id' => $this->node?->id,
                         'status' => $response->status(),
                         'body_preview' => substr($body, 0, 500),
@@ -237,8 +239,15 @@ class DirectAdminService
                     return [];
                 }
 
-                // DirectAdmin returns form-encoded list: list[]=Package1&list[]=Package2&list[]=Package3
-                parse_str($body, $responseData);
+                // Parse JSON response
+                $responseData = $response->json();
+                if (!$responseData) {
+                    Log::warning('DirectAdmin API returned invalid JSON', [
+                        'node_id' => $this->node?->id,
+                        'body_preview' => substr($body, 0, 200),
+                    ]);
+                    return [];
+                }
 
                 $packageNames = $responseData['list'] ?? [];
                 if (!is_array($packageNames)) {
@@ -288,6 +297,7 @@ class DirectAdminService
                 ->get("{$this->apiUrl}/CMD_API_MANAGE_USER_PACKAGES", [
                     'action' => 'view',
                     'name' => $packageName,
+                    'json' => 'yes',
                 ])
                 ->throw();
 
@@ -295,8 +305,10 @@ class DirectAdminService
                 return null;
             }
 
-            $body = $response->body();
-            parse_str($body, $packageData);
+            $packageData = $response->json();
+            if (!$packageData) {
+                return null;
+            }
 
             return $this->parsePackageData($packageName, $packageData);
         } catch (\Exception $e) {
