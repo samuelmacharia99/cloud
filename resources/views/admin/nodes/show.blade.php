@@ -316,6 +316,135 @@
         </div>
     @endif
 
+    <!-- DirectAdmin Packages (DA nodes only) -->
+    @if($node->type === 'directadmin')
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Packages</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Hosting plans synced from this server's DirectAdmin API
+                        @if($packages->isNotEmpty())
+                            &middot; {{ $packages->count() }} {{ \Illuminate\Support\Str::plural('package', $packages->count()) }}
+                        @endif
+                    </p>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    @if($node->status !== 'online')
+                        <form method="POST" action="{{ route('admin.nodes.test-connection', $node) }}" class="inline">
+                            @csrf
+                            <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                Test Connection
+                            </button>
+                        </form>
+                    @endif
+                    @if($directAdminPeerCount > 0)
+                        <a href="{{ route('admin.shared-hosting.package-consistency') }}"
+                           class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                            </svg>
+                            Compare across {{ $directAdminPeerCount + 1 }} DA nodes
+                        </a>
+                    @endif
+                    <form method="POST" action="{{ route('admin.nodes.sync-packages', $node) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                            Sync Now
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            @if($packages->isEmpty())
+                <div class="text-center py-12 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                    <svg class="w-12 h-12 text-slate-400 dark:text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                    <p class="text-slate-700 dark:text-slate-300 font-medium">No packages synced from this server yet.</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Click <span class="font-semibold">Sync Now</span> to pull packages from the DirectAdmin API.</p>
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 dark:border-slate-800">
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">Package</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Disk</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Bandwidth</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Domains</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">FTP</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Email</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">DBs</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Subdomains</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Last Sync</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                            @foreach($packages as $package)
+                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <td class="py-3 px-3">
+                                        <p class="font-medium text-slate-900 dark:text-white">{{ $package->name }}</p>
+                                        <code class="text-xs text-slate-500 dark:text-slate-400 font-mono">{{ $package->package_key }}</code>
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->disk_quota < 0 ? '∞' : (rtrim(rtrim(number_format((float) $package->disk_quota, 2), '0'), '.') . ' GB') }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        @if($package->bandwidth_quota === null)
+                                            <span class="text-slate-400">—</span>
+                                        @else
+                                            {{ $package->bandwidth_quota < 0 ? '∞' : (rtrim(rtrim(number_format((float) $package->bandwidth_quota, 2), '0'), '.') . ' GB') }}
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->num_domains < 0 ? '∞' : $package->num_domains }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->num_ftp < 0 ? '∞' : $package->num_ftp }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->num_email_accounts < 0 ? '∞' : $package->num_email_accounts }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->num_databases < 0 ? '∞' : $package->num_databases }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $package->num_subdomains < 0 ? '∞' : $package->num_subdomains }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-500 dark:text-slate-400 text-xs">
+                                        {{ $package->updated_at?->diffForHumans() ?? '—' }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right">
+                                        @if($package->is_active)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">Active</span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">Inactive</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-4">
+                    Note: the local package cache currently stores one row per package key globally. If you've synced multiple DA servers,
+                    this list reflects whichever server synced most recently. Use
+                    <a href="{{ route('admin.shared-hosting.package-consistency') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Compare across DA nodes</a>
+                    for the live picture.
+                </p>
+            @endif
+        </div>
+    @endif
+
     <!-- Node Information -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Hardware & Location -->

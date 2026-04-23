@@ -34,6 +34,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/customers/{customer}/impersonate', [\App\Http\Controllers\Admin\CustomerController::class, 'impersonate'])->name('admin.customers.impersonate');
         Route::post('admin/customers/{customer}/add-domain', [\App\Http\Controllers\Admin\CustomerController::class, 'addDomain'])->name('admin.customers.add-domain');
         Route::post('admin/customers/{customer}/add-service', [\App\Http\Controllers\Admin\CustomerController::class, 'addService'])->name('admin.customers.add-service');
+        Route::get('admin/customers/{customer}/generate-username', [\App\Http\Controllers\Admin\CustomerController::class, 'generateUsername'])->name('admin.customers.generate-username');
+        Route::get('admin/generate-password', [\App\Http\Controllers\Admin\CustomerController::class, 'generatePassword'])->name('admin.customers.generate-password');
         Route::post('admin/customers/{customer}/invoice', [\App\Http\Controllers\Admin\CustomerController::class, 'createInvoice'])->name('admin.customers.create-invoice');
         Route::post('admin/customers/{customer}/convert-to-reseller', [\App\Http\Controllers\Admin\CustomerController::class, 'convertToReseller'])->name('admin.customers.convert-to-reseller');
         Route::post('admin/customers/{customer}/transfer-to-reseller', [\App\Http\Controllers\Admin\CustomerController::class, 'transferToReseller'])->name('admin.customers.transfer-to-reseller');
@@ -48,8 +50,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/services', \App\Http\Controllers\Admin\ServiceController::class)->names('admin.services');
         Route::get('admin/services/create', [\App\Http\Controllers\Admin\ServiceController::class, 'create'])->name('admin.services.create');
         Route::post('admin/services', [\App\Http\Controllers\Admin\ServiceController::class, 'store'])->name('admin.services.store');
+        // DirectAdmin cross-node package consistency (must be registered BEFORE the
+        // nodes resource route so /admin/nodes/{node} doesn't swallow the URL).
+        Route::get('admin/shared-hosting/package-consistency', [\App\Http\Controllers\Admin\NodeController::class, 'packageConsistency'])->name('admin.shared-hosting.package-consistency');
         Route::resource('admin/nodes', \App\Http\Controllers\Admin\NodeController::class)->names('admin.nodes');
         Route::post('admin/nodes/{node}/status', [\App\Http\Controllers\Admin\NodeController::class, 'updateStatus'])->name('admin.nodes.update-status');
+        Route::post('admin/nodes/{node}/test-connection', [\App\Http\Controllers\Admin\NodeController::class, 'testConnection'])->name('admin.nodes.test-connection');
         Route::post('admin/nodes/{node}/utilization', [\App\Http\Controllers\Admin\NodeController::class, 'updateUtilization'])->name('admin.nodes.update-utilization');
         Route::post('admin/nodes/{node}/heartbeat', [\App\Http\Controllers\Admin\NodeController::class, 'heartbeat'])->name('admin.nodes.heartbeat');
         Route::post('admin/nodes/{node}/sync-packages', [\App\Http\Controllers\Admin\NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');

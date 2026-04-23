@@ -129,43 +129,99 @@ class ProvisioningService
     }
 
     /**
-     * Provision DirectAdmin hosting account
+     * Provision a DirectAdmin hosting account on the service's assigned node,
+     * using the product's bound DirectAdmin package.
+     *
+     * Credential and domain inputs come from $service->service_meta when
+     * available (set by the admin Add-Service modal or the customer checkout);
+     * any missing pieces are generated to keep the legacy "auto-provision on
+     * payment" path working when no one has supplied them yet.
      */
     private function provisionDirectAdmin(Service $service): void
     {
-        $daService = new DirectAdminService();
+        $node = $service->node;
+        if (!$node) {
+            throw new \Exception('Service is not assigned to a DirectAdmin node — cannot provision.');
+        }
 
-        // Generate username from service name + ID
-        $username = Str::slug($service->name) . $service->id;
-        $username = substr($username, 0, 16); // DA limit
+        if ($node->type !== 'directadmin') {
+            throw new \Exception("Service node {$node->name} is not a DirectAdmin server (type: {$node->type}).");
+        }
 
-        // Generate random password
-        $password = Str::random(16);
+        $daService = new DirectAdminService($node);
 
-        // Get domain from custom_options or use service name
-        $domain = $service->service_meta['domain'] ?? "{$username}.com";
+        if (!$daService->isConfigured()) {
+            throw new \Exception("DirectAdmin API is not configured for node {$node->name}.");
+        }
 
-        // Get package from settings
-        $package = \App\Models\Setting::getValue('directadmin_default_package', 'default');
+        // Resolve the package: prefer the product's bound DirectAdmin package,
+        // fall back to whatever was stamped into service_meta when the service
+        // was created, and only then to the legacy global setting.
+        $product = $service->product;
+        $package = $product?->directAdminPackage;
 
-        // Create account
-        $result = $daService->createHostingAccount($service, $username, $password, $domain, $package);
+        $packageKey = $package?->package_key
+            ?? ($service->service_meta['package'] ?? null)
+            ?? \App\Models\Setting::getValue('directadmin_default_package', 'default');
+
+        // Resolve credentials and primary domain from service_meta first.
+        $meta = $service->service_meta ?? [];
+        $username = $meta['username'] ?? $this->generateDirectAdminUsername($service);
+        $password = $meta['password'] ?? Str::random(16);
+        $domain = $meta['domain'] ?? "{$username}.local";
+
+        $result = $daService->createHostingAccount($service, $username, $password, $domain, $packageKey);
 
         if ($result['success']) {
-            // Save credentials to service
+            // Persist what we ended up using. Merge into service_meta so the
+            // admin sees the actual credentials in the customer detail view,
+            // and store the raw API response in `credentials` for audit.
             $service->update([
                 'status' => 'active',
                 'external_reference' => $username,
+                'service_meta' => array_merge($meta, [
+                    'username' => $username,
+                    'password' => $password,
+                    'domain' => $domain,
+                    'package' => $packageKey,
+                    'package_name' => $package?->name,
+                    'node_id' => $node->id,
+                    'node_name' => $node->name,
+                ]),
                 'credentials' => json_encode($result['credentials']),
             ]);
 
-            // Log the creation
             \Log::info("Service {$service->id} provisioned on DirectAdmin", [
+                'service_id' => $service->id,
+                'node_id' => $node->id,
+                'node' => $node->name,
                 'username' => $username,
                 'domain' => $domain,
+                'package' => $packageKey,
             ]);
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
         }
+    }
+
+    /**
+     * Build a DirectAdmin-safe username from a service when the admin/customer
+     * didn't supply one.
+     *
+     * DA accepts up to 16 chars, must start with a letter, lowercase + digits.
+     */
+    private function generateDirectAdminUsername(Service $service): string
+    {
+        $base = Str::of($service->name)->lower()->replaceMatches('/[^a-z0-9]+/', '')->__toString();
+
+        if ($base === '' || !ctype_alpha($base[0])) {
+            $base = 'u' . $base;
+        }
+
+        // Append the service id for uniqueness, but keep it under 16 chars.
+        $suffix = (string) $service->id;
+        $base = substr($base, 0, max(1, 16 - strlen($suffix)));
+
+        return substr($base . $suffix, 0, 16);
     }
 }

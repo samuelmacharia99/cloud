@@ -21,16 +21,19 @@ class Service extends Model
         'status',
         'billing_cycle',
         'next_due_date',
+        'commenced_at',
         'suspend_date',
         'terminate_date',
         'service_meta',
         'external_reference',
         'credentials',
+        'notes',
     ];
 
     protected $casts = [
         'service_meta' => 'array',
         'next_due_date' => 'datetime',
+        'commenced_at' => 'datetime',
         'suspend_date' => 'datetime',
         'terminate_date' => 'datetime',
     ];

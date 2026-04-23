@@ -84,15 +84,35 @@ class CustomerController extends Controller
             'domains'
         );
 
-        $products = \App\Models\Product::where('is_active', true)->orderBy('name')->get();
+        $products = \App\Models\Product::with('directAdminPackage.node')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
-        // Prepare products for Alpine.js
+        // Prepare products for Alpine.js — include type so the modal can switch
+        // its credential fields when a shared_hosting product is selected.
         $productsForJs = $products->map(function ($product) {
+            $package = $product->directAdminPackage;
+            $node = $package?->node;
+
             return [
                 'id' => $product->id,
                 'name' => $product->name,
+                'type' => $product->type,
                 'monthly_price' => $product->monthly_price,
                 'yearly_price' => $product->yearly_price,
+                'direct_admin_package' => $package ? [
+                    'id' => $package->id,
+                    'name' => $package->name,
+                    'package_key' => $package->package_key,
+                    'disk_quota' => $package->disk_quota,
+                    'bandwidth_quota' => $package->bandwidth_quota,
+                    'node' => $node ? [
+                        'id' => $node->id,
+                        'name' => $node->name,
+                        'hostname' => $node->hostname,
+                    ] : null,
+                ] : null,
             ];
         })->values()->toArray();
 
@@ -348,14 +368,21 @@ class CustomerController extends Controller
     }
 
     /**
-     * Manually add a service to a customer
+     * Manually add a service to a customer.
+     *
+     * Shared hosting (DirectAdmin) products require DA-specific credentials
+     * (username + password + primary domain) and skip the generic
+     * username/password/ip fields that VPS / Container / other hosting types use.
      */
     public function addService(Request $request, User $customer)
     {
         \Log::info('addService() called', [
             'customer_id' => $customer->id,
             'customer_name' => $customer->name,
-            'request_data' => $request->all(),
+            'request_data' => array_diff_key($request->all(), [
+                'password' => '',
+                'direct_admin_password' => '',
+            ]),
         ]);
 
         if ($customer->is_admin) {
@@ -363,46 +390,81 @@ class CustomerController extends Controller
             abort(404);
         }
 
-        $validated = $request->validate([
+        $product = \App\Models\Product::findOrFail($request->input('product_id'));
+        $isSharedHosting = $product->type === 'shared_hosting';
+
+        $rules = [
             'product_id' => 'required|exists:products,id',
             'name' => 'required|string|max:255',
             'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
             'status' => 'required|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
-            'username' => 'nullable|string|max:255',
-            'password' => 'nullable|string|max:255',
-            'ip_address' => 'nullable|string|max:45',
+            'commenced_at' => 'nullable|date|before_or_equal:next_due_date',
             'next_due_date' => 'required|date',
             'suspend_date' => 'nullable|date',
             'notes' => 'nullable|string|max:1000',
             'generate_invoice' => 'boolean',
-        ]);
+        ];
+
+        if ($isSharedHosting) {
+            $rules['direct_admin_username'] = [
+                'required',
+                'string',
+                'min:3',
+                'max:16',
+                'regex:/^[a-z][a-z0-9]*$/',
+            ];
+            $rules['direct_admin_password'] = ['required', 'string', 'min:8', 'max:64'];
+            $rules['direct_admin_domain'] = ['required', 'string', 'max:253', 'regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i'];
+        } else {
+            $rules['username'] = 'nullable|string|max:255';
+            $rules['password'] = 'nullable|string|max:255';
+            $rules['ip_address'] = 'nullable|string|max:45';
+        }
+
+        $messages = [
+            'direct_admin_username.regex' => 'DirectAdmin username must start with a lowercase letter and contain only lowercase letters and digits.',
+            'direct_admin_username.max' => 'DirectAdmin username cannot exceed 16 characters.',
+            'direct_admin_domain.regex' => 'Enter a valid primary domain (e.g. example.com).',
+            'commenced_at.before_or_equal' => 'Commenced date cannot be after the next due date.',
+        ];
+
+        $validated = $request->validate($rules, $messages);
 
         \Log::info('addService() validation passed', [
             'customer_id' => $customer->id,
             'service_name' => $validated['name'],
             'product_id' => $validated['product_id'],
+            'product_type' => $product->type,
             'billing_cycle' => $validated['billing_cycle'],
+            'is_shared_hosting' => $isSharedHosting,
         ]);
 
         try {
-            \DB::transaction(function () use ($validated, $customer) {
-                $product = \App\Models\Product::findOrFail($validated['product_id']);
-
-                \Log::info('addService() product found', [
-                    'product_id' => $product->id,
-                    'product_name' => $product->name,
-                ]);
-
-                // Build service_meta with credentials
+            $createdService = \DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting) {
                 $serviceMeta = [];
-                if (!empty($validated['username'])) {
-                    $serviceMeta['username'] = $validated['username'];
-                }
-                if (!empty($validated['password'])) {
-                    $serviceMeta['password'] = $validated['password'];
-                }
-                if (!empty($validated['ip_address'])) {
-                    $serviceMeta['ip_address'] = $validated['ip_address'];
+
+                if ($isSharedHosting) {
+                    $package = $product->directAdminPackage;
+
+                    $serviceMeta = [
+                        'username' => $validated['direct_admin_username'],
+                        'password' => $validated['direct_admin_password'],
+                        'domain' => strtolower($validated['direct_admin_domain']),
+                        'package' => $package?->package_key,
+                        'package_name' => $package?->name,
+                        'node_id' => $package?->node_id,
+                        'node_name' => $package?->node?->name,
+                    ];
+                } else {
+                    if (!empty($validated['username'])) {
+                        $serviceMeta['username'] = $validated['username'];
+                    }
+                    if (!empty($validated['password'])) {
+                        $serviceMeta['password'] = $validated['password'];
+                    }
+                    if (!empty($validated['ip_address'])) {
+                        $serviceMeta['ip_address'] = $validated['ip_address'];
+                    }
                 }
 
                 \Log::info('addService() creating service', [
@@ -411,21 +473,27 @@ class CustomerController extends Controller
                     'service_name' => $validated['name'],
                     'status' => $validated['status'],
                     'billing_cycle' => $validated['billing_cycle'],
+                    'commenced_at' => $validated['commenced_at'] ?? null,
                     'next_due_date' => $validated['next_due_date'],
+                    'meta_keys' => array_keys($serviceMeta),
                 ]);
 
-                // Create service
                 $service = \App\Models\Service::create([
                     'user_id' => $customer->id,
                     'product_id' => $validated['product_id'],
+                    'node_id' => $isSharedHosting ? ($product->directAdminPackage?->node_id) : null,
                     'name' => $validated['name'],
                     'status' => $validated['status'],
                     'billing_cycle' => $validated['billing_cycle'],
+                    'commenced_at' => $validated['commenced_at'] ?? null,
                     'next_due_date' => $validated['next_due_date'],
-                    'suspend_date' => $validated['suspend_date'],
-                    'provisioning_driver_key' => $product->provisioning_driver_key,
+                    'suspend_date' => $validated['suspend_date'] ?? null,
+                    'provisioning_driver_key' => $isSharedHosting
+                        ? 'directadmin'
+                        : $product->provisioning_driver_key,
+                    'external_reference' => $isSharedHosting ? $validated['direct_admin_username'] : null,
                     'service_meta' => !empty($serviceMeta) ? $serviceMeta : null,
-                    'notes' => $validated['notes'],
+                    'notes' => $validated['notes'] ?? null,
                 ]);
 
                 \Log::info('addService() service created successfully', [
@@ -435,71 +503,33 @@ class CustomerController extends Controller
                     'product_name' => $product->name,
                 ]);
 
-                // Create invoice if requested (10 days prior to next_due_date)
-                if ($validated['generate_invoice']) {
-                    $price = $this->getServicePrice($product, $validated['billing_cycle']);
-                    $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
-                    $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
-
-                    $subtotal = $price;
-                    $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-                    $total = $subtotal + $tax;
-
-                    $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
-
-                    \Log::info('addService() creating invoice', [
-                        'customer_id' => $customer->id,
-                        'service_id' => $service->id,
-                        'next_due_date' => $validated['next_due_date'],
-                        'invoice_due_date' => $invoiceDueDate->toDateString(),
-                        'price' => $price,
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
-                    ]);
-
-                    $invoice = \App\Models\Invoice::create([
-                        'user_id' => $customer->id,
-                        'invoice_number' => $this->generateInvoiceNumber(),
-                        'status' => 'unpaid',
-                        'due_date' => $invoiceDueDate,
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
-                    ]);
-
-                    \Log::info('addService() invoice created', [
-                        'invoice_id' => $invoice->id,
-                        'invoice_number' => $invoice->invoice_number,
-                    ]);
-
-                    \App\Models\InvoiceItem::create([
-                        'invoice_id' => $invoice->id,
-                        'service_id' => $service->id,
-                        'product_id' => $product->id,
-                        'description' => $service->name,
-                        'quantity' => 1,
-                        'unit_price' => $price,
-                        'amount' => $price,
-                    ]);
-
-                    \Log::info('addService() invoice item created', [
-                        'invoice_id' => $invoice->id,
-                        'service_id' => $service->id,
-                    ]);
-
+                if (!empty($validated['generate_invoice'])) {
+                    $invoice = $this->createServiceInvoice($customer, $product, $service, $validated);
                     $service->update(['invoice_id' => $invoice->id]);
 
                     \Log::info('addService() service updated with invoice_id', [
                         'service_id' => $service->id,
                         'invoice_id' => $invoice->id,
                     ]);
-                } else {
-                    \Log::info('addService() no invoice created - generate_invoice not requested', [
-                        'service_id' => $service->id,
-                    ]);
                 }
+
+                return $service;
             });
+
+            // Optional: attempt provisioning to DirectAdmin if package + node are
+            // wired up. Failures are logged but don't roll back — the admin asked
+            // to record the service manually, and the credentials are saved either
+            // way so the admin can sync later.
+            $message = "Service {$validated['name']} added successfully.";
+            if ($isSharedHosting && $product->directAdminPackage && $product->directAdminPackage->node_id) {
+                $provisionResult = $this->provisionDirectAdminAccount($createdService, $validated);
+
+                if ($provisionResult['success']) {
+                    $message .= ' DirectAdmin account provisioned on ' . $product->directAdminPackage->node->name . '.';
+                } else {
+                    $message .= ' DirectAdmin provisioning skipped: ' . $provisionResult['message'];
+                }
+            }
 
             \Log::info('addService() completed successfully', [
                 'customer_id' => $customer->id,
@@ -507,20 +537,171 @@ class CustomerController extends Controller
             ]);
 
             return redirect()->route('admin.customers.show', $customer)
-                ->with('success', "Service {$validated['name']} added successfully.");
+                ->with('success', $message);
         } catch (\Exception $e) {
             \Log::error('addService() failed with exception', [
                 'customer_id' => $customer->id,
                 'service_name' => $validated['name'] ?? 'unknown',
                 'error_message' => $e->getMessage(),
-                'error_code' => $e->getCode(),
                 'error_file' => $e->getFile(),
                 'error_line' => $e->getLine(),
-                'error_trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->with('error', 'Failed to add service: ' . $e->getMessage());
+            return back()
+                ->with('error', 'Failed to add service: ' . $e->getMessage())
+                ->withInput();
         }
+    }
+
+    /**
+     * Build the invoice + line item for a manually-added service.
+     */
+    private function createServiceInvoice(User $customer, \App\Models\Product $product, \App\Models\Service $service, array $validated): \App\Models\Invoice
+    {
+        $price = $this->getServicePrice($product, $validated['billing_cycle']);
+        $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
+        $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
+
+        $subtotal = $price;
+        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+        $total = $subtotal + $tax;
+
+        $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
+
+        $invoice = \App\Models\Invoice::create([
+            'user_id' => $customer->id,
+            'invoice_number' => $this->generateInvoiceNumber(),
+            'status' => 'unpaid',
+            'due_date' => $invoiceDueDate,
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'total' => $total,
+        ]);
+
+        \App\Models\InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => $service->name,
+            'quantity' => 1,
+            'unit_price' => $price,
+            'amount' => $price,
+        ]);
+
+        return $invoice;
+    }
+
+    /**
+     * Best-effort provisioning of a DirectAdmin account for a manually added
+     * shared-hosting service. Returns a result array; never throws.
+     */
+    private function provisionDirectAdminAccount(\App\Models\Service $service, array $validated): array
+    {
+        try {
+            $package = $service->product->directAdminPackage;
+            $node = $package?->node;
+
+            if (!$node) {
+                return ['success' => false, 'message' => 'no DirectAdmin node attached to package'];
+            }
+
+            $da = new \App\Services\Provisioning\DirectAdminService($node);
+
+            if (!$da->isConfigured()) {
+                return ['success' => false, 'message' => 'DirectAdmin node is not configured (missing API URL or password)'];
+            }
+
+            $result = $da->createHostingAccount(
+                $service,
+                $validated['direct_admin_username'],
+                $validated['direct_admin_password'],
+                strtolower($validated['direct_admin_domain']),
+                $package->package_key
+            );
+
+            if ($result['success']) {
+                $service->update([
+                    'credentials' => json_encode($result['credentials']),
+                ]);
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            \Log::error('provisionDirectAdminAccount() failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Generate a strong DirectAdmin-compatible password.
+     *
+     * Returns JSON for the Add Service modal's "Generate" button.
+     * The character set avoids ambiguous characters (0/O, 1/l/I) and the
+     * symbols DA's built-in password validator rejects.
+     */
+    public function generatePassword(Request $request)
+    {
+        $length = (int) $request->input('length', 16);
+        $length = max(12, min(32, $length));
+
+        $sets = [
+            'lower' => 'abcdefghjkmnpqrstuvwxyz',
+            'upper' => 'ABCDEFGHJKMNPQRSTUVWXYZ',
+            'digit' => '23456789',
+            'symbol' => '!@#$%^&*-_=+',
+        ];
+
+        // Guarantee at least one of each class so the result always satisfies
+        // common password complexity rules.
+        $password = '';
+        foreach ($sets as $chars) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+
+        $all = implode('', $sets);
+        for ($i = strlen($password); $i < $length; $i++) {
+            $password .= $all[random_int(0, strlen($all) - 1)];
+        }
+
+        // Shuffle so the guaranteed-class characters aren't always at the front.
+        $password = str_shuffle($password);
+
+        return response()->json(['password' => $password]);
+    }
+
+    /**
+     * Generate a DirectAdmin-compatible username from a customer name or email.
+     */
+    public function generateUsername(Request $request, User $customer)
+    {
+        $base = \Illuminate\Support\Str::of($customer->name ?: $customer->email)
+            ->lower()
+            ->replaceMatches('/[^a-z0-9]+/', '')
+            ->__toString();
+
+        if ($base === '' || !ctype_alpha($base[0])) {
+            $base = 'u' . $base;
+        }
+
+        // DA allows up to 16 chars; reserve 3 for a uniqueness suffix.
+        $base = substr($base, 0, 13);
+
+        // Find a non-colliding username.
+        $candidate = $base;
+        $suffix = 0;
+        while (\App\Models\Service::where('external_reference', $candidate)->exists()) {
+            $suffix++;
+            $candidate = $base . $suffix;
+            if (strlen($candidate) > 16) {
+                $candidate = substr($base, 0, 16 - strlen((string) $suffix)) . $suffix;
+            }
+        }
+
+        return response()->json(['username' => $candidate]);
     }
 
     /**

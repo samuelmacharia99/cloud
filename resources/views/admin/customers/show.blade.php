@@ -191,6 +191,7 @@
                                 <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Product</th>
                                 <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Billing Cycle</th>
                                 <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
+                                <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Commenced</th>
                                 <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Next Due</th>
                                 <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Actions</th>
                             </tr>
@@ -198,7 +199,17 @@
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                             @foreach ($customer->services as $service)
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">{{ $service->name }}</td>
+                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">
+                                        {{ $service->name }}
+                                        @if(($service->product?->type === 'shared_hosting') && !empty($service->service_meta['username']))
+                                            <div class="text-xs font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                                                <span class="font-mono">{{ $service->service_meta['username'] }}</span>
+                                                @if(!empty($service->service_meta['domain']))
+                                                    &middot; <span class="font-mono">{{ $service->service_meta['domain'] }}</span>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->product->name ?? '-' }}</td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('-', ' ', $service->billing_cycle)) }}</td>
                                     <td class="px-6 py-4">
@@ -210,6 +221,7 @@
                                             {{ ucfirst($service->status) }}
                                         </span>
                                     </td>
+                                    <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->commenced_at ? $service->commenced_at->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->next_due_date ? $service->next_due_date->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-right">
                                         <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
@@ -411,7 +423,7 @@
     <!-- Add Service Modal -->
     <div x-show="addServiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addServiceModal = false">
         <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
-        <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+        <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
             <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
             <button @click="addServiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -420,18 +432,39 @@
             </button>
         </div>
 
-        <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6">
+        <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6" @submit="onAddServiceSubmit($event)">
             @csrf
 
             <!-- Product Selection -->
             <div>
                 <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
-                <select id="product_id" name="product_id" x-model="selectedProduct" @change="productName = products.find(p => p.id == selectedProduct)?.name || ''" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                <select id="product_id" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
                     <option value="">Select a product</option>
                     @foreach ($products as $product)
-                        <option value="{{ $product->id }}">{{ $product->name }}</option>
+                        <option value="{{ $product->id }}">{{ $product->name }} &mdash; {{ \App\Models\Product::typeLabel($product->type) }}</option>
                     @endforeach
                 </select>
+
+                <!-- Shared hosting package summary -->
+                <template x-if="isSharedHosting() && currentProduct()?.direct_admin_package">
+                    <div class="mt-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm">
+                        <p class="font-semibold text-blue-700 dark:text-blue-300">
+                            DirectAdmin package: <span x-text="currentProduct()?.direct_admin_package?.name"></span>
+                        </p>
+                        <p class="text-blue-700 dark:text-blue-400 mt-1 text-xs">
+                            <span x-text="currentProduct()?.direct_admin_package?.disk_quota + ' GB disk &middot; ' + currentProduct()?.direct_admin_package?.bandwidth_quota + ' GB bandwidth'"></span>
+                            <template x-if="currentProduct()?.direct_admin_package?.node">
+                                <span> &middot; Server: <span x-text="currentProduct()?.direct_admin_package?.node?.name"></span></span>
+                            </template>
+                        </p>
+                    </div>
+                </template>
+
+                <template x-if="isSharedHosting() && !currentProduct()?.direct_admin_package">
+                    <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
+                        This shared-hosting product has no DirectAdmin package linked. Edit the product to attach one before continuing.
+                    </div>
+                </template>
             </div>
 
             <!-- Service Name -->
@@ -463,19 +496,109 @@
                 </select>
             </div>
 
-            <!-- Credentials Section -->
+            <!-- DirectAdmin Credentials (Shared Hosting) -->
+            <template x-if="isSharedHosting()">
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white">DirectAdmin Account <span class="text-red-500">*</span></h3>
+                    <span class="text-xs text-slate-500 dark:text-slate-400">cPanel-style username + password</span>
+                </div>
+                <div class="space-y-4">
+                    <!-- Username -->
+                    <div>
+                        <label for="direct_admin_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Username <span class="text-red-500">*</span></label>
+                        <div class="flex gap-2">
+                            <input type="text" id="direct_admin_username" name="direct_admin_username"
+                                x-model="daUsername"
+                                placeholder="e.g., janedoe01"
+                                pattern="^[a-z][a-z0-9]*$"
+                                minlength="3"
+                                maxlength="16"
+                                autocomplete="off"
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white font-mono"
+                                :required="isSharedHosting()">
+                            <button type="button" @click="suggestUsername()" :disabled="generatingUsername"
+                                class="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium hover:bg-slate-200 dark:hover:bg-slate-700 transition disabled:opacity-50 whitespace-nowrap">
+                                <span x-show="!generatingUsername">Suggest</span>
+                                <span x-show="generatingUsername">…</span>
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">3–16 characters, must start with a lowercase letter, only a–z and 0–9.</p>
+                    </div>
+
+                    <!-- Password -->
+                    <div>
+                        <label for="direct_admin_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password <span class="text-red-500">*</span></label>
+                        <div class="flex gap-2">
+                            <div class="relative flex-1">
+                                <input :type="password_visible ? 'text' : 'password'"
+                                    id="direct_admin_password"
+                                    name="direct_admin_password"
+                                    x-model="daPassword"
+                                    minlength="8"
+                                    maxlength="64"
+                                    autocomplete="new-password"
+                                    placeholder="At least 8 characters"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white pr-20 font-mono"
+                                    :required="isSharedHosting()">
+                                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                                    <button type="button" @click="copyPassword()" class="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" title="Copy password">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                        </svg>
+                                    </button>
+                                    <button type="button" @click="password_visible = !password_visible" class="p-1 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" :title="password_visible ? 'Hide password' : 'Show password'">
+                                        <svg x-show="!password_visible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                        </svg>
+                                        <svg x-show="password_visible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                            <button type="button" @click="generatePassword()" :disabled="generatingPassword"
+                                class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition disabled:opacity-50 whitespace-nowrap">
+                                <span x-show="!generatingPassword">Generate</span>
+                                <span x-show="generatingPassword">…</span>
+                            </button>
+                        </div>
+                        <p x-show="passwordCopied" x-transition class="mt-1 text-xs text-emerald-600 dark:text-emerald-400">Copied to clipboard.</p>
+                    </div>
+
+                    <!-- Primary Domain -->
+                    <div>
+                        <label for="direct_admin_domain" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Primary Domain <span class="text-red-500">*</span></label>
+                        <input type="text" id="direct_admin_domain" name="direct_admin_domain"
+                            x-model="daDomain"
+                            @blur="daDomain = (daDomain || '').toLowerCase()"
+                            placeholder="e.g., example.com"
+                            pattern="^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+                            maxlength="253"
+                            autocapitalize="off"
+                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white font-mono"
+                            :required="isSharedHosting()">
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">The primary website domain that will be associated with this hosting account.</p>
+                    </div>
+                </div>
+            </div>
+            </template>
+
+            <!-- Generic Credentials (Non-Shared Hosting) -->
+            <template x-if="!isSharedHosting() && selectedProduct">
             <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Service Credentials (Optional)</h3>
                 <div class="space-y-4">
                     <div>
                         <label for="username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Username</label>
-                        <input type="text" id="username" name="username" placeholder="e.g., admin" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                        <input type="text" id="username" name="username" placeholder="e.g., admin" autocomplete="off" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
                     </div>
 
                     <div>
                         <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password</label>
                         <div class="relative">
-                            <input :type="password_visible ? 'text' : 'password'" id="password" name="password" placeholder="e.g., Secure@123" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white pr-10">
+                            <input :type="password_visible ? 'text' : 'password'" id="password" name="password" autocomplete="new-password" placeholder="e.g., Secure@123" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white pr-10">
                             <button type="button" @click="password_visible = !password_visible" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                                 <svg x-show="!password_visible" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -494,15 +617,23 @@
                     </div>
                 </div>
             </div>
+            </template>
 
             <!-- Billing Dates -->
-            <div class="border-t border-slate-200 dark:border-slate-800 pt-6 space-y-4">
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label for="next_due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Due Date <span class="text-red-500">*</span></label>
-                    <input type="date" id="next_due_date" name="next_due_date" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                    <label for="commenced_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Service Commenced On</label>
+                    <input type="date" id="commenced_at" name="commenced_at" x-model="commencedAt" :max="todayIso()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">When the service actually started (for backdating). Leave blank if it starts today.</p>
                 </div>
 
                 <div>
+                    <label for="next_due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Due Date <span class="text-red-500">*</span></label>
+                    <input type="date" id="next_due_date" name="next_due_date" x-model="nextDueDate" :min="commencedAt || null" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">When the next invoice is due. Invoices are generated 10 days prior.</p>
+                </div>
+
+                <div class="md:col-span-2">
                     <label for="suspend_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Suspension Date (Optional)</label>
                     <input type="date" id="suspend_date" name="suspend_date" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
                 </div>
@@ -517,7 +648,7 @@
             <!-- Generate Invoice -->
             <div class="flex items-center gap-3">
                 <input type="checkbox" id="generate_invoice" name="generate_invoice" value="1" class="w-4 h-4 border-slate-300 rounded">
-                <label for="generate_invoice" class="text-sm text-slate-900 dark:text-white">Generate invoice for this service</label>
+                <label for="generate_invoice" class="text-sm text-slate-900 dark:text-white">Generate invoice for this service (10 days before next due date)</label>
             </div>
 
             <!-- Submit Button -->
@@ -758,8 +889,117 @@ function initCustomerData() {
         password_visible: false,
         selectedProduct: '',
         products: @json($productsForJs),
+
+        // DirectAdmin (shared hosting) form state
+        daUsername: '',
+        daPassword: '',
+        daDomain: '',
+        generatingPassword: false,
+        generatingUsername: false,
+        passwordCopied: false,
+
+        // Date fields
+        commencedAt: '',
+        nextDueDate: '',
+
+        // Custom invoice modal
         invoiceItems: [{ description: '', quantity: 1, unit_price: '' }],
         taxRate: 0,
+
+        currentProduct() {
+            if (!this.selectedProduct) return null;
+            return this.products.find(p => p.id == this.selectedProduct) || null;
+        },
+
+        isSharedHosting() {
+            return this.currentProduct()?.type === 'shared_hosting';
+        },
+
+        onProductChange() {
+            const product = this.currentProduct();
+            this.productName = product?.name || '';
+
+            // Reset DA fields when switching products so stale values don't leak
+            // between selections.
+            if (this.isSharedHosting()) {
+                this.daUsername = '';
+                this.daPassword = '';
+                this.daDomain = '';
+                this.suggestUsername();
+            } else {
+                this.daUsername = '';
+                this.daPassword = '';
+                this.daDomain = '';
+            }
+        },
+
+        async suggestUsername() {
+            if (this.generatingUsername) return;
+            this.generatingUsername = true;
+
+            try {
+                const res = await fetch('{{ route('admin.customers.generate-username', $customer) }}', {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!res.ok) throw new Error('Failed to suggest username');
+                const data = await res.json();
+                this.daUsername = data.username || '';
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.generatingUsername = false;
+            }
+        },
+
+        async generatePassword() {
+            if (this.generatingPassword) return;
+            this.generatingPassword = true;
+
+            try {
+                const res = await fetch('{{ route('admin.customers.generate-password') }}?length=16', {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!res.ok) throw new Error('Failed to generate password');
+                const data = await res.json();
+                this.daPassword = data.password || '';
+                this.password_visible = true;
+            } catch (e) {
+                console.error(e);
+            } finally {
+                this.generatingPassword = false;
+            }
+        },
+
+        async copyPassword() {
+            if (!this.daPassword) return;
+            try {
+                await navigator.clipboard.writeText(this.daPassword);
+                this.passwordCopied = true;
+                setTimeout(() => { this.passwordCopied = false; }, 2000);
+            } catch (e) {
+                console.error('Clipboard copy failed', e);
+            }
+        },
+
+        onAddServiceSubmit(e) {
+            // Extra client-side guard: shared hosting needs all DA fields.
+            if (this.isSharedHosting()) {
+                if (!this.currentProduct()?.direct_admin_package) {
+                    e.preventDefault();
+                    alert('This shared-hosting product has no DirectAdmin package linked. Edit the product to attach one before continuing.');
+                    return false;
+                }
+                if (!this.daUsername || !this.daPassword || !this.daDomain) {
+                    e.preventDefault();
+                    alert('DirectAdmin username, password, and primary domain are required for shared hosting.');
+                    return false;
+                }
+            }
+        },
+
+        todayIso() {
+            return new Date().toISOString().slice(0, 10);
+        },
 
         addInvoiceItem() {
             this.invoiceItems.push({ description: '', quantity: 1, unit_price: '' });
