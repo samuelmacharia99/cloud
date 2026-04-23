@@ -221,9 +221,18 @@ class DirectAdminService
             if ($response->ok()) {
                 $responseData = $response->json();
 
+                if ($responseData === null) {
+                    Log::warning('DirectAdmin API returned null/empty response', [
+                        'node_id' => $this->node?->id,
+                        'status' => $response->status(),
+                        'body' => $response->body(),
+                    ]);
+                    return [];
+                }
+
                 Log::debug('DirectAdmin API response', [
                     'node_id' => $this->node?->id,
-                    'response_keys' => array_keys($responseData),
+                    'response_keys' => array_keys($responseData ?? []),
                     'full_response' => json_encode($responseData),
                 ]);
 
