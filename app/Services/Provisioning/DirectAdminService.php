@@ -233,12 +233,11 @@ class DirectAdminService
                     }
                 } else {
                     // API responded but no 'packages' key
-                    $errorMsg = 'API response does not contain packages key. Response keys: ' . implode(', ', array_keys($responseData ?? []));
                     Log::warning('DirectAdmin API no packages in response', [
                         'node_id' => $this->node?->id,
                         'response' => $responseData,
+                        'response_keys' => array_keys($responseData ?? []),
                     ]);
-                    session()->flash('last_da_error', $errorMsg);
                     return [];
                 }
             }
@@ -250,15 +249,11 @@ class DirectAdminService
 
             return $packages;
         } catch (\Exception $e) {
-            $errorMsg = $e->getMessage();
             Log::error('Failed to fetch DirectAdmin packages', [
                 'node_id' => $this->node?->id,
-                'error' => $errorMsg,
+                'error' => $e->getMessage(),
                 'api_url' => $this->apiUrl,
             ]);
-
-            // Store error in session for display
-            session()->flash('last_da_error', $errorMsg);
 
             // Return empty array
             return [];
@@ -352,14 +347,7 @@ class DirectAdminService
         $result = ['synced' => 0, 'updated' => 0, 'failed' => 0, 'errors' => []];
 
         if (empty($packages)) {
-            // Check if there was a specific error from the API call
-            $lastError = session('last_da_error');
-            if ($lastError) {
-                $result['errors'][] = "DirectAdmin API Error: $lastError";
-                session()->forget('last_da_error');
-            } else {
-                $result['errors'][] = 'No packages retrieved from DirectAdmin server (no packages defined on server)';
-            }
+            $result['errors'][] = 'No packages retrieved from DirectAdmin server (no packages defined on server)';
             Log::warning('No packages synced from DirectAdmin', ['node_id' => $this->node?->id]);
             return $result;
         }
