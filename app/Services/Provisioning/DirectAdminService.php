@@ -196,7 +196,7 @@ class DirectAdminService
 
     /**
      * Fetch all packages from DirectAdmin server
-     * DirectAdmin returns form-encoded data, not JSON
+     * DirectAdmin returns form-encoded list of package names: list[]=Package1&list[]=Package2
      *
      * @return array Array of packages with their specs, or empty array on failure
      */
@@ -237,19 +237,26 @@ class DirectAdminService
                     return [];
                 }
 
-                // DirectAdmin returns form-encoded data like: package1=data&package2=data
+                // DirectAdmin returns form-encoded list: list[]=Package1&list[]=Package2&list[]=Package3
                 parse_str($body, $responseData);
+
+                $packageNames = $responseData['list'] ?? [];
+                if (!is_array($packageNames)) {
+                    $packageNames = [$packageNames];
+                }
 
                 Log::debug('DirectAdmin API response', [
                     'node_id' => $this->node?->id,
-                    'package_count' => count($responseData),
-                    'package_names' => array_keys($responseData),
+                    'package_count' => count($packageNames),
+                    'package_names' => $packageNames,
                 ]);
 
-                foreach ($responseData as $packageName => $packageData) {
-                    // Parse the form-encoded package data
-                    parse_str($packageData, $packageInfo);
-                    $packages[] = $this->parsePackageData($packageName, $packageInfo);
+                // Fetch details for each package
+                foreach ($packageNames as $packageName) {
+                    $packageDetails = $this->getPackageDetails($packageName);
+                    if ($packageDetails) {
+                        $packages[] = $packageDetails;
+                    }
                 }
             }
 
@@ -267,6 +274,39 @@ class DirectAdminService
             ]);
 
             return [];
+        }
+    }
+
+    /**
+     * Fetch detailed package information from DirectAdmin
+     */
+    private function getPackageDetails(string $packageName): ?array
+    {
+        try {
+            $response = Http::timeout(30)
+                ->withBasicAuth($this->username, $this->password)
+                ->get("{$this->apiUrl}/CMD_API_MANAGE_USER_PACKAGES", [
+                    'action' => 'view',
+                    'name' => $packageName,
+                ])
+                ->throw();
+
+            if (!$response->ok()) {
+                return null;
+            }
+
+            $body = $response->body();
+            parse_str($body, $packageData);
+
+            return $this->parsePackageData($packageName, $packageData);
+        } catch (\Exception $e) {
+            Log::warning('Failed to fetch package details', [
+                'node_id' => $this->node?->id,
+                'package_name' => $packageName,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
         }
     }
 
