@@ -100,49 +100,27 @@
                     </div>
                 </div>
 
-                <!-- Admin Credentials -->
+                <!-- API Credentials -->
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">DirectAdmin Credentials</h2>
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <!-- Username -->
-                        <div>
-                            <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Admin Username</label>
-                            <input type="text" id="ssh_username" name="ssh_username" value="{{ old('ssh_username') }}" placeholder="admin" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_username') border-red-500 @enderror" required>
-                            @error('ssh_username')
-                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <!-- Authentication Method Toggle -->
-                        <div x-data="{ useLoginKey: false }">
-                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Authentication Method</label>
-                            <div class="flex items-center gap-2 p-3 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                                <input type="radio" id="auth_password" name="auth_method" value="password" x-model="useLoginKey" :value="false" class="w-4 h-4 text-blue-600">
-                                <label for="auth_password" class="flex-1 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">Password</label>
-                                <input type="radio" id="auth_key" name="auth_method" value="key" x-model="useLoginKey" :value="true" class="w-4 h-4 text-blue-600">
-                                <label for="auth_key" class="flex-1 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">Login Key</label>
-                            </div>
-                        </div>
-
-                        <!-- Password -->
-                        <div x-data="{ useLoginKey: false }">
-                            <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">
-                                Password
-                                <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(or leave blank if using key)</span>
-                            </label>
-                            <input type="password" id="ssh_password" name="ssh_password" placeholder="Your admin password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
-                            @error('ssh_password')
-                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                            @enderror
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">API Authentication</h2>
+                    <div class="space-y-6">
+                        <!-- Help Text -->
+                        <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                            <p class="text-sm text-blue-900 dark:text-blue-100">
+                                <span class="font-medium">How to get your Login Key:</span><br>
+                                1. Log in to DirectAdmin control panel<br>
+                                2. Go to Admin > Manage Administrators<br>
+                                3. Click on your admin account<br>
+                                4. Click "Generate Login Key" and copy it
+                            </p>
                         </div>
 
                         <!-- Login Key -->
                         <div>
                             <label for="da_login_key" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">
-                                Login Key
-                                <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(preferred authentication)</span>
+                                DirectAdmin Login Key <span class="text-red-500">*</span>
                             </label>
-                            <textarea id="da_login_key" name="da_login_key" rows="4" placeholder="Paste your DirectAdmin login key here..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none font-mono text-xs @error('da_login_key') border-red-500 @enderror">{{ old('da_login_key') }}</textarea>
+                            <textarea id="da_login_key" name="da_login_key" rows="5" placeholder="Paste your 20-character login key here..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none font-mono @error('da_login_key') border-red-500 @enderror" required>{{ old('da_login_key') }}</textarea>
                             @error('da_login_key')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror

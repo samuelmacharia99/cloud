@@ -94,9 +94,7 @@ class NodeController extends Controller
                 'ip_address'     => 'required|ip|unique:nodes,ip_address',
                 'type'           => 'required|in:directadmin',
                 'da_port'        => 'required|string|max:10',
-                'ssh_username'   => 'required|string|max:100',
-                'ssh_password'   => 'nullable|string',
-                'da_login_key'   => 'nullable|string',
+                'da_login_key'   => 'required|string',
                 'region'         => 'nullable|string|max:50',
                 'datacenter'     => 'nullable|string|max:255',
                 'description'    => 'nullable|string',
@@ -107,6 +105,8 @@ class NodeController extends Controller
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
             $validated['ssh_port'] = $validated['da_port'];
+            $validated['ssh_username'] = 'admin';
+            $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}/api";
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
                 'name'           => 'required|string|max:255',
@@ -209,7 +209,7 @@ class NodeController extends Controller
             'name' => 'required|string|max:255',
             'hostname' => 'required|string|unique:nodes,hostname,' . $node->id,
             'ip_address' => 'required|ip|unique:nodes,ip_address,' . $node->id,
-            'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server',
+            'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
             'status' => 'required|in:online,offline,degraded,maintenance',
             'cpu_cores' => 'required|integer|min:1',
             'ram_gb' => 'required|integer|min:1',

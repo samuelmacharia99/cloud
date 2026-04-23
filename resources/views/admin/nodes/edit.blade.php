@@ -48,6 +48,7 @@
                             <option value="container_host" @selected(old('type', $node->type) === 'container_host')>Container Host</option>
                             <option value="load_balancer" @selected(old('type', $node->type) === 'load_balancer')>Load Balancer</option>
                             <option value="database_server" @selected(old('type', $node->type) === 'database_server')>Database Server</option>
+                            <option value="directadmin" @selected(old('type', $node->type) === 'directadmin')>DirectAdmin Server</option>
                         </select>
                         @error('type')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
