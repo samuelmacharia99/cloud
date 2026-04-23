@@ -518,6 +518,12 @@ class NodeController extends Controller
             // Bust the consistency report cache so the next view reflects this sync
             \Cache::forget('directadmin:package-consistency');
 
+            // Check for errors first
+            if (!empty($result['errors'])) {
+                $errorMsg = implode('; ', $result['errors']);
+                return back()->with('error', $errorMsg);
+            }
+
             $message = "Synced: {$result['synced']}, Updated: {$result['updated']}";
 
             if ($result['failed'] > 0) {
@@ -526,7 +532,7 @@ class NodeController extends Controller
             }
 
             if ($result['synced'] + $result['updated'] === 0) {
-                return back()->with('info', 'No packages to sync.');
+                return back()->with('warning', 'No packages were synced. The DirectAdmin server may not have any packages defined, or the API returned an empty response.');
             }
 
             return back()->with('success', $message);

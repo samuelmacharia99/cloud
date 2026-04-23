@@ -38,6 +38,21 @@ class DirectAdminService
     }
 
     /**
+     * Get detailed connection diagnostics for debugging
+     */
+    public function getConnectionDiagnostics(): array
+    {
+        return [
+            'configured' => $this->isConfigured(),
+            'api_url' => $this->apiUrl,
+            'username' => $this->username,
+            'has_password' => !empty($this->password),
+            'node_id' => $this->node?->id,
+            'node_name' => $this->node?->name,
+        ];
+    }
+
+    /**
      * Create a hosting account on DirectAdmin
      *
      * @param Service $service
@@ -225,6 +240,7 @@ class DirectAdminService
                 'api_url' => $this->apiUrl,
             ]);
 
+            // Return empty array with error context
             return [];
         }
     }
