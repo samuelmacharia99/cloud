@@ -239,7 +239,7 @@ class DirectAdminService
                     return [];
                 }
 
-                // Parse JSON response
+                // Parse JSON response (can be direct array or object with list key)
                 $responseData = $response->json();
                 if (!$responseData) {
                     Log::warning('DirectAdmin API returned invalid JSON', [
@@ -249,7 +249,11 @@ class DirectAdminService
                     return [];
                 }
 
-                $packageNames = $responseData['list'] ?? [];
+                // Handle both formats: direct array or object with list key
+                $packageNames = is_array($responseData) && isset($responseData[0]) && !isset($responseData['list'])
+                    ? $responseData  // Direct array format: ["Bronze", "Gold", ...]
+                    : ($responseData['list'] ?? []);  // Object format: {"list": ["Bronze", ...]}
+
                 if (!is_array($packageNames)) {
                     $packageNames = [$packageNames];
                 }
