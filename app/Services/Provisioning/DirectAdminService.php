@@ -226,6 +226,17 @@ class DirectAdminService
                     return [];
                 }
 
+                // Check if response is HTML (error/login page) instead of form-encoded data
+                if (stripos($body, '<!DOCTYPE') !== false || stripos($body, '<html') !== false) {
+                    Log::warning('DirectAdmin API returned HTML instead of data', [
+                        'node_id' => $this->node?->id,
+                        'status' => $response->status(),
+                        'body_preview' => substr($body, 0, 500),
+                        'likely_issue' => 'Login key may lack CMD_API_PACKAGES_USER permission',
+                    ]);
+                    return [];
+                }
+
                 // DirectAdmin returns form-encoded data like: package1=data&package2=data
                 parse_str($body, $responseData);
 
