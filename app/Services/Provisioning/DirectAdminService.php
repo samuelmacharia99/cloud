@@ -196,6 +196,7 @@ class DirectAdminService
 
     /**
      * Fetch all packages from DirectAdmin server
+     * DirectAdmin returns form-encoded data, not JSON
      *
      * @return array Array of packages with their specs, or empty array on failure
      */
@@ -209,45 +210,35 @@ class DirectAdminService
         try {
             $response = Http::timeout(30)
                 ->withBasicAuth($this->username, $this->password)
-                ->acceptJson()
-                ->get("{$this->apiUrl}/CMD_API_PACKAGE_MANAGER", [
-                    'action' => 'list',
-                ])
+                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER")
                 ->throw();
 
             $packages = [];
-            $responseData = null;
 
             if ($response->ok()) {
-                $responseData = $response->json();
+                $body = $response->body();
 
-                if ($responseData === null) {
-                    Log::warning('DirectAdmin API returned null/empty response', [
+                if (empty($body)) {
+                    Log::warning('DirectAdmin API returned empty response', [
                         'node_id' => $this->node?->id,
                         'status' => $response->status(),
-                        'body' => $response->body(),
                     ]);
                     return [];
                 }
 
+                // DirectAdmin returns form-encoded data like: package1=data&package2=data
+                parse_str($body, $responseData);
+
                 Log::debug('DirectAdmin API response', [
                     'node_id' => $this->node?->id,
-                    'response_keys' => array_keys($responseData ?? []),
-                    'full_response' => json_encode($responseData),
+                    'package_count' => count($responseData),
+                    'package_names' => array_keys($responseData),
                 ]);
 
-                if (isset($responseData['packages']) && is_array($responseData['packages'])) {
-                    foreach ($responseData['packages'] as $packageName => $packageData) {
-                        $packages[] = $this->parsePackageData($packageName, $packageData);
-                    }
-                } else {
-                    // API responded but no 'packages' key
-                    Log::warning('DirectAdmin API no packages in response', [
-                        'node_id' => $this->node?->id,
-                        'response' => $responseData,
-                        'response_keys' => array_keys($responseData ?? []),
-                    ]);
-                    return [];
+                foreach ($responseData as $packageName => $packageData) {
+                    // Parse the form-encoded package data
+                    parse_str($packageData, $packageInfo);
+                    $packages[] = $this->parsePackageData($packageName, $packageInfo);
                 }
             }
 
@@ -264,7 +255,6 @@ class DirectAdminService
                 'api_url' => $this->apiUrl,
             ]);
 
-            // Return empty array
             return [];
         }
     }
