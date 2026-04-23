@@ -68,7 +68,8 @@
         </div>
     </div>
 
-    <!-- Utilization -->
+    <!-- Utilization (not for DirectAdmin control panel servers) -->
+    @if($node->type !== 'directadmin')
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Resource Utilization</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -115,6 +116,7 @@
             </div>
         </div>
     </div>
+    @endif
 
     <!-- Monitoring Dashboard (for container hosts and database servers) -->
     @if($node->isMonitored())
@@ -318,6 +320,13 @@
 
     <!-- DirectAdmin Packages (DA nodes only) -->
     @if($node->type === 'directadmin')
+        @if(!$node->da_login_key)
+            <div class="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-xl p-4 mb-6">
+                <p class="text-sm font-semibold text-red-800 dark:text-red-200 mb-2">⚠ DirectAdmin Login Key Not Set</p>
+                <p class="text-sm text-red-700 dark:text-red-300">The login key is required to sync packages and test the connection. <a href="{{ route('admin.nodes.edit', $node) }}" class="font-medium underline hover:no-underline">Edit this node</a> and add your DirectAdmin login key.</p>
+            </div>
+        @endif
+
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
             <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
                 <div>

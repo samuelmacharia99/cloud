@@ -219,6 +219,7 @@ class NodeController extends Controller
             'ssh_port' => 'required|string|max:10',
             'api_url' => 'nullable|url',
             'api_token' => 'nullable|string',
+            'da_login_key' => 'nullable|string',
             'verify_ssl' => 'nullable|boolean',
             'description' => 'nullable|string',
             'is_active' => 'nullable|boolean',

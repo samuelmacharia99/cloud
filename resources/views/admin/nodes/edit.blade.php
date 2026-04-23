@@ -199,6 +199,41 @@
                 </label>
             </div>
 
+            <!-- DirectAdmin API Credentials (DirectAdmin nodes only) -->
+            @if($node->type === 'directadmin')
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">DirectAdmin API Authentication</h2>
+                <div class="space-y-6">
+                    <!-- Help Text -->
+                    <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                        <p class="text-sm text-blue-900 dark:text-blue-100">
+                            <span class="font-medium">How to get your Login Key:</span><br>
+                            1. Log in to DirectAdmin control panel<br>
+                            2. Go to Admin > Manage Administrators<br>
+                            3. Click on your admin account<br>
+                            4. Click "Generate Login Key" and copy it
+                        </p>
+                    </div>
+
+                    <!-- Login Key -->
+                    <div>
+                        <label for="da_login_key" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">
+                            DirectAdmin Login Key
+                        </label>
+                        <textarea id="da_login_key" name="da_login_key" rows="4" placeholder="Paste your 20-character login key here..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none font-mono @error('da_login_key') border-red-500 @enderror">{{ old('da_login_key', $node->da_login_key) }}</textarea>
+                        @error('da_login_key')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                        @if(!$node->da_login_key)
+                            <p class="mt-2 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded px-3 py-2">
+                                ⚠ Login key is currently not set. Add it to enable package sync and connection testing.
+                            </p>
+                        @endif
+                    </div>
+                </div>
+            </div>
+            @endif
+
             <!-- Form Actions -->
             <div class="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-slate-800">
                 <a href="{{ route('admin.nodes.show', $node) }}" class="px-6 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">
