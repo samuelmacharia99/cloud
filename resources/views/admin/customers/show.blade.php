@@ -457,7 +457,7 @@
                 </select>
 
                 <!-- DirectAdmin server selection (Shared Hosting) -->
-                <template x-if="isSharedHosting()">
+                <template x-if="selectedProductType === 'shared_hosting'">
                     <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
                         <!-- Server Selection -->
                         <div>
