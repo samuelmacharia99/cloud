@@ -291,16 +291,16 @@ class DirectAdminService
     }
 
     /**
-     * Fetch detailed package information from DirectAdmin via POST
+     * Fetch detailed package information from DirectAdmin
+     * Use CMD_API_PACKAGES_USER with package parameter to get specific package details
      */
     private function getPackageDetails(string $packageName): ?array
     {
         try {
             $response = Http::timeout(30)
                 ->withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_MANAGE_USER_PACKAGES", [
-                    'action' => 'view',
-                    'name' => $packageName,
+                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+                    'package' => $packageName,
                     'json' => 'yes',
                 ])
                 ->throw();
