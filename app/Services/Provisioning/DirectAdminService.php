@@ -291,14 +291,14 @@ class DirectAdminService
     }
 
     /**
-     * Fetch detailed package information from DirectAdmin
+     * Fetch detailed package information from DirectAdmin via POST
      */
     private function getPackageDetails(string $packageName): ?array
     {
         try {
             $response = Http::timeout(30)
                 ->withBasicAuth($this->username, $this->password)
-                ->get("{$this->apiUrl}/CMD_API_MANAGE_USER_PACKAGES", [
+                ->post("{$this->apiUrl}/CMD_API_MANAGE_USER_PACKAGES", [
                     'action' => 'view',
                     'name' => $packageName,
                     'json' => 'yes',
@@ -306,11 +306,21 @@ class DirectAdminService
                 ->throw();
 
             if (!$response->ok()) {
+                Log::warning('Failed to fetch package details - API error', [
+                    'node_id' => $this->node?->id,
+                    'package_name' => $packageName,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
                 return null;
             }
 
             $packageData = $response->json();
             if (!$packageData) {
+                Log::warning('Failed to parse package details JSON', [
+                    'node_id' => $this->node?->id,
+                    'package_name' => $packageName,
+                ]);
                 return null;
             }
 
