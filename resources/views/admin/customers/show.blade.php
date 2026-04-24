@@ -446,50 +446,63 @@
                 </select>
             </div>
 
-            <!-- Product Selection -->
-            <div>
-                <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
-                <select id="product_id" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" :disabled="!selectedProductType" required>
-                    <option value="">Select a product</option>
-                    <template x-for="product in getProductsByType()" :key="product.id">
-                        <option :value="product.id" x-text="product.name"></option>
-                    </template>
-                </select>
+            <!-- Non-Shared Hosting Product Selection -->
+            <template x-if="selectedProductType && selectedProductType !== 'shared_hosting'">
+                <div>
+                    <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
+                    <select id="product_id" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                        <option value="">Select a product</option>
+                        <template x-for="product in getProductsByType()" :key="product.id">
+                            <option :value="product.id" x-text="product.name"></option>
+                        </template>
+                    </select>
+                </div>
+            </template>
 
-                <!-- DirectAdmin server selection (Shared Hosting) -->
-                <template x-if="selectedProductType === 'shared_hosting'">
-                    <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
-                        <!-- Server Selection -->
+            <!-- Shared Hosting: Server → Product → Package -->
+            <template x-if="selectedProductType === 'shared_hosting'">
+                <div class="space-y-4 border-t border-slate-200 dark:border-slate-800 pt-4">
+                    <!-- Server Selection -->
+                    <div>
+                        <label for="node_select" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Server <span class="text-red-500">*</span></label>
+                        <select id="node_select" x-model="selectedNodeId" @change="onNodeChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                            <option value="">Choose a server...</option>
+                            <template x-for="node in daNodes" :key="node.id">
+                                <option :value="node.id" x-text="node.name + ' (' + node.hostname + ')'"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Product Selection (for Shared Hosting) -->
+                    <div>
+                        <label for="product_id_sh" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
+                        <select id="product_id_sh" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                            <option value="">Select a product</option>
+                            <template x-for="product in getProductsByType()" :key="product.id">
+                                <option :value="product.id" x-text="product.name"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Package Selection (Dropdown) -->
+                    <template x-if="selectedNodeId">
                         <div>
-                            <label for="node_select" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Server <span class="text-red-500">*</span></label>
-                            <select id="node_select" x-model="selectedNodeId" @change="onNodeChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
-                                <option value="">Choose a server...</option>
-                                <template x-for="node in daNodes" :key="node.id">
-                                    <option :value="node.id" x-text="node.name + ' (' + node.hostname + ')'"></option>
+                            <label for="package_select" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Package <span class="text-red-500">*</span></label>
+                            <select id="package_select" x-model="selectedPackageId" @change="onPackageChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" :disabled="loadingPackages" required>
+                                <template x-if="loadingPackages">
+                                    <option value="">Loading packages...</option>
+                                </template>
+                                <template x-if="!loadingPackages">
+                                    <option value="">Choose a package...</option>
+                                    <template x-for="pkg in nodePackages" :key="pkg.id">
+                                        <option :value="pkg.id" x-text="pkg.name + ' (' + pkg.disk_quota + ' GB disk, ' + pkg.bandwidth_quota + ' GB bandwidth)'"></option>
+                                    </template>
                                 </template>
                             </select>
                         </div>
-
-                        <!-- Package Selection -->
-                        <template x-if="selectedNodeId">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting Package <span class="text-red-500">*</span></label>
-                                <button type="button" @click="packagePickerOpen = true" :disabled="loadingPackages" class="w-full px-4 py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm hover:border-slate-400 dark:hover:border-slate-500 transition disabled:opacity-50">
-                                    <template x-if="loadingPackages">
-                                        <span>Loading packages...</span>
-                                    </template>
-                                    <template x-if="!loadingPackages && selectedPackage">
-                                        <span x-text="selectedPackage.name + ' - ' + selectedPackage.disk_quota + ' GB disk'"></span>
-                                    </template>
-                                    <template x-if="!loadingPackages && !selectedPackage">
-                                        <span>Click to choose a package...</span>
-                                    </template>
-                                </button>
-                            </div>
-                        </template>
-                    </div>
-                </template>
-            </div>
+                    </template>
+                </div>
+            </template>
 
             <!-- Service Name -->
             <div>
@@ -971,6 +984,7 @@ function initCustomerData() {
         // DirectAdmin server + package selection
         daNodes: @json($daNodes),
         selectedNodeId: '',
+        selectedPackageId: '',
         selectedPackage: null,
         nodePackages: [],
         loadingPackages: false,
@@ -1005,6 +1019,10 @@ function initCustomerData() {
 
         onProductTypeChange() {
             this.selectedProduct = '';
+            this.selectedNodeId = '';
+            this.selectedPackage = null;
+            this.selectedPackageId = '';
+            this.nodePackages = [];
             this.onProductChange();
         },
 
@@ -1084,6 +1102,7 @@ function initCustomerData() {
             if (!this.selectedNodeId) {
                 this.nodePackages = [];
                 this.selectedPackage = null;
+                this.selectedPackageId = '';
                 return;
             }
 
@@ -1095,6 +1114,7 @@ function initCustomerData() {
                 if (!res.ok) throw new Error('Failed to fetch packages');
                 this.nodePackages = await res.json();
                 this.selectedPackage = null;
+                this.selectedPackageId = '';
             } catch (e) {
                 console.error(e);
                 this.nodePackages = [];
@@ -1103,9 +1123,13 @@ function initCustomerData() {
             }
         },
 
-        selectPackage(pkg) {
-            this.selectedPackage = pkg;
-            this.packagePickerOpen = false;
+        onPackageChange() {
+            if (!this.selectedPackageId) {
+                this.selectedPackage = null;
+                return;
+            }
+            const pkg = this.nodePackages.find(p => p.id == this.selectedPackageId);
+            this.selectedPackage = pkg || null;
         },
 
         onAddServiceSubmit(e) {
