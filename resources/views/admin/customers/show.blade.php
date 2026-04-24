@@ -435,14 +435,25 @@
         <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6" @submit="onAddServiceSubmit($event)">
             @csrf
 
+            <!-- Product Type Selection -->
+            <div>
+                <label for="product_type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type <span class="text-red-500">*</span></label>
+                <select id="product_type" x-model="selectedProductType" @change="onProductTypeChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                    <option value="">Select a product type</option>
+                    <template x-for="type in getProductTypes()" :key="type">
+                        <option :value="type" x-text="type.replace(/_/g, ' ').replace(/\\b\\w/g, l => l.toUpperCase())"></option>
+                    </template>
+                </select>
+            </div>
+
             <!-- Product Selection -->
             <div>
                 <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product <span class="text-red-500">*</span></label>
-                <select id="product_id" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                <select id="product_id" name="product_id" x-model="selectedProduct" @change="onProductChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" :disabled="!selectedProductType" required>
                     <option value="">Select a product</option>
-                    @foreach ($products as $product)
-                        <option value="{{ $product->id }}">{{ $product->name }} &mdash; {{ \App\Models\Product::typeLabel($product->type) }}</option>
-                    @endforeach
+                    <template x-for="product in getProductsByType()" :key="product.id">
+                        <option :value="product.id" x-text="product.name"></option>
+                    </template>
                 </select>
 
                 <!-- DirectAdmin server selection (Shared Hosting) -->
@@ -945,6 +956,7 @@ function initCustomerData() {
         createInvoiceModal: false,
         productName: '',
         password_visible: false,
+        selectedProductType: '',
         selectedProduct: '',
         products: @json($productsForJs),
 
@@ -979,6 +991,21 @@ function initCustomerData() {
 
         isSharedHosting() {
             return this.currentProduct()?.type === 'shared_hosting';
+        },
+
+        getProductTypes() {
+            const types = new Set(this.products.map(p => p.type));
+            return Array.from(types).sort();
+        },
+
+        getProductsByType() {
+            if (!this.selectedProductType) return [];
+            return this.products.filter(p => p.type === this.selectedProductType);
+        },
+
+        onProductTypeChange() {
+            this.selectedProduct = '';
+            this.onProductChange();
         },
 
         onProductChange() {
