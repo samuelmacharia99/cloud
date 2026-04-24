@@ -540,4 +540,32 @@ class NodeController extends Controller
             return back()->with('error', 'Failed to sync packages: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Return JSON list of synced packages for a DirectAdmin node
+     * Used by AJAX in the Add Service modal for package selection
+     */
+    public function packagesJson(Node $node)
+    {
+        if ($node->type !== 'directadmin') {
+            abort(404, 'Not a DirectAdmin node');
+        }
+
+        $packages = $node->directAdminPackages()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get([
+                'id',
+                'name',
+                'package_key',
+                'disk_quota',
+                'bandwidth_quota',
+                'num_domains',
+                'num_email_accounts',
+                'num_databases',
+                'num_ftp',
+            ]);
+
+        return response()->json($packages);
+    }
 }

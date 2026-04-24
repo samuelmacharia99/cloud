@@ -59,6 +59,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/nodes/{node}/utilization', [\App\Http\Controllers\Admin\NodeController::class, 'updateUtilization'])->name('admin.nodes.update-utilization');
         Route::post('admin/nodes/{node}/heartbeat', [\App\Http\Controllers\Admin\NodeController::class, 'heartbeat'])->name('admin.nodes.heartbeat');
         Route::post('admin/nodes/{node}/sync-packages', [\App\Http\Controllers\Admin\NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');
+        Route::get('admin/nodes/{node}/packages-json', [\App\Http\Controllers\Admin\NodeController::class, 'packagesJson'])->name('admin.nodes.packages-json');
         Route::delete('admin/nodes/{node}', [\App\Http\Controllers\Admin\NodeController::class, 'delete'])->name('admin.nodes.delete');
         Route::resource('admin/domains', \App\Http\Controllers\Admin\DomainController::class)->names('admin.domains');
         Route::get('admin/domains-pricing', [\App\Http\Controllers\Admin\DomainController::class, 'pricing'])->name('admin.domains.pricing');

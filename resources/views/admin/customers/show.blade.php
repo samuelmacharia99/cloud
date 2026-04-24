@@ -445,24 +445,37 @@
                     @endforeach
                 </select>
 
-                <!-- Shared hosting package summary -->
-                <template x-if="isSharedHosting() && currentProduct()?.direct_admin_package">
-                    <div class="mt-3 px-4 py-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm">
-                        <p class="font-semibold text-blue-700 dark:text-blue-300">
-                            DirectAdmin package: <span x-text="currentProduct()?.direct_admin_package?.name"></span>
-                        </p>
-                        <p class="text-blue-700 dark:text-blue-400 mt-1 text-xs">
-                            <span x-text="currentProduct()?.direct_admin_package?.disk_quota + ' GB disk &middot; ' + currentProduct()?.direct_admin_package?.bandwidth_quota + ' GB bandwidth'"></span>
-                            <template x-if="currentProduct()?.direct_admin_package?.node">
-                                <span> &middot; Server: <span x-text="currentProduct()?.direct_admin_package?.node?.name"></span></span>
-                            </template>
-                        </p>
-                    </div>
-                </template>
+                <!-- DirectAdmin server selection (Shared Hosting) -->
+                <template x-if="isSharedHosting()">
+                    <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <!-- Server Selection -->
+                        <div>
+                            <label for="node_select" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Server <span class="text-red-500">*</span></label>
+                            <select id="node_select" x-model="selectedNodeId" @change="onNodeChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                                <option value="">Choose a server...</option>
+                                <template x-for="node in daNodes" :key="node.id">
+                                    <option :value="node.id" x-text="node.name + ' (' + node.hostname + ')'"></option>
+                                </template>
+                            </select>
+                        </div>
 
-                <template x-if="isSharedHosting() && !currentProduct()?.direct_admin_package">
-                    <div class="mt-3 px-4 py-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
-                        This shared-hosting product has no DirectAdmin package linked. Edit the product to attach one before continuing.
+                        <!-- Package Selection -->
+                        <template x-if="selectedNodeId">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting Package <span class="text-red-500">*</span></label>
+                                <button type="button" @click="packagePickerOpen = true" :disabled="loadingPackages" class="w-full px-4 py-2 border-2 border-dashed border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm hover:border-slate-400 dark:hover:border-slate-500 transition disabled:opacity-50">
+                                    <template x-if="loadingPackages">
+                                        <span>Loading packages...</span>
+                                    </template>
+                                    <template x-if="!loadingPackages && selectedPackage">
+                                        <span x-text="selectedPackage.name + ' - ' + selectedPackage.disk_quota + ' GB disk'"></span>
+                                    </template>
+                                    <template x-if="!loadingPackages && !selectedPackage">
+                                        <span>Click to choose a package...</span>
+                                    </template>
+                                </button>
+                            </div>
+                        </template>
                     </div>
                 </template>
             </div>
@@ -651,6 +664,10 @@
                 <label for="generate_invoice" class="text-sm text-slate-900 dark:text-white">Generate invoice for this service (10 days before next due date)</label>
             </div>
 
+            <!-- Hidden fields for DirectAdmin server + package -->
+            <input type="hidden" name="node_id" :value="selectedNodeId">
+            <input type="hidden" name="da_package_key" :value="selectedPackage?.package_key || ''">
+
             <!-- Submit Button -->
             <div class="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
                 <button type="button" @click="addServiceModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
@@ -661,6 +678,47 @@
                 </button>
             </div>
         </form>
+        </div>
+    </div>
+
+    <!-- Package Picker Modal (overlays Add Service modal) -->
+    <div x-show="packagePickerOpen && isSharedHosting()" x-transition class="fixed inset-0 bg-black/70 z-60 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-screen overflow-y-auto">
+            <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <h3 class="text-lg font-bold text-slate-900 dark:text-white">Select a Hosting Package</h3>
+                <button @click="packagePickerOpen = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="p-6">
+                <template x-if="loadingPackages">
+                    <div class="text-center py-8 text-slate-500 dark:text-slate-400">Loading packages...</div>
+                </template>
+
+                <template x-if="!loadingPackages && nodePackages.length === 0">
+                    <div class="text-center py-8 text-slate-500 dark:text-slate-400">No packages available on this server.</div>
+                </template>
+
+                <template x-if="!loadingPackages && nodePackages.length > 0">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <template x-for="pkg in nodePackages" :key="pkg.id">
+                            <button type="button" @click="selectPackage(pkg)" class="p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-left">
+                                <h4 class="font-semibold text-slate-900 dark:text-white" x-text="pkg.name"></h4>
+                                <div class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                                    <p>💾 <span x-text="pkg.disk_quota + ' GB'"></span> disk</p>
+                                    <p>🚀 <span x-text="pkg.bandwidth_quota + ' GB'"></span> bandwidth</p>
+                                    <p>🌐 <span x-text="pkg.num_domains"></span> domains</p>
+                                    <p>📧 <span x-text="pkg.num_email_accounts"></span> email accounts</p>
+                                    <p>🗂️ <span x-text="pkg.num_databases"></span> databases</p>
+                                </div>
+                            </button>
+                        </template>
+                    </div>
+                </template>
+            </div>
         </div>
     </div>
 
@@ -898,6 +956,14 @@ function initCustomerData() {
         generatingUsername: false,
         passwordCopied: false,
 
+        // DirectAdmin server + package selection
+        daNodes: @json($daNodes),
+        selectedNodeId: '',
+        selectedPackage: null,
+        nodePackages: [],
+        loadingPackages: false,
+        packagePickerOpen: false,
+
         // Date fields
         commencedAt: '',
         nextDueDate: '',
@@ -925,11 +991,17 @@ function initCustomerData() {
                 this.daUsername = '';
                 this.daPassword = '';
                 this.daDomain = '';
+                this.selectedNodeId = '';
+                this.selectedPackage = null;
+                this.nodePackages = [];
                 this.suggestUsername();
             } else {
                 this.daUsername = '';
                 this.daPassword = '';
                 this.daDomain = '';
+                this.selectedNodeId = '';
+                this.selectedPackage = null;
+                this.nodePackages = [];
             }
         },
 
@@ -981,12 +1053,45 @@ function initCustomerData() {
             }
         },
 
+        async onNodeChange() {
+            if (!this.selectedNodeId) {
+                this.nodePackages = [];
+                this.selectedPackage = null;
+                return;
+            }
+
+            this.loadingPackages = true;
+            try {
+                const res = await fetch(`/admin/nodes/${this.selectedNodeId}/packages-json`, {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!res.ok) throw new Error('Failed to fetch packages');
+                this.nodePackages = await res.json();
+                this.selectedPackage = null;
+            } catch (e) {
+                console.error(e);
+                this.nodePackages = [];
+            } finally {
+                this.loadingPackages = false;
+            }
+        },
+
+        selectPackage(pkg) {
+            this.selectedPackage = pkg;
+            this.packagePickerOpen = false;
+        },
+
         onAddServiceSubmit(e) {
-            // Extra client-side guard: shared hosting needs all DA fields.
+            // Extra client-side guard: shared hosting needs all DA fields + server + package.
             if (this.isSharedHosting()) {
-                if (!this.currentProduct()?.direct_admin_package) {
+                if (!this.selectedNodeId) {
                     e.preventDefault();
-                    alert('This shared-hosting product has no DirectAdmin package linked. Edit the product to attach one before continuing.');
+                    alert('Please select a DirectAdmin server.');
+                    return false;
+                }
+                if (!this.selectedPackage) {
+                    e.preventDefault();
+                    alert('Please select a hosting package from the server.');
                     return false;
                 }
                 if (!this.daUsername || !this.daPassword || !this.daDomain) {

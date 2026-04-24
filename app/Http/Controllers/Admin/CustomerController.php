@@ -116,7 +116,14 @@ class CustomerController extends Controller
             ];
         })->values()->toArray();
 
-        return view('admin.customers.show', compact('customer', 'products', 'productsForJs'));
+        // Get active DirectAdmin nodes for server selection in Add Service modal
+        $daNodes = \App\Models\Node::where('type', 'directadmin')
+            ->where('is_active', true)
+            ->where('status', 'online')
+            ->orderBy('name')
+            ->get(['id', 'name', 'hostname', 'status']);
+
+        return view('admin.customers.show', compact('customer', 'products', 'productsForJs', 'daNodes'));
     }
 
     public function edit(User $customer)
@@ -406,6 +413,8 @@ class CustomerController extends Controller
         ];
 
         if ($isSharedHosting) {
+            $rules['node_id'] = 'required|exists:nodes,id';
+            $rules['da_package_key'] = 'required|string';
             $rules['direct_admin_username'] = [
                 'required',
                 'string',
@@ -440,20 +449,31 @@ class CustomerController extends Controller
         ]);
 
         try {
-            $createdService = \DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting) {
+            // Pre-load package for shared hosting to avoid N+1 in transaction
+            $selectedPackage = null;
+            if ($isSharedHosting) {
+                $selectedPackage = \App\Models\DirectAdminPackage::where('node_id', $validated['node_id'])
+                    ->where('package_key', $validated['da_package_key'])
+                    ->with('node')
+                    ->firstOrFail();
+            }
+
+            $createdService = \DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting, $selectedPackage) {
                 $serviceMeta = [];
+                $nodeId = null;
 
                 if ($isSharedHosting) {
-                    $package = $product->directAdminPackage;
+                    $package = $selectedPackage;
+                    $nodeId = $package->node_id;
 
                     $serviceMeta = [
                         'username' => $validated['direct_admin_username'],
                         'password' => $validated['direct_admin_password'],
                         'domain' => strtolower($validated['direct_admin_domain']),
-                        'package' => $package?->package_key,
-                        'package_name' => $package?->name,
-                        'node_id' => $package?->node_id,
-                        'node_name' => $package?->node?->name,
+                        'package' => $package->package_key,
+                        'package_name' => $package->name,
+                        'node_id' => $package->node_id,
+                        'node_name' => $package->node->name,
                     ];
                 } else {
                     if (!empty($validated['username'])) {
@@ -481,7 +501,7 @@ class CustomerController extends Controller
                 $service = \App\Models\Service::create([
                     'user_id' => $customer->id,
                     'product_id' => $validated['product_id'],
-                    'node_id' => $isSharedHosting ? ($product->directAdminPackage?->node_id) : null,
+                    'node_id' => $nodeId,
                     'name' => $validated['name'],
                     'status' => $validated['status'],
                     'billing_cycle' => $validated['billing_cycle'],
@@ -521,11 +541,11 @@ class CustomerController extends Controller
             // to record the service manually, and the credentials are saved either
             // way so the admin can sync later.
             $message = "Service {$validated['name']} added successfully.";
-            if ($isSharedHosting && $product->directAdminPackage && $product->directAdminPackage->node_id) {
+            if ($isSharedHosting && $selectedPackage && $selectedPackage->node_id) {
                 $provisionResult = $this->provisionDirectAdminAccount($createdService, $validated);
 
                 if ($provisionResult['success']) {
-                    $message .= ' DirectAdmin account provisioned on ' . $product->directAdminPackage->node->name . '.';
+                    $message .= ' DirectAdmin account provisioned on ' . $selectedPackage->node->name . '.';
                 } else {
                     $message .= ' DirectAdmin provisioning skipped: ' . $provisionResult['message'];
                 }
