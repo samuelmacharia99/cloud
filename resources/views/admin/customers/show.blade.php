@@ -1030,23 +1030,14 @@ function initCustomerData() {
             const product = this.currentProduct();
             this.productName = product?.name || '';
 
-            // Reset DA fields when switching products so stale values don't leak
-            // between selections.
+            // Reset only DA credentials when switching products
+            // Keep server/package selection intact
+            this.daUsername = '';
+            this.daPassword = '';
+            this.daDomain = '';
+
             if (this.isSharedHosting()) {
-                this.daUsername = '';
-                this.daPassword = '';
-                this.daDomain = '';
-                this.selectedNodeId = '';
-                this.selectedPackage = null;
-                this.nodePackages = [];
                 this.suggestUsername();
-            } else {
-                this.daUsername = '';
-                this.daPassword = '';
-                this.daDomain = '';
-                this.selectedNodeId = '';
-                this.selectedPackage = null;
-                this.nodePackages = [];
             }
         },
 
