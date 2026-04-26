@@ -1090,7 +1090,10 @@ function initCustomerData() {
         },
 
         async onNodeChange() {
+            console.log('[onNodeChange] selectedNodeId:', this.selectedNodeId);
+
             if (!this.selectedNodeId) {
+                console.log('[onNodeChange] No node selected, clearing packages');
                 this.nodePackages = [];
                 this.selectedPackage = null;
                 this.selectedPackageId = '';
@@ -1098,16 +1101,25 @@ function initCustomerData() {
             }
 
             this.loadingPackages = true;
+            const url = `/admin/nodes/${this.selectedNodeId}/packages-json`;
+            console.log('[onNodeChange] Fetching packages from:', url);
+
             try {
-                const res = await fetch(`/admin/nodes/${this.selectedNodeId}/packages-json`, {
+                const res = await fetch(url, {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
-                if (!res.ok) throw new Error('Failed to fetch packages');
+                console.log('[onNodeChange] Response status:', res.status);
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
                 this.nodePackages = await res.json();
+                console.log('[onNodeChange] Packages loaded:', this.nodePackages.length, 'items');
+                console.log('[onNodeChange] Package details:', this.nodePackages);
+
                 this.selectedPackage = null;
                 this.selectedPackageId = '';
             } catch (e) {
-                console.error(e);
+                console.error('[onNodeChange] Error:', e);
                 this.nodePackages = [];
             } finally {
                 this.loadingPackages = false;
@@ -1115,11 +1127,15 @@ function initCustomerData() {
         },
 
         onPackageChange() {
+            console.log('[onPackageChange] selectedPackageId:', this.selectedPackageId);
+            console.log('[onPackageChange] nodePackages:', this.nodePackages);
+
             if (!this.selectedPackageId) {
                 this.selectedPackage = null;
                 return;
             }
             const pkg = this.nodePackages.find(p => p.id == this.selectedPackageId);
+            console.log('[onPackageChange] Found package:', pkg);
             this.selectedPackage = pkg || null;
         },
 
