@@ -172,7 +172,7 @@
     <div x-show="tab === 'services'" class="space-y-6">
         <!-- Action Buttons -->
         <div class="flex gap-3">
-            <button @click="addServiceModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+            <button @click="console.log('[Button] Add Service clicked'), addServiceModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                 + Add Service
             </button>
             <button @click="addDomainModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
@@ -1018,6 +1018,7 @@ function initCustomerData() {
         },
 
         onProductTypeChange() {
+            console.log('[onProductTypeChange] Changing product type, clearing selections');
             this.selectedProduct = '';
             this.selectedNodeId = '';
             this.selectedPackage = null;
@@ -1140,24 +1141,37 @@ function initCustomerData() {
         },
 
         onAddServiceSubmit(e) {
+            console.log('[onAddServiceSubmit] Form submission', {
+                isSharedHosting: this.isSharedHosting(),
+                selectedNodeId: this.selectedNodeId,
+                selectedPackage: this.selectedPackage,
+                daUsername: this.daUsername,
+                daPassword: this.daPassword ? '***' : '',
+                daDomain: this.daDomain,
+            });
+
             // Extra client-side guard: shared hosting needs all DA fields + server + package.
             if (this.isSharedHosting()) {
                 if (!this.selectedNodeId) {
+                    console.error('[onAddServiceSubmit] Missing selectedNodeId');
                     e.preventDefault();
                     alert('Please select a DirectAdmin server.');
                     return false;
                 }
                 if (!this.selectedPackage) {
+                    console.error('[onAddServiceSubmit] Missing selectedPackage');
                     e.preventDefault();
                     alert('Please select a hosting package from the server.');
                     return false;
                 }
                 if (!this.daUsername || !this.daPassword || !this.daDomain) {
+                    console.error('[onAddServiceSubmit] Missing DA credentials');
                     e.preventDefault();
                     alert('DirectAdmin username, password, and primary domain are required for shared hosting.');
                     return false;
                 }
             }
+            console.log('[onAddServiceSubmit] Validation passed, submitting form');
         },
 
         todayIso() {
@@ -1181,6 +1195,48 @@ function initCustomerData() {
         },
         fmt(v) {
             return 'Ksh ' + parseFloat(v||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        },
+
+        init() {
+            const self = this;
+            console.log('[init] Customer data initialized');
+
+            // Watch for modal open/close
+            this.$watch('addServiceModal', (val) => {
+                console.log('[watch:addServiceModal] Modal is now', val ? 'OPEN' : 'CLOSED');
+                if (val) {
+                    console.log('[watch:addServiceModal] Current state:', {
+                        selectedProductType: self.selectedProductType,
+                        selectedProduct: self.selectedProduct,
+                        selectedNodeId: self.selectedNodeId,
+                        nodePackages: self.nodePackages.length,
+                        daNodes: self.daNodes.length,
+                    });
+                }
+            });
+
+            // Watch for nodePackages changes
+            this.$watch('nodePackages', (val) => {
+                console.log('[watch:nodePackages] Packages changed to', val.length, 'items');
+                if (val.length > 0) {
+                    console.log('[watch:nodePackages] Packages:', val.map(p => ({ id: p.id, name: p.name, key: p.package_key })));
+                }
+            });
+
+            // Watch for selectedNodeId changes
+            this.$watch('selectedNodeId', (val) => {
+                console.log('[watch:selectedNodeId] Selected node changed to:', val);
+            });
+
+            // Watch for selectedPackage changes
+            this.$watch('selectedPackage', (val) => {
+                console.log('[watch:selectedPackage] Selected package changed to:', val?.name || 'none');
+            });
+
+            // Watch for selectedProduct changes
+            this.$watch('selectedProduct', (val) => {
+                console.log('[watch:selectedProduct] Selected product changed to:', val);
+            });
         }
     }
 }
