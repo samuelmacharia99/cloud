@@ -9,10 +9,11 @@ return new class extends Migration
     /**
      * Run the migrations.
      * Fixes unique constraints to be composite (node_id, field) instead of global
+     * Only applies if constraints don't already exist (idempotent for MySQL/SQLite)
      */
     public function up(): void
     {
-        // Use raw SQL to safely drop old constraints if they exist
+        // Drop old global constraints if they exist
         try {
             \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_name_unique`');
         } catch (\Exception $e) {
@@ -25,11 +26,21 @@ return new class extends Migration
             // Index doesn't exist, that's fine
         }
 
-        Schema::table('direct_admin_packages', function (Blueprint $table) {
-            // Add composite unique constraints so packages can exist on multiple nodes
-            // but are unique within each node
-            $table->unique(['node_id', 'name']);
-            $table->unique(['node_id', 'package_key']);
+        // Check if composite constraints already exist before adding
+        $indexes = \DB::select("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'direct_admin_packages' AND COLUMN_NAME IN ('node_id', 'name')");
+        $hasNodeIdNameConstraint = collect($indexes)->contains(fn($idx) => str_contains($idx->CONSTRAINT_NAME, 'node_id_name'));
+
+        $indexes = \DB::select("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'direct_admin_packages' AND COLUMN_NAME IN ('node_id', 'package_key')");
+        $hasNodeIdPackageKeyConstraint = collect($indexes)->contains(fn($idx) => str_contains($idx->CONSTRAINT_NAME, 'node_id_package_key'));
+
+        Schema::table('direct_admin_packages', function (Blueprint $table) use ($hasNodeIdNameConstraint, $hasNodeIdPackageKeyConstraint) {
+            // Add composite unique constraints if they don't already exist
+            if (!$hasNodeIdNameConstraint) {
+                $table->unique(['node_id', 'name']);
+            }
+            if (!$hasNodeIdPackageKeyConstraint) {
+                $table->unique(['node_id', 'package_key']);
+            }
         });
     }
 
