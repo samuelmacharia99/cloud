@@ -414,11 +414,14 @@ class DirectAdminService
 
     /**
      * Sync packages from DirectAdmin into the database
+     * Uses database transaction to ensure all-or-nothing persistence
      *
      * @return array ['synced' => int, 'updated' => int, 'failed' => int, 'errors' => array]
      */
     public function syncPackages(): array
     {
+        Log::info('Starting DirectAdmin package sync', ['node_id' => $this->node?->id, 'node_name' => $this->node?->name]);
+
         $packages = $this->getPackages();
         $result = ['synced' => 0, 'updated' => 0, 'failed' => 0, 'errors' => []];
 
@@ -428,43 +431,81 @@ class DirectAdminService
             return $result;
         }
 
-        foreach ($packages as $packageData) {
-            try {
-                $existing = DirectAdminPackage::where('package_key', $packageData['package_key'])->first();
-
-                if ($existing) {
-                    $existing->update(array_merge($packageData, ['node_id' => $this->node?->id]));
-                    $result['updated']++;
-                    Log::debug('Updated DirectAdmin package', ['package' => $packageData['package_key']]);
-                } else {
-                    DirectAdminPackage::create(array_merge(
-                        $packageData,
-                        [
-                            'is_active' => true,
-                            'node_id' => $this->node?->id,
-                        ]
-                    ));
-                    $result['synced']++;
-                    Log::debug('Created DirectAdmin package', ['package' => $packageData['package_key']]);
-                }
-            } catch (\Exception $e) {
-                $result['failed']++;
-                $result['errors'][] = "Failed to sync {$packageData['package_key']}: {$e->getMessage()}";
-                Log::error('Failed to sync DirectAdmin package', [
-                    'package' => $packageData['package_key'],
-                    'error' => $e->getMessage(),
-                    'node_id' => $this->node?->id,
-                ]);
-            }
-        }
-
-        Log::info('DirectAdmin package sync completed', [
+        Log::info('Retrieved packages from API', [
             'node_id' => $this->node?->id,
-            'synced' => $result['synced'],
-            'updated' => $result['updated'],
-            'failed' => $result['failed'],
+            'count' => count($packages),
+            'package_keys' => array_column($packages, 'package_key'),
         ]);
 
-        return $result;
+        // Use transaction to ensure data integrity
+        return \DB::transaction(function () use ($packages, $result) {
+            foreach ($packages as $packageData) {
+                try {
+                    // Query by BOTH node_id AND package_key to avoid overwriting packages from other nodes
+                    $existing = DirectAdminPackage::where('node_id', $this->node?->id)
+                        ->where('package_key', $packageData['package_key'])
+                        ->first();
+
+                    if ($existing) {
+                        // Update existing package for this node
+                        $updated = $existing->update(array_merge($packageData, ['node_id' => $this->node?->id]));
+                        if ($updated) {
+                            $result['updated']++;
+                            Log::debug('Updated DirectAdmin package', [
+                                'node_id' => $this->node?->id,
+                                'package_key' => $packageData['package_key'],
+                                'package_name' => $packageData['name'],
+                            ]);
+                        } else {
+                            $result['failed']++;
+                            $result['errors'][] = "Failed to update {$packageData['package_key']}: Update returned false";
+                        }
+                    } else {
+                        // Create new package for this node
+                        $created = DirectAdminPackage::create(array_merge(
+                            $packageData,
+                            [
+                                'is_active' => true,
+                                'node_id' => $this->node?->id,
+                            ]
+                        ));
+
+                        if ($created && $created->id) {
+                            $result['synced']++;
+                            Log::debug('Created DirectAdmin package', [
+                                'node_id' => $this->node?->id,
+                                'package_key' => $packageData['package_key'],
+                                'package_name' => $packageData['name'],
+                                'package_id' => $created->id,
+                            ]);
+                        } else {
+                            $result['failed']++;
+                            $result['errors'][] = "Failed to create {$packageData['package_key']}: Create returned false";
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $result['failed']++;
+                    $errorMsg = "Failed to sync {$packageData['package_key']}: {$e->getMessage()}";
+                    $result['errors'][] = $errorMsg;
+                    Log::error('Failed to sync DirectAdmin package', [
+                        'node_id' => $this->node?->id,
+                        'package_key' => $packageData['package_key'],
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString(),
+                    ]);
+                }
+            }
+
+            Log::info('DirectAdmin package sync completed', [
+                'node_id' => $this->node?->id,
+                'node_name' => $this->node?->name,
+                'synced' => $result['synced'],
+                'updated' => $result['updated'],
+                'failed' => $result['failed'],
+                'errors' => $result['errors'],
+            ]);
+
+            return $result;
+        });
     }
 }
