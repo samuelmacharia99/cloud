@@ -12,24 +12,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Get existing indexes to check what needs to be dropped
-        $sm = \DB::connection()->getDoctrineSchemaManager();
-        $indexes = $sm->listTableIndexes('direct_admin_packages');
+        // Use raw SQL to check and drop constraints safely
+        $connection = \DB::connection()->getDriverName();
 
-        Schema::table('direct_admin_packages', function (Blueprint $table) use ($indexes) {
-            // Drop existing global unique constraints if they exist
-            if (isset($indexes['direct_admin_packages_name_unique'])) {
-                $table->dropUnique('direct_admin_packages_name_unique');
-            } elseif (isset($indexes['name'])) {
-                $table->dropUnique('name');
-            }
+        if ($connection === 'mysql') {
+            // Check if constraints exist and drop them
+            \DB::statement('ALTER TABLE direct_admin_packages DROP INDEX IF EXISTS direct_admin_packages_name_unique');
+            \DB::statement('ALTER TABLE direct_admin_packages DROP INDEX IF EXISTS direct_admin_packages_package_key_unique');
+        }
 
-            if (isset($indexes['direct_admin_packages_package_key_unique'])) {
-                $table->dropUnique('direct_admin_packages_package_key_unique');
-            } elseif (isset($indexes['package_key'])) {
-                $table->dropUnique('package_key');
-            }
-
+        Schema::table('direct_admin_packages', function (Blueprint $table) {
             // Add composite unique constraints so packages can exist on multiple nodes
             // but are unique within each node
             $table->unique(['node_id', 'name']);
@@ -42,22 +34,9 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Get existing indexes to check what needs to be dropped
-        $sm = \DB::connection()->getDoctrineSchemaManager();
-        $indexes = $sm->listTableIndexes('direct_admin_packages');
-
-        Schema::table('direct_admin_packages', function (Blueprint $table) use ($indexes) {
-            if (isset($indexes['direct_admin_packages_node_id_name_unique'])) {
-                $table->dropUnique('direct_admin_packages_node_id_name_unique');
-            } elseif (isset($indexes['node_id_name'])) {
-                $table->dropUnique('node_id_name');
-            }
-
-            if (isset($indexes['direct_admin_packages_node_id_package_key_unique'])) {
-                $table->dropUnique('direct_admin_packages_node_id_package_key_unique');
-            } elseif (isset($indexes['node_id_package_key'])) {
-                $table->dropUnique('node_id_package_key');
-            }
+        Schema::table('direct_admin_packages', function (Blueprint $table) {
+            $table->dropUnique('direct_admin_packages_node_id_name_unique');
+            $table->dropUnique('direct_admin_packages_node_id_package_key_unique');
         });
     }
 };
