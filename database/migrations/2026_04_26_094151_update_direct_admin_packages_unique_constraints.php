@@ -12,18 +12,22 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('direct_admin_packages', function (Blueprint $table) {
+        // Get existing indexes to check what needs to be dropped
+        $sm = \DB::connection()->getDoctrineSchemaManager();
+        $indexes = $sm->listTableIndexes('direct_admin_packages');
+
+        Schema::table('direct_admin_packages', function (Blueprint $table) use ($indexes) {
             // Drop existing global unique constraints if they exist
-            try {
+            if (isset($indexes['direct_admin_packages_name_unique'])) {
                 $table->dropUnique('direct_admin_packages_name_unique');
-            } catch (\Exception $e) {
-                // Constraint may not exist
+            } elseif (isset($indexes['name'])) {
+                $table->dropUnique('name');
             }
 
-            try {
+            if (isset($indexes['direct_admin_packages_package_key_unique'])) {
                 $table->dropUnique('direct_admin_packages_package_key_unique');
-            } catch (\Exception $e) {
-                // Constraint may not exist
+            } elseif (isset($indexes['package_key'])) {
+                $table->dropUnique('package_key');
             }
 
             // Add composite unique constraints so packages can exist on multiple nodes
@@ -38,17 +42,21 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('direct_admin_packages', function (Blueprint $table) {
-            try {
+        // Get existing indexes to check what needs to be dropped
+        $sm = \DB::connection()->getDoctrineSchemaManager();
+        $indexes = $sm->listTableIndexes('direct_admin_packages');
+
+        Schema::table('direct_admin_packages', function (Blueprint $table) use ($indexes) {
+            if (isset($indexes['direct_admin_packages_node_id_name_unique'])) {
                 $table->dropUnique('direct_admin_packages_node_id_name_unique');
-            } catch (\Exception $e) {
-                // Constraint may not exist
+            } elseif (isset($indexes['node_id_name'])) {
+                $table->dropUnique('node_id_name');
             }
 
-            try {
+            if (isset($indexes['direct_admin_packages_node_id_package_key_unique'])) {
                 $table->dropUnique('direct_admin_packages_node_id_package_key_unique');
-            } catch (\Exception $e) {
-                // Constraint may not exist
+            } elseif (isset($indexes['node_id_package_key'])) {
+                $table->dropUnique('node_id_package_key');
             }
         });
     }
