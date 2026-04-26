@@ -12,13 +12,17 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Use raw SQL to check and drop constraints safely
-        $connection = \DB::connection()->getDriverName();
+        // Use raw SQL to safely drop old constraints if they exist
+        try {
+            \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_name_unique`');
+        } catch (\Exception $e) {
+            // Index doesn't exist, that's fine
+        }
 
-        if ($connection === 'mysql') {
-            // Check if constraints exist and drop them
-            \DB::statement('ALTER TABLE direct_admin_packages DROP INDEX IF EXISTS direct_admin_packages_name_unique');
-            \DB::statement('ALTER TABLE direct_admin_packages DROP INDEX IF EXISTS direct_admin_packages_package_key_unique');
+        try {
+            \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_package_key_unique`');
+        } catch (\Exception $e) {
+            // Index doesn't exist, that's fine
         }
 
         Schema::table('direct_admin_packages', function (Blueprint $table) {
