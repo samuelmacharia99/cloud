@@ -1121,17 +1121,22 @@ function initCustomerData() {
                     throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 200)}`);
                 }
 
-                this.nodePackages = await res.json();
+                const jsonData = await res.json();
+                console.log('[onNodeChange] Raw JSON response:', jsonData);
+
+                this.nodePackages = jsonData;
                 console.log('[onNodeChange] ✅ Packages loaded:', this.nodePackages.length, 'items');
+                console.log('[onNodeChange] State nodePackages is now:', this.nodePackages);
 
                 if (this.nodePackages.length === 0) {
                     console.warn('[onNodeChange] ⚠️ Node has 0 packages! This node may not have any packages synced yet.');
                 } else {
-                    console.log('[onNodeChange] Package names:', this.nodePackages.map(p => `${p.name} (${p.disk_quota}GB)`));
+                    console.log('[onNodeChange] Package names:', this.nodePackages.map(p => `${p.name} (disk: ${p.disk_quota}GB, id: ${p.id})`));
                 }
 
                 this.selectedPackage = null;
                 this.selectedPackageId = '';
+                console.log('[onNodeChange] State after reset:', { nodePackages: this.nodePackages.length, selectedPackageId: this.selectedPackageId });
             } catch (e) {
                 console.error('[onNodeChange] ❌ Error fetching packages:', e.message);
                 console.error('[onNodeChange] Full error:', e);

@@ -564,7 +564,20 @@ class NodeController extends Controller
                 'num_email_accounts',
                 'num_databases',
                 'num_ftp',
-            ]);
+            ])
+            ->map(function ($pkg) {
+                return [
+                    'id' => (int) $pkg->id,
+                    'name' => (string) $pkg->name,
+                    'package_key' => (string) $pkg->package_key,
+                    'disk_quota' => (float) $pkg->disk_quota,
+                    'bandwidth_quota' => (float) $pkg->bandwidth_quota,
+                    'num_domains' => (int) $pkg->num_domains,
+                    'num_email_accounts' => (int) $pkg->num_email_accounts,
+                    'num_databases' => (int) $pkg->num_databases,
+                    'num_ftp' => (int) $pkg->num_ftp,
+                ];
+            });
 
         return response()->json($packages);
     }
