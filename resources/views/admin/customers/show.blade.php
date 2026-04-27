@@ -1110,18 +1110,33 @@ function initCustomerData() {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 console.log('[onNodeChange] Response status:', res.status);
+                console.log('[onNodeChange] Response headers:', {
+                    contentType: res.headers.get('content-type'),
+                    contentLength: res.headers.get('content-length'),
+                });
 
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    console.error('[onNodeChange] HTTP Error response:', errorText);
+                    throw new Error(`HTTP ${res.status}: ${errorText.substring(0, 200)}`);
+                }
 
                 this.nodePackages = await res.json();
-                console.log('[onNodeChange] Packages loaded:', this.nodePackages.length, 'items');
-                console.log('[onNodeChange] Package details:', this.nodePackages);
+                console.log('[onNodeChange] ✅ Packages loaded:', this.nodePackages.length, 'items');
+
+                if (this.nodePackages.length === 0) {
+                    console.warn('[onNodeChange] ⚠️ Node has 0 packages! This node may not have any packages synced yet.');
+                } else {
+                    console.log('[onNodeChange] Package names:', this.nodePackages.map(p => `${p.name} (${p.disk_quota}GB)`));
+                }
 
                 this.selectedPackage = null;
                 this.selectedPackageId = '';
             } catch (e) {
-                console.error('[onNodeChange] Error:', e);
+                console.error('[onNodeChange] ❌ Error fetching packages:', e.message);
+                console.error('[onNodeChange] Full error:', e);
                 this.nodePackages = [];
+                alert(`Error loading packages: ${e.message}`);
             } finally {
                 this.loadingPackages = false;
             }
@@ -1200,6 +1215,14 @@ function initCustomerData() {
         init() {
             const self = this;
             console.log('[init] Customer data initialized');
+            console.log('[init] Available DA Nodes:', {
+                count: self.daNodes.length,
+                nodes: self.daNodes.map(n => ({ id: n.id, name: n.name, hostname: n.hostname, status: n.status }))
+            });
+            console.log('[init] Available Products:', {
+                count: self.products.length,
+                sharedHosting: self.products.filter(p => p.type === 'shared_hosting').length
+            });
 
             // Watch for modal open/close
             this.$watch('addServiceModal', (val) => {
@@ -1226,6 +1249,10 @@ function initCustomerData() {
             // Watch for selectedNodeId changes
             this.$watch('selectedNodeId', (val) => {
                 console.log('[watch:selectedNodeId] Selected node changed to:', val);
+                const node = self.daNodes.find(n => n.id == val);
+                if (node) {
+                    console.log('[watch:selectedNodeId] Node details:', { id: node.id, name: node.name, hostname: node.hostname });
+                }
             });
 
             // Watch for selectedPackage changes
