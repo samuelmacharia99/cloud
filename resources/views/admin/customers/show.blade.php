@@ -489,14 +489,10 @@
                         <div>
                             <label for="package_select" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Package <span class="text-red-500">*</span></label>
                             <select id="package_select" x-model="selectedPackageId" @change="onPackageChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" :disabled="loadingPackages" required>
-                                <template x-if="loadingPackages">
-                                    <option value="">Loading packages...</option>
-                                </template>
-                                <template x-if="!loadingPackages">
-                                    <option value="">Choose a package...</option>
-                                    <template x-for="pkg in nodePackages" :key="pkg.id">
-                                        <option :value="pkg.id" x-text="pkg.name + ' (' + pkg.disk_quota + ' GB disk, ' + pkg.bandwidth_quota + ' GB bandwidth)'"></option>
-                                    </template>
+                                <option value="" x-show="loadingPackages">Loading packages...</option>
+                                <option value="" x-show="!loadingPackages">Choose a package...</option>
+                                <template x-for="pkg in nodePackages" :key="pkg.id">
+                                    <option :value="pkg.id" x-show="!loadingPackages" x-text="pkg.name + ' (' + pkg.disk_quota + ' GB disk, ' + pkg.bandwidth_quota + ' GB bandwidth)'"></option>
                                 </template>
                             </select>
                         </div>
