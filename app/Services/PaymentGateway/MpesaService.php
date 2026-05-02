@@ -245,6 +245,13 @@ class MpesaService implements PaymentGatewayInterface
 
                 if ($payment->invoice) {
                     $payment->invoice->update(['status' => InvoiceStatus::Paid->value]);
+
+                    if ($payment->invoice->order) {
+                        $payment->invoice->order->update([
+                            'status' => 'paid',
+                            'payment_status' => 'paid',
+                        ]);
+                    }
                 }
 
                 Log::info('M-Pesa payment completed', [

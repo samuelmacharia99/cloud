@@ -209,6 +209,14 @@ class StripeService implements PaymentGatewayInterface
                 // Update invoice
                 $payment->invoice->update(['status' => 'paid']);
 
+                // Update associated order
+                if ($payment->invoice->order) {
+                    $payment->invoice->order->update([
+                        'status' => 'paid',
+                        'payment_status' => 'paid',
+                    ]);
+                }
+
                 return [
                     'success' => true,
                     'message' => 'Payment received',

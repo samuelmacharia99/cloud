@@ -18,13 +18,30 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $order->order_number }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Manage and track this customer order</p>
         </div>
-        <div class="flex items-center gap-2">
-            <button class="px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8m0 8l-6-2m6 2l6-2"/>
-                </svg>
-                Actions
-            </button>
+        <div class="flex items-center gap-2" x-data="{ actionsOpen: false }">
+            <div class="relative">
+                <button @click="actionsOpen = !actionsOpen" class="px-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8m0 8l-6-2m6 2l6-2"/>
+                    </svg>
+                    Actions
+                </button>
+                <div x-show="actionsOpen" @click.outside="actionsOpen = false" class="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-2 z-10">
+                    @if($order->status !== 'paid')
+                        <form method="POST" action="{{ route('admin.orders.mark-complete', $order) }}" class="block">
+                            @csrf
+                            <button type="submit" class="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                                </svg>
+                                Mark as Complete
+                            </button>
+                        </form>
+                    @else
+                        <div class="px-4 py-2.5 text-sm text-slate-500 dark:text-slate-400 italic">Order already completed</div>
+                    @endif
+                </div>
+            </div>
         </div>
     </div>
 

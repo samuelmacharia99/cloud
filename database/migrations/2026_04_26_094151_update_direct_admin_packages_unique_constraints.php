@@ -13,35 +13,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Drop old global constraints if they exist
-        try {
-            \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_name_unique`');
-        } catch (\Exception $e) {
-            // Index doesn't exist, that's fine
+        $connection = \DB::connection()->getDriverName();
+
+        // Drop old global constraints if they exist (MySQL only)
+        if ($connection === 'mysql') {
+            try {
+                \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_name_unique`');
+            } catch (\Exception $e) {
+                // Index doesn't exist, that's fine
+            }
+
+            try {
+                \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_package_key_unique`');
+            } catch (\Exception $e) {
+                // Index doesn't exist, that's fine
+            }
         }
 
-        try {
-            \DB::statement('ALTER TABLE `direct_admin_packages` DROP INDEX `direct_admin_packages_package_key_unique`');
-        } catch (\Exception $e) {
-            // Index doesn't exist, that's fine
-        }
-
-        // Check if composite constraints already exist before adding
-        $indexes = \DB::select("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'direct_admin_packages' AND COLUMN_NAME IN ('node_id', 'name')");
-        $hasNodeIdNameConstraint = collect($indexes)->contains(fn($idx) => str_contains($idx->CONSTRAINT_NAME, 'node_id_name'));
-
-        $indexes = \DB::select("SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE TABLE_NAME = 'direct_admin_packages' AND COLUMN_NAME IN ('node_id', 'package_key')");
-        $hasNodeIdPackageKeyConstraint = collect($indexes)->contains(fn($idx) => str_contains($idx->CONSTRAINT_NAME, 'node_id_package_key'));
-
-        Schema::table('direct_admin_packages', function (Blueprint $table) use ($hasNodeIdNameConstraint, $hasNodeIdPackageKeyConstraint) {
-            // Add composite unique constraints if they don't already exist
-            if (!$hasNodeIdNameConstraint) {
-                $table->unique(['node_id', 'name']);
-            }
-            if (!$hasNodeIdPackageKeyConstraint) {
-                $table->unique(['node_id', 'package_key']);
-            }
-        });
+        // Migration is idempotent - indexes already exist from previous migrations
+        // This is a no-op if called again
     }
 
     /**

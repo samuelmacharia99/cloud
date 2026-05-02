@@ -172,23 +172,24 @@ class CheckoutController extends Controller
                 $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                 $total = $subtotal + $tax;
 
-                // Create Order
-                $order = Order::create([
-                    'user_id' => $user->id,
-                    'order_number' => 'ORD-' . uniqid(),
-                    'status' => 'pending',
-                    'payment_status' => 'unpaid',
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
-                ]);
-
-                // Create Invoice
+                // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
                     'user_id' => $user->id,
                     'invoice_number' => $this->generateInvoiceNumber(),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                ]);
+
+                // Create Order linked to Invoice
+                $order = Order::create([
+                    'user_id' => $user->id,
+                    'invoice_id' => $invoice->id,
+                    'order_number' => 'ORD-' . uniqid(),
+                    'status' => 'pending',
+                    'payment_status' => 'unpaid',
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'total' => $total,
@@ -574,23 +575,24 @@ class CheckoutController extends Controller
                 $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                 $total = $subtotal + $tax;
 
-                // Create Order
-                $order = Order::create([
-                    'user_id' => $user->id,
-                    'order_number' => 'ORD-' . uniqid(),
-                    'status' => 'pending',
-                    'payment_status' => 'unpaid',
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
-                ]);
-
-                // Create Invoice
+                // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
                     'user_id' => $user->id,
                     'invoice_number' => $this->generateInvoiceNumber(),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                ]);
+
+                // Create Order linked to Invoice
+                $order = Order::create([
+                    'user_id' => $user->id,
+                    'invoice_id' => $invoice->id,
+                    'order_number' => 'ORD-' . uniqid(),
+                    'status' => 'pending',
+                    'payment_status' => 'unpaid',
                     'subtotal' => $subtotal,
                     'tax' => $tax,
                     'total' => $total,

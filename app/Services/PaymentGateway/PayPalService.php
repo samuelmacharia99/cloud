@@ -295,6 +295,13 @@ class PayPalService implements PaymentGatewayInterface
                 // Update invoice if payment completed
                 if ($status === 'COMPLETED') {
                     $payment->invoice->update(['status' => 'paid']);
+
+                    if ($payment->invoice->order) {
+                        $payment->invoice->order->update([
+                            'status' => 'paid',
+                            'payment_status' => 'paid',
+                        ]);
+                    }
                 }
 
                 return [

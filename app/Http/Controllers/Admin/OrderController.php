@@ -47,4 +47,16 @@ class OrderController extends Controller
         $order->load('user', 'items.product');
         return view('admin.orders.show', compact('order'));
     }
+
+    public function markComplete(Order $order)
+    {
+        $this->authorize('update', $order);
+
+        $order->update([
+            'status' => 'paid',
+            'payment_status' => 'paid',
+        ]);
+
+        return redirect()->route('admin.orders.show', $order)->with('success', 'Order marked as complete');
+    }
 }
