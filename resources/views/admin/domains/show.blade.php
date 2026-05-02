@@ -58,12 +58,17 @@
 
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Expires</p>
-            <p class="text-2xl font-bold {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">
-                {{ $domain->expires_at->format('M d, Y') }}
-            </p>
-            <p class="text-xs {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">
-                {{ $domain->daysUntilExpiry() }} days {{ $domain->isExpired() ? 'overdue' : 'remaining' }}
-            </p>
+            @if ($domain->expires_at)
+                <p class="text-2xl font-bold {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">
+                    {{ $domain->expires_at->format('M d, Y') }}
+                </p>
+                <p class="text-xs {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }} mt-2">
+                    {{ $domain->daysUntilExpiry() }} days {{ $domain->isExpired() ? 'overdue' : 'remaining' }}
+                </p>
+            @else
+                <p class="text-2xl font-bold text-slate-500 dark:text-slate-400 mt-2">—</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Not yet activated</p>
+            @endif
         </div>
     </div>
 

@@ -57,17 +57,17 @@ class Domain extends Model
 
     public function isActive(): bool
     {
-        return $this->status === 'active' && $this->expires_at->isFuture();
+        return $this->status === 'active' && $this->expires_at?->isFuture();
     }
 
     public function isExpired(): bool
     {
-        return $this->expires_at->isPast();
+        return $this->expires_at?->isPast() ?? false;
     }
 
     public function daysUntilExpiry(): int
     {
-        return now()->diffInDays($this->expires_at);
+        return $this->expires_at ? now()->diffInDays($this->expires_at) : 0;
     }
 
     /**

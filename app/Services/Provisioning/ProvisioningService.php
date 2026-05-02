@@ -27,6 +27,11 @@ class ProvisioningService
             } else {
                 // For domains, manual hosting, etc. — just activate
                 $service->update(['status' => 'active']);
+
+                // If this is a domain service, activate the domain
+                if ($service->product && $service->product->type === 'domain') {
+                    $this->activateDomain($service);
+                }
             }
 
             // Send service activated notification (only if not already sent by the driver)
@@ -202,6 +207,36 @@ class ProvisioningService
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
         }
+    }
+
+    /**
+     * Activate a domain after payment is received
+     */
+    private function activateDomain(Service $service): void
+    {
+        $domainId = $service->service_meta['domain_id'] ?? null;
+        if (!$domainId) {
+            return;
+        }
+
+        $domain = \App\Models\Domain::find($domainId);
+        if (!$domain) {
+            return;
+        }
+
+        $years = $service->service_meta['years'] ?? 1;
+        $domain->update([
+            'status' => 'active',
+            'registered_at' => now(),
+            'expires_at' => now()->addYears($years),
+        ]);
+
+        \Log::info("Domain activated after payment", [
+            'domain_id' => $domain->id,
+            'domain_name' => $domain->name,
+            'service_id' => $service->id,
+            'expires_at' => $domain->expires_at,
+        ]);
     }
 
     /**
