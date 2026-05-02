@@ -264,50 +264,64 @@ class CheckoutController extends Controller
                             'status' => 'pending',
                         ]);
 
+                        // Get or create domain product
+                        $domainProduct = Product::where('type', 'domain')->firstOrCreate(
+                            ['type' => 'domain'],
+                            [
+                                'name' => 'Domain Registration',
+                                'slug' => 'domain-registration',
+                                'description' => 'Domain registration and renewal',
+                                'category' => 'domains',
+                                'price' => 0,
+                                'billing_cycle' => 'annual',
+                                'is_active' => true,
+                                'visible_to_resellers' => false,
+                            ]
+                        );
+
+                        // Create OrderItem
+                        $orderItem = OrderItem::create([
+                            'order_id' => $order->id,
+                            'product_id' => $domainProduct->id,
+                            'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                            'billing_cycle' => 'annual',
+                            'custom_options' => [
+                                'domain' => $item['domain'],
+                                'extension' => $item['extension'],
+                                'years' => $item['years'],
+                            ],
+                        ]);
+
                         // Create Service for domain
-                        $domainProduct = Product::where('type', 'domain')->first();
-                        if ($domainProduct) {
-                            $orderItem = OrderItem::create([
-                                'order_id' => $order->id,
-                                'product_id' => $domainProduct->id,
-                                'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
-                                'quantity' => 1,
-                                'unit_price' => $item['unit_price'],
-                                'amount' => $item['amount'],
-                                'billing_cycle' => 'annual',
-                                'custom_options' => [
-                                    'domain' => $item['domain'],
-                                    'extension' => $item['extension'],
-                                    'years' => $item['years'],
-                                ],
-                            ]);
+                        $service = Service::create([
+                            'user_id' => $user->id,
+                            'product_id' => $domainProduct->id,
+                            'order_item_id' => $orderItem->id,
+                            'name' => "{$item['domain']}{$item['extension']}",
+                            'status' => 'pending',
+                            'billing_cycle' => 'annual',
+                            'next_due_date' => now()->addDays($item['years'] * 365),
+                            'service_meta' => [
+                                'domain_id' => $domain->id,
+                                'domain_name' => $item['domain'],
+                                'extension' => $item['extension'],
+                                'years' => $item['years'],
+                            ],
+                        ]);
 
-                            $service = Service::create([
-                                'user_id' => $user->id,
-                                'product_id' => $domainProduct->id,
-                                'order_item_id' => $orderItem->id,
-                                'name' => "{$item['domain']}{$item['extension']}",
-                                'status' => 'pending',
-                                'billing_cycle' => 'annual',
-                                'next_due_date' => now()->addDays($item['years'] * 365),
-                                'service_meta' => [
-                                    'domain_id' => $domain->id,
-                                    'domain_name' => $item['domain'],
-                                    'extension' => $item['extension'],
-                                    'years' => $item['years'],
-                                ],
-                            ]);
-
-                            InvoiceItem::create([
-                                'invoice_id' => $invoice->id,
-                                'service_id' => $service->id,
-                                'product_id' => $domainProduct->id,
-                                'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
-                                'quantity' => 1,
-                                'unit_price' => $item['unit_price'],
-                                'amount' => $item['amount'],
-                            ]);
-                        }
+                        // Create InvoiceItem
+                        InvoiceItem::create([
+                            'invoice_id' => $invoice->id,
+                            'service_id' => $service->id,
+                            'product_id' => $domainProduct->id,
+                            'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                        ]);
                     }
                 }
 
@@ -648,40 +662,64 @@ class CheckoutController extends Controller
                             'status' => 'pending',
                         ]);
 
+                        // Get or create domain product
+                        $domainProduct = Product::where('type', 'domain')->firstOrCreate(
+                            ['type' => 'domain'],
+                            [
+                                'name' => 'Domain Registration',
+                                'slug' => 'domain-registration',
+                                'description' => 'Domain registration and renewal',
+                                'category' => 'domains',
+                                'price' => 0,
+                                'billing_cycle' => 'annual',
+                                'is_active' => true,
+                                'visible_to_resellers' => false,
+                            ]
+                        );
+
+                        // Create OrderItem
+                        $orderItem = OrderItem::create([
+                            'order_id' => $order->id,
+                            'product_id' => $domainProduct->id,
+                            'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                            'billing_cycle' => 'annual',
+                            'custom_options' => [
+                                'domain' => $item['domain'],
+                                'extension' => $item['extension'],
+                                'years' => $item['years'],
+                            ],
+                        ]);
+
                         // Create Service for domain
-                        $domainProduct = Product::where('type', 'domain')->first();
-                        if ($domainProduct) {
-                            $orderItem = OrderItem::create([
-                                'order_id' => $order->id,
-                                'product_id' => $domainProduct->id,
-                                'description' => "{$item['domain']}{$item['extension']}",
-                                'quantity' => 1,
-                                'unit_price' => $item['unit_price'],
-                                'amount' => $item['amount'],
-                                'billing_cycle' => 'annual',
-                                'custom_options' => [],
-                            ]);
+                        $service = Service::create([
+                            'user_id' => $user->id,
+                            'product_id' => $domainProduct->id,
+                            'order_item_id' => $orderItem->id,
+                            'name' => "{$item['domain']}{$item['extension']}",
+                            'status' => 'pending',
+                            'billing_cycle' => 'annual',
+                            'next_due_date' => now()->addDays($item['years'] * 365),
+                            'service_meta' => [
+                                'domain_id' => $domain->id,
+                                'domain_name' => $item['domain'],
+                                'extension' => $item['extension'],
+                                'years' => $item['years'],
+                            ],
+                        ]);
 
-                            $service = Service::create([
-                                'user_id' => $user->id,
-                                'product_id' => $domainProduct->id,
-                                'order_item_id' => $orderItem->id,
-                                'name' => "{$item['domain']}{$item['extension']}",
-                                'status' => 'pending',
-                                'billing_cycle' => 'annual',
-                                'next_due_date' => now()->addDays(365),
-                            ]);
-
-                            InvoiceItem::create([
-                                'invoice_id' => $invoice->id,
-                                'service_id' => $service->id,
-                                'product_id' => $domainProduct->id,
-                                'description' => "{$item['domain']}{$item['extension']}",
-                                'quantity' => 1,
-                                'unit_price' => $item['unit_price'],
-                                'amount' => $item['amount'],
-                            ]);
-                        }
+                        // Create InvoiceItem
+                        InvoiceItem::create([
+                            'invoice_id' => $invoice->id,
+                            'service_id' => $service->id,
+                            'product_id' => $domainProduct->id,
+                            'description' => "{$item['domain']}{$item['extension']} ({$item['years']} year(s))",
+                            'quantity' => 1,
+                            'unit_price' => $item['unit_price'],
+                            'amount' => $item['amount'],
+                        ]);
                     }
                 }
 
