@@ -86,7 +86,7 @@
         <!-- Expiry Date -->
         <div>
             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Expiry Date <span class="text-red-600">*</span></label>
-            <input type="date" name="expires_at" value="{{ $domain->expires_at->format('Y-m-d') }}" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+            <input type="date" name="expires_at" value="{{ $domain->expires_at ? $domain->expires_at->format('Y-m-d') : '' }}" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
             @error('expires_at')
                 <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
             @enderror
