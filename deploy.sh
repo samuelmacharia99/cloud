@@ -62,14 +62,14 @@ log "Time: $(date)"
 cd "$APP_PATH" || error "Cannot change to app directory: $APP_PATH"
 
 # Step 1: Verify .env exists before making changes
-log "Step 1/8: Verifying .env file..."
+log "Step 1/9: Verifying .env file..."
 if [ ! -f "$APP_PATH/.env" ]; then
     error ".env file not found. Cannot proceed without configuration."
 fi
 log ".env verified ✓"
 
 # Step 2: Backup current state
-log "Step 2/8: Creating backup..."
+log "Step 2/9: Creating backup..."
 BACKUP_NAME="backup_${TIMESTAMP}"
 mkdir -p "$BACKUP_DIR/$BACKUP_NAME"
 
@@ -83,14 +83,14 @@ fi
 log "Backup created at $BACKUP_DIR/$BACKUP_NAME ✓"
 
 # Step 3: Fetch latest code from GitHub
-log "Step 3/8: Fetching latest code from GitHub..."
+log "Step 3/9: Fetching latest code from GitHub..."
 git fetch origin || error "Failed to fetch from GitHub"
 git checkout "$GIT_BRANCH" || error "Failed to checkout $GIT_BRANCH"
 git reset --hard "origin/$GIT_BRANCH" || error "Failed to reset to origin/$GIT_BRANCH"
 log "Code updated to latest version ✓"
 
 # Step 4: Install/update Composer dependencies
-log "Step 4/8: Installing Composer dependencies..."
+log "Step 4/9: Installing Composer dependencies..."
 if ! command -v composer &> /dev/null; then
     error "Composer not found. Please install Composer first."
 fi
@@ -98,7 +98,7 @@ composer install --no-dev --optimize-autoloader --no-interaction || error "Compo
 log "Dependencies installed ✓"
 
 # Step 5: Run migrations (with confirmation)
-log "Step 5/8: Checking for pending migrations..."
+log "Step 5/9: Checking for pending migrations..."
 PENDING_MIGRATIONS=$(php artisan migrate:status 2>/dev/null | grep -c "Pending" || true)
 if [ "$PENDING_MIGRATIONS" -gt 0 ]; then
     log "Found $PENDING_MIGRATIONS pending migrations"
@@ -109,7 +109,7 @@ else
 fi
 
 # Step 6: Clear caches and compiled files
-log "Step 6/8: Clearing caches..."
+log "Step 6/9: Clearing caches..."
 php artisan cache:clear || warning "Could not clear cache"
 php artisan config:clear || warning "Could not clear config cache"
 php artisan route:clear || warning "Could not clear route cache"
@@ -117,14 +117,22 @@ php artisan view:clear || warning "Could not clear view cache"
 log "Caches cleared ✓"
 
 # Step 7: Optimize application
-log "Step 7/8: Optimizing application..."
+log "Step 7/9: Optimizing application..."
 php artisan config:cache || warning "Could not cache config"
 php artisan route:cache || warning "Could not cache routes"
 php artisan view:cache || warning "Could not cache views"
 log "Application optimized ✓"
 
-# Step 8: Set permissions and finish
-log "Step 8/8: Setting permissions..."
+# Step 8: Build frontend assets
+log "Step 8/9: Building frontend assets..."
+if ! command -v npm &> /dev/null; then
+    error "npm not found. Please install Node.js and npm first."
+fi
+npm run build || error "Frontend build failed"
+log "Frontend assets built ✓"
+
+# Step 9: Set permissions and finish
+log "Step 9/9: Setting permissions..."
 
 # Check if running as root (production) or local user (development)
 if [ "$EUID" -eq 0 ]; then
