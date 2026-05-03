@@ -113,6 +113,16 @@ class User extends Authenticatable
         return $this->hasMany(Credit::class);
     }
 
+    public function wallet()
+    {
+        return $this->hasOne(ResellerWallet::class, 'reseller_id');
+    }
+
+    public function domainOrders()
+    {
+        return $this->hasMany(ResellerDomainOrder::class, 'reseller_id');
+    }
+
     public function isAdmin(): bool
     {
         return $this->is_admin;

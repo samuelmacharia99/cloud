@@ -470,6 +470,25 @@ class PaymentController extends Controller
 
         // Trigger service provisioning
         $this->provisionServices($invoice);
+
+        // Process domain orders for reseller customers
+        $this->processDomainOrdersForReseller($invoice);
+    }
+
+    private function processDomainOrdersForReseller(Invoice $invoice): void
+    {
+        if ($invoice->user->reseller_id === null) {
+            return;
+        }
+
+        try {
+            app('domain-push-service')->handlePaidDomainInvoice($invoice);
+        } catch (\Exception $e) {
+            Log::error('Failed to process domain orders after payment', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -243,6 +243,11 @@ class MpesaService implements PaymentGatewayInterface
                     ]),
                 ]);
 
+                if ($payment->payment_purpose === 'wallet_topup') {
+                    app('wallet-service')->processTopupPayment($payment);
+                    return ['success' => true, 'payment_id' => $payment->id];
+                }
+
                 if ($payment->invoice) {
                     $payment->invoice->update(['status' => InvoiceStatus::Paid->value]);
 
@@ -292,6 +297,91 @@ class MpesaService implements PaymentGatewayInterface
             return [
                 'success' => false,
                 'message' => 'Callback processing failed',
+            ];
+        }
+    }
+
+    /**
+     * Initiate wallet top-up via M-Pesa STK push
+     */
+    public function initiateTopup(\App\Models\User $reseller, float $amount, string $phone, \App\Models\Invoice $topupInvoice): array
+    {
+        try {
+            $phone = $this->sanitizePhone($phone);
+            $token = $this->getAccessToken();
+
+            if (!$token) {
+                throw new \Exception('Failed to get M-Pesa access token');
+            }
+
+            $timestamp = now()->format('YmdHis');
+            $password = base64_encode($this->businessShortCode . $this->passkey . $timestamp);
+
+            $payload = [
+                'BusinessShortCode' => $this->businessShortCode,
+                'Password' => $password,
+                'Timestamp' => $timestamp,
+                'TransactionType' => 'CustomerPayBillOnline',
+                'Amount' => (int) ceil($amount),
+                'PartyA' => $phone,
+                'PartyB' => $this->businessShortCode,
+                'PhoneNumber' => $phone,
+                'CallBackURL' => $this->buildCallbackUrl(),
+                'AccountReference' => "WALLET-{$reseller->id}",
+                'TransactionDesc' => "Wallet top-up - {$amount} KES",
+            ];
+
+            Log::info('M-Pesa Wallet Topup STK Push Request', [
+                'reseller_id' => $reseller->id,
+                'phone' => $phone,
+                'amount' => $amount,
+            ]);
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+            ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
+
+            if (!$response->successful()) {
+                Log::error('M-Pesa wallet topup STK Push failed', [
+                    'reseller_id' => $reseller->id,
+                    'status_code' => $response->status(),
+                    'response' => $response->json(),
+                ]);
+                throw new \Exception('M-Pesa request failed: ' . ($response->json()['errorMessage'] ?? 'Unknown error'));
+            }
+
+            $data = $response->json();
+
+            Payment::create([
+                'user_id' => $reseller->id,
+                'invoice_id' => $topupInvoice->id,
+                'amount' => $amount,
+                'currency' => 'KES',
+                'payment_method' => 'mpesa',
+                'payment_purpose' => 'wallet_topup',
+                'transaction_reference' => $data['CheckoutRequestID'] ?? null,
+                'status' => 'pending',
+                'notes' => json_encode([
+                    'response_code' => $data['ResponseCode'] ?? null,
+                    'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
+                ]),
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Please check your phone for M-Pesa prompt',
+                'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
+                'response_code' => $data['ResponseCode'] ?? null,
+            ];
+        } catch (\Exception $e) {
+            Log::error('M-Pesa wallet topup initiate failed', [
+                'reseller_id' => $reseller->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Payment initiation failed: ' . $e->getMessage(),
             ];
         }
     }

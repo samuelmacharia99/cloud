@@ -12,7 +12,20 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->singleton('wallet-service', function () {
+            return new \App\Services\ResellerWalletService($this->app['db']);
+        });
+
+        $this->app->singleton('domain-push-service', function () {
+            return new \App\Services\DomainPushService(
+                $this->app['db'],
+                $this->app['wallet-service'],
+                app(\App\Services\WalletNotificationService::class)
+            );
+        });
+
+        $this->app->singleton(\App\Services\WalletNotificationService::class);
+        $this->app->singleton(\App\Services\ResellerDomainTransferService::class);
     }
 
     public function boot(): void
@@ -43,6 +56,14 @@ class AppServiceProvider extends ServiceProvider
                 'logo_url' => null,
                 'favicon_url' => null,
             ], $branding));
+
+            // Share wallet balance for resellers
+            if ($user->is_reseller) {
+                $wallet = $user->wallet;
+                $view->with('walletBalance', $wallet?->balance ?? 0);
+                $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
+                $view->with('walletCurrency', $wallet?->currency ?? 'KES');
+            }
         });
 
         // Register dynamic cron job scheduler

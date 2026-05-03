@@ -55,6 +55,21 @@ class Domain extends Model
         return $this->hasMany(DnsZone::class);
     }
 
+    public function reseller()
+    {
+        return $this->belongsTo(User::class, 'reseller_id');
+    }
+
+    public function domainOrder()
+    {
+        return $this->belongsTo(ResellerDomainOrder::class, 'domain_order_id');
+    }
+
+    public function pendingTransferRecipient()
+    {
+        return $this->belongsTo(User::class, 'pending_transfer_to_user_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active' && $this->expires_at?->isFuture();

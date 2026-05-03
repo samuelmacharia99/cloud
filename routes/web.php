@@ -172,6 +172,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/tickets/{ticket}/reply', [\App\Http\Controllers\Admin\TicketController::class, 'reply'])->name('tickets.reply');
         Route::patch('admin/tickets/{ticket}/status', [\App\Http\Controllers\Admin\TicketController::class, 'updateStatus'])->name('tickets.updateStatus');
         Route::patch('admin/tickets/{ticket}/assign', [\App\Http\Controllers\Admin\TicketController::class, 'assign'])->name('tickets.assign');
+
+        // Reseller Wallet Management
+        Route::get('admin/reseller-wallets', [\App\Http\Controllers\Admin\ResellerWalletController::class, 'index'])->name('admin.reseller-wallets.index');
+        Route::get('admin/reseller-wallets/{reseller}', [\App\Http\Controllers\Admin\ResellerWalletController::class, 'show'])->name('admin.reseller-wallets.show');
+        Route::post('admin/reseller-wallets/{reseller}/adjust', [\App\Http\Controllers\Admin\ResellerWalletController::class, 'adjust'])->name('admin.reseller-wallets.adjust');
+        Route::get('admin/reseller-wallets/{reseller}/export', [\App\Http\Controllers\Admin\ResellerWalletController::class, 'exportPdf'])->name('admin.reseller-wallets.export');
+
+        // Domain Orders Management
+        Route::get('admin/domain-orders', [\App\Http\Controllers\Admin\DomainOrderController::class, 'index'])->name('admin.domain-orders.index');
+        Route::get('admin/domain-orders/{order}', [\App\Http\Controllers\Admin\DomainOrderController::class, 'show'])->name('admin.domain-orders.show');
+        Route::post('admin/domain-orders/{order}/complete', [\App\Http\Controllers\Admin\DomainOrderController::class, 'complete'])->name('admin.domain-orders.complete');
+        Route::post('admin/domain-orders/{order}/fail', [\App\Http\Controllers\Admin\DomainOrderController::class, 'fail'])->name('admin.domain-orders.fail');
     });
 
     // Reseller-only routes
@@ -202,6 +214,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
+
+        // Wallet Management
+        Route::get('reseller/wallet', [\App\Http\Controllers\Reseller\WalletController::class, 'index'])->name('reseller.wallet.index');
+        Route::post('reseller/wallet/topup', [\App\Http\Controllers\Reseller\WalletController::class, 'initiateTopup'])->name('reseller.wallet.topup');
+        Route::get('reseller/wallet/topup/status/{invoice}', [\App\Http\Controllers\Reseller\WalletController::class, 'checkTopupStatus'])->name('reseller.wallet.topup.status');
+        Route::get('reseller/wallet/transactions', [\App\Http\Controllers\Reseller\WalletController::class, 'transactions'])->name('reseller.wallet.transactions');
+        Route::get('reseller/wallet/export', [\App\Http\Controllers\Reseller\WalletController::class, 'exportPdf'])->name('reseller.wallet.export');
+
+        // Domain Orders
+        Route::get('reseller/domain-orders', [\App\Http\Controllers\Reseller\DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
+        Route::post('reseller/domain-orders/{order}/push', [\App\Http\Controllers\Reseller\DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
+        Route::post('reseller/domain-orders/{order}/retry', [\App\Http\Controllers\Reseller\DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
     });
 
     // Customer-only routes
