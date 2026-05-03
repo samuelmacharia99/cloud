@@ -165,6 +165,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('reseller/domains-pricing', [\App\Http\Controllers\Reseller\DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
         Route::post('reseller/domains-pricing', [\App\Http\Controllers\Reseller\DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
         Route::get('api/reseller/domains/pricing/{extension}', [\App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');
+
+        // Settings
+        Route::get('reseller/settings', [\App\Http\Controllers\Reseller\SettingController::class, 'index'])->name('reseller.settings.index');
+        Route::post('reseller/settings/mpesa', [\App\Http\Controllers\Reseller\SettingController::class, 'updateMpesa'])->name('reseller.settings.mpesa.update');
+        Route::post('reseller/settings/mpesa/register-urls', [\App\Http\Controllers\Reseller\SettingController::class, 'registerMpesaUrls'])->name('reseller.settings.mpesa.register-urls');
+        Route::post('reseller/settings/sms', [\App\Http\Controllers\Reseller\SettingController::class, 'updateSms'])->name('reseller.settings.sms.update');
+        Route::post('reseller/settings/sms/test', [\App\Http\Controllers\Reseller\SettingController::class, 'testSms'])->name('reseller.settings.sms.test');
+        Route::post('reseller/settings/smtp', [\App\Http\Controllers\Reseller\SettingController::class, 'updateSmtp'])->name('reseller.settings.smtp.update');
+        Route::post('reseller/settings/smtp/test', [\App\Http\Controllers\Reseller\SettingController::class, 'testSmtp'])->name('reseller.settings.smtp.test');
+
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
     });
