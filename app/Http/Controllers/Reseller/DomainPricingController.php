@@ -21,7 +21,17 @@ class DomainPricingController extends Controller
 
         $periods = [1, 2, 3, 5, 10];
 
-        return view('reseller.domains.pricing', compact('extensions', 'periods'));
+        // Transform extensions for JSON encoding
+        $extensionsData = $extensions->map(function ($e) {
+            return [
+                'id' => $e->id,
+                'extension' => $e->extension,
+                'pricing' => $e->pricing->toArray(),
+                'resellerPricing' => $e->resellerPricing->toArray(),
+            ];
+        })->values();
+
+        return view('reseller.domains.pricing', compact('extensions', 'periods', 'extensionsData'));
     }
 
     public function update(Request $request)

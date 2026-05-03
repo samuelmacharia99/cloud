@@ -168,12 +168,7 @@ function domainPricingManager() {
         modalMargin: 0,
         modalMarginPercent: 0,
         filteredExtensions: [],
-        extensions: @json($extensions->map(fn($e) => [
-            'id' => $e->id,
-            'extension' => $e->extension,
-            'pricing' => $e->pricing,
-            'resellerPricing' => $e->resellerPricing,
-        ])),
+        extensions: @json($extensionsData),
         periods: @json($periods),
         get selectedExtension() {
             const ext = this.extensions.find(e => e.id === this.selectedExtensionId);
