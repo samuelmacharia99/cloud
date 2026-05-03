@@ -2,319 +2,159 @@
 
 namespace App\Http\Controllers\Reseller;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Http;
+use App\Http\Requests\UpdateMpesaSettingsRequest;
+use App\Http\Requests\UpdateSmsSettingsRequest;
+use App\Http\Requests\UpdateSmtpSettingsRequest;
+use App\Http\Requests\RegisterMpesaUrlsRequest;
+use App\Http\Requests\TestSmsRequest;
+use App\Http\Requests\TestSmtpRequest;
+use App\Services\ResellerSettingsService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
 
 class SettingController extends Controller
 {
-    /**
-     * Show reseller settings page
-     */
-    public function index()
-    {
-        $resellerId = auth()->id();
-        $user = auth()->user();
+    public function __construct(
+        private ResellerSettingsService $settingsService
+    ) {}
 
-        // Get reseller settings from database (JSON field or separate table)
-        $mpesaSettings = $this->getMpesaSettings($resellerId);
-        $smsSettings = $this->getSmsSettings($resellerId);
-        $smtpSettings = $this->getSmtpSettings($resellerId);
+    public function index(): View
+    {
+        $user = auth()->user();
 
         return view('reseller.settings.index', [
             'user' => $user,
-            'mpesaSettings' => $mpesaSettings,
-            'smsSettings' => $smsSettings,
-            'smtpSettings' => $smtpSettings,
+            'mpesaSettings' => $this->settingsService->getMpesaSettings($user),
+            'smsSettings' => $this->settingsService->getSmsSettings($user),
+            'smtpSettings' => $this->settingsService->getSmtpSettings($user),
         ]);
     }
 
-    /**
-     * Update M-Pesa settings
-     */
-    public function updateMpesa(Request $request)
+    public function updateMpesa(UpdateMpesaSettingsRequest $request): RedirectResponse
     {
-        $resellerId = auth()->id();
-
-        $validated = $request->validate([
-            'mpesa_business_shortcode' => 'required|string|max:20',
-            'mpesa_consumer_key' => 'required|string|max:255',
-            'mpesa_consumer_secret' => 'required|string|max:255',
-            'mpesa_passkey' => 'required|string|max:255',
-            'mpesa_callback_url' => 'nullable|url',
-            'mpesa_timeout_url' => 'nullable|url',
-        ]);
-
         try {
-            // Store settings in user's metadata or a settings table
             $user = auth()->user();
-            $settings = $user->settings ?? [];
-            $settings['mpesa'] = [
-                'business_shortcode' => $validated['mpesa_business_shortcode'],
-                'consumer_key' => $validated['mpesa_consumer_key'],
-                'consumer_secret' => $validated['mpesa_consumer_secret'],
-                'passkey' => $validated['mpesa_passkey'],
-                'callback_url' => $validated['mpesa_callback_url'],
-                'timeout_url' => $validated['mpesa_timeout_url'],
-            ];
-
-            // Update user model (assuming there's a settings JSON column)
-            $user->update(['settings' => $settings]);
-
-            // Log the activity
-            Log::info('Reseller M-Pesa settings updated', [
-                'reseller_id' => $resellerId,
-                'user_email' => $user->email,
-            ]);
+            $this->settingsService->updateMpesaSettings($user, $request->validated());
 
             return back()->with('success', 'M-Pesa settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('Failed to update M-Pesa settings', [
                 'error' => $e->getMessage(),
-                'reseller_id' => $resellerId,
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to update M-Pesa settings: ' . $e->getMessage());
+            return back()->with('error', 'Failed to update M-Pesa settings. Please try again.');
         }
     }
 
-    /**
-     * Register M-Pesa URLs
-     */
-    public function registerMpesaUrls(Request $request)
+    public function registerMpesaUrls(RegisterMpesaUrlsRequest $request): RedirectResponse
     {
-        $resellerId = auth()->id();
-
-        $validated = $request->validate([
-            'callback_url' => 'required|url',
-            'timeout_url' => 'required|url',
-        ]);
-
         try {
             $user = auth()->user();
-            $mpesaSettings = $user->settings['mpesa'] ?? [];
-
-            // In production, this would call the M-Pesa API to register URLs
-            // For now, we'll just update the settings
-            $mpesaSettings['callback_url'] = $validated['callback_url'];
-            $mpesaSettings['timeout_url'] = $validated['timeout_url'];
-            $mpesaSettings['urls_registered_at'] = now();
-
-            $settings = $user->settings ?? [];
-            $settings['mpesa'] = $mpesaSettings;
-            $user->update(['settings' => $settings]);
-
-            Log::info('M-Pesa URLs registered for reseller', [
-                'reseller_id' => $resellerId,
-                'callback_url' => $validated['callback_url'],
-            ]);
+            $this->settingsService->registerMpesaUrls($user, $request->validated());
 
             return back()->with('success', 'M-Pesa URLs registered successfully.');
         } catch (\Exception $e) {
             Log::error('Failed to register M-Pesa URLs', [
                 'error' => $e->getMessage(),
-                'reseller_id' => $resellerId,
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to register M-Pesa URLs: ' . $e->getMessage());
+            return back()->with('error', 'Failed to register M-Pesa URLs. Please try again.');
         }
     }
 
-    /**
-     * Update SMS settings
-     */
-    public function updateSms(Request $request)
+    public function updateSms(UpdateSmsSettingsRequest $request): RedirectResponse
     {
-        $resellerId = auth()->id();
-
-        $validated = $request->validate([
-            'sms_api_key' => 'required|string|max:255',
-            'sms_sender_id' => 'required|string|max:11',
-            'sms_enabled' => 'nullable|in:on,1,0',
-        ]);
-
         try {
             $user = auth()->user();
-            $settings = $user->settings ?? [];
-            $settings['sms'] = [
-                'api_key' => $validated['sms_api_key'],
-                'sender_id' => $validated['sms_sender_id'],
-                'enabled' => (bool) $request->boolean('sms_enabled'),
-            ];
-
-            $user->update(['settings' => $settings]);
-
-            Log::info('Reseller SMS settings updated', [
-                'reseller_id' => $resellerId,
-                'sender_id' => $validated['sms_sender_id'],
-            ]);
+            $this->settingsService->updateSmsSettings($user, $request->validated());
 
             return back()->with('success', 'SMS settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('Failed to update SMS settings', [
                 'error' => $e->getMessage(),
-                'reseller_id' => $resellerId,
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to update SMS settings: ' . $e->getMessage());
+            return back()->with('error', 'Failed to update SMS settings. Please try again.');
         }
     }
 
-    /**
-     * Test SMS
-     */
-    public function testSms(Request $request)
+    public function testSms(TestSmsRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'phone' => 'required|string|min:10',
-        ]);
-
         try {
             $user = auth()->user();
-            $smsSettings = $user->settings['sms'] ?? [];
+            $smsSettings = $this->settingsService->getSmsSettings($user);
 
-            if (!$smsSettings || !$smsSettings['api_key']) {
-                return back()->with('error', 'SMS settings not configured.');
+            if (empty($smsSettings['api_key'])) {
+                return back()->with('error', 'SMS settings are not configured. Please configure SMS settings first.');
             }
 
-            // Test SMS sending (in production, call actual SMS provider)
             Log::info('SMS test message sent', [
                 'reseller_id' => auth()->id(),
-                'phone' => $validated['phone'],
+                'phone' => $request->input('phone'),
             ]);
 
-            return back()->with('success', 'Test SMS sent successfully to ' . $validated['phone']);
+            return back()->with('success', 'Test SMS sent successfully to ' . $request->input('phone'));
         } catch (\Exception $e) {
-            Log::error('Failed to send test SMS', ['error' => $e->getMessage()]);
-            return back()->with('error', 'Failed to send test SMS: ' . $e->getMessage());
+            Log::error('Failed to send test SMS', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with('error', 'Failed to send test SMS. Please try again.');
         }
     }
 
-    /**
-     * Update SMTP settings
-     */
-    public function updateSmtp(Request $request)
+    public function updateSmtp(UpdateSmtpSettingsRequest $request): RedirectResponse
     {
-        $resellerId = auth()->id();
-
-        $validated = $request->validate([
-            'smtp_host' => 'required|string|max:255',
-            'smtp_port' => 'required|integer|min:1|max:65535',
-            'smtp_username' => 'required|string|max:255',
-            'smtp_password' => 'required|string|max:255',
-            'smtp_encryption' => 'required|in:tls,ssl',
-            'smtp_from_address' => 'required|email',
-            'smtp_from_name' => 'required|string|max:255',
-            'smtp_enabled' => 'nullable|in:on,1,0',
-        ]);
-
         try {
             $user = auth()->user();
-            $settings = $user->settings ?? [];
-            $settings['smtp'] = [
-                'host' => $validated['smtp_host'],
-                'port' => $validated['smtp_port'],
-                'username' => $validated['smtp_username'],
-                'password' => $validated['smtp_password'],
-                'encryption' => $validated['smtp_encryption'],
-                'from_address' => $validated['smtp_from_address'],
-                'from_name' => $validated['smtp_from_name'],
-                'enabled' => (bool) $request->boolean('smtp_enabled'),
-            ];
-
-            $user->update(['settings' => $settings]);
-
-            Log::info('Reseller SMTP settings updated', [
-                'reseller_id' => $resellerId,
-                'host' => $validated['smtp_host'],
-            ]);
+            $this->settingsService->updateSmtpSettings($user, $request->validated());
 
             return back()->with('success', 'SMTP settings updated successfully.');
         } catch (\Exception $e) {
             Log::error('Failed to update SMTP settings', [
                 'error' => $e->getMessage(),
-                'reseller_id' => $resellerId,
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to update SMTP settings: ' . $e->getMessage());
+            return back()->with('error', 'Failed to update SMTP settings. Please try again.');
         }
     }
 
-    /**
-     * Test SMTP connection
-     */
-    public function testSmtp(Request $request)
+    public function testSmtp(TestSmtpRequest $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'test_email' => 'required|email',
-        ]);
-
         try {
             $user = auth()->user();
-            $smtpSettings = $user->settings['smtp'] ?? [];
+            $smtpSettings = $this->settingsService->getSmtpSettings($user);
 
-            if (!$smtpSettings || !$smtpSettings['host']) {
-                return back()->with('error', 'SMTP settings not configured.');
+            if (empty($smtpSettings['host'])) {
+                return back()->with('error', 'SMTP settings are not configured. Please configure SMTP settings first.');
             }
 
-            // Test SMTP connection (in production, actually send an email)
             Log::info('SMTP test connection initiated', [
                 'reseller_id' => auth()->id(),
-                'test_email' => $validated['test_email'],
+                'test_email' => $request->input('test_email'),
             ]);
 
-            return back()->with('success', 'Test email would be sent to ' . $validated['test_email']);
+            return back()->with('success', 'Test email would be sent to ' . $request->input('test_email'));
         } catch (\Exception $e) {
-            Log::error('Failed to test SMTP', ['error' => $e->getMessage()]);
-            return back()->with('error', 'Failed to test SMTP: ' . $e->getMessage());
+            Log::error('Failed to test SMTP', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with('error', 'Failed to test SMTP. Please try again.');
         }
-    }
-
-    /**
-     * Get M-Pesa settings
-     */
-    private function getMpesaSettings($resellerId)
-    {
-        $user = auth()->user();
-        return $user->settings['mpesa'] ?? [
-            'business_shortcode' => '',
-            'consumer_key' => '',
-            'consumer_secret' => '',
-            'passkey' => '',
-            'callback_url' => '',
-            'timeout_url' => '',
-        ];
-    }
-
-    /**
-     * Get SMS settings
-     */
-    private function getSmsSettings($resellerId)
-    {
-        $user = auth()->user();
-        return $user->settings['sms'] ?? [
-            'api_key' => '',
-            'sender_id' => '',
-            'enabled' => false,
-        ];
-    }
-
-    /**
-     * Get SMTP settings
-     */
-    private function getSmtpSettings($resellerId)
-    {
-        $user = auth()->user();
-        return $user->settings['smtp'] ?? [
-            'host' => '',
-            'port' => 587,
-            'username' => '',
-            'password' => '',
-            'encryption' => 'tls',
-            'from_address' => '',
-            'from_name' => '',
-            'enabled' => false,
-        ];
     }
 }

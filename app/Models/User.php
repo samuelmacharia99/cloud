@@ -34,6 +34,7 @@ class User extends Authenticatable
         'two_factor_code',
         'two_factor_code_expires_at',
         'two_factor_recovery_codes',
+        'settings',
     ];
 
     protected $hidden = [
@@ -53,6 +54,7 @@ class User extends Authenticatable
             'two_factor_enabled' => 'boolean',
             'two_factor_code_expires_at' => 'datetime',
             'two_factor_recovery_codes' => 'array',
+            'settings' => 'array',
         ];
     }
 
