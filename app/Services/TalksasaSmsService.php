@@ -245,13 +245,17 @@ class TalksasaSmsService
             $responseData = ['raw_body' => $response->body()];
         }
 
-        // Determine success based on Talksasa response status
-        if ($talksasaStatus === 'success' && $response->successful()) {
+        // Determine success based on Talksasa response status and HTTP status code
+        // Talksasa returns 202 (Accepted) for successful async SMS
+        // Response status can be "success", "accepted", or "error"
+        if (($talksasaStatus === 'success' || $talksasaStatus === 'accepted') && $response->successful()) {
             $status = 'sent';
             Log::info('SMS Send: Success', array_merge($logContext, [
                 'status' => $status,
+                'http_status_code' => $response->status(),
                 'talksasa_status' => $talksasaStatus,
-                'response_data' => $responseData['data'] ?? null,
+                'queue_uid' => $responseData['data']['queue_uid'] ?? $responseData['queue_uid'] ?? null,
+                'response_data' => $responseData['data'] ?? $responseData,
             ]));
         } else {
             Log::error('SMS Send: Failed', array_merge($logContext, [
@@ -284,6 +288,7 @@ class TalksasaSmsService
             'success' => $status === 'sent',
             'status' => $status,
             'talksasa_status' => $talksasaStatus,
+            'queue_uid' => $responseData['data']['queue_uid'] ?? $responseData['queue_uid'] ?? null,
             'message' => $status === 'sent' ? 'SMS sent successfully' : ($responseData['message'] ?? 'SMS delivery failed'),
             'response' => $responseData,
         ];
@@ -309,13 +314,16 @@ class TalksasaSmsService
             $responseData = ['raw_body' => $response->body()];
         }
 
-        // Determine success based on Talksasa response status
-        if ($talksasaStatus === 'success' && $response->successful()) {
+        // Determine success based on Talksasa response status and HTTP status code
+        // Talksasa returns 202 (Accepted) for successful async SMS
+        if (($talksasaStatus === 'success' || $talksasaStatus === 'accepted') && $response->successful()) {
             $status = 'sent';
             Log::info('SMS Bulk: Success', array_merge($logContext, [
                 'status' => $status,
+                'http_status_code' => $response->status(),
                 'talksasa_status' => $talksasaStatus,
-                'response_data' => $responseData['data'] ?? null,
+                'queue_uid' => $responseData['data']['queue_uid'] ?? $responseData['queue_uid'] ?? null,
+                'response_data' => $responseData['data'] ?? $responseData,
             ]));
         } else {
             Log::error('SMS Bulk: Failed', array_merge($logContext, [
@@ -353,6 +361,7 @@ class TalksasaSmsService
             'success' => $status === 'sent',
             'status' => $status,
             'talksasa_status' => $talksasaStatus,
+            'queue_uid' => $responseData['data']['queue_uid'] ?? $responseData['queue_uid'] ?? null,
             'recipient_count' => count($phoneNumbers),
             'message' => $status === 'sent' ? 'Bulk SMS sent successfully' : ($responseData['message'] ?? 'Bulk SMS delivery failed'),
             'response' => $responseData,

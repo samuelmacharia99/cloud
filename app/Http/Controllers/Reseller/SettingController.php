@@ -106,10 +106,11 @@ class SettingController extends Controller
             if ($result['success']) {
                 Log::info('Test SMS: Sent successfully', [
                     'reseller_id' => $user->id,
-                    'sms_id' => $result['sms_id'],
+                    'queue_uid' => $result['response']['data']['queue_uid'] ?? null,
+                    'talksasa_status' => $result['talksasa_status'],
                 ]);
 
-                return back()->with('success', 'Test SMS sent successfully to ' . $phone . '. Check your logs for delivery status.');
+                return back()->with('success', 'Test SMS sent successfully to ' . $phone . '. Check your phone for the message.');
             } else {
                 Log::warning('Test SMS: API rejected request', [
                     'reseller_id' => $user->id,
