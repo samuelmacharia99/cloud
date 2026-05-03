@@ -4,7 +4,7 @@
 
 @section('breadcrumb')
 <div class="flex items-center gap-2 text-sm">
-    <a href="{{ route('reseller.dashboard') }}" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Dashboard</a>
+    <a href="{{ route('dashboard') }}" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">Dashboard</a>
     <span class="text-slate-400 dark:text-slate-600">/</span>
     <a href="{{ route('reseller.catalog.index') }}" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">My Catalog</a>
     <span class="text-slate-400 dark:text-slate-600">/</span>
