@@ -131,7 +131,7 @@ class SettingController extends Controller
         $validated = $request->validate([
             'sms_api_key' => 'required|string|max:255',
             'sms_sender_id' => 'required|string|max:11',
-            'sms_enabled' => 'nullable|boolean',
+            'sms_enabled' => 'nullable|in:on,1,0',
         ]);
 
         try {
@@ -140,7 +140,7 @@ class SettingController extends Controller
             $settings['sms'] = [
                 'api_key' => $validated['sms_api_key'],
                 'sender_id' => $validated['sms_sender_id'],
-                'enabled' => $request->has('sms_enabled'),
+                'enabled' => (bool) $request->boolean('sms_enabled'),
             ];
 
             $user->update(['settings' => $settings]);
@@ -206,7 +206,7 @@ class SettingController extends Controller
             'smtp_encryption' => 'required|in:tls,ssl',
             'smtp_from_address' => 'required|email',
             'smtp_from_name' => 'required|string|max:255',
-            'smtp_enabled' => 'nullable|boolean',
+            'smtp_enabled' => 'nullable|in:on,1,0',
         ]);
 
         try {
@@ -220,7 +220,7 @@ class SettingController extends Controller
                 'encryption' => $validated['smtp_encryption'],
                 'from_address' => $validated['smtp_from_address'],
                 'from_name' => $validated['smtp_from_name'],
-                'enabled' => $request->has('smtp_enabled'),
+                'enabled' => (bool) $request->boolean('smtp_enabled'),
             ];
 
             $user->update(['settings' => $settings]);

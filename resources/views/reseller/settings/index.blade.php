@@ -188,8 +188,9 @@
                 <!-- SMS Enabled -->
                 <div>
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" name="sms_enabled"
-                            {{ old('sms_enabled', $smsSettings['enabled'] ?? false) ? 'checked' : '' }}
+                        <input type="hidden" name="sms_enabled" value="0">
+                        <input type="checkbox" name="sms_enabled" value="1"
+                            {{ old('sms_enabled') || (!old() && $smsSettings['enabled'] ?? false) ? 'checked' : '' }}
                             class="w-4 h-4 text-green-600 rounded">
                         <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMS Notifications</span>
                     </label>
@@ -326,8 +327,9 @@
                 <!-- SMTP Enabled -->
                 <div>
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" name="smtp_enabled"
-                            {{ old('smtp_enabled', $smtpSettings['enabled'] ?? false) ? 'checked' : '' }}
+                        <input type="hidden" name="smtp_enabled" value="0">
+                        <input type="checkbox" name="smtp_enabled" value="1"
+                            {{ old('smtp_enabled') || (!old() && $smtpSettings['enabled'] ?? false) ? 'checked' : '' }}
                             class="w-4 h-4 text-purple-600 rounded">
                         <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMTP</span>
                     </label>
