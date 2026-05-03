@@ -161,9 +161,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('reseller')->group(function () {
         Route::resource('reseller/customers', \App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
         Route::resource('reseller/catalog', \App\Http\Controllers\Reseller\CatalogController::class)->names('reseller.catalog');
+        Route::get('reseller/domains', [\App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
         Route::get('reseller/domains-pricing', [\App\Http\Controllers\Reseller\DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
         Route::post('reseller/domains-pricing', [\App\Http\Controllers\Reseller\DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
-        Route::get('my/domains', [\App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
         Route::get('api/reseller/domains/pricing/{extension}', [\App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
