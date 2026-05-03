@@ -206,7 +206,7 @@ class DomainController extends Controller
         $validated = $request->validate([
             'extension' => 'required|exists:domain_extensions,extension',
             'registrar' => 'nullable|string',
-            'status' => 'required|in:active,expired,suspended',
+            'status' => 'required|in:pending,active,expired,suspended',
             'registered_at' => 'nullable|date',
             'expires_at' => 'nullable|date',
             'auto_renew' => 'nullable|boolean',
