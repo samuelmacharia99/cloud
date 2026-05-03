@@ -1,5 +1,7 @@
 @extends('layouts.reseller')
 
+@use('App\Models\Product')
+
 @section('title', 'My Catalog')
 
 @section('breadcrumb')
