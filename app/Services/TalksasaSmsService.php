@@ -11,11 +11,12 @@ use Exception;
 
 class TalksasaSmsService
 {
-    private const API_ENDPOINT = 'https://api.talksasa.com/sms/send';
-    private const BULK_ENDPOINT = 'https://api.talksasa.com/sms/bulk';
+    private const API_ENDPOINT = 'https://bulksms.talksasa.com/api/v3/sms/send';
+    private const CAMPAIGN_ENDPOINT = 'https://bulksms.talksasa.com/api/v3/sms/campaign';
     private const TIMEOUT = 30; // seconds
     private const RETRY_TIMES = 3;
     private const RETRY_DELAY = 1000; // milliseconds
+    private const SMS_TYPE = 'plain'; // Talksasa SMS type
 
     public function __construct(
         private SmsPayloadService $payloadService
@@ -42,12 +43,13 @@ class TalksasaSmsService
                 return $this->createFailureResponse('SMS settings not configured', $logContext, $phoneNumber);
             }
 
-            // Build payload
-            $payload = $this->payloadService->buildSmsPayload($reseller, $phoneNumber, $message);
+            // Build Talksasa API payload
+            $payload = $this->buildTalksasaPayload($reseller, $phoneNumber, $message);
             Log::info('SMS Send: Payload built', array_merge($logContext, [
-                'api_key_length' => strlen($payload['api_key']),
+                'recipient' => $payload['recipient'],
                 'sender_id' => $payload['sender_id'],
-                'timestamp' => $payload['timestamp'],
+                'type' => $payload['type'],
+                'message_length' => strlen($payload['message']),
             ]));
 
             // Send SMS
@@ -87,12 +89,13 @@ class TalksasaSmsService
                 return $this->createFailureResponse('SMS settings not configured', $logContext, implode(', ', $phoneNumbers));
             }
 
-            // Build payload
-            $payload = $this->payloadService->buildBulkSmsPayload($reseller, $phoneNumbers, $message);
+            // Build Talksasa API payload
+            $payload = $this->buildTalksasaBulkPayload($reseller, $phoneNumbers, $message);
             Log::info('SMS Bulk: Payload built', array_merge($logContext, [
-                'api_key_length' => strlen($payload['api_key']),
+                'recipient_count' => count($phoneNumbers),
                 'sender_id' => $payload['sender_id'],
-                'recipients' => $phoneNumbers,
+                'type' => $payload['type'],
+                'message_length' => strlen($payload['message']),
             ]));
 
             // Send SMS
@@ -141,10 +144,41 @@ class TalksasaSmsService
     }
 
     /**
+     * Build Talksasa API payload for single SMS
+     */
+    private function buildTalksasaPayload(User $reseller, string $phoneNumber, string $message): array
+    {
+        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings($reseller);
+
+        return [
+            'recipient' => $phoneNumber,
+            'sender_id' => $smsSettings['sender_id'],
+            'type' => self::SMS_TYPE,
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * Build Talksasa API payload for bulk SMS
+     */
+    private function buildTalksasaBulkPayload(User $reseller, array $phoneNumbers, string $message): array
+    {
+        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings($reseller);
+
+        return [
+            'recipient' => implode(',', $phoneNumbers),
+            'sender_id' => $smsSettings['sender_id'],
+            'type' => self::SMS_TYPE,
+            'message' => $message,
+        ];
+    }
+
+    /**
      * Make HTTP request to Talksasa API with retry logic
      */
     private function makeApiRequest(array $payload, array $logContext): Response
     {
+        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings(User::find($logContext['reseller_id']));
         $attempt = 1;
         $lastError = null;
 
@@ -153,11 +187,15 @@ class TalksasaSmsService
                 Log::info("SMS Send: API request (attempt {$attempt}/{self::RETRY_TIMES})", array_merge($logContext, [
                     'endpoint' => self::API_ENDPOINT,
                     'timeout' => self::TIMEOUT,
+                    'recipient' => $payload['recipient'] ?? 'unknown',
+                    'type' => $payload['type'] ?? 'unknown',
                 ]));
 
                 $response = Http::timeout(self::TIMEOUT)
                     ->withHeaders([
                         'Content-Type' => 'application/json',
+                        'Accept' => 'application/json',
+                        'Authorization' => 'Bearer ' . $smsSettings['api_key'],
                         'User-Agent' => 'TalksasaCloud/1.0',
                     ])
                     ->post(self::API_ENDPOINT, $payload);
@@ -194,9 +232,11 @@ class TalksasaSmsService
     {
         $status = 'failed';
         $responseData = [];
+        $talksasaStatus = null;
 
         try {
             $responseData = $response->json() ?? [];
+            $talksasaStatus = $responseData['status'] ?? null;
         } catch (Exception $e) {
             Log::error('SMS Send: Failed to parse response JSON', array_merge($logContext, [
                 'error' => $e->getMessage(),
@@ -205,16 +245,19 @@ class TalksasaSmsService
             $responseData = ['raw_body' => $response->body()];
         }
 
-        // Determine success based on status code and response
-        if ($response->successful()) {
+        // Determine success based on Talksasa response status
+        if ($talksasaStatus === 'success' && $response->successful()) {
             $status = 'sent';
             Log::info('SMS Send: Success', array_merge($logContext, [
                 'status' => $status,
-                'sms_id' => $responseData['sms_id'] ?? null,
+                'talksasa_status' => $talksasaStatus,
+                'response_data' => $responseData['data'] ?? null,
             ]));
         } else {
             Log::error('SMS Send: Failed', array_merge($logContext, [
                 'status_code' => $response->status(),
+                'talksasa_status' => $talksasaStatus,
+                'message' => $responseData['message'] ?? null,
                 'response' => $responseData,
                 'reason' => $response->reason(),
             ]));
@@ -240,8 +283,8 @@ class TalksasaSmsService
         return [
             'success' => $status === 'sent',
             'status' => $status,
-            'sms_id' => $responseData['sms_id'] ?? null,
-            'message' => $status === 'sent' ? 'SMS sent successfully' : 'SMS delivery failed',
+            'talksasa_status' => $talksasaStatus,
+            'message' => $status === 'sent' ? 'SMS sent successfully' : ($responseData['message'] ?? 'SMS delivery failed'),
             'response' => $responseData,
         ];
     }
@@ -253,9 +296,11 @@ class TalksasaSmsService
     {
         $status = 'failed';
         $responseData = [];
+        $talksasaStatus = null;
 
         try {
             $responseData = $response->json() ?? [];
+            $talksasaStatus = $responseData['status'] ?? null;
         } catch (Exception $e) {
             Log::error('SMS Bulk: Failed to parse response JSON', array_merge($logContext, [
                 'error' => $e->getMessage(),
@@ -264,17 +309,19 @@ class TalksasaSmsService
             $responseData = ['raw_body' => $response->body()];
         }
 
-        // Determine success based on status code
-        if ($response->successful()) {
+        // Determine success based on Talksasa response status
+        if ($talksasaStatus === 'success' && $response->successful()) {
             $status = 'sent';
             Log::info('SMS Bulk: Success', array_merge($logContext, [
                 'status' => $status,
-                'campaign_id' => $responseData['campaign_id'] ?? null,
-                'accepted' => $responseData['accepted'] ?? count($phoneNumbers),
+                'talksasa_status' => $talksasaStatus,
+                'response_data' => $responseData['data'] ?? null,
             ]));
         } else {
             Log::error('SMS Bulk: Failed', array_merge($logContext, [
                 'status_code' => $response->status(),
+                'talksasa_status' => $talksasaStatus,
+                'message' => $responseData['message'] ?? null,
                 'response' => $responseData,
                 'reason' => $response->reason(),
             ]));
@@ -289,7 +336,7 @@ class TalksasaSmsService
                     'sender_id' => $payload['sender_id'],
                     'status' => $status,
                     'response' => json_encode([
-                        'campaign_id' => $responseData['campaign_id'] ?? null,
+                        'talksasa_status' => $talksasaStatus,
                         'bulk_send' => true,
                     ]),
                     'sent_by' => $reseller->id,
@@ -305,9 +352,9 @@ class TalksasaSmsService
         return [
             'success' => $status === 'sent',
             'status' => $status,
-            'campaign_id' => $responseData['campaign_id'] ?? null,
-            'accepted' => $responseData['accepted'] ?? ($status === 'sent' ? count($phoneNumbers) : 0),
-            'message' => $status === 'sent' ? 'Bulk SMS sent successfully' : 'Bulk SMS delivery failed',
+            'talksasa_status' => $talksasaStatus,
+            'recipient_count' => count($phoneNumbers),
+            'message' => $status === 'sent' ? 'Bulk SMS sent successfully' : ($responseData['message'] ?? 'Bulk SMS delivery failed'),
             'response' => $responseData,
         ];
     }

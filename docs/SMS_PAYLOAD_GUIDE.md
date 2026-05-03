@@ -1,7 +1,9 @@
-# SMS Payload Structure - Talksasa Bulk SMS
+# SMS Payload Structure - Talksasa Bulk SMS API v3
 
 ## Overview
-This document describes the payload structure used when sending SMS messages on behalf of resellers through the Talksasa Cloud platform.
+This document describes the payload structure used when sending SMS messages via Talksasa Bulk SMS API v3 on behalf of resellers through the Talksasa Cloud platform.
+
+**Official API Documentation:** https://bulksms.talksasa.com/api/v3/sms/send
 
 ## Reseller SMS Configuration
 
@@ -29,22 +31,30 @@ The reseller SMS settings stored in `user.settings['sms']`:
 ### Structure
 ```json
 {
-  "api_key": "sms_api_key_from_talksasa",
+  "recipient": "+254712345678",
   "sender_id": "TALKSASA",
-  "phone": "+254712345678",
-  "message": "Your order #12345 has been confirmed. Total: KES 5,000",
-  "timestamp": "2026-05-03T10:30:00Z"
+  "type": "plain",
+  "message": "Your order #12345 has been confirmed. Total: KES 5,000"
 }
 ```
 
 ### Fields
 | Field | Type | Required | Description | Example |
 |-------|------|----------|-------------|---------|
-| `api_key` | string | Yes | Talksasa SMS API key | `sk_live_abc123...` |
-| `sender_id` | string | Yes | Sender ID (max 11 chars) | `TALKSASA` |
-| `phone` | string | Yes | Recipient phone in E.164 format | `+254712345678` |
+| `recipient` | string | Yes | Recipient phone number(s), comma-separated for multiple | `+254712345678` or `254712345678,254723456789` |
+| `sender_id` | string | Yes | Sender ID (max 11 alphanumeric characters) | `TALKSASA` |
+| `type` | string | Yes | Message type (must be "plain" for SMS) | `plain` |
 | `message` | string | Yes | SMS message content | `Your invoice is ready` |
-| `timestamp` | ISO8601 | Yes | Request timestamp for audit | `2026-05-03T10:30:00Z` |
+| `schedule_time` | datetime | No | Optional scheduled send time (RFC3339 format: Y-m-d H:i) | `2026-05-03 14:30` |
+| `dlt_template_id` | string | No | Optional DLT template ID for regulatory compliance | `template_id_123` |
+
+### Authentication
+Add to HTTP headers:
+```
+Authorization: Bearer {api_token}
+Content-Type: application/json
+Accept: application/json
+```
 
 ### Phone Number Normalization
 
@@ -61,23 +71,45 @@ Input              →  Output
 
 ```php
 $reseller = \App\Models\User::find($resellerId);
-$smsService = app(\App\Services\SmsPayloadService::class);
+$smsService = app(\App\Services\TalksasaSmsService::class);
 
-// Build single SMS payload
-$payload = $smsService->buildSmsPayload(
+// Send single SMS (handles payload building and API call)
+$result = $smsService->sendSms(
     reseller: $reseller,
     phoneNumber: '0712345678',
     message: 'Your invoice is ready'
 );
 
 // Result:
-// {
-//   "api_key": "sk_live_...",
-//   "sender_id": "TALKSASA",
-//   "phone": "+254712345678",
-//   "message": "Your invoice is ready",
-//   "timestamp": "2026-05-03T10:30:00Z"
-// }
+// [
+//   "success": true,
+//   "status": "sent",
+//   "talksasa_status": "success",
+//   "message": "SMS sent successfully",
+//   "response": {
+//     "status": "success",
+//     "data": "sms reports with all details"
+//   }
+// ]
+```
+
+### Direct Payload Example
+
+The internal payload sent to Talksasa API:
+```json
+{
+  "recipient": "+254712345678",
+  "sender_id": "TALKSASA",
+  "type": "plain",
+  "message": "Your invoice is ready"
+}
+```
+
+With HTTP headers:
+```
+Authorization: Bearer {api_token}
+Content-Type: application/json
+Accept: application/json
 ```
 
 ---
@@ -87,35 +119,36 @@ $payload = $smsService->buildSmsPayload(
 ### Structure
 ```json
 {
-  "api_key": "sms_api_key_from_talksasa",
+  "recipient": "254712345678,254723456789,254734567890",
   "sender_id": "TALKSASA",
-  "recipients": [
-    "+254712345678",
-    "+254723456789",
-    "+254734567890"
-  ],
-  "message": "Scheduled maintenance tonight at 2 AM",
-  "timestamp": "2026-05-03T10:30:00Z"
+  "type": "plain",
+  "message": "Scheduled maintenance tonight at 2 AM"
 }
 ```
 
 ### Fields
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `api_key` | string | Yes | Talksasa SMS API key |
-| `sender_id` | string | Yes | Sender ID (max 11 chars) |
-| `recipients` | array | Yes | Array of phone numbers in E.164 format |
+| `recipient` | string | Yes | Comma-separated phone numbers (no spaces) |
+| `sender_id` | string | Yes | Sender ID (max 11 alphanumeric characters) |
+| `type` | string | Yes | Message type (must be "plain" for SMS) |
 | `message` | string | Yes | SMS message content (same for all recipients) |
-| `timestamp` | ISO8601 | Yes | Request timestamp for audit |
+| `schedule_time` | datetime | No | Optional scheduled send time (Y-m-d H:i) |
+| `dlt_template_id` | string | No | Optional DLT template ID |
+
+### Notes
+- **Recipient Format**: Phone numbers are comma-separated, NOT an array
+- **No Spaces**: Comma-separated list should have NO spaces between numbers
+- **Format**: Can be `254712345678` (without +) or `+254712345678` (with +)
 
 ### PHP Usage Example
 
 ```php
 $reseller = \App\Models\User::find($resellerId);
-$smsService = app(\App\Services\SmsPayloadService::class);
+$smsService = app(\App\Services\TalksasaSmsService::class);
 
-// Build bulk SMS payload
-$payload = $smsService->buildBulkSmsPayload(
+// Send bulk SMS (handles payload building and API call)
+$result = $smsService->sendBulkSms(
     reseller: $reseller,
     phoneNumbers: [
         '0712345678',
@@ -126,18 +159,31 @@ $payload = $smsService->buildBulkSmsPayload(
 );
 
 // Result:
-// {
-//   "api_key": "sk_live_...",
-//   "sender_id": "TALKSASA",
-//   "recipients": [
-//     "+254712345678",
-//     "+254723456789",
-//     "+254734567890"
-//   ],
-//   "message": "System maintenance notification",
-//   "timestamp": "2026-05-03T10:30:00Z"
-// }
+// [
+//   "success": true,
+//   "status": "sent",
+//   "talksasa_status": "success",
+//   "recipient_count": 3,
+//   "message": "Bulk SMS sent successfully",
+//   "response": {
+//     "status": "success",
+//     "data": "campaign reports with all details"
+//   }
+// ]
 ```
+
+### Internal Payload Sent to Talksasa
+
+```json
+{
+  "recipient": "254712345678,254723456789,254734567890",
+  "sender_id": "TALKSASA",
+  "type": "plain",
+  "message": "System maintenance notification"
+}
+```
+
+Note: Phone numbers are comma-separated string, NOT an array
 
 ---
 
