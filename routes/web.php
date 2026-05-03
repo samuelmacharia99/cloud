@@ -11,6 +11,23 @@ Route::get('/', function () {
 Route::middleware(['auth'])->group(function () {
     // Exit impersonation (accessible by all authenticated users, including impersonated customers)
     Route::post('admin/exit-impersonation', [\App\Http\Controllers\Admin\CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
+    Route::post('/exit-impersonation', function () {
+        // Check if impersonating from reseller or admin
+        if (session('impersonating_reseller')) {
+            $resellerId = session('impersonating_reseller');
+            session()->forget(['impersonating_reseller', 'impersonating_user_id']);
+            auth()->logout();
+            auth()->loginUsingId($resellerId);
+            return redirect()->route('reseller.customers.index')->with('success', 'Exited customer view.');
+        } elseif (session('impersonating')) {
+            $adminId = session('impersonating');
+            session()->forget(['impersonating', 'impersonating_user_id']);
+            auth()->logout();
+            auth()->loginUsingId($adminId);
+            return redirect()->route('admin.customers.index')->with('success', 'Exited customer view.');
+        }
+        return redirect()->route('dashboard');
+    })->name('exit-impersonation');
 });
 
 // Public domain search and checkout (no authentication required)
@@ -160,6 +177,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Reseller-only routes
     Route::middleware('reseller')->group(function () {
         Route::resource('reseller/customers', \App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
+        Route::post('reseller/customers/{customer}/impersonate', [\App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
+        Route::post('reseller/exit-impersonation', [\App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
         Route::resource('reseller/catalog', \App\Http\Controllers\Reseller\CatalogController::class)->names('reseller.catalog');
         Route::get('reseller/domains', [\App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
         Route::get('reseller/domains-pricing', [\App\Http\Controllers\Reseller\DomainPricingController::class, 'index'])->name('reseller.domains.pricing');

@@ -139,6 +139,40 @@ class CustomerController extends Controller
             ->with('success', "Customer '{$customerName}' has been deleted successfully.");
     }
 
+    public function impersonate(User $customer)
+    {
+        $this->checkOwnership($customer);
+
+        // Store the reseller ID in session for later exit
+        session(['impersonating_reseller' => auth()->id(), 'impersonating_user_id' => $customer->id]);
+
+        // Log out the current reseller and log in as the customer
+        auth()->logout();
+        auth()->loginUsingId($customer->id);
+
+        return redirect()->route('dashboard')
+            ->with('success', "You are now viewing the dashboard as {$customer->name}.");
+    }
+
+    public function exitImpersonation()
+    {
+        if (!session('impersonating_reseller')) {
+            return redirect()->route('dashboard');
+        }
+
+        $resellerId = session('impersonating_reseller');
+
+        // Clear impersonation session data
+        session()->forget(['impersonating_reseller', 'impersonating_user_id']);
+
+        // Log out and log back in as reseller
+        auth()->logout();
+        auth()->loginUsingId($resellerId);
+
+        return redirect()->route('reseller.customers.index')
+            ->with('success', 'Exited customer view.');
+    }
+
     /**
      * Check if customer belongs to the authenticated reseller
      */
