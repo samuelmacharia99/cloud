@@ -39,6 +39,11 @@
 
             <!-- Mode 1: Add from Admin Catalog -->
             <div x-show="mode === 'admin'" class="space-y-6">
+                <!-- Hidden fields for admin mode (name and type come from selected product) -->
+                <input type="hidden" name="name" x-bind:value="selectedProduct?.name || ''">
+                <input type="hidden" name="description" x-bind:value="selectedProduct?.description || ''">
+                <input type="hidden" name="type" x-bind:value="selectedProduct?.type || ''">
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <!-- Left: Admin Product Selection -->
                     <div class="space-y-6">
@@ -174,7 +179,7 @@
                         <!-- Name -->
                         <div>
                             <label for="custom_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Name</label>
-                            <input type="text" id="custom_name" x-model="customName" @input="updateCustomForm()" placeholder="My Custom Product" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror">
+                            <input type="text" id="custom_name" name="name" x-model="customName" placeholder="My Custom Product" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror">
                             @error('name')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -183,7 +188,7 @@
                         <!-- Description -->
                         <div>
                             <label for="custom_description" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Description <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
-                            <textarea id="custom_description" x-model="customDescription" @input="updateCustomForm()" rows="4" placeholder="Describe this product..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none @error('description') border-red-500 @enderror"></textarea>
+                            <textarea id="custom_description" name="description" x-model="customDescription" rows="4" placeholder="Describe this product..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none @error('description') border-red-500 @enderror"></textarea>
                             @error('description')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -192,7 +197,7 @@
                         <!-- Type -->
                         <div>
                             <label for="custom_type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type</label>
-                            <select id="custom_type" x-model="customType" @change="updateCustomForm()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror">
+                            <select id="custom_type" name="type" x-model="customType" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror">
                                 <option value="">Select a type...</option>
                                 @foreach($productTypes as $key => $label)
                                     <option value="{{ $key }}">{{ $label }}</option>
@@ -210,7 +215,7 @@
                             <label for="custom_monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_monthly_price" x-model.number="customMonthlyPrice" @input="updateCustomForm()" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                                <input type="number" id="custom_monthly_price" name="monthly_price" x-model.number="customMonthlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                             </div>
                             @error('monthly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -222,7 +227,7 @@
                             <label for="custom_yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_yearly_price" x-model.number="customYearlyPrice" @input="updateCustomForm()" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                                <input type="number" id="custom_yearly_price" name="yearly_price" x-model.number="customYearlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                             </div>
                             @error('yearly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -234,7 +239,7 @@
                             <label for="custom_setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_setup_fee" x-model.number="customSetupFee" @input="updateCustomForm()" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                                <input type="number" id="custom_setup_fee" name="setup_fee" x-model.number="customSetupFee" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                             </div>
                             @error('setup_fee')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -244,15 +249,13 @@
                         <!-- Active Toggle -->
                         <div>
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" x-model="customIsActive" @change="updateCustomForm()" class="w-4 h-4 text-blue-600 rounded" checked>
+                                <input type="checkbox" name="is_active" value="1" x-model="customIsActive" class="w-4 h-4 text-blue-600 rounded" checked>
                                 <span class="text-sm text-slate-700 dark:text-slate-300">Active</span>
                             </label>
                         </div>
                     </div>
                 </div>
 
-                <!-- Hidden input for mode 2 -->
-                <input type="hidden" name="product_id" value="">
             </div>
 
             <!-- Form Actions -->
@@ -326,18 +329,6 @@ function catalogForm() {
         },
         productTypeLabel(type) {
             return this.productTypes[type] || type;
-        },
-        updateCustomForm() {
-            const form = document.querySelector('form');
-            const inputs = {
-                name: this.customName,
-                description: this.customDescription,
-                type: this.customType,
-                monthly_price: this.customMonthlyPrice || '',
-                yearly_price: this.customYearlyPrice || '',
-                setup_fee: this.customSetupFee || '',
-                is_active: this.customIsActive ? '1' : '0',
-            };
         }
     }
 }
