@@ -12,7 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('payments', function (Blueprint $table) {
-            $table->enum('payment_purpose', ['invoice_payment', 'wallet_topup'])->default('invoice_payment')->after('method');
+            if (!Schema::hasColumn('payments', 'payment_purpose')) {
+                $table->enum('payment_purpose', ['invoice_payment', 'wallet_topup'])->default('invoice_payment')->after('payment_method');
+            }
         });
     }
 
@@ -22,7 +24,9 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('payments', function (Blueprint $table) {
-            $table->dropColumn('payment_purpose');
+            if (Schema::hasColumn('payments', 'payment_purpose')) {
+                $table->dropColumn('payment_purpose');
+            }
         });
     }
 };
