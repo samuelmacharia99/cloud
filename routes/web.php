@@ -177,6 +177,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('reseller/settings/branding', [\App\Http\Controllers\Reseller\SettingController::class, 'updateBranding'])->name('reseller.settings.branding.update');
         Route::post('reseller/settings/branding/upload', [\App\Http\Controllers\Reseller\SettingController::class, 'uploadBrandingFile'])->name('reseller.settings.branding.upload');
         Route::delete('reseller/settings/branding/file', [\App\Http\Controllers\Reseller\SettingController::class, 'deleteBrandingFile'])->name('reseller.settings.branding.delete');
+        Route::get('reseller/settings/branding/ssl/check-dns', [\App\Http\Controllers\Reseller\SettingController::class, 'checkSslDns'])->name('reseller.settings.branding.ssl.check-dns');
+        Route::post('reseller/settings/branding/ssl/issue', [\App\Http\Controllers\Reseller\SettingController::class, 'issueSsl'])->name('reseller.settings.branding.ssl.issue');
+        Route::post('reseller/settings/branding/ssl/renew', [\App\Http\Controllers\Reseller\SettingController::class, 'renewSsl'])->name('reseller.settings.branding.ssl.renew');
 
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');

@@ -559,6 +559,93 @@
                                 </form>
                             </div>
                         </div>
+
+                        <!-- SSL Certificate Section -->
+                        @php
+                            $sslStatus = $brandingSettings['ssl'] ?? [];
+                            $customDomain = $brandingSettings['custom_domain'] ?? null;
+                        @endphp
+
+                        @if(!empty($customDomain))
+                        <div class="border-t border-slate-200 dark:border-slate-700 pt-6" x-data="sslChecker()">
+                            <h4 class="font-medium text-slate-900 dark:text-white mb-4">SSL Certificate</h4>
+
+                            <!-- DNS Check Section -->
+                            <div class="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-lg border border-slate-200 dark:border-slate-700 mb-6">
+                                <p class="text-sm font-medium text-slate-900 dark:text-white mb-4">Before setting up SSL, verify your DNS is correctly configured:</p>
+                                <div class="flex gap-3">
+                                    <button type="button" @click="checkDns()" :disabled="checking" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-500 text-white text-sm font-medium rounded-lg transition">
+                                        <span x-show="!checking">Check DNS</span>
+                                        <span x-show="checking">Checking...</span>
+                                    </button>
+                                </div>
+
+                                <!-- DNS Check Results -->
+                                <div x-show="dnsChecked" class="mt-4 space-y-2">
+                                    <div class="text-sm">
+                                        <p class="text-slate-600 dark:text-slate-400">Server IP: <span class="font-mono text-slate-900 dark:text-white">{{ substr(gethostbyname(parse_url(config('app.url'), PHP_URL_HOST)), 0, 50) }}</span></p>
+                                        <p class="text-slate-600 dark:text-slate-400" x-show="dnsResult">Domain IP: <span class="font-mono text-slate-900 dark:text-white" x-text="dnsResult.domain_ip"></span></p>
+                                    </div>
+                                    <p class="text-sm" :class="dnsResult && dnsResult.match ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'" x-show="dnsResult && !dnsResult.match">
+                                        ✗ {{ $customDomain }} is not pointing to this server
+                                    </p>
+                                    <p class="text-sm text-emerald-600 dark:text-emerald-400" x-show="dnsResult && dnsResult.match">
+                                        ✓ DNS is correctly configured
+                                    </p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400" x-show="!dnsResult.certbot_available">
+                                        ⚠️ certbot is not installed on this server. Ask your administrator to install it.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- SSL Status -->
+                            <div class="space-y-4">
+                                @if($sslStatus['status'] === 'active')
+                                    <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                        <div>
+                                            <p class="text-sm font-medium text-emerald-900 dark:text-emerald-300">SSL Certificate Active</p>
+                                            @if($sslStatus['expires_at'])
+                                                <p class="text-xs text-emerald-700 dark:text-emerald-400">
+                                                    Expires: {{ \Carbon\Carbon::parse($sslStatus['expires_at'])->format('M d, Y') }}
+                                                </p>
+                                            @endif
+                                        </div>
+                                        <form action="{{ route('reseller.settings.branding.ssl.renew') }}" method="POST">
+                                            @csrf
+                                            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                                                Renew
+                                            </button>
+                                        </form>
+                                    </div>
+                                @elseif($sslStatus['status'] === 'failed')
+                                    <div class="bg-red-50 dark:bg-red-950/30 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                                        <p class="text-sm font-medium text-red-900 dark:text-red-300 mb-2">SSL Setup Failed</p>
+                                        @if($sslStatus['error'])
+                                            <p class="text-xs text-red-700 dark:text-red-400 mb-3">{{ $sslStatus['error'] }}</p>
+                                        @endif
+                                        <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST" class="flex gap-3">
+                                            @csrf
+                                            <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition">
+                                                Retry SSL Setup
+                                            </button>
+                                        </form>
+                                    </div>
+                                @else
+                                    <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST">
+                                        @csrf
+                                        <button type="submit" x-bind:disabled="!dnsResult || !dnsResult.match || !dnsResult.certbot_available" :class="(!dnsResult || !dnsResult.match || !dnsResult.certbot_available) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-700'" class="px-6 py-2 bg-amber-600 text-white font-medium rounded-lg transition">
+                                            Setup SSL Certificate
+                                        </button>
+                                    </form>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Click "Check DNS" first to verify your domain is properly configured.</p>
+                                @endif
+                            </div>
+                        </div>
+                        @else
+                            <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
+                                <p class="text-sm text-slate-600 dark:text-slate-400">Set a custom domain above to enable SSL certificate setup.</p>
+                            </div>
+                        @endif
                     </div>
                 </div>
             </div>
@@ -570,6 +657,37 @@
 function settingsTabs() {
     return {
         activeTab: 'payment',
+    }
+}
+
+function sslChecker() {
+    return {
+        checking: false,
+        dnsChecked: false,
+        dnsResult: null,
+        checkDns() {
+            this.checking = true;
+            const domain = '{{ $customDomain ?? "" }}';
+
+            if (!domain) {
+                alert('Please save a custom domain first.');
+                this.checking = false;
+                return;
+            }
+
+            fetch(`{{ route('reseller.settings.branding.ssl.check-dns') }}?domain=${encodeURIComponent(domain)}`)
+                .then(response => response.json())
+                .then(data => {
+                    this.dnsResult = data;
+                    this.dnsChecked = true;
+                    this.checking = false;
+                })
+                .catch(error => {
+                    console.error('Error checking DNS:', error);
+                    alert('Failed to check DNS. Please try again.');
+                    this.checking = false;
+                });
+        }
     }
 }
 </script>

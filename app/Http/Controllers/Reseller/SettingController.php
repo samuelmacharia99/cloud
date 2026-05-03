@@ -14,17 +14,20 @@ use App\Http\Requests\UploadBrandingFileRequest;
 use App\Services\ResellerSettingsService;
 use App\Services\TalksasaSmsService;
 use App\Services\ResellerBrandingService;
+use App\Services\ResellerSslService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 
 class SettingController extends Controller
 {
     public function __construct(
         private ResellerSettingsService $settingsService,
         private TalksasaSmsService $smsService,
-        private ResellerBrandingService $brandingService
+        private ResellerBrandingService $brandingService,
+        private ResellerSslService $sslService
     ) {}
 
     public function index(): View
@@ -246,6 +249,126 @@ class SettingController extends Controller
             ]);
 
             return back()->with('error', 'Failed to delete file. Please try again.');
+        }
+    }
+
+    public function checkSslDns(Request $request): JsonResponse
+    {
+        try {
+            $domain = $request->query('domain');
+
+            if (empty($domain)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Domain is required.',
+                ], 400);
+            }
+
+            $dnsCheck = $this->sslService->checkDns($domain);
+            $certbotAvailable = $this->sslService->isCertbotAvailable();
+
+            Log::info('DNS check performed for custom domain', [
+                'reseller_id' => auth()->id(),
+                'domain' => $domain,
+                'resolves' => $dnsCheck['resolves'],
+                'match' => $dnsCheck['match'],
+                'certbot_available' => $certbotAvailable,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'resolves' => $dnsCheck['resolves'],
+                'match' => $dnsCheck['match'],
+                'domain_ip' => $dnsCheck['domain_ip'],
+                'server_ip' => $dnsCheck['server_ip'],
+                'message' => $dnsCheck['message'],
+                'certbot_available' => $certbotAvailable,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('DNS check failed', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to check DNS: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function issueSsl(Request $request): RedirectResponse
+    {
+        try {
+            $user = auth()->user();
+
+            Log::info('SSL issuance initiated', [
+                'reseller_id' => $user->id,
+            ]);
+
+            $result = $this->sslService->issueCertificate($user);
+
+            if ($result['success']) {
+                Log::info('SSL certificate issued successfully', [
+                    'reseller_id' => $user->id,
+                    'message' => $result['message'],
+                ]);
+
+                return back()->with('success', $result['message']);
+            } else {
+                Log::warning('SSL certificate issuance failed', [
+                    'reseller_id' => $user->id,
+                    'message' => $result['message'],
+                ]);
+
+                return back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            Log::error('Exception during SSL issuance', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with('error', 'Failed to issue SSL certificate. Please try again.');
+        }
+    }
+
+    public function renewSsl(Request $request): RedirectResponse
+    {
+        try {
+            $user = auth()->user();
+
+            Log::info('SSL renewal initiated', [
+                'reseller_id' => $user->id,
+            ]);
+
+            $result = $this->sslService->renewCertificate($user);
+
+            if ($result['success']) {
+                Log::info('SSL certificate renewed successfully', [
+                    'reseller_id' => $user->id,
+                    'message' => $result['message'],
+                ]);
+
+                return back()->with('success', $result['message']);
+            } else {
+                Log::warning('SSL certificate renewal failed', [
+                    'reseller_id' => $user->id,
+                    'message' => $result['message'],
+                ]);
+
+                return back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            Log::error('Exception during SSL renewal', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with('error', 'Failed to renew SSL certificate. Please try again.');
         }
     }
 }
