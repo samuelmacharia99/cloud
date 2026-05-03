@@ -208,7 +208,7 @@ class DomainController extends Controller
             'registrar' => 'nullable|string',
             'status' => 'required|in:active,expired,suspended',
             'registered_at' => 'nullable|date',
-            'expires_at' => 'required|date',
+            'expires_at' => 'nullable|date',
             'auto_renew' => 'nullable|boolean',
             'nameserver_1' => 'nullable|string',
             'nameserver_2' => 'nullable|string',
