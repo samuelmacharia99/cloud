@@ -129,6 +129,43 @@ class ResellerSettingsService
         ]);
     }
 
+    public function getBrandingSettings(User $user): array
+    {
+        return $this->getSettings($user, 'branding', [
+            'company_name' => '',
+            'custom_domain' => null,
+            'logo_url' => null,
+            'logo_path' => null,
+            'favicon_url' => null,
+            'favicon_path' => null,
+            'updated_at' => null,
+        ]);
+    }
+
+    public function updateBrandingSettings(User $user, array $data): void
+    {
+        $settings = $user->settings ?? [];
+        $currentBranding = $settings['branding'] ?? [];
+
+        $settings['branding'] = [
+            'company_name' => $data['company_name'],
+            'custom_domain' => $data['custom_domain'] ?? null,
+            'logo_url' => $currentBranding['logo_url'] ?? null,
+            'logo_path' => $currentBranding['logo_path'] ?? null,
+            'favicon_url' => $currentBranding['favicon_url'] ?? null,
+            'favicon_path' => $currentBranding['favicon_path'] ?? null,
+            'updated_at' => now(),
+        ];
+
+        $user->update([self::SETTINGS_KEY => $settings]);
+
+        Log::info('Reseller branding settings updated', [
+            'reseller_id' => $user->id,
+            'company_name' => $data['company_name'],
+            'custom_domain' => $data['custom_domain'] ?? null,
+        ]);
+    }
+
     private function getSettings(User $user, string $key, array $defaults): array
     {
         $settings = $user->settings ?? [];

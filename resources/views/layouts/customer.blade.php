@@ -5,7 +5,11 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>@yield('title', 'My Account') — {{ config('app.name', 'Talksasa Cloud') }}</title>
+        <title>@yield('title', 'My Account') — {{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa Cloud') }}</title>
+
+        @isset($resellerBranding['favicon_url'])
+        <link rel="icon" type="image/x-icon" href="{{ $resellerBranding['favicon_url'] }}">
+        @endisset
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
@@ -19,12 +23,16 @@
             <aside class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto hidden md:flex md:flex-col fixed h-screen md:static">
                 <!-- Logo -->
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
-                    <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                            <span class="text-white font-bold text-sm">TC</span>
-                        </div>
-                        <div>
-                            <p class="text-sm font-bold text-slate-900 dark:text-white">Talksasa</p>
+                    <a href="{{ route('dashboard') }}" class="flex items-center gap-2 w-full">
+                        @if(!empty($resellerBranding['logo_url']))
+                            <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
+                        @else
+                            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0">
+                                <span class="text-white font-bold text-sm">{{ strtoupper(substr($resellerBranding['company_name'] ?? 'TC', 0, 2)) }}</span>
+                            </div>
+                        @endif
+                        <div class="min-w-0">
+                            <p class="text-sm font-bold text-slate-900 dark:text-white truncate">{{ $resellerBranding['company_name'] ?? 'Talksasa' }}</p>
                             <p class="text-xs text-slate-500 dark:text-slate-400">Cloud</p>
                         </div>
                     </a>

@@ -5,6 +5,8 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 use App\Models\CronJob;
+use Illuminate\Support\Facades\View;
+use App\Models\User;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,6 +19,31 @@ class AppServiceProvider extends ServiceProvider
     {
         // Load mail settings from database
         $this->loadMailConfigFromDatabase();
+
+        // Share reseller branding with all views
+        View::composer('*', function ($view) {
+            if (!auth()->check()) {
+                return;
+            }
+
+            $user = auth()->user();
+            $reseller = null;
+
+            if ($user->is_reseller) {
+                $reseller = $user;
+            } elseif ($user->reseller_id) {
+                $reseller = User::find($user->reseller_id);
+            }
+
+            $branding = $reseller ? ($reseller->settings['branding'] ?? []) : [];
+
+            $view->with('resellerBranding', array_merge([
+                'company_name' => config('app.name'),
+                'custom_domain' => null,
+                'logo_url' => null,
+                'favicon_url' => null,
+            ], $branding));
+        });
 
         // Register dynamic cron job scheduler
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {

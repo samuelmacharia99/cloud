@@ -62,6 +62,14 @@
                 </svg>
                 <span>Email</span>
             </button>
+
+            <!-- Branding Tab -->
+            <button @click="activeTab = 'branding'" :class="activeTab === 'branding' ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+                </svg>
+                <span>Branding</span>
+            </button>
         </div>
 
         <!-- Tab Content -->
@@ -402,6 +410,154 @@
                                     Send Test Email
                                 </button>
                             </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Branding Tab Content -->
+            <div x-show="activeTab === 'branding'" x-transition>
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <div class="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+                            </svg>
+                            <h3 class="text-lg font-bold text-white">Branding Settings</h3>
+                        </div>
+                    </div>
+
+                    <div class="p-6 space-y-6">
+                        <!-- Company Name Form -->
+                        <form action="{{ route('reseller.settings.branding.update') }}" method="POST" class="space-y-6">
+                            @csrf
+
+                            <!-- Company Name -->
+                            <div>
+                                <label for="company_name" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Company Name</label>
+                                <input type="text" id="company_name" name="company_name"
+                                    value="{{ old('company_name', $brandingSettings['company_name'] ?? '') }}"
+                                    placeholder="e.g., Acme Hosting" required
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
+                                @error('company_name')
+                                    <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Custom Domain -->
+                            <div>
+                                <label for="custom_domain" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Domain</label>
+                                <input type="text" id="custom_domain" name="custom_domain"
+                                    value="{{ old('custom_domain', $brandingSettings['custom_domain'] ?? '') }}"
+                                    placeholder="e.g., billing.acme.com"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your customers can access your portal via your custom domain. To use a custom domain, create a CNAME record pointing to your Talksasa instance.</p>
+                                @error('custom_domain')
+                                    <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <div class="flex gap-3">
+                                <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
+                                    Save Branding Settings
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Logo Upload -->
+                        <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
+                            <h4 class="font-medium text-slate-900 dark:text-white mb-4">Logo</h4>
+                            <div class="space-y-4">
+                                @if(!empty($brandingSettings['logo_url']))
+                                    <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                                        <div class="flex items-center gap-3">
+                                            <img src="{{ $brandingSettings['logo_url'] }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
+                                            <div>
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Current Logo</p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 500x150px</p>
+                                            </div>
+                                        </div>
+                                        <form action="{{ route('reseller.settings.branding.delete') }}" method="POST" class="flex">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="type" value="logo">
+                                            <button type="submit" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition">
+                                                Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                @endif
+                                <form action="{{ route('reseller.settings.branding.upload') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-2">
+                                    @csrf
+                                    <input type="hidden" name="type" value="logo">
+                                    <div class="relative">
+                                        <label for="logo_file" class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                            <div class="text-center">
+                                                <svg class="mx-auto h-8 w-8 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">Click to upload or drag and drop</p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500">PNG, JPG, GIF or WebP (max 2MB)</p>
+                                            </div>
+                                            <input id="logo_file" name="file" type="file" class="hidden" accept="image/*" required>
+                                        </label>
+                                    </div>
+                                    <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
+                                        Upload Logo
+                                    </button>
+                                    @error('file')
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
+                                    @enderror
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- Favicon Upload -->
+                        <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
+                            <h4 class="font-medium text-slate-900 dark:text-white mb-4">Favicon</h4>
+                            <div class="space-y-4">
+                                @if(!empty($brandingSettings['favicon_url']))
+                                    <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                                        <div class="flex items-center gap-3">
+                                            <img src="{{ $brandingSettings['favicon_url'] }}" alt="Favicon" class="h-8 w-8 object-contain">
+                                            <div>
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Current Favicon</p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 32x32px or 64x64px</p>
+                                            </div>
+                                        </div>
+                                        <form action="{{ route('reseller.settings.branding.delete') }}" method="POST" class="flex">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="type" value="favicon">
+                                            <button type="submit" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition">
+                                                Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                @endif
+                                <form action="{{ route('reseller.settings.branding.upload') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-2">
+                                    @csrf
+                                    <input type="hidden" name="type" value="favicon">
+                                    <div class="relative">
+                                        <label for="favicon_file" class="flex items-center justify-center w-full px-4 py-3 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
+                                            <div class="text-center">
+                                                <svg class="mx-auto h-8 w-8 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                                </svg>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400">Click to upload or drag and drop</p>
+                                                <p class="text-xs text-slate-500 dark:text-slate-500">PNG, ICO or GIF (max 2MB)</p>
+                                            </div>
+                                            <input id="favicon_file" name="file" type="file" class="hidden" accept="image/*" required>
+                                        </label>
+                                    </div>
+                                    <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
+                                        Upload Favicon
+                                    </button>
+                                    @error('file')
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
+                                    @enderror
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>

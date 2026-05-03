@@ -174,6 +174,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('reseller/settings/sms/test', [\App\Http\Controllers\Reseller\SettingController::class, 'testSms'])->name('reseller.settings.sms.test');
         Route::post('reseller/settings/smtp', [\App\Http\Controllers\Reseller\SettingController::class, 'updateSmtp'])->name('reseller.settings.smtp.update');
         Route::post('reseller/settings/smtp/test', [\App\Http\Controllers\Reseller\SettingController::class, 'testSmtp'])->name('reseller.settings.smtp.test');
+        Route::post('reseller/settings/branding', [\App\Http\Controllers\Reseller\SettingController::class, 'updateBranding'])->name('reseller.settings.branding.update');
+        Route::post('reseller/settings/branding/upload', [\App\Http\Controllers\Reseller\SettingController::class, 'uploadBrandingFile'])->name('reseller.settings.branding.upload');
+        Route::delete('reseller/settings/branding/file', [\App\Http\Controllers\Reseller\SettingController::class, 'deleteBrandingFile'])->name('reseller.settings.branding.delete');
 
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
