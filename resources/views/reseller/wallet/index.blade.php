@@ -3,7 +3,37 @@
 @section('title', 'My Wallet')
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="{
+    openTopupForm: false,
+    loading: false,
+    invoiceId: null,
+    checkoutId: null,
+    checking: false,
+    async startStatusCheck() {
+        this.checking = true;
+        const invoiceId = this.invoiceId;
+        const self = this;
+
+        const interval = setInterval(async () => {
+            try {
+                const response = await fetch(`{{ route('reseller.wallet.topup.status', '') }}/${invoiceId}`);
+                const data = await response.json();
+
+                if (data.status === 'completed') {
+                    clearInterval(interval);
+                    alert('Payment successful! Your wallet has been credited.');
+                    setTimeout(() => window.location.reload(), 500);
+                } else if (data.status === 'failed') {
+                    clearInterval(interval);
+                    alert('Payment failed: ' + data.message);
+                    setTimeout(() => window.location.reload(), 500);
+                }
+            } catch (error) {
+                console.error('Error checking payment status:', error);
+            }
+        }, 2000);
+    }
+}" @click.outside="if (event.target.closest('.modal-form')) { return; } openTopupForm = false">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
@@ -36,18 +66,20 @@
         @endif
     </div>
 
-    <!-- Top-up Form (Alpine.js) -->
-    <div x-data="{ openTopupForm: false, loading: false, invoiceId: null, checkoutId: null, checking: false }" @click.outside="openTopupForm = false">
-        <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Top Up Wallet</h3>
-                    <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700">✕</button>
-                </div>
+    <!-- Top-up Modal Overlay -->
+    <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+        <!-- Top-up Form Card -->
+        <div class="modal-form bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Top Up Wallet</h3>
+                <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">✕</button>
+            </div>
 
-                <form @submit.prevent="async () => {
-                    loading = true;
-                    const formData = new FormData(this);
+            <form @submit.prevent="async function(e) {
+                loading = true;
+                const form = e.target;
+                const formData = new FormData(form);
+                try {
                     const response = await fetch('{{ route('reseller.wallet.topup') }}', {
                         method: 'POST',
                         headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content },
@@ -62,36 +94,40 @@
                         alert('Error: ' + data.message);
                         loading = false;
                     }
-                }">
-                    @csrf
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
-                            <input type="number" name="amount" min="1500" max="50000" step="100" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400">
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 1,500 | Maximum: KES 50,000</p>
-                        </div>
-
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone</label>
-                            <input type="tel" name="phone" placeholder="+254712345678" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400">
-                        </div>
-
-                        <button type="submit" :disabled="loading" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition">
-                            <span x-show="!loading">Initiate Payment</span>
-                            <span x-show="loading">Processing...</span>
-                        </button>
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('An error occurred. Please try again.');
+                    loading = false;
+                }
+            }">
+                @csrf
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
+                        <input type="number" name="amount" min="1500" max="50000" step="100" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 1,500 | Maximum: KES 50,000</p>
                     </div>
-                </form>
-            </div>
-        </div>
 
-        <!-- Payment Confirmation (shown after STK push) -->
-        <div x-show="checkoutId && !checking" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6" style="display: none;">
-            <h3 class="text-lg font-semibold text-blue-900 dark:text-blue-200 mb-2">M-Pesa Payment Initiated</h3>
-            <p class="text-blue-800 dark:text-blue-300 mb-4">Check your phone for the M-Pesa prompt. Do not refresh this page.</p>
-            <button type="button" @click="startStatusCheck()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg">
-                Verify Payment
-            </button>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone</label>
+                        <input type="tel" name="phone" placeholder="+254712345678" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
+                    </div>
+
+                    <button type="submit" :disabled="loading" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition">
+                        <span x-show="!loading">Initiate Payment</span>
+                        <span x-show="loading">Processing...</span>
+                    </button>
+                </div>
+            </form>
+
+            <!-- Payment Confirmation (shown after STK push) -->
+            <div x-show="checkoutId && !checking" class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl" style="display: none;">
+                <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">M-Pesa Payment Initiated</h4>
+                <p class="text-sm text-blue-800 dark:text-blue-300 mb-4">Check your phone for the M-Pesa prompt. Do not refresh this page.</p>
+                <button type="button" @click="startStatusCheck()" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition">
+                    Verify Payment
+                </button>
+            </div>
         </div>
     </div>
 
@@ -161,26 +197,4 @@
     @endif
 </div>
 
-<script>
-function startStatusCheck() {
-    const invoiceId = this.invoiceId;
-    const checkoutId = this.checkoutId;
-    this.checking = true;
-
-    const interval = setInterval(async () => {
-        const response = await fetch(`{{ route('reseller.wallet.topup.status', '') }}/${invoiceId}`);
-        const data = await response.json();
-
-        if (data.status === 'completed') {
-            clearInterval(interval);
-            alert('Payment successful! Your wallet has been credited.');
-            window.location.reload();
-        } else if (data.status === 'failed') {
-            clearInterval(interval);
-            alert('Payment failed: ' + data.message);
-            window.location.reload();
-        }
-    }, 2000);
-}
-</script>
 @endsection
