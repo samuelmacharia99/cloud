@@ -10,6 +10,7 @@ use App\Http\Requests\RegisterMpesaUrlsRequest;
 use App\Http\Requests\TestSmsRequest;
 use App\Http\Requests\TestSmtpRequest;
 use App\Services\ResellerSettingsService;
+use App\Services\TalksasaSmsService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -17,7 +18,8 @@ use Illuminate\Http\RedirectResponse;
 class SettingController extends Controller
 {
     public function __construct(
-        private ResellerSettingsService $settingsService
+        private ResellerSettingsService $settingsService,
+        private TalksasaSmsService $smsService
     ) {}
 
     public function index(): View
@@ -90,26 +92,41 @@ class SettingController extends Controller
     {
         try {
             $user = auth()->user();
-            $smsSettings = $this->settingsService->getSmsSettings($user);
+            $phone = $request->input('phone');
+            $message = 'This is a test SMS from Talksasa Cloud. Your SMS configuration is working correctly!';
 
-            if (empty($smsSettings['api_key'])) {
-                return back()->with('error', 'SMS settings are not configured. Please configure SMS settings first.');
-            }
-
-            Log::info('SMS test message sent', [
-                'reseller_id' => auth()->id(),
-                'phone' => $request->input('phone'),
+            Log::info('Test SMS: Initiating', [
+                'reseller_id' => $user->id,
+                'phone' => $phone,
             ]);
 
-            return back()->with('success', 'Test SMS sent successfully to ' . $request->input('phone'));
+            // Send test SMS
+            $result = $this->smsService->sendSms($user, $phone, $message);
+
+            if ($result['success']) {
+                Log::info('Test SMS: Sent successfully', [
+                    'reseller_id' => $user->id,
+                    'sms_id' => $result['sms_id'],
+                ]);
+
+                return back()->with('success', 'Test SMS sent successfully to ' . $phone . '. Check your logs for delivery status.');
+            } else {
+                Log::warning('Test SMS: API rejected request', [
+                    'reseller_id' => $user->id,
+                    'response' => $result['response'],
+                ]);
+
+                $errorMessage = $result['message'] ?? 'Failed to send test SMS';
+                return back()->with('error', $errorMessage);
+            }
         } catch (\Exception $e) {
-            Log::error('Failed to send test SMS', [
+            Log::error('Test SMS: Exception occurred', [
                 'error' => $e->getMessage(),
                 'reseller_id' => auth()->id(),
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to send test SMS. Please try again.');
+            return back()->with('error', 'Failed to send test SMS. Check logs for details.');
         }
     }
 

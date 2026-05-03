@@ -42,6 +42,11 @@ class SmsPayloadService
         ];
     }
 
+    public function normalizePhone(string $phone): string
+    {
+        return $this->normalizePhoneNumber($phone);
+    }
+
     private function normalizePhoneNumber(string $phone): string
     {
         $phone = preg_replace('/[^0-9+]/', '', $phone);
