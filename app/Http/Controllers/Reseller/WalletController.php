@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Enums\PaymentStatus;
 use App\Http\Requests\InitiateWalletTopupRequest;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -135,16 +136,28 @@ class WalletController extends Controller
             return response()->json(['status' => 'pending', 'message' => 'Payment not found']);
         }
 
-        if ($payment->status === 'completed') {
+        if ($payment->status === PaymentStatus::Completed) {
             return response()->json(['status' => 'completed', 'message' => 'Payment successful']);
         }
 
-        if ($payment->status === 'failed') {
+        if ($payment->status === PaymentStatus::Failed) {
             return response()->json(['status' => 'failed', 'message' => 'Payment failed']);
         }
 
         // Check payment status via M-Pesa
         $result = $this->mpesaService->verify($payment->transaction_reference);
+
+        // If M-Pesa says payment succeeded, update our records and credit the wallet
+        if ($result['status'] === 'completed' && $payment->status !== PaymentStatus::Completed) {
+            $payment->update(['status' => PaymentStatus::Completed->value, 'paid_at' => now()]);
+
+            if ($payment->invoice) {
+                $payment->invoice->update(['status' => 'paid']);
+            }
+
+            // Credit the wallet
+            app('wallet-service')->processTopupPayment($payment);
+        }
 
         return response()->json([
             'status' => $result['status'],
