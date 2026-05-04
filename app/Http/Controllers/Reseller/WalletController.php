@@ -36,9 +36,12 @@ class WalletController extends Controller
         $reseller = auth()->user();
 
         $validated = $request->validate([
-            'amount' => 'required|numeric|min:1500|max:50000',
+            'amount' => 'required|numeric|min:5|max:50000',
             'payment_method' => 'required|string|in:mpesa,stripe,paypal',
             'phone' => 'required_if:payment_method,mpesa|nullable|string',
+        ], [
+            'amount.min' => 'Minimum top-up amount is KES 5',
+            'amount.max' => 'Maximum top-up amount is KES 50,000',
         ]);
 
         try {

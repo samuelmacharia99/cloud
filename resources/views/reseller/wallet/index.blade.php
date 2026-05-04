@@ -105,8 +105,8 @@
                     <!-- Amount -->
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
-                        <input type="number" name="amount" min="1500" max="50000" step="100" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 1,500 | Maximum: KES 50,000</p>
+                        <input type="number" name="amount" min="5" max="50000" step="1" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 5 | Maximum: KES 50,000</p>
                     </div>
 
                     <!-- Payment Method -->

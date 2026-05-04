@@ -29,7 +29,7 @@ class InitiateWalletTopupRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'amount' => 'required|numeric|min:1500|max:50000',
+            'amount' => 'required|numeric|min:5|max:50000',
             'phone' => 'required|string|regex:/^\+254\d{9}$/',
         ];
     }
@@ -37,7 +37,7 @@ class InitiateWalletTopupRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'amount.min' => 'Minimum top-up amount is KES 1,500',
+            'amount.min' => 'Minimum top-up amount is KES 5',
             'amount.max' => 'Maximum top-up amount is KES 50,000',
             'phone.regex' => 'Phone number must be in format: +254XXXXXXXXX',
         ];
