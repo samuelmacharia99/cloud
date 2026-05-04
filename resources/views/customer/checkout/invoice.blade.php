@@ -47,13 +47,13 @@
                 <hr class="border-slate-200 dark:border-slate-700">
 
                 <!-- Payment Method Selection -->
-                <div>
+                <div x-data="{ paymentMethod: 'mpesa' }">
                     <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Select Payment Method</h2>
 
                     <div class="space-y-3">
                         <!-- M-Pesa -->
-                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition">
-                            <input type="radio" name="payment_method" value="mpesa" class="w-4 h-4 text-blue-600" checked>
+                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition" @click="paymentMethod = 'mpesa'">
+                            <input type="radio" name="payment_method" value="mpesa" x-model="paymentMethod" class="w-4 h-4 text-blue-600" checked>
                             <div class="ml-4 flex-1">
                                 <p class="font-semibold text-slate-900 dark:text-white">M-Pesa</p>
                                 <p class="text-sm text-slate-600 dark:text-slate-400">Pay via M-Pesa</p>
@@ -61,8 +61,8 @@
                         </label>
 
                         <!-- Stripe -->
-                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition">
-                            <input type="radio" name="payment_method" value="stripe" class="w-4 h-4 text-blue-600">
+                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition" @click="paymentMethod = 'stripe'">
+                            <input type="radio" name="payment_method" value="stripe" x-model="paymentMethod" class="w-4 h-4 text-blue-600">
                             <div class="ml-4 flex-1">
                                 <p class="font-semibold text-slate-900 dark:text-white">Card</p>
                                 <p class="text-sm text-slate-600 dark:text-slate-400">Pay with credit/debit card</p>
@@ -70,13 +70,20 @@
                         </label>
 
                         <!-- PayPal -->
-                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition">
-                            <input type="radio" name="payment_method" value="paypal" class="w-4 h-4 text-blue-600">
+                        <label class="flex items-center p-4 border-2 border-slate-200 dark:border-slate-700 rounded-lg hover:border-blue-500 dark:hover:border-blue-400 cursor-pointer transition" @click="paymentMethod = 'paypal'">
+                            <input type="radio" name="payment_method" value="paypal" x-model="paymentMethod" class="w-4 h-4 text-blue-600">
                             <div class="ml-4 flex-1">
                                 <p class="font-semibold text-slate-900 dark:text-white">PayPal</p>
                                 <p class="text-sm text-slate-600 dark:text-slate-400">Pay via PayPal</p>
                             </div>
                         </label>
+                    </div>
+
+                    <!-- M-Pesa Phone Number -->
+                    <div x-show="paymentMethod === 'mpesa'" class="mt-4 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone Number</label>
+                        <input type="tel" name="phone" placeholder="+254712345678" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required>
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter your M-Pesa registered phone number (with country code)</p>
                     </div>
                 </div>
 
@@ -131,6 +138,7 @@
 function handlePayment(invoiceId) {
     const paymentMethod = document.querySelector('input[name="payment_method"]:checked')?.value;
     const agreeTerms = document.getElementById('agree_terms').checked;
+    const phoneInput = document.querySelector('input[name="phone"]');
 
     if (!paymentMethod) {
         alert('Please select a payment method');
@@ -139,6 +147,12 @@ function handlePayment(invoiceId) {
 
     if (!agreeTerms) {
         alert('Please agree to the terms and conditions');
+        return;
+    }
+
+    // Validate M-Pesa phone number
+    if (paymentMethod === 'mpesa' && (!phoneInput || !phoneInput.value.trim())) {
+        alert('Please enter your M-Pesa phone number');
         return;
     }
 
@@ -164,6 +178,16 @@ function handlePayment(invoiceId) {
 
     form.appendChild(tokenInput);
     form.appendChild(methodInput);
+
+    // Add phone if M-Pesa
+    if (paymentMethod === 'mpesa' && phoneInput && phoneInput.value) {
+        const phoneFieldInput = document.createElement('input');
+        phoneFieldInput.type = 'hidden';
+        phoneFieldInput.name = 'phone';
+        phoneFieldInput.value = phoneInput.value;
+        form.appendChild(phoneFieldInput);
+    }
+
     document.body.appendChild(form);
     form.submit();
 }
