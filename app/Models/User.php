@@ -123,6 +123,11 @@ class User extends Authenticatable
         return $this->hasMany(ResellerDomainOrder::class, 'reseller_id');
     }
 
+    public function domainRenewalOrders()
+    {
+        return $this->hasMany(DomainRenewalOrder::class);
+    }
+
     public function isAdmin(): bool
     {
         return $this->is_admin;

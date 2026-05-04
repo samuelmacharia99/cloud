@@ -184,6 +184,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('admin/domain-orders/{order}', [\App\Http\Controllers\Admin\DomainOrderController::class, 'show'])->name('admin.domain-orders.show');
         Route::post('admin/domain-orders/{order}/complete', [\App\Http\Controllers\Admin\DomainOrderController::class, 'complete'])->name('admin.domain-orders.complete');
         Route::post('admin/domain-orders/{order}/fail', [\App\Http\Controllers\Admin\DomainOrderController::class, 'fail'])->name('admin.domain-orders.fail');
+
+        // Domain renewals
+        Route::get('admin/domain-renewals', [\App\Http\Controllers\Admin\DomainRenewalController::class, 'index'])->name('admin.domain-renewals.index');
+        Route::get('admin/domain-renewals/{renewal}', [\App\Http\Controllers\Admin\DomainRenewalController::class, 'show'])->name('admin.domain-renewals.show');
+        Route::post('admin/domain-renewals/{renewal}/complete', [\App\Http\Controllers\Admin\DomainRenewalController::class, 'complete'])->name('admin.domain-renewals.complete');
+        Route::post('admin/domain-renewals/{renewal}/fail', [\App\Http\Controllers\Admin\DomainRenewalController::class, 'fail'])->name('admin.domain-renewals.fail');
+        Route::post('admin/domain-renewals/{renewal}/expire', [\App\Http\Controllers\Admin\DomainRenewalController::class, 'expire'])->name('admin.domain-renewals.expire');
     });
 
     // Reseller-only routes
@@ -257,6 +264,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/my/domains/transfer/checkout/confirm', [\App\Http\Controllers\Customer\DomainController::class, 'confirmTransferCheckout'])->name('customer.domains.transfer-checkout-confirm');
         Route::get('/my/domains/{domain}/transfer', [\App\Http\Controllers\Customer\DomainController::class, 'showTransferDetails'])->name('customer.domains.transfer-details');
         Route::post('/my/domains/{domain}/transfer/cancel', [\App\Http\Controllers\Customer\DomainController::class, 'cancelTransfer'])->name('customer.domains.cancel-transfer');
+
+        // Domain renewal
+        Route::post('/my/domains/{domain}/renew', [\App\Http\Controllers\Customer\DomainController::class, 'initiateRenewal'])->name('customer.domains.initiate-renewal');
+        Route::get('/my/domains/renewal/checkout', [\App\Http\Controllers\Customer\DomainController::class, 'showRenewalCheckout'])->name('customer.domains.renewal-checkout');
+        Route::post('/my/domains/renewal/checkout/confirm', [\App\Http\Controllers\Customer\DomainController::class, 'confirmRenewalCheckout'])->name('customer.domains.renewal-checkout-confirm');
+        Route::post('/my/domains/renewal-modal', fn() => null)->name('customer.domains.renewal-modal');
+
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
 
         // Shopping cart

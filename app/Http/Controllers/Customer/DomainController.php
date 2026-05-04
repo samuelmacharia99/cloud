@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\Currency;
 use App\Services\DomainTransferService;
+use App\Services\DomainRenewalService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -241,6 +242,106 @@ class DomainController extends Controller
             // Redirect to invoice payment page
             return redirect()->route('customer.checkout.show', ['invoice_id' => $invoice->id])
                 ->with('success', 'Order confirmed. Please select a payment method.');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Initiate domain renewal
+     */
+    public function initiateRenewal(Request $request, Domain $domain)
+    {
+        abort_if($domain->user_id !== auth()->id(), 403);
+
+        $validated = $request->validate([
+            'years' => 'required|integer|min:1|max:10',
+        ]);
+
+        try {
+            $renewalService = new DomainRenewalService();
+            $renewalOrder = $renewalService->initiateRenewal($domain, auth()->user(), $validated['years']);
+
+            // Redirect to renewal checkout
+            session(['renewal_checkout' => [
+                'domain_id' => $domain->id,
+                'renewal_order_id' => $renewalOrder->id,
+                'years' => $validated['years'],
+                'amount' => $renewalOrder->amount,
+                'domain_name' => "{$domain->name}{$domain->extension}",
+            ]]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Domain renewal initiated. Proceed to checkout.',
+                'redirect' => route('customer.domains.renewal-checkout'),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    /**
+     * Show renewal checkout page
+     */
+    public function showRenewalCheckout()
+    {
+        $renewalCheckout = session('renewal_checkout');
+        abort_if(!$renewalCheckout, 404, 'Renewal not found');
+
+        $domain = Domain::findOrFail($renewalCheckout['domain_id']);
+        abort_if($domain->user_id !== auth()->id(), 403);
+
+        $subtotal = $renewalCheckout['amount'];
+        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
+        $total = $subtotal + $tax;
+
+        $currencyCode = Setting::getValue('currency', 'KES');
+        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+
+        return view('customer.domains.renewal-checkout', [
+            'domain' => $domain,
+            'years' => $renewalCheckout['years'],
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'taxEnabled' => $taxEnabled,
+            'taxRate' => $taxRate,
+            'total' => $total,
+            'currency' => $currency,
+            'currencyCode' => $currencyCode,
+        ]);
+    }
+
+    /**
+     * Confirm renewal checkout and create invoice
+     */
+    public function confirmRenewalCheckout(Request $request)
+    {
+        $request->validate([
+            'agree_terms' => 'required|accepted',
+        ]);
+
+        $renewalCheckout = session('renewal_checkout');
+        abort_if(!$renewalCheckout, 404, 'Renewal not found');
+
+        try {
+            $renewalService = new DomainRenewalService();
+            $renewalOrder = \App\Models\DomainRenewalOrder::findOrFail($renewalCheckout['renewal_order_id']);
+
+            abort_if($renewalOrder->user_id !== auth()->id(), 403);
+
+            // Create invoice
+            $invoice = $renewalService->createInvoice($renewalOrder);
+
+            session()->forget('renewal_checkout');
+
+            return redirect()->route('customer.checkout.show', ['invoice_id' => $invoice->id])
+                ->with('success', 'Renewal order confirmed. Please select a payment method.');
         } catch (\Exception $e) {
             return redirect()->back()->with('error', $e->getMessage());
         }

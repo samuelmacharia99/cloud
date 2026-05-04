@@ -473,6 +473,9 @@ class PaymentController extends Controller
 
         // Process domain orders for reseller customers
         $this->processDomainOrdersForReseller($invoice);
+
+        // Process domain renewal orders
+        $this->processDomainRenewals($invoice);
     }
 
     private function processDomainOrdersForReseller(Invoice $invoice): void
@@ -485,6 +488,25 @@ class PaymentController extends Controller
             app('domain-push-service')->handlePaidDomainInvoice($invoice);
         } catch (\Exception $e) {
             Log::error('Failed to process domain orders after payment', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function processDomainRenewals(Invoice $invoice): void
+    {
+        try {
+            $renewalOrders = \App\Models\DomainRenewalOrder::where('invoice_id', $invoice->id)
+                ->where('status', 'invoiced')
+                ->get();
+
+            foreach ($renewalOrders as $order) {
+                $renewalService = app(\App\Services\DomainRenewalService::class);
+                $renewalService->pushRenewalToAdmin($order);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to process domain renewals after payment', [
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
             ]);

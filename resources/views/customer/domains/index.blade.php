@@ -30,6 +30,7 @@
                             <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Registered</th>
                             <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Expires</th>
                             <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
@@ -48,6 +49,46 @@
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium {{ $domain->status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' }}">
                                         {{ ucfirst($domain->status) }}
                                     </span>
+                                </td>
+                                <td class="px-6 py-4 text-sm">
+                                    <div x-data="{ open: false }" class="relative">
+                                        <button @click="open = !open" class="inline-flex items-center p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M10.5 1.5H9.5V3.5H10.5V1.5ZM10.5 8.5H9.5V10.5H10.5V8.5ZM10.5 15.5H9.5V17.5H10.5V15.5Z"/>
+                                            </svg>
+                                        </button>
+                                        <div x-show="open" @click.outside="open = false" class="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50" style="display: none;">
+                                            <form action="{{ route('customer.domains.renewal-modal') }}" method="POST" x-data="{ years: 1 }" @submit.prevent="
+                                                fetch('{{ route('customer.domains.initiate-renewal', $domain->id) }}', {
+                                                    method: 'POST',
+                                                    headers: {
+                                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                                                        'Content-Type': 'application/json'
+                                                    },
+                                                    body: JSON.stringify({ years: parseInt(years) })
+                                                }).then(r => r.json()).then(data => {
+                                                    if (data.success) {
+                                                        window.location.href = data.redirect;
+                                                    } else {
+                                                        alert('Error: ' + data.message);
+                                                    }
+                                                })
+                                            " class="p-4">
+                                                <div class="mb-4">
+                                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Period</label>
+                                                    <select x-model="years" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
+                                                        <option value="1">1 Year</option>
+                                                        <option value="2">2 Years</option>
+                                                        <option value="3">3 Years</option>
+                                                        <option value="5">5 Years</option>
+                                                    </select>
+                                                </div>
+                                                <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                                                    Renew Domain
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
                                 </td>
                             </tr>
                         @endforeach

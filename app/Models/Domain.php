@@ -70,6 +70,11 @@ class Domain extends Model
         return $this->belongsTo(User::class, 'pending_transfer_to_user_id');
     }
 
+    public function renewalOrders()
+    {
+        return $this->hasMany(DomainRenewalOrder::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active' && $this->expires_at?->isFuture();
