@@ -269,7 +269,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/my/domains/{domain}/renew', [\App\Http\Controllers\Customer\DomainController::class, 'initiateRenewal'])->name('customer.domains.initiate-renewal');
         Route::get('/my/domains/renewal/checkout', [\App\Http\Controllers\Customer\DomainController::class, 'showRenewalCheckout'])->name('customer.domains.renewal-checkout');
         Route::post('/my/domains/renewal/checkout/confirm', [\App\Http\Controllers\Customer\DomainController::class, 'confirmRenewalCheckout'])->name('customer.domains.renewal-checkout-confirm');
-        Route::post('/my/domains/renewal-modal', fn() => null)->name('customer.domains.renewal-modal');
 
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
 
