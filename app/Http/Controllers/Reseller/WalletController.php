@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\PaymentStatus;
 use App\Http\Requests\InitiateWalletTopupRequest;
 use App\Models\Invoice;
@@ -152,7 +153,7 @@ class WalletController extends Controller
             $payment->update(['status' => PaymentStatus::Completed->value, 'paid_at' => now()]);
 
             if ($payment->invoice) {
-                $payment->invoice->update(['status' => 'paid']);
+                $payment->invoice->update(['status' => InvoiceStatus::Paid->value]);
             }
 
             // Credit the wallet
