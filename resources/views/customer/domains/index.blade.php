@@ -74,7 +74,7 @@
                                                 </button>
 
                                                 <!-- DNS Management Option -->
-                                                <a href="javascript:void(0)" onclick="alert('DNS Management coming soon')" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
+                                                <a href="{{ route('customer.domains.dns.index', $domain) }}" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
                                                     <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                                                     </svg>

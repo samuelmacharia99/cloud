@@ -270,6 +270,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/my/domains/renewal/checkout', [\App\Http\Controllers\Customer\DomainController::class, 'showRenewalCheckout'])->name('customer.domains.renewal-checkout');
         Route::post('/my/domains/renewal/checkout/confirm', [\App\Http\Controllers\Customer\DomainController::class, 'confirmRenewalCheckout'])->name('customer.domains.renewal-checkout-confirm');
 
+        // DNS management
+        Route::get('/my/domains/{domain}/dns', [\App\Http\Controllers\Customer\DnsController::class, 'index'])->name('customer.domains.dns.index');
+        Route::get('/my/domains/{domain}/dns/nameservers', [\App\Http\Controllers\Customer\DnsController::class, 'nameservers'])->name('customer.domains.dns.nameservers');
+        Route::post('/my/domains/{domain}/dns/nameservers', [\App\Http\Controllers\Customer\DnsController::class, 'updateNameservers'])->name('customer.domains.dns.update-nameservers');
+        Route::get('/my/domains/{domain}/dns/records', [\App\Http\Controllers\Customer\DnsController::class, 'records'])->name('customer.domains.dns.records');
+        Route::post('/my/domains/{domain}/dns/records', [\App\Http\Controllers\Customer\DnsController::class, 'addRecord'])->name('customer.domains.dns.add-record');
+        Route::patch('/my/domains/{domain}/dns/records/{record}', [\App\Http\Controllers\Customer\DnsController::class, 'updateRecord'])->name('customer.domains.dns.update-record');
+        Route::delete('/my/domains/{domain}/dns/records/{record}', [\App\Http\Controllers\Customer\DnsController::class, 'deleteRecord'])->name('customer.domains.dns.delete-record');
+
         Route::get('/domains/search', [\App\Http\Controllers\Customer\DomainSearchController::class, 'search'])->name('domains.search');
 
         // Shopping cart
