@@ -69,8 +69,8 @@
     <!-- Top-up Modal Overlay -->
     <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
         <!-- Top-up Form Card -->
-        <div class="modal-form bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md">
-            <div class="flex items-center justify-between mb-4">
+        <div class="modal-form bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: 'mpesa' }">
+            <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Top Up Wallet</h3>
                 <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">✕</button>
             </div>
@@ -102,19 +102,55 @@
             }">
                 @csrf
                 <div class="space-y-4">
+                    <!-- Amount -->
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
                         <input type="number" name="amount" min="1500" max="50000" step="100" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 1,500 | Maximum: KES 50,000</p>
                     </div>
 
+                    <!-- Payment Method -->
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone</label>
-                        <input type="tel" name="phone" placeholder="+254712345678" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Payment Method</label>
+                        <div class="space-y-2">
+                            <!-- M-Pesa -->
+                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-400 cursor-pointer transition" @click="paymentMethod = 'mpesa'">
+                                <input type="radio" name="payment_method" value="mpesa" x-model="paymentMethod" class="w-4 h-4 text-purple-600">
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white">M-Pesa</p>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400">Instant payment via M-Pesa</p>
+                                </div>
+                            </label>
+
+                            <!-- Card (Stripe) -->
+                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-400 cursor-pointer transition" @click="paymentMethod = 'stripe'">
+                                <input type="radio" name="payment_method" value="stripe" x-model="paymentMethod" class="w-4 h-4 text-purple-600">
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white">Card</p>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400">Pay with credit/debit card</p>
+                                </div>
+                            </label>
+
+                            <!-- PayPal -->
+                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-purple-500 dark:hover:border-purple-400 cursor-pointer transition" @click="paymentMethod = 'paypal'">
+                                <input type="radio" name="payment_method" value="paypal" x-model="paymentMethod" class="w-4 h-4 text-purple-600">
+                                <div class="ml-3 flex-1">
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white">PayPal</p>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400">Pay via PayPal</p>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- M-Pesa Phone (conditional) -->
+                    <div x-show="paymentMethod === 'mpesa'" class="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone Number</label>
+                        <input type="tel" name="phone" placeholder="+254712345678" x-show="paymentMethod === 'mpesa'" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter your M-Pesa registered phone number</p>
                     </div>
 
                     <button type="submit" :disabled="loading" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition">
-                        <span x-show="!loading">Initiate Payment</span>
+                        <span x-show="!loading">Proceed to Payment</span>
                         <span x-show="loading">Processing...</span>
                     </button>
                 </div>
@@ -122,8 +158,15 @@
 
             <!-- Payment Confirmation (shown after STK push) -->
             <div x-show="checkoutId && !checking" class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl" style="display: none;">
-                <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200 mb-2">M-Pesa Payment Initiated</h4>
-                <p class="text-sm text-blue-800 dark:text-blue-300 mb-4">Check your phone for the M-Pesa prompt. Do not refresh this page.</p>
+                <div class="flex items-start gap-3 mb-3">
+                    <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                    </svg>
+                    <div>
+                        <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200">M-Pesa Payment Initiated</h4>
+                        <p class="text-sm text-blue-800 dark:text-blue-300 mt-1">Check your phone for the M-Pesa prompt. Do not refresh or close this page.</p>
+                    </div>
+                </div>
                 <button type="button" @click="startStatusCheck()" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition">
                     Verify Payment
                 </button>
