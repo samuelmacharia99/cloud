@@ -51,42 +51,91 @@
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 text-sm">
-                                    <div x-data="{ open: false }" class="relative">
-                                        <button @click="open = !open" class="inline-flex items-center p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800">
+                                    <div x-data="{ open: false, showRenewal: false, years: 1 }" class="relative">
+                                        <!-- Menu Button -->
+                                        <button @click="open = !open" type="button" class="inline-flex items-center justify-center p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
                                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                                                 <path d="M10.5 1.5H9.5V3.5H10.5V1.5ZM10.5 8.5H9.5V10.5H10.5V8.5ZM10.5 15.5H9.5V17.5H10.5V15.5Z"/>
                                             </svg>
                                         </button>
-                                        <div x-show="open" @click.outside="open = false" class="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50" style="display: none;">
-                                            <form x-data="{ years: 1 }" @submit.prevent="
-                                                fetch('{{ route('customer.domains.initiate-renewal', $domain->id) }}', {
-                                                    method: 'POST',
-                                                    headers: {
-                                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
-                                                        'Content-Type': 'application/json'
-                                                    },
-                                                    body: JSON.stringify({ years: parseInt(years) })
-                                                }).then(r => r.json()).then(data => {
-                                                    if (data.success) {
-                                                        window.location.href = data.redirect;
-                                                    } else {
-                                                        alert('Error: ' + data.message);
-                                                    }
-                                                })
-                                            " class="p-4">
-                                                <div class="mb-4">
-                                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Period</label>
-                                                    <select x-model="years" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white">
-                                                        <option value="1">1 Year</option>
-                                                        <option value="2">2 Years</option>
-                                                        <option value="3">3 Years</option>
-                                                        <option value="5">5 Years</option>
-                                                    </select>
-                                                </div>
-                                                <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-                                                    Renew Domain
+
+                                        <!-- Dropdown Menu -->
+                                        <div x-show="open" @click.outside="open = false; showRenewal = false" class="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden" style="display: none;">
+                                            <!-- Renew Option -->
+                                            <div x-show="!showRenewal" style="display: none;">
+                                                <button @click="showRenewal = true" type="button" class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
+                                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                                    </svg>
+                                                    <div>
+                                                        <p class="font-medium text-slate-900 dark:text-white">Renew Domain</p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Extend registration</p>
+                                                    </div>
                                                 </button>
-                                            </form>
+
+                                                <!-- DNS Management Option -->
+                                                <a href="javascript:void(0)" onclick="alert('DNS Management coming soon')" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
+                                                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                                    </svg>
+                                                    <div>
+                                                        <p class="font-medium text-slate-900 dark:text-white">DNS Management</p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Manage nameservers</p>
+                                                    </div>
+                                                </a>
+
+                                                <!-- View Details Option -->
+                                                <a href="{{ route('customer.domains.transfer-details', $domain->id) }}" onclick="event.preventDefault(); alert('Details view coming soon')" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3">
+                                                    <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                    </svg>
+                                                    <div>
+                                                        <p class="font-medium text-slate-900 dark:text-white">View Details</p>
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Domain information</p>
+                                                    </div>
+                                                </a>
+                                            </div>
+
+                                            <!-- Renewal Period Selection -->
+                                            <div x-show="showRenewal" style="display: none;" class="p-4">
+                                                <button @click="showRenewal = false" type="button" class="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white mb-4 text-sm font-medium transition">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                                                    </svg>
+                                                    Back
+                                                </button>
+
+                                                <div class="mb-4">
+                                                    <label class="block text-sm font-semibold text-slate-900 dark:text-white mb-3">Select Renewal Period</label>
+                                                    <div class="space-y-2">
+                                                        <template x-for="period in [1, 2, 3, 5]" :key="period">
+                                                            <label class="flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition" :class="years == period ? 'bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-600' : 'border-slate-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-600'">
+                                                                <input type="radio" :value="period" x-model.number="years" class="w-4 h-4 text-blue-600">
+                                                                <span class="font-medium text-slate-900 dark:text-white" x-text="`${period} Year${period > 1 ? 's' : ''}`"></span>
+                                                            </label>
+                                                        </template>
+                                                    </div>
+                                                </div>
+
+                                                <button @click="
+                                                    fetch('{{ route('customer.domains.initiate-renewal', $domain->id) }}', {
+                                                        method: 'POST',
+                                                        headers: {
+                                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                                                            'Content-Type': 'application/json'
+                                                        },
+                                                        body: JSON.stringify({ years: parseInt(years) })
+                                                    }).then(r => r.json()).then(data => {
+                                                        if (data.success) {
+                                                            window.location.href = data.redirect;
+                                                        } else {
+                                                            alert('Error: ' + data.message);
+                                                        }
+                                                    })
+                                                " type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                                                    Continue
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </td>
