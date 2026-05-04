@@ -58,7 +58,7 @@
                                             </svg>
                                         </button>
                                         <div x-show="open" @click.outside="open = false" class="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 z-50" style="display: none;">
-                                            <form action="{{ route('customer.domains.renewal-modal') }}" method="POST" x-data="{ years: 1 }" @submit.prevent="
+                                            <form x-data="{ years: 1 }" @submit.prevent="
                                                 fetch('{{ route('customer.domains.initiate-renewal', $domain->id) }}', {
                                                     method: 'POST',
                                                     headers: {
