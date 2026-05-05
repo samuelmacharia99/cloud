@@ -122,6 +122,14 @@
 
                         <!-- Card Content -->
                         <div class="p-6 space-y-4">
+                            <!-- Owner (if customer's domain) -->
+                            @if($domain->user_id !== auth()->id())
+                                <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Customer</span>
+                                    <span class="text-sm text-slate-900 dark:text-white font-medium">{{ $domain->user->name }}</span>
+                                </div>
+                            @endif
+
                             <!-- Status Badge -->
                             <div class="flex items-center justify-between">
                                 <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Status</span>

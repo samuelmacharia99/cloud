@@ -6,6 +6,7 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\ResellerDomainPricing;
+use App\Models\Service;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 
@@ -18,9 +19,17 @@ class DomainController extends Controller
     {
         $resellerId = auth()->id();
 
-        // Get all domains owned by the reseller
-        $domains = Domain::where('user_id', $resellerId)
-            ->with('domainExtension')
+        // Get customer IDs managed by this reseller (via services)
+        $customerIds = Service::where('reseller_id', $resellerId)
+            ->distinct()
+            ->pluck('user_id');
+
+        // Get all domains: those owned by the reseller or their managed customers
+        $domains = Domain::where(function ($q) use ($resellerId, $customerIds) {
+            $q->where('user_id', $resellerId)
+              ->orWhereIn('user_id', $customerIds);
+        })
+            ->with('domainExtension', 'user')
             ->orderByDesc('created_at')
             ->paginate(12);
 
