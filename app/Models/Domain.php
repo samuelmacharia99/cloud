@@ -19,6 +19,7 @@ class Domain extends Model
         'transfer_status',
         'registered_at',
         'expires_at',
+        'next_invoice_date',
         'auto_renew',
         'nameserver_1',
         'nameserver_2',
@@ -35,6 +36,7 @@ class Domain extends Model
     protected $casts = [
         'registered_at' => 'datetime',
         'expires_at' => 'datetime',
+        'next_invoice_date' => 'datetime',
         'auto_renew' => 'boolean',
         'transfer_initiated_at' => 'datetime',
         'transfer_completed_at' => 'datetime',

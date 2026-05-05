@@ -90,6 +90,9 @@
                 <button @click="activeTab = 'customers'" :class="activeTab === 'customers' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
                     Customers ({{ $customerIds->count() }})
                 </button>
+                <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
+                    Domains ({{ $domains->count() }})
+                </button>
             </div>
         </div>
 
@@ -275,6 +278,137 @@
                 @else
                     <div class="text-center py-12">
                         <p class="text-slate-600 dark:text-slate-400">No customers served yet</p>
+                    </div>
+                @endif
+            </div>
+
+            <!-- Domains Tab -->
+            <div x-show="activeTab === 'domains'" class="space-y-6">
+                <!-- Add Domain Form -->
+                @if ($customerIds->count() > 0)
+                    <div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Add Domain</h3>
+                        <form action="{{ route('admin.resellers.add-domain', $user) }}" method="POST" class="space-y-4">
+                            @csrf
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Customer Selection -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Customer</label>
+                                    <select name="customer_id" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('customer_id') border-red-500 @enderror">
+                                        <option value="">Select a customer</option>
+                                        @foreach ($customers as $customer)
+                                            <option value="{{ $customer->id }}" {{ old('customer_id') == $customer->id ? 'selected' : '' }}>
+                                                {{ $customer->name }} ({{ $customer->email }})
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('customer_id')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Domain Name -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain Name</label>
+                                    <input type="text" name="domain_name" placeholder="e.g., example" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('domain_name') border-red-500 @enderror" value="{{ old('domain_name') }}">
+                                    @error('domain_name')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Extension -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
+                                    <input type="text" name="extension" placeholder="e.g., .com" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('extension') border-red-500 @enderror" value="{{ old('extension') }}">
+                                    @error('extension')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Registration Date -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration Date</label>
+                                    <input type="date" name="registered_at" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('registered_at') border-red-500 @enderror" value="{{ old('registered_at') }}">
+                                    @error('registered_at')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Expiry Date -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Expiry Date</label>
+                                    <input type="date" name="expires_at" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('expires_at') border-red-500 @enderror" value="{{ old('expires_at') }}">
+                                    @error('expires_at')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+
+                                <!-- Next Invoice Date -->
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Next Invoice Date</label>
+                                    <input type="date" name="next_invoice_date" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('next_invoice_date') border-red-500 @enderror" value="{{ old('next_invoice_date') }}">
+                                    @error('next_invoice_date')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                                Add Domain
+                            </button>
+                        </form>
+                    </div>
+                @endif
+
+                <!-- Domains List -->
+                @if ($domains->count() > 0)
+                    <div>
+                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domains</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-200 dark:border-slate-800">
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Domain</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Customer</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Registered</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Expires</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Next Invoice</th>
+                                        <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                    @foreach ($domains as $domain)
+                                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                            <td class="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                                                {{ $domain->name }}{{ $domain->extension }}
+                                            </td>
+                                            <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                                <a href="{{ route('admin.customers.show', $domain->user) }}" class="text-blue-600 dark:text-blue-400 hover:underline">
+                                                    {{ $domain->user->name }}
+                                                </a>
+                                            </td>
+                                            <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                                {{ $domain->registered_at?->format('M d, Y') ?? '—' }}
+                                            </td>
+                                            <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                                {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
+                                            </td>
+                                            <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                                {{ $domain->next_invoice_date?->format('M d, Y') ?? '—' }}
+                                            </td>
+                                            <td class="py-3 px-4">
+                                                <span class="inline-block px-2.5 py-0.5 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
+                                                    {{ ucfirst($domain->status) }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                @else
+                    <div class="text-center py-12">
+                        <p class="text-slate-600 dark:text-slate-400">No domains added yet</p>
                     </div>
                 @endif
             </div>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\User;
 use App\Models\Service;
+use App\Models\Domain;
 use App\Models\ResellerPackage;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
@@ -49,7 +50,13 @@ class ResellerController extends Controller
         $customers = User::whereIn('id', $customerIds)->get();
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages'));
+        // Get domains associated with this reseller's customers
+        $domains = Domain::whereIn('user_id', $customerIds)
+            ->with('user')
+            ->latest()
+            ->get();
+
+        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains'));
     }
 
     public function promote(User $user)
@@ -127,5 +134,39 @@ class ResellerController extends Controller
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$user->name}.");
+    }
+
+    public function addDomain(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'customer_id' => 'required|exists:users,id',
+            'domain_name' => 'required|string|max:255',
+            'extension' => 'required|string|max:20',
+            'registered_at' => 'required|date',
+            'expires_at' => 'required|date|after:registered_at',
+            'next_invoice_date' => 'required|date|after_or_equal:registered_at',
+        ]);
+
+        // Verify the customer is managed by this reseller
+        $customer = User::find($validated['customer_id']);
+        $customerIds = Service::where('reseller_id', $user->id)
+            ->distinct()
+            ->pluck('user_id');
+
+        abort_if(!$customerIds->contains($customer->id), 403, 'This customer is not managed by this reseller.');
+
+        Domain::create([
+            'user_id' => $validated['customer_id'],
+            'name' => $validated['domain_name'],
+            'extension' => $validated['extension'],
+            'registered_at' => $validated['registered_at'],
+            'expires_at' => $validated['expires_at'],
+            'next_invoice_date' => $validated['next_invoice_date'],
+            'status' => 'active',
+        ]);
+
+        return back()->with('success', "Domain {$validated['domain_name']}{$validated['extension']} added successfully.");
     }
 }
