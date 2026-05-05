@@ -11,6 +11,7 @@ class Domain extends Model
 
     protected $fillable = [
         'user_id',
+        'reseller_id',
         'name',
         'extension',
         'type',

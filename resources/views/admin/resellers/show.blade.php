@@ -77,7 +77,9 @@
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: 'overview' }" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+    <div x-data="{ activeTab: 'overview', addDomainModal: false }"
+         x-init="@if($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
+         class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
         <div class="border-b border-slate-200 dark:border-slate-800">
             <div class="flex gap-1 px-6">
@@ -283,87 +285,17 @@
             </div>
 
             <!-- Domains Tab -->
-            <div x-show="activeTab === 'domains'" class="space-y-6">
-                <!-- Add Domain Form -->
-                @if ($customerIds->count() > 0)
-                    <div class="bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700 p-6">
-                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Add Domain</h3>
-                        <form action="{{ route('admin.resellers.add-domain', $user) }}" method="POST" class="space-y-4">
-                            @csrf
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <!-- Customer Selection -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Customer</label>
-                                    <select name="customer_id" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('customer_id') border-red-500 @enderror">
-                                        <option value="">Select a customer</option>
-                                        @foreach ($customers as $customer)
-                                            <option value="{{ $customer->id }}" {{ old('customer_id') == $customer->id ? 'selected' : '' }}>
-                                                {{ $customer->name }} ({{ $customer->email }})
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('customer_id')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Domain Name -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain Name</label>
-                                    <input type="text" name="domain_name" placeholder="e.g., example" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('domain_name') border-red-500 @enderror" value="{{ old('domain_name') }}">
-                                    @error('domain_name')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Extension -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
-                                    <input type="text" name="extension" placeholder="e.g., .com" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('extension') border-red-500 @enderror" value="{{ old('extension') }}">
-                                    @error('extension')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Registration Date -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration Date</label>
-                                    <input type="date" name="registered_at" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('registered_at') border-red-500 @enderror" value="{{ old('registered_at') }}">
-                                    @error('registered_at')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Expiry Date -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Expiry Date</label>
-                                    <input type="date" name="expires_at" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('expires_at') border-red-500 @enderror" value="{{ old('expires_at') }}">
-                                    @error('expires_at')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-
-                                <!-- Next Invoice Date -->
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Next Invoice Date</label>
-                                    <input type="date" name="next_invoice_date" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('next_invoice_date') border-red-500 @enderror" value="{{ old('next_invoice_date') }}">
-                                    @error('next_invoice_date')
-                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
-                                    @enderror
-                                </div>
-                            </div>
-                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-                                Add Domain
-                            </button>
-                        </form>
-                    </div>
-                @endif
+            <div x-show="activeTab === 'domains'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">Domains ({{ $domains->count() }})</h3>
+                    <button @click="addDomainModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+                        + Add Domain
+                    </button>
+                </div>
 
                 <!-- Domains List -->
                 @if ($domains->count() > 0)
-                    <div>
-                        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domains</h3>
-                        <div class="overflow-x-auto">
+                    <div class="overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b border-slate-200 dark:border-slate-800">
@@ -404,13 +336,167 @@
                                     @endforeach
                                 </tbody>
                             </table>
-                        </div>
                     </div>
                 @else
                     <div class="text-center py-12">
                         <p class="text-slate-600 dark:text-slate-400">No domains added yet</p>
                     </div>
                 @endif
+            </div>
+        </div>
+
+        <!-- Add Domain Modal -->
+        <div x-show="addDomainModal" x-transition fixed inset-0 bg-black/50 z-50 flex items-end @click.self="addDomainModal = false">
+            <div class="bg-white dark:bg-slate-900 w-full max-w-2xl mx-auto rounded-t-2xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col">
+                <!-- Sticky Header -->
+                <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Add Domain</h2>
+                    <button @click="addDomainModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Form Content -->
+                <form id="add-domain-form" action="{{ route('admin.resellers.add-domain', $user) }}" method="POST" class="flex-1 overflow-y-auto p-6">
+                    @csrf
+                    <div class="space-y-6">
+                        <!-- Owner Selection -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain Owner</label>
+                            <select name="owner_id" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('owner_id') border-red-500 @enderror">
+                                <option value="">Select owner (reseller or customer)</option>
+                                @foreach ($ownerOptions as $option)
+                                    <option value="{{ $option['id'] }}" {{ old('owner_id') == $option['id'] ? 'selected' : '' }}>
+                                        {{ $option['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('owner_id')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Domain Name -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain Name</label>
+                            <input type="text" name="domain_name" placeholder="e.g., talksasa.co.ke" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('domain_name') border-red-500 @enderror" value="{{ old('domain_name') }}">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter full domain e.g. talksasa.co.ke</p>
+                            @error('domain_name')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Extension -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
+                            <select name="extension" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('extension') border-red-500 @enderror">
+                                <option value="">Select extension</option>
+                                @foreach ($extensions as $ext)
+                                    <option value="{{ $ext }}" {{ old('extension') == $ext ? 'selected' : '' }}>
+                                        {{ $ext }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('extension')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Status -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
+                            <select name="status" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('status') border-red-500 @enderror">
+                                <option value="active" {{ old('status', 'active') == 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="pending" {{ old('status') == 'pending' ? 'selected' : '' }}>Pending</option>
+                                <option value="expired" {{ old('status') == 'expired' ? 'selected' : '' }}>Expired</option>
+                                <option value="suspended" {{ old('status') == 'suspended' ? 'selected' : '' }}>Suspended</option>
+                            </select>
+                            @error('status')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Dates Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Registered Date -->
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registered Date</label>
+                                <input type="date" name="registered_at" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('registered_at') border-red-500 @enderror" value="{{ old('registered_at') }}">
+                                @error('registered_at')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Expiry Date -->
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Expiry Date <span class="text-red-500">*</span></label>
+                                <input type="date" name="expires_at" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('expires_at') border-red-500 @enderror" value="{{ old('expires_at') }}">
+                                @error('expires_at')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <!-- Next Invoice Date -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Next Invoice Date</label>
+                            <input type="date" name="next_invoice_date" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('next_invoice_date') border-red-500 @enderror" value="{{ old('next_invoice_date') }}">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Used for auto-invoice generation</p>
+                            @error('next_invoice_date')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Nameservers Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Nameserver 1 -->
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Nameserver 1</label>
+                                <input type="text" name="nameserver_1" placeholder="e.g., ns1.example.com" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('nameserver_1') border-red-500 @enderror" value="{{ old('nameserver_1') }}">
+                                @error('nameserver_1')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <!-- Nameserver 2 -->
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Nameserver 2</label>
+                                <input type="text" name="nameserver_2" placeholder="e.g., ns2.example.com" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('nameserver_2') border-red-500 @enderror" value="{{ old('nameserver_2') }}">
+                                @error('nameserver_2')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <!-- Auto Renew -->
+                        <div class="flex items-center gap-2">
+                            <input type="hidden" name="auto_renew" value="0">
+                            <input type="checkbox" name="auto_renew" value="1" id="auto_renew" {{ old('auto_renew', 1) ? 'checked' : '' }} class="w-4 h-4 border border-slate-300 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 accent-blue-600 cursor-pointer">
+                            <label for="auto_renew" class="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">Enable auto-renewal</label>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Notes</label>
+                            <textarea name="notes" rows="3" placeholder="e.g., renewal reminder, special terms..." class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('notes') border-red-500 @enderror">{{ old('notes') }}</textarea>
+                            @error('notes')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Sticky Footer -->
+                <div class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-end gap-3">
+                    <button @click="addDomainModal = false" class="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition font-medium">
+                        Cancel
+                    </button>
+                    <button form="add-domain-form" type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                        Add Domain
+                    </button>
+                </div>
             </div>
         </div>
     </div>

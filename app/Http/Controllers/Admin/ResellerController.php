@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Models\User;
 use App\Models\Service;
 use App\Models\Domain;
+use App\Models\DomainExtension;
 use App\Models\ResellerPackage;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 
 class ResellerController extends Controller
@@ -50,13 +53,21 @@ class ResellerController extends Controller
         $customers = User::whereIn('id', $customerIds)->get();
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
 
-        // Get domains associated with this reseller's customers
-        $domains = Domain::whereIn('user_id', $customerIds)
-            ->with('user')
-            ->latest()
-            ->get();
+        // Get domains associated with this reseller and their customers
+        $domains = Domain::where(function ($q) use ($customerIds, $user) {
+            $q->whereIn('user_id', $customerIds)->orWhere('user_id', $user->id);
+        })->with('user')->latest()->get();
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains'));
+        // Get enabled domain extensions for the add domain form
+        $extensions = DomainExtension::where('enabled', true)
+            ->orderBy('extension')->pluck('extension');
+
+        // Build owner options: reseller first, then customers
+        $ownerOptions = collect()
+            ->push(['id' => $user->id, 'label' => $user->name . ' (' . $user->email . ') — Reseller'])
+            ->merge($customers->map(fn($c) => ['id' => $c->id, 'label' => $c->name . ' (' . $c->email . ')']));
+
+        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions'));
     }
 
     public function promote(User $user)
@@ -140,33 +151,78 @@ class ResellerController extends Controller
     {
         abort_if(!$user->is_reseller, 404);
 
+        Log::info('Admin adding domain to reseller', ['reseller_id' => $user->id]);
+
         $validated = $request->validate([
-            'customer_id' => 'required|exists:users,id',
-            'domain_name' => 'required|string|max:255',
-            'extension' => 'required|string|max:20',
-            'registered_at' => 'required|date',
-            'expires_at' => 'required|date|after:registered_at',
-            'next_invoice_date' => 'required|date|after_or_equal:registered_at',
+            'owner_id' => 'required|exists:users,id',
+            'domain_name' => 'required|string|max:253',
+            'extension' => 'required|exists:domain_extensions,extension',
+            'status' => 'required|in:active,pending,expired,suspended',
+            'registered_at' => 'nullable|date',
+            'expires_at' => 'required|date',
+            'next_invoice_date' => 'nullable|date',
+            'nameserver_1' => 'nullable|string|max:255',
+            'nameserver_2' => 'nullable|string|max:255',
+            'auto_renew' => 'boolean',
+            'notes' => 'nullable|string|max:2000',
         ]);
 
-        // Verify the customer is managed by this reseller
-        $customer = User::find($validated['customer_id']);
-        $customerIds = Service::where('reseller_id', $user->id)
+        // Build allowed owner IDs: reseller themselves or their customers
+        $allowedIds = Service::where('reseller_id', $user->id)
             ->distinct()
-            ->pluck('user_id');
+            ->pluck('user_id')
+            ->push($user->id)
+            ->unique();
 
-        abort_if(!$customerIds->contains($customer->id), 403, 'This customer is not managed by this reseller.');
+        abort_if(!$allowedIds->contains($validated['owner_id']), 403, 'This owner is not managed by this reseller.');
 
-        Domain::create([
-            'user_id' => $validated['customer_id'],
-            'name' => $validated['domain_name'],
-            'extension' => $validated['extension'],
-            'registered_at' => $validated['registered_at'],
-            'expires_at' => $validated['expires_at'],
-            'next_invoice_date' => $validated['next_invoice_date'],
-            'status' => 'active',
-        ]);
+        // Parse domain name: strip extension suffix if present in input
+        $domainInput = $validated['domain_name'];
+        $ext = $validated['extension'];
+        $bare = ltrim($ext, '.');
 
-        return back()->with('success', "Domain {$validated['domain_name']}{$validated['extension']} added successfully.");
+        if (str_ends_with($domainInput, '.' . $bare)) {
+            $name = substr($domainInput, 0, -strlen('.' . $bare));
+        } elseif (str_contains($domainInput, '.')) {
+            $name = explode('.', $domainInput, 2)[0];
+        } else {
+            $name = $domainInput;
+        }
+
+        try {
+            DB::transaction(function () use ($validated, $user, $name, $ext) {
+                Domain::create([
+                    'user_id' => $validated['owner_id'],
+                    'reseller_id' => $user->id,
+                    'name' => $name,
+                    'extension' => $ext,
+                    'status' => $validated['status'],
+                    'type' => 'registration',
+                    'registered_at' => $validated['registered_at'],
+                    'expires_at' => $validated['expires_at'],
+                    'next_invoice_date' => $validated['next_invoice_date'],
+                    'nameserver_1' => $validated['nameserver_1'],
+                    'nameserver_2' => $validated['nameserver_2'],
+                    'auto_renew' => $validated['auto_renew'] ?? true,
+                    'notes' => $validated['notes'],
+                ]);
+
+                Log::info('Domain created successfully', [
+                    'reseller_id' => $user->id,
+                    'owner_id' => $validated['owner_id'],
+                    'domain' => $name . '.' . $ext,
+                ]);
+            });
+
+            return back()->with('success', "Domain {$name}.{$ext} added successfully.");
+        } catch (\Exception $e) {
+            Log::error('Failed to create domain', [
+                'reseller_id' => $user->id,
+                'owner_id' => $validated['owner_id'],
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to add domain. Please try again.')->withInput();
+        }
     }
 }
