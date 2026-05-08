@@ -12,22 +12,28 @@ class TechStackRoutingService
      * Determine hosting type and product based on language + database selection
      *
      * Database Restrictions:
-     * - PHP & WordPress: MySQL and MariaDB only (DirectAdmin shared hosting)
-     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis (Container hosting)
+     * - PHP & WordPress & Laravel: MySQL and MariaDB only (DirectAdmin shared hosting)
+     * - Static Site: no database (Container hosting)
+     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Container hosting)
      */
     public static function determineHostingType(
         ContainerTemplate $language,
-        DatabaseTemplate $database
+        ?DatabaseTemplate $database
     ): array {
-        $isPhpWithMysql = $language->hosting_type === 'directadmin' &&
-                         in_array($database->type, ['mysql', 'mariadb']);
+        $hosting_type = 'container';
+        $database_name = $database?->name ?? 'None';
+        $database_slug = $database?->slug ?? 'none';
+
+        if ($language->hosting_type === 'directadmin' && $database && in_array($database->type, ['mysql', 'mariadb'])) {
+            $hosting_type = 'directadmin';
+        }
 
         return [
-            'hosting_type' => $isPhpWithMysql ? 'directadmin' : 'container',
+            'hosting_type' => $hosting_type,
             'language' => $language->name,
-            'database' => $database->name,
+            'database' => $database_name,
             'language_slug' => $language->slug,
-            'database_slug' => $database->slug,
+            'database_slug' => $database_slug,
         ];
     }
 
@@ -59,16 +65,18 @@ class TechStackRoutingService
      */
     public static function isValidCombination(
         ContainerTemplate $language,
-        DatabaseTemplate $database
+        ?DatabaseTemplate $database
     ): bool {
-        // PHP and WordPress only support MySQL/MariaDB
-        if (in_array(strtolower($language->slug), ['php', 'wordpress'])) {
+        if ($database === null) {
+            return $language->slug === 'static-site';
+        }
+
+        if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
             return in_array($database->type, ['mysql', 'mariadb']);
         }
 
-        // Container languages work with PostgreSQL, MongoDB, Redis
         if ($language->hosting_type === 'container') {
-            return in_array($database->type, ['postgresql', 'mongodb', 'redis']);
+            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql']);
         }
 
         return false;
@@ -79,20 +87,20 @@ class TechStackRoutingService
      */
     public static function getAvailableDatabasesForLanguage(ContainerTemplate $language): \Illuminate\Database\Eloquent\Collection
     {
-        // PHP and WordPress only support MySQL and MariaDB
-        if (in_array(strtolower($language->slug), ['php', 'wordpress'])) {
+        // PHP, WordPress, Laravel only support MySQL and MariaDB (DirectAdmin)
+        if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
             return DatabaseTemplate::active()
                                   ->whereIn('type', ['mysql', 'mariadb'])
+                                  ->where('hosting_type', 'directadmin')
                                   ->get();
         }
 
-        // For other languages, show all databases matching hosting type
-        if ($language->hosting_type === 'directadmin') {
-            return DatabaseTemplate::active()
-                                  ->forHostingType('directadmin')
-                                  ->get();
+        // Static site needs no database
+        if (strtolower($language->slug) === 'static-site') {
+            return collect();
         }
 
+        // Container languages show all container-hosted databases
         return DatabaseTemplate::active()
                               ->forHostingType('container')
                               ->get();
@@ -103,9 +111,9 @@ class TechStackRoutingService
      */
     public static function getAvailableLanguagesForDatabase(DatabaseTemplate $database): \Illuminate\Database\Eloquent\Collection
     {
-        // MySQL and MariaDB only support PHP and WordPress
+        // MySQL and MariaDB support PHP, WordPress, and Laravel (DirectAdmin)
         if (in_array($database->type, ['mysql', 'mariadb'])) {
-            return ContainerTemplate::whereIn('slug', ['php', 'wordpress'])
+            return ContainerTemplate::whereIn('slug', ['php', 'wordpress', 'laravel'])
                                    ->active()
                                    ->get();
         }

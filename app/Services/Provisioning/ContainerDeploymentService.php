@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\ContainerDeployment;
+use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
@@ -59,12 +60,18 @@ class ContainerDeploymentService
             // Assign port
             $port = $this->assignPort($node);
 
+            // Load selected database if any
+            $databaseTemplate = null;
+            if (!empty($service->service_meta['database_id'])) {
+                $databaseTemplate = DatabaseTemplate::find($service->service_meta['database_id']);
+            }
+
             // Collect environment variables
             $envValues = $service->service_meta['env_values'] ?? [];
-            $envVars = $this->buildEnvironmentVariables($template, $envValues, $service);
+            $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate);
 
             // Render docker-compose.yml
-            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars);
+            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate);
 
             // Create deployment record
             $deployment = ContainerDeployment::create([
@@ -394,9 +401,9 @@ class ContainerDeploymentService
     }
 
     /**
-     * Build complete environment variables including system vars
+     * Build complete environment variables including system vars and database connection
      */
-    private function buildEnvironmentVariables($template, array $userValues, Service $service): array
+    private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null): array
     {
         $env = [];
 
@@ -421,13 +428,98 @@ class ContainerDeploymentService
             $env['ADMIN_PASSWORD'] = Str::random(20);
         }
 
+        // Add database connection env vars if database is selected
+        if ($databaseTemplate) {
+            $dbVars = match($databaseTemplate->type) {
+                'mysql', 'mariadb' => [
+                    'MYSQL_ROOT_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
+                    'MYSQL_DATABASE' => $env['MYSQL_DATABASE'] ?? 'appdb',
+                    'MYSQL_USER' => $env['MYSQL_USER'] ?? 'appuser',
+                    'MYSQL_PASSWORD' => $env['MYSQL_PASSWORD'] ?? ($env['DB_PASSWORD'] ?? Str::random(32)),
+                    'DB_HOST' => 'db',
+                    'DB_PORT' => '3306',
+                    'DB_DATABASE' => $env['MYSQL_DATABASE'] ?? 'appdb',
+                    'DB_USERNAME' => $env['MYSQL_USER'] ?? 'appuser',
+                    'DB_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
+                ],
+                'postgresql' => [
+                    'POSTGRES_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
+                    'POSTGRES_DB' => $env['POSTGRES_DB'] ?? 'appdb',
+                    'POSTGRES_USER' => $env['POSTGRES_USER'] ?? 'appuser',
+                    'DATABASE_URL' => 'postgresql://appuser:' . ($env['DB_PASSWORD'] ?? Str::random(32)) . '@db:5432/appdb',
+                ],
+                'mongodb' => [
+                    'MONGO_INITDB_ROOT_USERNAME' => $env['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser',
+                    'MONGO_INITDB_ROOT_PASSWORD' => $env['MONGO_INITDB_ROOT_PASSWORD'] ?? ($env['DB_PASSWORD'] ?? Str::random(32)),
+                    'MONGO_INITDB_DATABASE' => $env['MONGO_INITDB_DATABASE'] ?? 'appdb',
+                    'MONGODB_URI' => 'mongodb://appuser:' . ($env['DB_PASSWORD'] ?? Str::random(32)) . '@db:27017/appdb',
+                ],
+                'redis' => [
+                    'REDIS_HOST' => 'db',
+                    'REDIS_PORT' => '6379',
+                    'REDIS_URL' => 'redis://db:6379',
+                ],
+                default => [],
+            };
+            $env = array_merge($env, $dbVars);
+        }
+
         return $env;
     }
 
     /**
-     * Render docker-compose.yml from template
+     * Inject database sidecar service into compose array
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars): string
+    private function injectDatabaseSidecar(
+        array &$compose,
+        DatabaseTemplate $db,
+        array $envVars,
+        string $appServiceName
+    ): void {
+        $dbEnv = match($db->type) {
+            'mysql', 'mariadb' => [
+                'MYSQL_ROOT_PASSWORD' => $envVars['MYSQL_ROOT_PASSWORD'] ?? Str::random(32),
+                'MYSQL_DATABASE' => $envVars['MYSQL_DATABASE'] ?? 'appdb',
+                'MYSQL_USER' => $envVars['MYSQL_USER'] ?? 'appuser',
+                'MYSQL_PASSWORD' => $envVars['MYSQL_PASSWORD'] ?? Str::random(32),
+            ],
+            'postgresql' => [
+                'POSTGRES_PASSWORD' => $envVars['POSTGRES_PASSWORD'] ?? Str::random(32),
+                'POSTGRES_DB' => $envVars['POSTGRES_DB'] ?? 'appdb',
+                'POSTGRES_USER' => $envVars['POSTGRES_USER'] ?? 'appuser',
+            ],
+            'mongodb' => [
+                'MONGO_INITDB_ROOT_USERNAME' => $envVars['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser',
+                'MONGO_INITDB_ROOT_PASSWORD' => $envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? Str::random(32),
+                'MONGO_INITDB_DATABASE' => $envVars['MONGO_INITDB_DATABASE'] ?? 'appdb',
+            ],
+            'redis' => [],
+            default => [],
+        };
+
+        $mountPath = match($db->type) {
+            'mysql', 'mariadb' => '/var/lib/mysql',
+            'postgresql' => '/var/lib/postgresql/data',
+            'mongodb' => '/data/db',
+            'redis' => '/data',
+            default => '/data',
+        };
+
+        $compose['services']['db'] = array_filter([
+            'image' => $db->docker_image,
+            'restart' => 'unless-stopped',
+            'environment' => $dbEnv ?: null,
+            'volumes' => ["db_data:{$mountPath}"],
+        ]);
+
+        $compose['volumes']['db_data'] = null;
+        $compose['services'][$appServiceName]['depends_on'] = ['db'];
+    }
+
+    /**
+     * Render docker-compose.yml from template with optional database sidecar
+     */
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null): string
     {
         $compose = [
             'version' => '3.9',
@@ -466,11 +558,16 @@ class ContainerDeploymentService
             }
         }
 
-        // Add sidecar services
+        // Add sidecar services from template
         if ($template->compose_services) {
             foreach ($template->compose_services as $serviceName => $serviceConfig) {
                 $compose['services'][$serviceName] = $serviceConfig;
             }
+        }
+
+        // Inject database sidecar if selected
+        if ($databaseTemplate) {
+            $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $containerName);
         }
 
         return Yaml::dump($compose, 10, 2);

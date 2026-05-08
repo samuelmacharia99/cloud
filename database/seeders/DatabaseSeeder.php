@@ -12,6 +12,8 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             SettingSeeder::class,
             CronJobSeeder::class,
+            ContainerTemplateSeeder::class,
+            DatabaseTemplateSeeder::class,
             ProductSeeder::class,
             DomainExtensionSeeder::class,
             NodeSeeder::class,

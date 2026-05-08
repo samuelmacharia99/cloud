@@ -215,12 +215,18 @@ class CheckoutController extends Controller
                         // Prepare service metadata
                         $serviceMeta = [];
 
-                        // For container products, collect environment variables
+                        // For container products, collect environment variables and database selection
                         if ($product->type === 'container_hosting') {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
                             if (!empty($envValues)) {
                                 $serviceMeta['env_values'] = $envValues;
+                            }
+
+                            // Store selected database for provisioning
+                            $techstack = session('selected_techstack', []);
+                            if (!empty($techstack['database_id'])) {
+                                $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
                         }
 

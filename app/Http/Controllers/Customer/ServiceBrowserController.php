@@ -72,11 +72,11 @@ class ServiceBrowserController extends Controller
     {
         $request->validate([
             'language_id' => 'required|exists:container_templates,id',
-            'database_id' => 'required|exists:database_templates,id',
+            'database_id' => 'nullable|exists:database_templates,id',
         ]);
 
         $language = ContainerTemplate::findOrFail($request->language_id);
-        $database = DatabaseTemplate::findOrFail($request->database_id);
+        $database = $request->database_id ? DatabaseTemplate::findOrFail($request->database_id) : null;
 
         // Validate combination
         if (!TechStackRoutingService::isValidCombination($language, $database)) {
@@ -90,10 +90,8 @@ class ServiceBrowserController extends Controller
         $productsQuery = Product::where('is_active', true);
 
         if ($routing['hosting_type'] === 'directadmin') {
-            // PHP/WordPress → all shared hosting packages
             $productsQuery->where('type', 'shared_hosting');
         } else {
-            // Other languages → container hosting packages for this template
             $productsQuery->where('type', 'container_hosting')
                          ->where('container_template_id', $language->id);
         }
@@ -105,15 +103,16 @@ class ServiceBrowserController extends Controller
         }
 
         // Store selection in session temporarily
-        session([
-            'selected_techstack' => [
-                'language_id' => $language->id,
-                'language_name' => $language->name,
-                'database_id' => $database->id,
-                'database_name' => $database->name,
-                'hosting_type' => $routing['hosting_type'],
-            ]
-        ]);
+        $techstackData = [
+            'language_id' => $language->id,
+            'language_name' => $language->name,
+            'hosting_type' => $routing['hosting_type'],
+        ];
+        if ($database) {
+            $techstackData['database_id'] = $database->id;
+            $techstackData['database_name'] = $database->name;
+        }
+        session(['selected_techstack' => $techstackData]);
 
         $cartCount = count(session('cart', []));
 

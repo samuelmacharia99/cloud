@@ -32,8 +32,17 @@
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-600'"
             >
                 <div class="flex items-start justify-between mb-2">
-                    <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
-                    <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <div class="flex-1">
+                        <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
+                        <div class="flex gap-2 mt-1">
+                            @if($language->hosting_type === 'directadmin')
+                                <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared Hosting</span>
+                            @else
+                                <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Container</span>
+                            @endif
+                        </div>
+                    </div>
+                    <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                     </svg>
                 </div>
@@ -55,6 +64,13 @@
             Browse All Services
         </a>
     </div>
+
+    <!-- Hidden form for static-site skip -->
+    <form id="skip-db-form" method="POST" action="{{ route('customer.confirm-techstack') }}" class="hidden">
+        @csrf
+        <input type="hidden" id="skip-db-form-language" name="language_id" value="">
+        <input type="hidden" name="database_id" value="">
+    </form>
 
     <!-- Database Selection Modal -->
     <div
@@ -188,6 +204,16 @@ function techstackSelector() {
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
+
+            // Skip database modal for static sites
+            if (language.slug === 'static-site') {
+                this.$nextTick(() => {
+                    document.getElementById('skip-db-form-language').value = languageId;
+                    document.getElementById('skip-db-form').submit();
+                });
+                return;
+            }
+
             this.showDatabaseModal = true;
             this.loadDatabases(languageId);
         },
