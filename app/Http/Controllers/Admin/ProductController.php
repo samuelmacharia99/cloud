@@ -97,6 +97,14 @@ class ProductController extends Controller
             $validated['wholesale_monthly_price'] = null;
             $validated['wholesale_yearly_price'] = null;
             $validated['resource_limits'] = null;
+        } elseif ($validated['type'] === 'container_hosting') {
+            // Container hosting doesn't need setup fee, provisioning key, wholesale rates, or direct admin
+            $validated['setup_fee'] = 0;
+            $validated['provisioning_driver_key'] = null;
+            $validated['wholesale_monthly_price'] = null;
+            $validated['wholesale_yearly_price'] = null;
+            $validated['direct_admin_package_id'] = null;
+            $validated['resource_limits'] = null;
         } else {
             $validated['direct_admin_package_id'] = null;
         }
@@ -172,6 +180,13 @@ class ProductController extends Controller
         if ($product->type === 'shared_hosting') {
             $validated['wholesale_monthly_price'] = null;
             $validated['wholesale_yearly_price'] = null;
+            $validated['resource_limits'] = null;
+        } elseif ($product->type === 'container_hosting') {
+            $validated['setup_fee'] = 0;
+            $validated['provisioning_driver_key'] = null;
+            $validated['wholesale_monthly_price'] = null;
+            $validated['wholesale_yearly_price'] = null;
+            $validated['direct_admin_package_id'] = null;
             $validated['resource_limits'] = null;
         } else {
             $validated['direct_admin_package_id'] = null;
