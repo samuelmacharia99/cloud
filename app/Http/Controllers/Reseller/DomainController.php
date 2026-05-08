@@ -33,6 +33,14 @@ class DomainController extends Controller
             ->orderByDesc('created_at')
             ->paginate(12);
 
+        // Debug info
+        \Log::info('Reseller domains page', [
+            'reseller_id' => $resellerId,
+            'customer_ids' => $customerIds->toArray(),
+            'domains_count' => $domains->total(),
+            'domains' => $domains->map(fn($d) => $d->name . $d->extension)->toArray(),
+        ]);
+
         // Get enabled domain extensions with wholesale and reseller pricing
         $extensions = DomainExtension::with([
             'pricing' => fn($q) => $q->where('tier', 'wholesale'),
