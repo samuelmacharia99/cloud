@@ -170,11 +170,50 @@ class ServiceController extends Controller
     public function provision(Service $service)
     {
         try {
+            // Validate service prerequisites before provisioning
+            $this->validateServiceForProvisioning($service);
+
             $provisioningService = new ProvisioningService();
             $provisioningService->provision($service);
             return back()->with('success', 'Service provisioned successfully.');
         } catch (\Exception $e) {
+            \Log::error("Admin provisioning attempt failed for service {$service->id}: {$e->getMessage()}");
             return back()->with('error', 'Provisioning failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Validate that a service has all required configuration before provisioning
+     */
+    private function validateServiceForProvisioning(Service $service): void
+    {
+        if (!$service->product) {
+            throw new \Exception('Service has no product assigned.');
+        }
+
+        $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
+
+        // DirectAdmin services must have a node assigned
+        if ($driver === 'directadmin') {
+            if (!$service->node_id) {
+                throw new \Exception('DirectAdmin services must be assigned to a DirectAdmin node before provisioning. Assign a node from the Configuration section.');
+            }
+
+            $node = $service->node;
+            if (!$node || $node->type !== 'directadmin') {
+                throw new \Exception('Service node must be a DirectAdmin type node.');
+            }
+
+            if (!$node->is_active) {
+                throw new \Exception("Assigned DirectAdmin node '{$node->name}' is not active. Activate it first.");
+            }
+        }
+
+        // Container services must have a product with container template
+        if ($driver === 'container') {
+            if (!$service->product->container_template_id) {
+                throw new \Exception('Container services must have a product linked to a container template.');
+            }
         }
     }
 
