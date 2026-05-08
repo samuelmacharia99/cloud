@@ -25,12 +25,12 @@ class ProvisioningService
                 $serverService = new ServerProvisioningService();
                 $serverService->provision($service);
             } else {
-                // For domains, manual hosting, etc. — just activate
-                $service->update(['status' => 'active']);
-
-                // If this is a domain service, activate the domain
+                // Unknown driver - only allow for domain-type services (manual provisioning)
                 if ($service->product && $service->product->type === 'domain') {
+                    $service->update(['status' => 'active']);
                     $this->activateDomain($service);
+                } else {
+                    throw new \Exception("Unknown provisioning driver '{$driver}' for service type '{$service->product->type}'. Service requires a valid driver (directadmin, container, server).");
                 }
             }
 
