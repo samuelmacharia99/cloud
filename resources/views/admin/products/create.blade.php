@@ -203,7 +203,7 @@
                             <input type="checkbox" name="featured" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('featured') === '1' || old('featured') === true)>
                             <span class="text-sm text-slate-700 dark:text-slate-300">Featured Product</span>
                         </label>
-                        <label class="flex items-center gap-3 cursor-pointer">
+                        <label class="flex items-center gap-3 cursor-pointer" x-show="productType !== 'container_hosting'">
                             <input type="checkbox" name="visible_to_resellers" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('visible_to_resellers') === '1' || old('visible_to_resellers') === true)>
                             <span class="text-sm text-slate-700 dark:text-slate-300">Visible to Resellers</span>
                         </label>
