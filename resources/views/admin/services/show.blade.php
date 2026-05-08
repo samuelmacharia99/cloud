@@ -43,11 +43,11 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
-                @if ($service->status === 'pending')
+                @if (in_array($service->status, ['pending', 'provisioning']))
                     <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="inline">
                         @csrf
-                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
-                            Provision
+                        <button type="submit" class="px-4 py-2 {{ $service->status === 'provisioning' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700' }} text-white font-medium rounded-lg transition text-sm">
+                            {{ $service->status === 'provisioning' ? 'Retry Provisioning' : 'Provision' }}
                         </button>
                     </form>
                 @endif
@@ -130,19 +130,84 @@
 
             <!-- Configuration -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Configuration</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Configuration</h2>
+                    @if ($service->status === 'provisioning')
+                        <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="inline">
+                            @csrf
+                            <button type="submit" class="px-3 py-1 text-xs bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900 font-medium rounded transition">
+                                Retry Provisioning
+                            </button>
+                        </form>
+                    @endif
+                </div>
                 <div class="space-y-3">
+                    <!-- Provisioning Driver -->
                     @if ($service->provisioning_driver_key)
                         <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Provisioning Driver</p>
                             <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $service->provisioning_driver_key }}</p>
                         </div>
                     @endif
+
+                    <!-- Node (if assigned) -->
+                    @if ($service->node_id)
+                        <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Node</p>
+                            <div class="flex items-center justify-between mt-1">
+                                <p class="text-sm text-slate-900 dark:text-white font-mono">{{ $service->node->name ?? 'Unknown' }}</p>
+                                @if($service->node)
+                                    <a href="{{ route('admin.nodes.show', $service->node) }}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">View Node</a>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
+
+                    <!-- External Reference -->
                     @if ($service->external_reference)
                         <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">External Reference</p>
                             <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $service->external_reference }}</p>
                         </div>
+                    @endif
+
+                    <!-- Credentials (from credentials JSON field) -->
+                    @if ($service->credentials && is_string($service->credentials))
+                        @php
+                            $creds = json_decode($service->credentials, true);
+                        @endphp
+                        @if ($creds)
+                            @if (isset($creds['admin_username']) || isset($creds['username']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Username</p>
+                                    <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $creds['admin_username'] ?? $creds['username'] ?? '-' }}</p>
+                                </div>
+                            @endif
+                            @if (isset($creds['admin_email']) || isset($creds['access_url']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Admin Email</p>
+                                    <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $creds['admin_email'] ?? $service->user->email ?? '-' }}</p>
+                                </div>
+                            @endif
+                            @if (isset($creds['access_url']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Access URL</p>
+                                    <p class="text-sm text-slate-900 dark:text-white font-mono mt-1 break-all">
+                                        @if (filter_var($creds['access_url'], FILTER_VALIDATE_URL))
+                                            <a href="{{ $creds['access_url'] }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">{{ $creds['access_url'] }}</a>
+                                        @else
+                                            {{ $creds['access_url'] }}
+                                        @endif
+                                    </p>
+                                </div>
+                            @endif
+                            @if (isset($creds['port']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Port</p>
+                                    <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $creds['port'] }}</p>
+                                </div>
+                            @endif
+                        @endif
                     @endif
                 </div>
             </div>
