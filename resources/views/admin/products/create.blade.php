@@ -146,8 +146,8 @@
                         @enderror
                     </div>
 
-                    <!-- Wholesale Pricing Section (hidden for shared hosting) -->
-                    <div x-show="productType !== 'shared_hosting'" class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <!-- Wholesale Pricing Section (hidden for shared hosting & container hosting) -->
+                    <div x-show="productType !== 'shared_hosting' && productType !== 'container_hosting'" class="pt-4 border-t border-slate-200 dark:border-slate-700">
                         <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Wholesale Rate (for Resellers)</p>
 
                         <!-- Wholesale Monthly Price -->
@@ -176,8 +176,8 @@
                         </div>
                     </div>
 
-                    <!-- Setup Fee -->
-                    <div>
+                    <!-- Setup Fee (hidden for container hosting) -->
+                    <div x-show="productType !== 'container_hosting'">
                         <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <div class="relative">
                             <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
