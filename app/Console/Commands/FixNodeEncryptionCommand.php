@@ -87,10 +87,22 @@ class FixNodeEncryptionCommand extends Command
     private function fixContainerNode(Node $node): void
     {
         $username = $this->ask('SSH Username (e.g., root)', $node->ssh_username);
-        $password = $this->secret('SSH Password (will be encrypted before storing)');
 
-        if (empty($password)) {
-            $this->warn('Password is required.');
+        // Keep asking for password until we get one
+        do {
+            $password = $this->secret('SSH Password (will be encrypted before storing)');
+
+            if (empty($password)) {
+                $this->warn('⚠️  Password cannot be empty. Please enter your SSH password.');
+                $this->newLine();
+            }
+        } while (empty($password));
+
+        // Confirm password
+        $confirm = $this->secret('Confirm SSH Password');
+
+        if ($password !== $confirm) {
+            $this->error('❌ Passwords do not match. Please try again.');
             return;
         }
 
@@ -101,7 +113,7 @@ class FixNodeEncryptionCommand extends Command
 
         $this->info('✓ SSH credentials updated and encrypted with current APP_KEY');
         $this->line("  Username: {$username}");
-        $this->line('  Password: ' . str_repeat('•', strlen($password)));
+        $this->line('  Password: ' . str_repeat('•', strlen($password)) . ' (' . strlen($password) . ' chars)');
         $this->newLine();
         $this->info('You can now test the connection by clicking "Test Health"');
     }
