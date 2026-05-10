@@ -17,32 +17,23 @@ class SecurityHeaders
     {
         $response = $next($request);
 
-        // Skip CSP in development (Vite dev server causes issues with CSP)
-        // CSP is critical in production for security
+        // Apply CSP in both development and production
+        // Fonts need to be loaded from fonts.bunny.net even in development
+        $csp = "default-src 'self'; " .
+               "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " .
+               "style-src 'self' 'unsafe-inline' fonts.bunny.net; " .
+               "font-src fonts.bunny.net; " .
+               "img-src 'self' data: https:; " .
+               "connect-src 'self' https:; ";
+
+        // Add stricter CSP rules for production
         if (!app()->environment('local', 'development')) {
-            // Get security headers from config for production
-            $headers = config('security.headers', []);
-
-            // Apply each security header (except CSP, we handle it separately)
-            foreach ($headers as $header => $value) {
-                if ($header !== 'Content-Security-Policy') {
-                    $response->header($header, $value);
-                }
-            }
-
-            // Strict CSP for production
-            $strictCsp = "default-src 'self'; " .
-                        "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " .
-                        "style-src 'self' 'unsafe-inline' fonts.bunny.net; " .
-                        "font-src fonts.bunny.net; " .
-                        "img-src 'self' data: https:; " .
-                        "connect-src 'self' https:; " .
-                        "frame-ancestors 'none'; " .
-                        "base-uri 'self'; " .
-                        "form-action 'self';";
-
-            $response->header('Content-Security-Policy', $strictCsp);
+            $csp .= "frame-ancestors 'none'; " .
+                   "base-uri 'self'; " .
+                   "form-action 'self';";
         }
+
+        $response->header('Content-Security-Policy', $csp);
 
         // Other security headers (always apply, safe in both dev and production)
         $response->header('X-Frame-Options', 'DENY');
