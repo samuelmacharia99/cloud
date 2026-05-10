@@ -337,16 +337,47 @@ To complete the monitoring system:
 
 ## Troubleshooting
 
+### SSH Connection Failed: "The payload is invalid"
+
+**Cause:** SSH credentials are missing or corrupted in the database.
+
+**Fix:**
+1. Go to admin dashboard → Nodes → click your node
+2. Click "Edit Node" button
+3. **Add SSH credentials:**
+   - SSH Username: `root` (or your SSH user)
+   - SSH Password: your SSH password for the node
+4. Scroll down and click "Update Node"
+5. Return to node detail page
+6. Click "Test Health" button again
+
+**If credentials are encrypted incorrectly:**
+- This happens when the database was backed up/restored or encryption key changed
+- Simply re-enter the SSH password (it will be re-encrypted with the current key)
+- Click "Test Health" again
+
+### SSH Username or Password Missing
+
+**Error:** "SSH username is not configured" or "SSH credentials are not configured"
+
+**Fix:**
+1. Edit the node and add:
+   - SSH Username (usually `root`)
+   - SSH Password (your server's SSH password)
+2. Click "Update Node"
+3. Click "Test Health" button
+
 ### Node Shows "Offline" But Server is Running
 
 **Cause:** Node hasn't sent a heartbeat in 15+ minutes.
 
 **Fix:**
-1. SSH into the node and check if heartbeat script is running
-2. Check if `/usr/local/bin/send-heartbeat.sh` exists and is executable
-3. Review `/var/log/heartbeat.log` for errors
-4. Manually test heartbeat: `curl -X POST http://platform/admin/nodes/{id}/heartbeat`
-5. Check node's network connectivity to platform
+1. First, verify SSH credentials are set (see above)
+2. SSH into the node and check if heartbeat script is running
+3. Check if `/usr/local/bin/send-heartbeat.sh` exists and is executable
+4. Review `/var/log/heartbeat.log` for errors
+5. Manually test heartbeat: `curl -X POST http://platform/admin/nodes/{id}/heartbeat`
+6. Check node's network connectivity to platform
 
 ### Monitoring Data Shows "Never"
 

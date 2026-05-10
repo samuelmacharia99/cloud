@@ -217,6 +217,8 @@ class NodeController extends Controller
             'region' => 'nullable|string|max:50',
             'datacenter' => 'nullable|string|max:255',
             'ssh_port' => 'required|string|max:10',
+            'ssh_username' => 'nullable|string|max:100',
+            'ssh_password' => 'nullable|string',
             'api_url' => 'nullable|url',
             'api_token' => 'nullable|string',
             'da_login_key' => 'nullable|string',
@@ -504,6 +506,15 @@ class NodeController extends Controller
     {
         if (!in_array($node->type, ['container_host', 'database_server'])) {
             return back()->with('error', 'Node health tests are only available for container hosts and database servers.');
+        }
+
+        // Validate SSH credentials are configured
+        if (!$node->ssh_username) {
+            return back()->with('error', 'SSH username is not configured. Please edit the node and set the SSH username.');
+        }
+
+        if (!$node->ssh_password && !$node->da_login_key) {
+            return back()->with('error', 'SSH credentials are not configured. Please edit the node and set either an SSH password or login key.');
         }
 
         try {

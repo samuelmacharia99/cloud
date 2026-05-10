@@ -154,6 +154,31 @@
                         @enderror
                     </div>
 
+                    <!-- SSH Username (for container/database servers) -->
+                    @if(in_array($node->type, ['container_host', 'database_server']))
+                    <div>
+                        <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Username</label>
+                        <input type="text" id="ssh_username" name="ssh_username" value="{{ old('ssh_username', $node->ssh_username) }}" placeholder="root" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_username') border-red-500 @enderror">
+                        @error('ssh_username')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- SSH Password (for container/database servers) -->
+                    <div>
+                        <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
+                        <input type="password" id="ssh_password" name="ssh_password" placeholder="Leave blank to keep existing password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
+                        @error('ssh_password')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                        @if(!$node->ssh_password)
+                            <p class="mt-2 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded px-3 py-2">
+                                ⚠ SSH password is required for node health tests.
+                            </p>
+                        @endif
+                    </div>
+                    @endif
+
                     <!-- API URL -->
                     <div>
                         <label for="api_url" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">API URL <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
