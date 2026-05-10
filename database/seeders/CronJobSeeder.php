@@ -53,11 +53,18 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Poll Node Health',
+                'description' => 'Actively polls node health via SSH every 2 minutes (alternative to heartbeats).',
+                'command' => 'cron:poll-node-health',
+                'schedule' => '*/2 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Check Node Health',
-                'description' => 'Sets monitored nodes to offline/degraded based on last heartbeat.',
+                'description' => 'Sets monitored nodes to offline/degraded based on last heartbeat (disabled if using polling).',
                 'command' => 'cron:check-node-health',
                 'schedule' => '*/5 * * * *',
-                'enabled' => true,
+                'enabled' => false,
             ],
             [
                 'name' => 'Cleanup Monitoring Data',

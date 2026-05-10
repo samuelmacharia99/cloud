@@ -567,8 +567,9 @@ class NodeController extends Controller
                 'recorded_at' => now(),
             ]);
 
-            // Update node resource utilization
+            // Update node resource utilization and enable monitoring
             $node->update([
+                'is_active' => true,
                 'ram_gb' => $ramTotalGb,
                 'storage_gb' => $diskTotalGb,
                 'cpu_cores' => $cpuCores,
