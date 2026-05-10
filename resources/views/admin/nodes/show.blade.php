@@ -19,6 +19,17 @@
             <p class="text-slate-600 dark:text-slate-400 mt-1">{{ $node->hostname }} ({{ $node->ip_address }})</p>
         </div>
         <div class="flex gap-2">
+            @if(in_array($node->type, ['container_host', 'database_server']))
+                <form method="POST" action="{{ route('admin.nodes.test-health', $node) }}" class="inline">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Test Health
+                    </button>
+                </form>
+            @endif
             <a href="{{ route('admin.nodes.edit', $node) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                 Edit Node
             </a>

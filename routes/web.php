@@ -73,6 +73,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::resource('admin/nodes', \App\Http\Controllers\Admin\NodeController::class)->names('admin.nodes');
         Route::post('admin/nodes/{node}/status', [\App\Http\Controllers\Admin\NodeController::class, 'updateStatus'])->name('admin.nodes.update-status');
         Route::post('admin/nodes/{node}/test-connection', [\App\Http\Controllers\Admin\NodeController::class, 'testConnection'])->name('admin.nodes.test-connection');
+        Route::post('admin/nodes/{node}/test-health', [\App\Http\Controllers\Admin\NodeController::class, 'testHealth'])->name('admin.nodes.test-health');
         Route::post('admin/nodes/{node}/utilization', [\App\Http\Controllers\Admin\NodeController::class, 'updateUtilization'])->name('admin.nodes.update-utilization');
         Route::post('admin/nodes/{node}/heartbeat', [\App\Http\Controllers\Admin\NodeController::class, 'heartbeat'])->name('admin.nodes.heartbeat');
         Route::post('admin/nodes/{node}/sync-packages', [\App\Http\Controllers\Admin\NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');

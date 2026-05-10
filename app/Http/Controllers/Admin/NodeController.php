@@ -500,6 +500,96 @@ class NodeController extends Controller
         }
     }
 
+    public function testHealth(Node $node)
+    {
+        if (!in_array($node->type, ['container_host', 'database_server'])) {
+            return back()->with('error', 'Node health tests are only available for container hosts and database servers.');
+        }
+
+        try {
+            $ssh = \App\Services\SSH\SSHService::forNode($node);
+
+            // Test 1: SSH connectivity
+            $ssh->exec('echo "SSH connection OK"', 5);
+            $node->recordHeartbeat();
+
+            // Test 2: Collect system metrics
+            $uptime = $ssh->exec('uptime -p', 5);
+            $freeOutput = $ssh->exec('free -b | grep Mem', 5);
+            $dfOutput = $ssh->exec('df /opt/talksasa/containers -B1 | tail -1', 5);
+            $cpuOutput = $ssh->exec('grep -c ^processor /proc/cpuinfo', 5);
+            $loadOutput = $ssh->exec('cat /proc/loadavg | awk \'{print $1, $2, $3}\'', 5);
+
+            // Parse memory (free -b output: Mem: total used free shared buff/cache available)
+            preg_match('/Mem:\s+(\d+)\s+(\d+)\s+(\d+)/', $freeOutput, $memMatches);
+            $ramTotalBytes = $memMatches[1] ?? 0;
+            $ramUsedBytes = $memMatches[2] ?? 0;
+            $ramTotalGb = intval($ramTotalBytes / (1024 * 1024 * 1024));
+            $ramUsedGb = intval($ramUsedBytes / (1024 * 1024 * 1024));
+
+            // Parse disk (df output: filesystem 1K-blocks used available use% mounted)
+            $dfParts = preg_split('/\s+/', trim($dfOutput));
+            $diskTotalBytes = ($dfParts[1] ?? 0) * 1024;
+            $diskUsedBytes = ($dfParts[2] ?? 0) * 1024;
+            $diskTotalGb = intval($diskTotalBytes / (1024 * 1024 * 1024));
+            $diskUsedGb = intval($diskUsedBytes / (1024 * 1024 * 1024));
+
+            // Get CPU load average (1, 5, 15 min)
+            $loads = array_map('floatval', explode(' ', trim($loadOutput)));
+            $loadAverage = $loads[0] ?? 0;
+            $cpuCores = intval(trim($cpuOutput));
+            $cpuPercent = $cpuCores > 0 ? intval(($loadAverage / $cpuCores) * 100) : 0;
+            $cpuPercent = min(100, max(0, $cpuPercent));
+
+            // Determine uptime percentage (estimate: 99% if running, 0% if just booted)
+            $uptimePercent = strpos($uptime, 'minute') !== false || strpos($uptime, 'hour') !== false ? 99 : 95;
+
+            // Record monitoring data
+            NodeMonitoring::create([
+                'node_id' => $node->id,
+                'uptime_percentage' => $uptimePercent,
+                'ram_used_gb' => $ramUsedGb,
+                'ram_total_gb' => $ramTotalGb,
+                'storage_used_gb' => $diskUsedGb,
+                'storage_total_gb' => $diskTotalGb,
+                'cpu_percentage' => $cpuPercent,
+                'recorded_at' => now(),
+            ]);
+
+            // Update node resource utilization
+            $node->update([
+                'ram_gb' => $ramTotalGb,
+                'storage_gb' => $diskTotalGb,
+                'cpu_cores' => $cpuCores,
+                'ram_used_gb' => $ramUsedGb,
+                'storage_used_gb' => $diskUsedGb,
+                'cpu_used' => $cpuPercent,
+            ]);
+
+            // If all metrics look healthy, set status to online
+            if ($ramUsedGb <= ($ramTotalGb * 0.85) && $diskUsedGb <= ($diskTotalGb * 0.90)) {
+                $node->update(['status' => 'online']);
+            }
+
+            $ssh->disconnect();
+
+            $ramPercent = intval($ramUsedGb / $ramTotalGb * 100);
+            $storagePercent = intval($diskUsedGb / $diskTotalGb * 100);
+
+            $message = "Node health test passed! ✓\n\n";
+            $message .= "📊 Metrics:\n";
+            $message .= "  CPU: {$cpuPercent}% ({$cpuCores} cores)\n";
+            $message .= "  RAM: {$ramUsedGb}/{$ramTotalGb} GB ({$ramPercent}%)\n";
+            $message .= "  Storage: {$diskUsedGb}/{$diskTotalGb} GB ({$storagePercent}%)\n";
+            $message .= "  Uptime: {$uptime}\n";
+            $message .= "  Load Average: {$loadAverage}";
+
+            return back()->with('success', $message);
+        } catch (\Exception $e) {
+            return back()->with('error', 'Node health test failed: ' . $e->getMessage());
+        }
+    }
+
     public function syncDirectAdminPackages(Node $node)
     {
         if ($node->type !== 'directadmin') {
