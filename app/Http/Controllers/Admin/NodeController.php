@@ -538,10 +538,10 @@ class NodeController extends Controller
             $ramTotalGb = intval($ramTotalBytes / (1024 * 1024 * 1024));
             $ramUsedGb = intval($ramUsedBytes / (1024 * 1024 * 1024));
 
-            // Parse disk (df output: filesystem 1K-blocks used available use% mounted)
+            // Parse disk (df output: filesystem 1B-blocks used available use% mounted)
             $dfParts = preg_split('/\s+/', trim($dfOutput));
-            $diskTotalBytes = ($dfParts[1] ?? 0) * 1024;
-            $diskUsedBytes = ($dfParts[2] ?? 0) * 1024;
+            $diskTotalBytes = intval($dfParts[1] ?? 0);
+            $diskUsedBytes = intval($dfParts[2] ?? 0);
             $diskTotalGb = intval($diskTotalBytes / (1024 * 1024 * 1024));
             $diskUsedGb = intval($diskUsedBytes / (1024 * 1024 * 1024));
 
