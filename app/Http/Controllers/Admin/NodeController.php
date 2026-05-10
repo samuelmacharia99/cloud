@@ -584,14 +584,18 @@ class NodeController extends Controller
 
             $ssh->disconnect();
 
-            $ramPercent = intval($ramUsedGb / $ramTotalGb * 100);
-            $storagePercent = intval($diskUsedGb / $diskTotalGb * 100);
+            $ramPercent = $ramTotalGb > 0 ? intval($ramUsedGb / $ramTotalGb * 100) : 0;
+            $storagePercent = $diskTotalGb > 0 ? intval($diskUsedGb / $diskTotalGb * 100) : 0;
 
             $message = "Node health test passed! ✓\n\n";
             $message .= "📊 Metrics:\n";
             $message .= "  CPU: {$cpuPercent}% ({$cpuCores} cores)\n";
             $message .= "  RAM: {$ramUsedGb}/{$ramTotalGb} GB ({$ramPercent}%)\n";
-            $message .= "  Storage: {$diskUsedGb}/{$diskTotalGb} GB ({$storagePercent}%)\n";
+            if ($diskTotalGb > 0) {
+                $message .= "  Storage: {$diskUsedGb}/{$diskTotalGb} GB ({$storagePercent}%)\n";
+            } else {
+                $message .= "  Storage: Could not determine (path may not exist)\n";
+            }
             $message .= "  Uptime: {$uptime}\n";
             $message .= "  Load Average: {$loadAverage}";
 
