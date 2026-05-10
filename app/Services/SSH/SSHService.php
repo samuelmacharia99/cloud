@@ -57,10 +57,18 @@ class SSHService
 
             // Try password authentication first
             if ($this->node->ssh_password) {
-                $authenticated = @$this->ssh->login(
-                    $this->node->ssh_username,
-                    decrypt($this->node->ssh_password)
-                );
+                try {
+                    $password = decrypt($this->node->ssh_password);
+                    $authenticated = @$this->ssh->login(
+                        $this->node->ssh_username,
+                        $password
+                    );
+                } catch (\Exception $e) {
+                    throw new \Exception(
+                        'SSH password decryption failed: ' . $e->getMessage() .
+                        ' (This usually means the APP_KEY changed. Re-enter the SSH password to fix.)'
+                    );
+                }
             }
 
             // Fallback to login key if available and password failed
@@ -69,12 +77,15 @@ class SSHService
                     $key = PublicKeyLoader::load(decrypt($this->node->da_login_key));
                     $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
-                    // Key loading failed, continue to error
+                    throw new \Exception(
+                        'SSH key decryption failed: ' . $e->getMessage() .
+                        ' (This usually means the APP_KEY changed. Re-enter the login key to fix.)'
+                    );
                 }
             }
 
             if (! $authenticated) {
-                throw new \Exception('Authentication failed');
+                throw new \Exception('SSH authentication failed (invalid credentials or network issue)');
             }
 
             $this->connected = true;
@@ -261,10 +272,18 @@ class SSHService
             $authenticated = false;
 
             if ($this->node->ssh_password) {
-                $authenticated = @$this->sftp->login(
-                    $this->node->ssh_username,
-                    decrypt($this->node->ssh_password)
-                );
+                try {
+                    $password = decrypt($this->node->ssh_password);
+                    $authenticated = @$this->sftp->login(
+                        $this->node->ssh_username,
+                        $password
+                    );
+                } catch (\Exception $e) {
+                    throw new \Exception(
+                        'SFTP password decryption failed: ' . $e->getMessage() .
+                        ' (This usually means the APP_KEY changed. Re-enter the SSH password to fix.)'
+                    );
+                }
             }
 
             if (! $authenticated && $this->node->da_login_key) {
@@ -272,7 +291,10 @@ class SSHService
                     $key = PublicKeyLoader::load(decrypt($this->node->da_login_key));
                     $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
-                    // Key loading failed
+                    throw new \Exception(
+                        'SFTP key decryption failed: ' . $e->getMessage() .
+                        ' (This usually means the APP_KEY changed. Re-enter the login key to fix.)'
+                    );
                 }
             }
 
