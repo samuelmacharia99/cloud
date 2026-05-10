@@ -56,36 +56,30 @@ class SSHService
             $authenticated = false;
 
             // Try password authentication first
+            // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
+            // Do NOT call decrypt() on it again - that causes "payload is invalid" errors
             if ($this->node->ssh_password) {
-                try {
-                    $password = decrypt($this->node->ssh_password);
-                    $authenticated = @$this->ssh->login(
-                        $this->node->ssh_username,
-                        $password
-                    );
-                } catch (\Exception $e) {
-                    throw new \Exception(
-                        'SSH password decryption failed: ' . $e->getMessage() .
-                        ' (This usually means the APP_KEY changed. Re-enter the SSH password to fix.)'
-                    );
-                }
+                $authenticated = @$this->ssh->login(
+                    $this->node->ssh_username,
+                    $this->node->ssh_password
+                );
             }
 
             // Fallback to login key if available and password failed
+            // NOTE: $this->node->da_login_key is already decrypted by the Model's 'encrypted' cast
             if (! $authenticated && $this->node->da_login_key) {
                 try {
-                    $key = PublicKeyLoader::load(decrypt($this->node->da_login_key));
+                    $key = PublicKeyLoader::load($this->node->da_login_key);
                     $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
                     throw new \Exception(
-                        'SSH key decryption failed: ' . $e->getMessage() .
-                        ' (This usually means the APP_KEY changed. Re-enter the login key to fix.)'
+                        'SSH key format invalid: ' . $e->getMessage()
                     );
                 }
             }
 
             if (! $authenticated) {
-                throw new \Exception('SSH authentication failed (invalid credentials or network issue)');
+                throw new \Exception('SSH authentication failed - invalid credentials or network issue');
             }
 
             $this->connected = true;
@@ -271,35 +265,28 @@ class SSHService
 
             $authenticated = false;
 
+            // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
+            // Do NOT call decrypt() on it again
             if ($this->node->ssh_password) {
-                try {
-                    $password = decrypt($this->node->ssh_password);
-                    $authenticated = @$this->sftp->login(
-                        $this->node->ssh_username,
-                        $password
-                    );
-                } catch (\Exception $e) {
-                    throw new \Exception(
-                        'SFTP password decryption failed: ' . $e->getMessage() .
-                        ' (This usually means the APP_KEY changed. Re-enter the SSH password to fix.)'
-                    );
-                }
+                $authenticated = @$this->sftp->login(
+                    $this->node->ssh_username,
+                    $this->node->ssh_password
+                );
             }
 
             if (! $authenticated && $this->node->da_login_key) {
                 try {
-                    $key = PublicKeyLoader::load(decrypt($this->node->da_login_key));
+                    $key = PublicKeyLoader::load($this->node->da_login_key);
                     $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
                     throw new \Exception(
-                        'SFTP key decryption failed: ' . $e->getMessage() .
-                        ' (This usually means the APP_KEY changed. Re-enter the login key to fix.)'
+                        'SFTP key format invalid: ' . $e->getMessage()
                     );
                 }
             }
 
             if (! $authenticated) {
-                throw new SSHConnectionException($this->node->ip_address, 'SFTP authentication failed');
+                throw new SSHConnectionException($this->node->ip_address, 'SFTP authentication failed - check credentials');
             }
         }
     }
