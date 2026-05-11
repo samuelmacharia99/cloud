@@ -293,7 +293,11 @@
                     @foreach($invoice->items as $item)
                         <tr>
                             <td>
-                                <strong>{{ $item->product->name ?? 'Unknown' }}</strong><br>
+                                @if($item->domain_id)
+                                    <strong>Domain</strong><br>
+                                @else
+                                    <strong>{{ $item->product->name ?? 'Unknown Product' }}</strong><br>
+                                @endif
                                 <small>{{ $item->description }}</small>
                             </td>
                             <td class="text-right">{{ $item->quantity }}</td>

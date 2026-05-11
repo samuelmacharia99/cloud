@@ -60,6 +60,7 @@ class DomainRenewalService
 
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
+                'domain_id' => $domain->id,
                 'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year" . ($renewalOrder->years > 1 ? 's' : ''),
                 'quantity' => 1,
                 'unit_price' => $renewalOrder->amount,
@@ -107,6 +108,7 @@ class DomainRenewalService
 
             InvoiceItem::create([
                 'invoice_id' => $adminInvoice->id,
+                'domain_id' => $domain->id,
                 'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year" . ($renewalOrder->years > 1 ? 's' : ''),
                 'quantity' => 1,
                 'unit_price' => $renewalOrder->amount,

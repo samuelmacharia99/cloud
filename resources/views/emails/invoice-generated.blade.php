@@ -70,7 +70,13 @@
         @forelse($invoice->items as $item)
             <tr>
                 <td>
-                    <strong>{{ $item->product->name ?? 'Product' }}</strong>
+                    <strong>
+                        @if($item->domain_id)
+                            Domain
+                        @else
+                            {{ $item->product->name ?? 'Product' }}
+                        @endif
+                    </strong>
                     @if($item->description)
                         <div style="font-size: 12px; color: #6b7280;">{{ $item->description }}</div>
                     @endif

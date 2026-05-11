@@ -13,6 +13,7 @@ class InvoiceItem extends Model
         'invoice_id',
         'service_id',
         'product_id',
+        'domain_id',
         'description',
         'quantity',
         'unit_price',
@@ -37,5 +38,10 @@ class InvoiceItem extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function domain()
+    {
+        return $this->belongsTo(Domain::class);
     }
 }
