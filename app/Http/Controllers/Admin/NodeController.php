@@ -687,4 +687,64 @@ class NodeController extends Controller
 
         return response()->json($packages);
     }
+
+    /**
+     * Get node status data for auto-polling on dashboard
+     */
+    public function statusJson(Request $request)
+    {
+        $query = Node::query();
+
+        // Search by name or hostname
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('name', 'like', "%{$request->search}%")
+                  ->orWhere('hostname', 'like', "%{$request->search}%")
+                  ->orWhere('ip_address', 'like', "%{$request->search}%");
+            });
+        }
+
+        // Filter by type
+        if ($request->filled('type')) {
+            $query->where('type', $request->type);
+        }
+
+        // Filter by status
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        // Filter by region
+        if ($request->filled('region')) {
+            $query->where('region', $request->region);
+        }
+
+        $nodes = $query->get();
+
+        return response()->json([
+            'timestamp' => now()->toIso8601String(),
+            'nodes' => $nodes->map(function ($node) {
+                return [
+                    'id' => $node->id,
+                    'name' => $node->name,
+                    'hostname' => $node->hostname,
+                    'type' => $node->type,
+                    'status' => $node->status,
+                    'cpu_cores' => $node->cpu_cores,
+                    'cpu_used' => $node->cpu_used,
+                    'cpu_usage_percentage' => $node->getCpuUsagePercentage(),
+                    'ram_gb' => $node->ram_gb,
+                    'ram_used_gb' => $node->ram_used_gb,
+                    'ram_usage_percentage' => $node->getRamUsagePercentage(),
+                    'storage_gb' => $node->storage_gb,
+                    'storage_used_gb' => $node->storage_used_gb,
+                    'storage_usage_percentage' => $node->getStorageUsagePercentage(),
+                    'region' => $node->region,
+                    'services_count' => $node->services_count ?? 0,
+                    'last_heartbeat_at' => $node->last_heartbeat_at?->toIso8601String(),
+                    'last_heartbeat_diff' => $node->last_heartbeat_at?->diffForHumans() ?? 'Never',
+                ];
+            }),
+        ]);
+    }
 }

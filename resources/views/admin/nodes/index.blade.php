@@ -7,17 +7,23 @@
 @endsection
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="nodePolling()" x-init="initPolling()">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Infrastructure Nodes</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your servers and container hosts.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your servers and container hosts. Last updated: <span x-text="lastUpdated" class="font-mono">--:--:--</span></p>
         </div>
-        <button @click="$dispatch('open-node-type-modal')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            Add Node
-        </button>
+        <div class="flex items-center gap-2">
+            <button @click="refreshNow()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" :class="{ 'animate-spin': isRefreshing }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Refresh
+            </button>
+            <button @click="$dispatch('open-node-type-modal')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Add Node
+            </button>
+        </div>
     </div>
 
     <!-- Stats Cards -->
@@ -129,7 +135,7 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($nodes as $node)
-                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" data-node-id="{{ $node->id }}">
                             <td class="px-6 py-4">
                                 <div>
                                     <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $node->name }}</p>
@@ -217,6 +223,108 @@
         {{ $nodes->links() }}
     </div>
 </div>
+
+<script>
+function nodePolling() {
+    return {
+        lastUpdated: '--:--:--',
+        isRefreshing: false,
+        pollInterval: 60000, // 1 minute
+        pollTimeout: null,
+
+        async initPolling() {
+            // Initial load
+            await this.fetchAndUpdateNodes();
+            // Start polling
+            this.pollTimeout = setInterval(() => this.fetchAndUpdateNodes(), this.pollInterval);
+        },
+
+        async refreshNow() {
+            this.isRefreshing = true;
+            await this.fetchAndUpdateNodes();
+            this.isRefreshing = false;
+        },
+
+        async fetchAndUpdateNodes() {
+            try {
+                // Get current query parameters
+                const params = new URLSearchParams(window.location.search);
+                const response = await fetch(`{{ route('admin.nodes.status-json') }}?${params.toString()}`);
+                const data = await response.json();
+
+                // Update last updated time
+                const now = new Date();
+                this.lastUpdated = now.toLocaleTimeString();
+
+                // Update each node row
+                data.nodes.forEach(node => {
+                    const row = document.querySelector(`tr[data-node-id="${node.id}"]`);
+                    if (!row) return;
+
+                    // Update status badge
+                    const statusCell = row.querySelector('td:nth-child(3)');
+                    if (statusCell) {
+                        const statusBadge = statusCell.querySelector('span');
+                        statusBadge.className = `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${this.getStatusClasses(node.status)}`;
+                        statusBadge.textContent = this.capitalizeFirst(node.status);
+                    }
+
+                    // Update CPU/RAM usage
+                    const usageCell = row.querySelector('td:nth-child(4)');
+                    if (usageCell) {
+                        usageCell.innerHTML = `
+                            <div class="space-y-1 text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-12 text-slate-600 dark:text-slate-400">CPU:</span>
+                                    <div class="w-24 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                                        <div class="bg-blue-500 h-2 rounded-full" style="width: ${Math.min(node.cpu_usage_percentage, 100)}%"></div>
+                                    </div>
+                                    <span class="text-slate-600 dark:text-slate-400">${node.cpu_usage_percentage}%</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="w-12 text-slate-600 dark:text-slate-400">RAM:</span>
+                                    <div class="w-24 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                                        <div class="bg-amber-500 h-2 rounded-full" style="width: ${Math.min(node.ram_usage_percentage, 100)}%"></div>
+                                    </div>
+                                    <span class="text-slate-600 dark:text-slate-400">${node.ram_usage_percentage}%</span>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    // Update services count
+                    const servicesCell = row.querySelector('td:nth-child(6)');
+                    if (servicesCell) {
+                        servicesCell.textContent = node.services_count;
+                    }
+
+                    // Update last heartbeat
+                    const heartbeatCell = row.querySelector('td:nth-child(7)');
+                    if (heartbeatCell) {
+                        heartbeatCell.textContent = node.last_heartbeat_diff;
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to fetch node status:', error);
+            }
+        },
+
+        getStatusClasses(status) {
+            const classes = {
+                'online': 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
+                'offline': 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
+                'degraded': 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
+                'maintenance': 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
+            };
+            return classes[status] || classes['offline'];
+        },
+
+        capitalizeFirst(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        },
+    };
+}
+</script>
 
 <!-- Node Type Selection Modal -->
 <div x-data="{ show: false }" x-on:open-node-type-modal.window="show = true" x-show="show"
