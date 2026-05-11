@@ -300,6 +300,36 @@ class NotificationService
         }
     }
 
+    public function notifyDomainRenewalInvoice(Invoice $invoice, Domain $domain): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_invoice_generated')) {
+            return;
+        }
+
+        try {
+            Mail::to($invoice->user->email)->send(new InvoiceGeneratedMail($invoice));
+            $this->logEmail($invoice->user->email, 'Domain Renewal Invoice ' . $invoice->invoice_number . ' for ' . $domain->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($invoice->user->email, 'Domain Renewal Invoice ' . $invoice->invoice_number, 'failed', $e->getMessage());
+            Log::error('Failed to send domain renewal invoice notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $invoice->user->phone && $this->settingEnabled('notify_invoice_generated')) {
+            try {
+                $message = $this->renderTemplate('invoice_generated', [
+                    'customer_name' => $invoice->user->name,
+                    'invoice_number' => $invoice->invoice_number,
+                    'amount' => 'Ksh ' . number_format($invoice->total, 2),
+                    'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Domain renewal invoice ' . $invoice->invoice_number . ' for ' . $domain->name . ' has been generated. Amount due: Ksh ' . number_format($invoice->total, 0) . '. Pay by ' . ($invoice->due_date?->format('M d, Y') ?? 'due date') . '.');
+                $this->smsService->send($invoice->user->phone, $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to send domain renewal invoice SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
     /**
      * Notify admin and customer about a new order placement.
      * Admin receives SMS to all notification phones with order summary.

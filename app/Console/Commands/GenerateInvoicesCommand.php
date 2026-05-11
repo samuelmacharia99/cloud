@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\DB;
 class GenerateInvoicesCommand extends BaseCronCommand
 {
     protected $signature = 'cron:generate-invoices';
-    protected $description = 'Generate renewal invoices for services due today or past due';
+    protected $description = 'Generate renewal invoices for services expiring in 30 days';
 
     protected function handleCron(): string
     {
@@ -24,7 +24,8 @@ class GenerateInvoicesCommand extends BaseCronCommand
 
         $services = Service::with(['product', 'user'])
             ->where('status', 'active')
-            ->where('next_due_date', '<=', now())
+            ->where('next_due_date', '<=', now()->addDays(30))
+            ->where('next_due_date', '>', now())
             ->whereDoesntHave('invoice', function ($q) {
                 $q->whereIn('status', ['draft', 'unpaid'])
                   ->where('created_at', '>=', now()->subDays(7));
