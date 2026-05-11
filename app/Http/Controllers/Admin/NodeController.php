@@ -504,8 +504,8 @@ class NodeController extends Controller
 
     public function testHealth(Node $node)
     {
-        if (!in_array($node->type, ['container_host', 'database_server'])) {
-            return back()->with('error', 'Node health tests are only available for container hosts and database servers.');
+        if (!in_array($node->type, ['container_host', 'database_server', 'directadmin'])) {
+            return back()->with('error', 'Node health tests are only available for container hosts, database servers, and DirectAdmin nodes.');
         }
 
         // Validate SSH credentials are configured

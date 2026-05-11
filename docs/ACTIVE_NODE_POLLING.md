@@ -25,7 +25,7 @@ Instead of requiring each node to send heartbeats, the platform can **actively p
 ```
 Platform Cron (every 2 minutes):
   ↓
-For each active container/database node:
+For each active container/database/directadmin node:
   ├─ SSH into node
   ├─ Run: uptime, free, df, nproc, load avg
   ├─ Parse metrics
@@ -429,6 +429,43 @@ Key behaviors:
 
 ---
 
+## DirectAdmin Node Monitoring
+
+**DirectAdmin nodes are now fully supported** in the active polling system!
+
+### What Changed
+
+- ✅ DirectAdmin nodes are now monitored via SSH every 2 minutes (just like container/database servers)
+- ✅ System metrics collected: CPU, RAM, storage, uptime, load average
+- ✅ "Test Health" button available on DirectAdmin node pages
+- ✅ 24h Monitoring dashboard shows for DirectAdmin nodes
+- ✅ Status automatically set to Online/Degraded/Offline based on metrics
+
+### DirectAdmin Node Setup
+
+For DirectAdmin servers to be monitored, ensure:
+
+```
+1. Go to /admin/nodes → Click DirectAdmin node → Edit
+2. Configure SSH credentials:
+   - SSH Username: (e.g., "root")
+   - SSH Password: (your SSH password)
+   - SSH Port: (usually 22)
+3. Mark as "Active" (checkbox)
+4. Save changes
+5. Click "Test Health" to verify connectivity
+```
+
+### Important Notes
+
+- DirectAdmin servers are standard Linux machines running the DirectAdmin control panel
+- SSH access works exactly like container/database servers
+- No special DirectAdmin API integration required for basic monitoring
+- Node health is determined by system resources (CPU, RAM, storage, uptime)
+- This is **Phase 1** (system metrics only). Phase 2 will add DirectAdmin-specific metrics (accounts, resources, etc.)
+
+---
+
 ## Next Steps
 
 1. ✅ Run the seeder: `php artisan db:seed --class=CronJobSeeder`
@@ -471,6 +508,7 @@ A: Polling stops. Nodes can't be monitored (unlike heartbeats where nodes send d
 | Monitoring latency | ⭐⭐⭐ Fast (2 min polls) |
 | Node setup required | ⭐ None (SSH only) |
 | Platform load | ⭐⭐ Moderate |
+| Node types supported | Container, Database, DirectAdmin |
 | Recommended for | Small-medium deployments |
 
 Use polling for simplicity on small-to-medium deployments. Switch to heartbeats when you scale to 50+ nodes.

@@ -17,7 +17,7 @@ class PollNodeHealthCommand extends BaseCronCommand
     {
         $lines = [];
         $nodes = Node::where('is_active', true)
-            ->whereIn('type', ['container_host', 'database_server'])
+            ->whereIn('type', ['container_host', 'database_server', 'directadmin'])
             ->get();
 
         $healthy = 0;

@@ -154,8 +154,8 @@
                         @enderror
                     </div>
 
-                    <!-- SSH Username (for container/database servers) -->
-                    @if(in_array($node->type, ['container_host', 'database_server']))
+                    <!-- SSH Username (for container/database servers and DirectAdmin) -->
+                    @if(in_array($node->type, ['container_host', 'database_server', 'directadmin']))
                     <div>
                         <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Username</label>
                         <input type="text" id="ssh_username" name="ssh_username" value="{{ old('ssh_username', $node->ssh_username) }}" placeholder="root" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_username') border-red-500 @enderror">

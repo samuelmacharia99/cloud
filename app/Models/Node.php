@@ -77,7 +77,7 @@ class Node extends Model
     // Helper Methods
     public function isMonitored(): bool
     {
-        return in_array($this->type, ['container_host', 'database_server']);
+        return in_array($this->type, ['container_host', 'database_server', 'directadmin']);
     }
 
     public function isHealthy(): bool
