@@ -365,8 +365,8 @@
     <!-- Edit Pricing Modal -->
     <div x-show="showPricingModal" @click.outside="showPricingModal = false" x-transition class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" style="display: none;">
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-xl w-full mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <h3 class="text-lg font-bold text-slate-900 dark:text-white">Edit Renewal Pricing</h3>
-            <p class="text-sm text-slate-600 dark:text-slate-400">Configure renewal prices for retail (customer) and wholesale (reseller). Domains do not have setup fees.</p>
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white">Edit Pricing</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-400">Configure both retail (customer) and wholesale (reseller) pricing. Setup fees are not applicable to domain renewals.</p>
 
             <form method="POST" action="{{ route('admin.domains.pricing.store') }}" class="space-y-4">
                 @csrf
@@ -380,16 +380,25 @@
                 <div class="border-2 border-emerald-200 dark:border-emerald-800 rounded-lg p-4 space-y-3">
                     <h4 class="font-semibold text-slate-900 dark:text-white text-sm flex items-center gap-2">
                         <span class="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-xs font-bold text-emerald-700 dark:text-emerald-300">$</span>
-                        Retail (Customer) Renewal Price
+                        Retail (Customer)
                     </h4>
 
                     <div>
-                        <label for="retail_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Annual Renewal Price <span class="text-red-600">*</span></label>
+                        <label for="retail_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Annual Price <span class="text-red-600">*</span></label>
                         <div class="flex items-center gap-2">
                             <span class="text-slate-900 dark:text-white font-medium">$</span>
                             <input type="number" id="retail_price" name="retail_price" x-model="retailPrice" placeholder="9.99" step="0.01" min="0" required class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-400 text-sm">
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Price charged to customers for renewing this domain for 1 year</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Price for registering a new domain</p>
+                    </div>
+
+                    <div>
+                        <label for="retail_renewal_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Price</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input type="number" id="retail_renewal_price" name="retail_renewal_price" x-model="retailRenewalPrice" placeholder="9.99" step="0.01" min="0" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-emerald-500 dark:focus:ring-emerald-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Annual price for renewing the domain (if different from registration)</p>
                     </div>
                 </div>
 
@@ -397,16 +406,25 @@
                 <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-3">
                     <h4 class="font-semibold text-slate-900 dark:text-white text-sm flex items-center gap-2">
                         <span class="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-950 flex items-center justify-center text-xs font-bold text-blue-700 dark:text-blue-300">$</span>
-                        Wholesale (Reseller) Renewal Price
+                        Wholesale (Reseller)
                     </h4>
 
                     <div>
-                        <label for="wholesale_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Annual Renewal Price <span class="text-red-600">*</span></label>
+                        <label for="wholesale_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Annual Price <span class="text-red-600">*</span></label>
                         <div class="flex items-center gap-2">
                             <span class="text-slate-900 dark:text-white font-medium">$</span>
                             <input type="number" id="wholesale_price" name="wholesale_price" x-model="wholesalePrice" placeholder="5.99" step="0.01" min="0" required class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Price charged to resellers for renewing this domain for 1 year</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Price for registering a new domain</p>
+                    </div>
+
+                    <div>
+                        <label for="wholesale_renewal_price" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal Price</label>
+                        <div class="flex items-center gap-2">
+                            <span class="text-slate-900 dark:text-white font-medium">$</span>
+                            <input type="number" id="wholesale_renewal_price" name="wholesale_renewal_price" x-model="wholesaleRenewalPrice" placeholder="5.99" step="0.01" min="0" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Annual price for renewing the domain (if different from registration)</p>
                     </div>
                 </div>
 
@@ -440,7 +458,9 @@ function pricingManager() {
         selectedExtensionId: null,
         selectedPeriod: null,
         retailPrice: '',
+        retailRenewalPrice: '',
         wholesalePrice: '',
+        wholesaleRenewalPrice: '',
 
         openAddExtensionModal() {
             this.showAddExtensionModal = true;
@@ -457,14 +477,18 @@ function pricingManager() {
             // Pre-fill with existing pricing if available
             if (pricing && pricing.retail) {
                 this.retailPrice = parseFloat(pricing.retail.price).toFixed(2);
+                this.retailRenewalPrice = pricing.retail.renewal_price ? parseFloat(pricing.retail.renewal_price).toFixed(2) : '';
             } else {
                 this.retailPrice = '';
+                this.retailRenewalPrice = '';
             }
 
             if (pricing && pricing.wholesale) {
                 this.wholesalePrice = parseFloat(pricing.wholesale.price).toFixed(2);
+                this.wholesaleRenewalPrice = pricing.wholesale.renewal_price ? parseFloat(pricing.wholesale.renewal_price).toFixed(2) : '';
             } else {
                 this.wholesalePrice = '';
+                this.wholesaleRenewalPrice = '';
             }
 
             this.showPricingModal = true;

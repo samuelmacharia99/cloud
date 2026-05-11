@@ -13,6 +13,7 @@ class DomainPricing extends Model
         'period_years',
         'tier',
         'price',
+        'renewal_price',
         'setup_fee',
         'enabled',
     ];

@@ -94,12 +94,12 @@ class DomainController extends Controller
             'domain_extension_id' => 'required|exists:domain_extensions,id',
             'period_years' => 'required|in:1,2,3,5,10',
             'retail_price' => 'required|numeric|min:0',
-            'retail_setup_fee' => 'nullable|numeric|min:0',
+            'retail_renewal_price' => 'nullable|numeric|min:0',
             'wholesale_price' => 'required|numeric|min:0',
-            'wholesale_setup_fee' => 'nullable|numeric|min:0',
+            'wholesale_renewal_price' => 'nullable|numeric|min:0',
         ]);
 
-        // Save retail pricing
+        // Save retail pricing (domains don't have setup fees)
         DomainPricing::updateOrCreate(
             [
                 'domain_extension_id' => $validated['domain_extension_id'],
@@ -108,12 +108,13 @@ class DomainController extends Controller
             ],
             [
                 'price' => $validated['retail_price'],
-                'setup_fee' => $validated['retail_setup_fee'] ?? 0,
+                'renewal_price' => $validated['retail_renewal_price'] ?? $validated['retail_price'],
+                'setup_fee' => 0,
                 'enabled' => true,
             ]
         );
 
-        // Save wholesale pricing
+        // Save wholesale pricing (domains don't have setup fees)
         DomainPricing::updateOrCreate(
             [
                 'domain_extension_id' => $validated['domain_extension_id'],
@@ -122,7 +123,8 @@ class DomainController extends Controller
             ],
             [
                 'price' => $validated['wholesale_price'],
-                'setup_fee' => $validated['wholesale_setup_fee'] ?? 0,
+                'renewal_price' => $validated['wholesale_renewal_price'] ?? $validated['wholesale_price'],
+                'setup_fee' => 0,
                 'enabled' => true,
             ]
         );
