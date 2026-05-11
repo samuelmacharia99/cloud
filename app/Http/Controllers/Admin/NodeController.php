@@ -719,7 +719,7 @@ class NodeController extends Controller
             $query->where('region', $request->region);
         }
 
-        $nodes = $query->get();
+        $nodes = $query->withCount('services')->get();
 
         return response()->json([
             'timestamp' => now()->toIso8601String(),
