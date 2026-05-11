@@ -144,6 +144,21 @@
             <!-- Connection Details -->
             <div>
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Connection Details</h2>
+
+                <!-- SSH Info Banner (for monitored node types) -->
+                @if(in_array($node->type, ['container_host', 'database_server', 'directadmin']))
+                <div class="mb-6 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                    <p class="text-sm text-blue-900 dark:text-blue-100">
+                        <span class="font-medium">🔍 System Monitoring:</span>
+                        @if($node->type === 'directadmin')
+                            SSH credentials below are used to monitor DirectAdmin server health (CPU, RAM, storage, uptime) every 2 minutes.
+                        @else
+                            SSH credentials below are used to monitor node health (CPU, RAM, storage, uptime) every 2 minutes.
+                        @endif
+                    </p>
+                </div>
+                @endif
+
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- SSH Port -->
                     <div>
@@ -164,7 +179,7 @@
                         @enderror
                     </div>
 
-                    <!-- SSH Password (for container/database servers) -->
+                    <!-- SSH Password (for container/database servers and DirectAdmin) -->
                     <div>
                         <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
                         <input type="password" id="ssh_password" name="ssh_password" placeholder="Leave blank to keep existing password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
@@ -173,7 +188,7 @@
                         @enderror
                         @if(!$node->ssh_password)
                             <p class="mt-2 text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded px-3 py-2">
-                                ⚠ SSH password is required for node health tests.
+                                ⚠ SSH password is required for automatic health monitoring.
                             </p>
                         @endif
                     </div>
@@ -227,18 +242,38 @@
             <!-- DirectAdmin API Credentials (DirectAdmin nodes only) -->
             @if($node->type === 'directadmin')
             <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">DirectAdmin API Authentication</h2>
-                <div class="space-y-6">
-                    <!-- Help Text -->
-                    <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
-                        <p class="text-sm text-blue-900 dark:text-blue-100">
-                            <span class="font-medium">How to get your Login Key:</span><br>
-                            1. Log in to DirectAdmin control panel<br>
-                            2. Go to Admin > Manage Administrators<br>
-                            3. Click on your admin account<br>
-                            4. Click "Generate Login Key" and copy it
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">DirectAdmin Server Monitoring</h2>
+
+                <!-- Monitoring Overview -->
+                <div class="mb-6 space-y-4">
+                    <div class="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg p-4">
+                        <p class="text-sm text-emerald-900 dark:text-emerald-100">
+                            <span class="font-medium">✓ System Monitoring (Active):</span><br>
+                            SSH credentials (above) monitor server health every 2 minutes:<br>
+                            CPU cores, RAM usage, storage usage, uptime, load average
                         </p>
                     </div>
+
+                    <div class="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                        <p class="text-sm text-slate-700 dark:text-slate-300">
+                            <span class="font-medium">📋 DirectAdmin API Integration (Optional):</span><br>
+                            Login key below enables package sync and account management
+                        </p>
+                    </div>
+                </div>
+
+                <h3 class="text-md font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin API Authentication</h3>
+
+                <!-- Help Text -->
+                <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-900 dark:text-blue-100">
+                        <span class="font-medium">How to get your Login Key:</span><br>
+                        1. Log in to DirectAdmin control panel<br>
+                        2. Go to Admin > Manage Administrators<br>
+                        3. Click on your admin account<br>
+                        4. Click "Generate Login Key" and copy it
+                    </p>
+                </div>
 
                     <!-- Login Key -->
                     <div>
