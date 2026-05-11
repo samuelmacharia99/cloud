@@ -81,6 +81,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('admin/nodes-status-json', [\App\Http\Controllers\Admin\NodeController::class, 'statusJson'])->name('admin.nodes.status-json');
         Route::delete('admin/nodes/{node}', [\App\Http\Controllers\Admin\NodeController::class, 'delete'])->name('admin.nodes.delete');
         Route::resource('admin/domains', \App\Http\Controllers\Admin\DomainController::class)->names('admin.domains');
+        Route::post('admin/domains/{domain}/generate-invoice', [\App\Http\Controllers\Admin\DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
         Route::get('admin/domains-pricing', [\App\Http\Controllers\Admin\DomainController::class, 'pricing'])->name('admin.domains.pricing');
         Route::post('admin/domains-pricing', [\App\Http\Controllers\Admin\DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
         Route::post('admin/domain-extensions', [\App\Http\Controllers\Admin\DomainController::class, 'storeExtension'])->name('admin.domain-extensions.store');

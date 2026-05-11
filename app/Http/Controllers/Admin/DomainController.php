@@ -231,4 +231,66 @@ class DomainController extends Controller
         return redirect()->route('admin.domains.index')
             ->with('success', "Domain '{$domainName}' has been deleted successfully.");
     }
+
+    public function generateInvoice(Domain $domain)
+    {
+        try {
+            // Check if domain has extension pricing
+            if (!$domain->domainExtension) {
+                return redirect()->route('admin.domains.show', $domain)
+                    ->with('error', 'Domain extension not found. Cannot generate invoice.');
+            }
+
+            // Check if domain has an owner
+            if (!$domain->user) {
+                return redirect()->route('admin.domains.show', $domain)
+                    ->with('error', 'Domain owner not found. Cannot generate invoice.');
+            }
+
+            // Get renewal price
+            $pricing = $domain->domainExtension->getRetailPricing(1);
+            if (!$pricing || !$pricing->renewal_price) {
+                return redirect()->route('admin.domains.show', $domain)
+                    ->with('error', 'No pricing available for renewal. Please configure domain extension pricing.');
+            }
+
+            // Check if invoice already exists for this domain
+            $existingOrder = $domain->renewalOrders()
+                ->whereIn('status', ['pending', 'invoiced'])
+                ->where('created_at', '>=', now()->subDays(7))
+                ->first();
+
+            if ($existingOrder) {
+                return redirect()->route('admin.domains.show', $domain)
+                    ->with('error', 'A renewal invoice already exists for this domain. Please cancel it first if you want to create a new one.');
+            }
+
+            // Create renewal order and invoice
+            $renewalOrder = \App\Models\DomainRenewalOrder::create([
+                'domain_id' => $domain->id,
+                'user_id' => $domain->user_id,
+                'years' => 1,
+                'amount' => $pricing->renewal_price,
+                'status' => 'pending',
+                'expires_at' => now()->addDays(10),
+            ]);
+
+            $renewalService = app(\App\Services\DomainRenewalService::class);
+            $invoice = $renewalService->createInvoice($renewalOrder);
+
+            // Send notification
+            app(\App\Services\NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
+
+            return redirect()->route('admin.domains.show', $domain)
+                ->with('success', "Invoice {$invoice->invoice_number} generated successfully. Customer notified via email and SMS.");
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to generate domain invoice', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('admin.domains.show', $domain)
+                ->with('error', 'Failed to generate invoice: ' . $e->getMessage());
+        }
+    }
 }
