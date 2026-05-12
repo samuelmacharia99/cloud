@@ -181,7 +181,7 @@
                 </div>
 
                 <!-- Package Details Card -->
-                @if ($user->resellerPackage && $user->package_expires_at)
+                @if ($user->resellerPackage)
                 <div class="pt-6 border-t border-slate-200 dark:border-slate-800">
                     <div class="bg-gradient-to-br from-blue-50 to-blue-50/50 dark:from-blue-950/20 dark:to-blue-950/10 border border-blue-200 dark:border-blue-900/30 rounded-lg p-6">
                         <div class="flex items-start justify-between mb-6">

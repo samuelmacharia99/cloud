@@ -46,6 +46,13 @@ class ResellerController extends Controller
 
         $user->load('resellerPackage');
 
+        // If reseller has a package but no expiry date, set it to 1 month from now
+        if ($user->resellerPackage && !$user->package_expires_at) {
+            $user->update([
+                'package_expires_at' => now()->addMonth(),
+            ]);
+        }
+
         $services = Service::where('reseller_id', $user->id)
             ->with('user', 'product')
             ->get();
