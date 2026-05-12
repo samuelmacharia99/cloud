@@ -43,7 +43,7 @@ class SettingController extends Controller
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
         ],
         'email' => [
-            'smtp_host', 'smtp_port', 'smtp_user', 'smtp_password',
+            'smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_user', 'smtp_password',
             'mail_from_name', 'mail_from_address',
         ],
         'notifications' => [
@@ -196,6 +196,26 @@ class SettingController extends Controller
         $subject = 'Talksasa Cloud - SMTP Test Email';
         $body = "This is a test email from Talksasa Cloud.\n\nIf you received this email, your SMTP settings are configured correctly!";
 
+        // Validate SMTP configuration
+        $smtpHost = Setting::getValue('smtp_host');
+        $smtpPort = Setting::getValue('smtp_port');
+        $smtpUser = Setting::getValue('smtp_user');
+        $smtpPassword = Setting::getValue('smtp_password');
+
+        if (!$smtpHost || !$smtpPort || !$smtpUser || !$smtpPassword) {
+            $missing = [];
+            if (!$smtpHost) $missing[] = 'Host';
+            if (!$smtpPort) $missing[] = 'Port';
+            if (!$smtpUser) $missing[] = 'Username';
+            if (!$smtpPassword) $missing[] = 'Password';
+
+            $message = 'SMTP configuration incomplete. Missing: ' . implode(', ', $missing);
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 400);
+            }
+            return back()->with('error', $message);
+        }
+
         try {
             $fromName = Setting::getValue('mail_from_name', 'Talksasa Cloud');
             $fromAddress = Setting::getValue('mail_from_address', 'noreply@talksasa.cloud');
@@ -216,28 +236,56 @@ class SettingController extends Controller
                 'created_at' => now(),
             ]);
 
-            $message = 'Test email sent successfully to ' . $toEmail;
+            $message = 'Test email sent successfully to ' . $toEmail . '. Check your inbox!';
             if ($request->wantsJson()) {
                 return response()->json(['success' => true, 'message' => $message]);
             }
             return back()->with('success', $message);
-        } catch (\Exception $e) {
+        } catch (\Swift_TransportException $e) {
+            $errorMsg = 'SMTP Connection Error: ' . $e->getMessage();
+            \Log::error('SMTP Test Failed - Connection Error', [
+                'host' => $smtpHost,
+                'port' => $smtpPort,
+                'error' => $e->getMessage(),
+            ]);
+
             // Log the failed email
             \App\Models\Email::create([
                 'recipient' => $toEmail,
                 'subject' => $subject,
                 'body' => $body,
                 'status' => 'failed',
-                'response' => $e->getMessage(),
+                'response' => $errorMsg,
                 'sent_by' => auth()->id(),
                 'created_at' => now(),
             ]);
 
-            $message = 'Failed to send test email: ' . $e->getMessage();
             if ($request->wantsJson()) {
-                return response()->json(['success' => false, 'message' => $message], 400);
+                return response()->json(['success' => false, 'message' => $errorMsg], 400);
             }
-            return back()->with('error', $message);
+            return back()->with('error', $errorMsg);
+        } catch (\Exception $e) {
+            $errorMsg = 'Failed to send test email: ' . $e->getMessage();
+            \Log::error('SMTP Test Failed', [
+                'exception' => get_class($e),
+                'message' => $e->getMessage(),
+            ]);
+
+            // Log the failed email
+            \App\Models\Email::create([
+                'recipient' => $toEmail,
+                'subject' => $subject,
+                'body' => $body,
+                'status' => 'failed',
+                'response' => $errorMsg,
+                'sent_by' => auth()->id(),
+                'created_at' => now(),
+            ]);
+
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $errorMsg], 400);
+            }
+            return back()->with('error', $errorMsg);
         }
     }
 

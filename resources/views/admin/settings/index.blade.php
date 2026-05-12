@@ -1039,6 +1039,16 @@
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SMTP Port</label>
                                 <input type="number" name="settings[smtp_port]" value="{{ $settings['smtp_port'] ?? '587' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Common ports: 25 (plain), 587 (TLS), 465 (SSL)</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Encryption</label>
+                                <select name="settings[smtp_encryption]" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                    <option value="tls" @selected(($settings['smtp_encryption'] ?? 'tls') === 'tls')>TLS (STARTTLS - Port 587)</option>
+                                    <option value="ssl" @selected(($settings['smtp_encryption'] ?? 'tls') === 'ssl')>SSL (Implicit SSL - Port 465)</option>
+                                    <option value="" @selected(($settings['smtp_encryption'] ?? 'tls') === '')>None (Plain - Port 25)</option>
+                                </select>
                             </div>
 
                             <div>

@@ -75,6 +75,7 @@ class SettingSeeder extends Seeder
             // Email settings
             ['key' => 'smtp_host', 'value' => 'smtp.mailtrap.io', 'description' => 'SMTP server host'],
             ['key' => 'smtp_port', 'value' => '2525', 'description' => 'SMTP server port'],
+            ['key' => 'smtp_encryption', 'value' => 'tls', 'description' => 'SMTP encryption (tls, ssl, or empty)'],
             ['key' => 'smtp_user', 'value' => 'user@mailtrap.io', 'description' => 'SMTP username'],
             ['key' => 'smtp_password', 'value' => 'password', 'description' => 'SMTP password'],
             ['key' => 'mail_from_name', 'value' => 'Talksasa Cloud', 'description' => 'Email from name'],

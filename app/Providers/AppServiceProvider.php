@@ -98,6 +98,7 @@ class AppServiceProvider extends ServiceProvider
             $smtpPort = \App\Models\Setting::getValue('smtp_port');
             $smtpUser = \App\Models\Setting::getValue('smtp_user');
             $smtpPassword = \App\Models\Setting::getValue('smtp_password');
+            $smtpEncryption = \App\Models\Setting::getValue('smtp_encryption', 'tls');
             $mailFromName = \App\Models\Setting::getValue('mail_from_name');
             $mailFromAddress = \App\Models\Setting::getValue('mail_from_address');
 
@@ -105,7 +106,8 @@ class AppServiceProvider extends ServiceProvider
             if ($smtpHost) {
                 config([
                     'mail.mailers.smtp.host' => $smtpHost,
-                    'mail.mailers.smtp.port' => $smtpPort ?: 2525,
+                    'mail.mailers.smtp.port' => $smtpPort ?: 587,
+                    'mail.mailers.smtp.encryption' => $smtpEncryption ?: 'tls',
                     'mail.mailers.smtp.username' => $smtpUser,
                     'mail.mailers.smtp.password' => $smtpPassword,
                 ]);
