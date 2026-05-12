@@ -67,7 +67,13 @@ class ResellerController extends Controller
             ->push(['id' => $user->id, 'label' => $user->name . ' (' . $user->email . ') — Reseller'])
             ->merge($customers->map(fn($c) => ['id' => $c->id, 'label' => $c->name . ' (' . $c->email . ')']));
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions'));
+        // Get reseller's own subscription invoices
+        $resellerInvoices = Invoice::where('user_id', $user->id)
+            ->resellerSubscription()
+            ->latest()
+            ->get();
+
+        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions', 'resellerInvoices'));
     }
 
     public function promote(User $user)
@@ -126,10 +132,45 @@ class ResellerController extends Controller
         $user->update([
             'reseller_package_id'   => $validated['reseller_package_id'],
             'package_subscribed_at' => now(),
+            'package_expires_at'    => now()->addMonth(),
         ]);
 
         $package = ResellerPackage::find($validated['reseller_package_id']);
         return back()->with('success', "Package '{$package->name}' assigned to {$user->name}.");
+    }
+
+    public function upgradePackage(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'reseller_package_id' => 'required|exists:reseller_packages,id',
+        ]);
+
+        $newPackage = ResellerPackage::find($validated['reseller_package_id']);
+
+        // Update reseller's package
+        $user->update([
+            'reseller_package_id'   => $newPackage->id,
+            'package_subscribed_at' => now(),
+            'package_expires_at'    => now()->addMonth(),
+        ]);
+
+        // Generate invoice for the new plan
+        $invoice = Invoice::create([
+            'user_id'        => $user->id,
+            'type'           => 'reseller_subscription',
+            'invoice_number' => 'INV-' . strtoupper(uniqid()),
+            'status'         => 'unpaid',
+            'due_date'       => now()->addDays(7),
+            'subtotal'       => $newPackage->price,
+            'tax'            => 0,
+            'total'          => $newPackage->price,
+            'notes'          => "Reseller Package Upgrade: {$newPackage->name}",
+        ]);
+
+        return redirect()->route('admin.resellers.show', $user)
+            ->with('success', "Package upgraded to {$newPackage->name}. Invoice #{$invoice->invoice_number} generated.");
     }
 
     public function impersonate(User $user)

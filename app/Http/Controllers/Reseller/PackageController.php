@@ -88,14 +88,20 @@ class PackageController extends Controller
         $invoiceNumber = 'INV-' . strtoupper(uniqid());
 
         $invoice = Invoice::create([
-            'user_id' => $user->id,
+            'user_id'        => $user->id,
+            'type'           => 'reseller_subscription',
             'invoice_number' => $invoiceNumber,
-            'status' => 'unpaid',
-            'due_date' => now()->addDays(7),
-            'subtotal' => $package->price,
-            'tax' => 0,
-            'total' => $package->price,
-            'notes' => "Reseller Package: {$package->name} ({$package->billing_cycle})",
+            'status'         => 'unpaid',
+            'due_date'       => now()->addDays(7),
+            'subtotal'       => $package->price,
+            'tax'            => 0,
+            'total'          => $package->price,
+            'notes'          => "Reseller Package: {$package->name} ({$package->billing_cycle})",
+        ]);
+
+        // Update the reseller's package expiry date
+        $user->update([
+            'package_expires_at' => now()->addMonth(),
         ]);
 
         return $invoice;

@@ -11,6 +11,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'user_id',
+        'type',
         'invoice_number',
         'status',
         'due_date',
@@ -99,5 +100,10 @@ class Invoice extends Model
     public function isFullyPaid(): bool
     {
         return $this->getAmountRemaining() <= 0;
+    }
+
+    public function scopeResellerSubscription($query)
+    {
+        return $query->where('type', 'reseller_subscription');
     }
 }

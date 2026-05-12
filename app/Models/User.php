@@ -30,6 +30,7 @@ class User extends Authenticatable
         'email_verified_at',
         'reseller_package_id',
         'package_subscribed_at',
+        'package_expires_at',
         'two_factor_enabled',
         'two_factor_code',
         'two_factor_code_expires_at',
@@ -51,6 +52,7 @@ class User extends Authenticatable
             'is_reseller' => 'boolean',
             'notification_phones' => 'array',
             'package_subscribed_at' => 'datetime',
+            'package_expires_at' => 'datetime',
             'two_factor_enabled' => 'boolean',
             'two_factor_code_expires_at' => 'datetime',
             'two_factor_recovery_codes' => 'array',
@@ -216,5 +218,15 @@ class User extends Authenticatable
     public function isOverPackageLimits(): bool
     {
         return $this->isAtUserLimit() || $this->isAtServiceLimit();
+    }
+
+    public function getNextInvoiceDateAttribute(): ?\Carbon\Carbon
+    {
+        return $this->package_expires_at?->subDays(10);
+    }
+
+    public function getPackageSuspendDateAttribute(): ?\Carbon\Carbon
+    {
+        return $this->package_expires_at;
     }
 }

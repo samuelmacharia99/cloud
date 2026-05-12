@@ -95,6 +95,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/resellers/{user}/promote', [\App\Http\Controllers\Admin\ResellerController::class, 'promote'])->name('admin.resellers.promote');
         Route::post('admin/resellers/{user}/demote', [\App\Http\Controllers\Admin\ResellerController::class, 'demote'])->name('admin.resellers.demote');
         Route::post('admin/resellers/{user}/assign-package', [\App\Http\Controllers\Admin\ResellerController::class, 'assignPackage'])->name('admin.resellers.assign-package');
+        Route::post('admin/resellers/{user}/upgrade-package', [\App\Http\Controllers\Admin\ResellerController::class, 'upgradePackage'])->name('admin.resellers.upgrade-package');
         Route::post('admin/resellers/{user}/impersonate', [\App\Http\Controllers\Admin\ResellerController::class, 'impersonate'])->name('admin.resellers.impersonate');
         Route::post('admin/resellers/{user}/add-domain', [\App\Http\Controllers\Admin\ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
         Route::get('admin/settings', [\App\Http\Controllers\Admin\SettingController::class, 'index'])->name('admin.settings.index');

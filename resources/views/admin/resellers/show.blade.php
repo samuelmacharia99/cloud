@@ -77,7 +77,7 @@
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: 'overview', addDomainModal: false }"
+    <div x-data="{ activeTab: 'overview', addDomainModal: false, upgradeModal: false }"
          x-init="@if($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
@@ -94,6 +94,9 @@
                 </button>
                 <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
                     Domains ({{ $domains->count() }})
+                </button>
+                <button @click="activeTab = 'invoices'" :class="activeTab === 'invoices' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
+                    Invoices ({{ $resellerInvoices->count() }})
                 </button>
             </div>
         </div>
@@ -177,17 +180,66 @@
                     </div>
                 </div>
 
-                <!-- Placeholder Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-                    <div class="p-6 bg-gradient-to-br from-amber-50 to-amber-50/50 dark:from-amber-950/20 dark:to-amber-950/10 border border-amber-200 dark:border-amber-900/30 rounded-lg">
-                        <h4 class="font-semibold text-amber-900 dark:text-amber-200 mb-2">Pricing Tiers</h4>
-                        <p class="text-sm text-amber-800 dark:text-amber-300">Configure custom pricing for this reseller (coming soon)</p>
-                    </div>
-                    <div class="p-6 bg-gradient-to-br from-purple-50 to-purple-50/50 dark:from-purple-950/20 dark:to-purple-950/10 border border-purple-200 dark:border-purple-900/30 rounded-lg">
-                        <h4 class="font-semibold text-purple-900 dark:text-purple-200 mb-2">Commission & Wallet</h4>
-                        <p class="text-sm text-purple-800 dark:text-purple-300">View earned commissions and wallet balance (coming soon)</p>
+                <!-- Package Details Card -->
+                @if ($user->resellerPackage && $user->package_expires_at)
+                <div class="pt-6 border-t border-slate-200 dark:border-slate-800">
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-50/50 dark:from-blue-950/20 dark:to-blue-950/10 border border-blue-200 dark:border-blue-900/30 rounded-lg p-6">
+                        <div class="flex items-start justify-between mb-6">
+                            <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Package Details</h3>
+                            <button @click="upgradeModal = true" class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition inline-flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                <span>Upgrade Plan</span>
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Package</p>
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ $user->resellerPackage->name }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Price</p>
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">Ksh {{ number_format($user->resellerPackage->price, 0) }}</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">{{ ucfirst($user->resellerPackage->billing_cycle) }}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Next Invoice</p>
+                                @php
+                                    $nextInvoiceDate = $user->next_invoice_date;
+                                    $daysUntilInvoice = $nextInvoiceDate?->diffInDays(now());
+                                @endphp
+                                @if ($nextInvoiceDate && $daysUntilInvoice !== null)
+                                    <p class="text-sm font-semibold {{ $daysUntilInvoice <= 3 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white' }}">
+                                        {{ $nextInvoiceDate->format('M d, Y') }}
+                                    </p>
+                                    @if ($daysUntilInvoice <= 3)
+                                        <p class="text-xs text-amber-600 dark:text-amber-400">in {{ $daysUntilInvoice }} days</p>
+                                    @endif
+                                @else
+                                    <p class="text-sm text-slate-500">—</p>
+                                @endif
+                            </div>
+                            <div>
+                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Suspension Date</p>
+                                @php
+                                    $suspendDate = $user->package_suspend_date;
+                                    $isPast = $suspendDate && $suspendDate->isPast();
+                                @endphp
+                                @if ($suspendDate)
+                                    <p class="text-sm font-semibold {{ $isPast ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }}">
+                                        {{ $suspendDate->format('M d, Y') }}
+                                    </p>
+                                    @if ($isPast)
+                                        <p class="text-xs text-red-600 dark:text-red-400">OVERDUE</p>
+                                    @endif
+                                @else
+                                    <p class="text-sm text-slate-500">—</p>
+                                @endif
+                            </div>
+                        </div>
                     </div>
                 </div>
+                @endif
             </div>
 
             <!-- Services Tab -->
@@ -340,6 +392,72 @@
                 @else
                     <div class="text-center py-12">
                         <p class="text-slate-600 dark:text-slate-400">No domains added yet</p>
+                    </div>
+                @endif
+            </div>
+
+            <!-- Invoices Tab -->
+            <div x-show="activeTab === 'invoices'">
+                @if ($resellerInvoices->count() > 0)
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-800">
+                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Invoice #</th>
+                                    <th class="text-right py-3 px-4 font-semibold text-slate-900 dark:text-white">Amount</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Status</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Due Date</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Paid Date</th>
+                                    <th class="text-center py-3 px-4 font-semibold text-slate-900 dark:text-white">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                                @foreach ($resellerInvoices as $invoice)
+                                    <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                        <td class="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                                            {{ $invoice->invoice_number }}
+                                        </td>
+                                        <td class="py-3 px-4 text-right font-semibold text-slate-900 dark:text-white">
+                                            <x-currency-formatter :amount="$invoice->total" currency="KES" />
+                                        </td>
+                                        <td class="py-3 px-4">
+                                            @if ($invoice->status === 'paid')
+                                                <span class="inline-block px-2.5 py-0.5 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
+                                                    Paid
+                                                </span>
+                                            @elseif ($invoice->status === 'unpaid')
+                                                <span class="inline-block px-2.5 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded-full text-xs font-medium">
+                                                    Unpaid
+                                                </span>
+                                            @elseif ($invoice->status === 'overdue')
+                                                <span class="inline-block px-2.5 py-0.5 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full text-xs font-medium">
+                                                    Overdue
+                                                </span>
+                                            @else
+                                                <span class="inline-block px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full text-xs font-medium">
+                                                    {{ ucfirst($invoice->status) }}
+                                                </span>
+                                            @endif
+                                        </td>
+                                        <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                            {{ $invoice->due_date?->format('M d, Y') ?? '—' }}
+                                        </td>
+                                        <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                                            {{ $invoice->paid_date?->format('M d, Y') ?? '—' }}
+                                        </td>
+                                        <td class="py-3 px-4 text-center">
+                                            <a href="{{ route('admin.invoices.show', $invoice) }}" class="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium">
+                                                View
+                                            </a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="text-center py-12">
+                        <p class="text-slate-600 dark:text-slate-400">No subscription invoices yet</p>
                     </div>
                 @endif
             </div>
@@ -497,6 +615,72 @@
                         Add Domain
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Upgrade Plan Modal -->
+        <div x-show="upgradeModal" x-transition fixed inset-0 bg-black/50 z-50 flex items-end @click.self="upgradeModal = false">
+            <div class="bg-white dark:bg-slate-900 w-full max-w-2xl mx-auto rounded-t-2xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col">
+                <!-- Sticky Header -->
+                <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Upgrade Reseller Plan</h2>
+                    <button @click="upgradeModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Form Content -->
+                <form action="{{ route('admin.resellers.upgrade-package', $user) }}" method="POST" class="flex-1 overflow-y-auto p-6">
+                    @csrf
+                    <div class="space-y-6">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                            Current plan: <span class="font-semibold text-slate-900 dark:text-white">{{ $user->resellerPackage?->name ?? 'None' }}</span>
+                        </p>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-4">Select New Plan</label>
+                            <div class="space-y-3">
+                                @foreach ($packages as $package)
+                                    @if ($package->id !== ($user->reseller_package_id ?? null))
+                                        <label class="flex items-start gap-3 p-4 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/20 cursor-pointer transition">
+                                            <input type="radio" name="reseller_package_id" value="{{ $package->id }}" required class="mt-1 w-4 h-4 border border-slate-300 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 accent-blue-600">
+                                            <div class="flex-1">
+                                                <p class="font-semibold text-slate-900 dark:text-white">{{ $package->name }}</p>
+                                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $package->description }}</p>
+                                                <div class="flex items-center gap-4 mt-2 text-sm">
+                                                    <span class="font-medium text-slate-900 dark:text-white">
+                                                        Ksh {{ number_format($package->price, 0) }}
+                                                    </span>
+                                                    <span class="text-slate-600 dark:text-slate-400">
+                                                        {{ ucfirst($package->billing_cycle) }}
+                                                    </span>
+                                                    <span class="text-slate-600 dark:text-slate-400">
+                                                        • {{ $package->max_users }} customers max
+                                                    </span>
+                                                    <span class="text-slate-600 dark:text-slate-400">
+                                                        • {{ $package->storage_space }} service slots
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    @endif
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sticky Footer -->
+                    <div class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 mt-6 pt-4 flex items-center justify-end gap-3">
+                        <button type="button" @click="upgradeModal = false" class="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition font-medium">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                            Upgrade Plan
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
