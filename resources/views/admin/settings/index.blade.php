@@ -1510,9 +1510,8 @@
 
                         <div class="space-y-4">
                             <div>
-                                <input type="hidden" name="settings[recaptcha_enabled]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[recaptcha_enabled]" value="1" @checked(($settings['recaptcha_enabled'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[recaptcha_enabled]" value="1" @checked(($settings['recaptcha_enabled'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Enable reCAPTCHA for registration</span>
                                 </label>
                             </div>
@@ -1581,6 +1580,14 @@
 
         try {
             const formData = new FormData(form);
+
+            // Fix checkbox handling: ensure recaptcha_enabled is sent as "1" or "0", not as array
+            const recaptchaCheckbox = form.querySelector('input[name="settings[recaptcha_enabled]"]');
+            if (recaptchaCheckbox && recaptchaCheckbox.type === 'checkbox') {
+                formData.delete('settings[recaptcha_enabled]');
+                formData.append('settings[recaptcha_enabled]', recaptchaCheckbox.checked ? '1' : '0');
+            }
+
             const response = await fetch(form.action, {
                 method: 'POST',
                 body: formData,
