@@ -250,6 +250,23 @@ class ServiceController extends Controller
         }
     }
 
+    public function update(Request $request, Service $service)
+    {
+        $validated = $request->validate([
+            'billing_cycle'  => 'required|in:monthly,quarterly,semi-annual,annual',
+            'next_due_date'  => 'required|date',
+            'commenced_at'   => 'nullable|date',
+            'suspend_date'   => 'nullable|date',
+            'terminate_date' => 'nullable|date',
+            'notes'          => 'nullable|string|max:2000',
+        ]);
+
+        $service->update($validated);
+
+        return redirect()->route('admin.services.show', $service)
+            ->with('success', 'Service updated successfully.');
+    }
+
     public function refreshStatus(Service $service)
     {
         // Placeholder for checking actual service status with provisioning driver
