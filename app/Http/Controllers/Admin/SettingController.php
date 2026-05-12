@@ -60,6 +60,9 @@ class SettingController extends Controller
         'directadmin' => [
             'directadmin_api_url', 'directadmin_api_user', 'directadmin_api_password', 'directadmin_default_package',
         ],
+        'security' => [
+            'recaptcha_enabled', 'recaptcha_site_key', 'recaptcha_secret_key',
+        ],
     ];
 
     public function __construct()
@@ -129,7 +132,7 @@ class SettingController extends Controller
         $sensitiveFields = [
             'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
-            'paypal_client_secret',
+            'paypal_client_secret', 'recaptcha_secret_key',
         ];
 
         foreach ($settings as $key => $value) {

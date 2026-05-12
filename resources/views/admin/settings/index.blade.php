@@ -23,6 +23,7 @@
                     <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Notifications</button>
                     <button @click="activeTab = 'cron'" :class="activeTab === 'cron' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Cron</button>
                     <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">SMS</button>
+                    <button @click="activeTab = 'security'" :class="activeTab === 'security' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Security</button>
                 </div>
             </div>
 
@@ -1493,6 +1494,74 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
                             Save SMS
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tab: Security -->
+            <div x-show="activeTab === 'security'" class="space-y-6">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                    @csrf
+
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">reCAPTCHA v3</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Protect registration form from bot attacks using Google reCAPTCHA v3. Get keys at <a href="https://www.google.com/recaptcha/admin" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">https://www.google.com/recaptcha/admin</a></p>
+
+                        <div class="space-y-4">
+                            <div>
+                                <input type="hidden" name="settings[recaptcha_enabled]" value="false">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[recaptcha_enabled]" value="true" @checked(($settings['recaptcha_enabled'] ?? 'false') === 'true')" class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Enable reCAPTCHA for registration</span>
+                                </label>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Site Key</label>
+                                <input type="text" name="settings[recaptcha_site_key]" value="{{ $settings['recaptcha_site_key'] ?? '' }}" placeholder="6Le-XXXX..." class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Public key from Google reCAPTCHA console</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Secret Key</label>
+                                @if($settings['recaptcha_secret_key'] ?? false)
+                                    <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
+                                @endif
+                                <input type="password" name="settings[recaptcha_secret_key]" placeholder="6Le-XXXX..." class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                    @if($settings['recaptcha_secret_key'] ?? false)
+                                        A secret key is configured. Leave blank to keep it.
+                                    @else
+                                        Private key from Google reCAPTCHA console. Keep this secure!
+                                    @endif
+                                </p>
+                            </div>
+
+                            <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-lg p-4">
+                                <div class="flex gap-3">
+                                    <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 8a1 1 0 000 2h6a1 1 0 000-2H8zm1 5a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"/></svg>
+                                    <div class="text-sm text-blue-900 dark:text-blue-100">
+                                        <p class="font-semibold">How it works:</p>
+                                        <ul class="list-disc list-inside mt-2 space-y-1">
+                                            <li>reCAPTCHA v3 runs invisibly in the background</li>
+                                            <li>No user interaction required (no checkboxes)</li>
+                                            <li>Scores users on 0-1 scale (1 = human, 0 = bot)</li>
+                                            <li>Blocks registrations from detected bot traffic</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                        <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
+                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Save Security Settings
                         </button>
                     </div>
                 </form>

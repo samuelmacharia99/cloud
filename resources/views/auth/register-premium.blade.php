@@ -11,8 +11,9 @@
     </div>
 
     <!-- Registration Form -->
-    <form method="POST" action="{{ route('register') }}" class="space-y-5">
+    <form method="POST" action="{{ route('register') }}" class="space-y-5" id="register-form">
         @csrf
+        <input type="hidden" id="recaptcha_token" name="recaptcha_token" value="" />
 
         <!-- Full Name -->
         <div class="space-y-2.5">
@@ -146,9 +147,16 @@
         </div>
 
         <!-- Sign Up Button -->
-        <button type="submit" class="auth-btn-primary mt-2">
+        <button type="button" onclick="handleRegisterSubmit(event)" class="auth-btn-primary mt-2" id="register-btn">
             Create account
         </button>
+
+        <!-- reCAPTCHA Error Message -->
+        @error('recaptcha_token')
+            <div class="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/30 rounded-lg text-sm text-red-700 dark:text-red-200">
+                Security verification failed. Please try again.
+            </div>
+        @enderror
     </form>
 
     <!-- Divider -->
@@ -195,4 +203,43 @@
         @endif
     </div>
 </div>
+
+@php
+    $recaptchaService = new \App\Services\RecaptchaService();
+@endphp
+
+@if($recaptchaService->isEnabled())
+<script src="https://www.google.com/recaptcha/api.js"></script>
+<script>
+async function handleRegisterSubmit(event) {
+    event.preventDefault();
+
+    const form = document.getElementById('register-form');
+    const btn = document.getElementById('register-btn');
+    const originalText = btn.textContent;
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Verifying security...';
+
+        const token = await grecaptcha.execute('{{ $recaptchaService->getSiteKey() }}', { action: 'register' });
+        document.getElementById('recaptcha_token').value = token;
+
+        form.submit();
+    } catch (error) {
+        console.error('reCAPTCHA error:', error);
+        alert('Security verification failed. Please refresh and try again.');
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+</script>
+@else
+<script>
+function handleRegisterSubmit(event) {
+    event.preventDefault();
+    document.getElementById('register-form').submit();
+}
+</script>
+@endif
 @endsection
