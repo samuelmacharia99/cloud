@@ -1527,10 +1527,10 @@
                                 @if($settings['recaptcha_secret_key'] ?? false)
                                     <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
                                 @endif
-                                <input type="password" name="settings[recaptcha_secret_key]" placeholder="6Le-XXXX..." class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                <input type="text" name="settings[recaptcha_secret_key]" placeholder="6Le-XXXX..." autocomplete="off" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
                                     @if($settings['recaptcha_secret_key'] ?? false)
-                                        A secret key is configured. Leave blank to keep it.
+                                        A secret key is configured. Paste a new one to update, or leave blank to keep it.
                                     @else
                                         Private key from Google reCAPTCHA console. Keep this secure!
                                     @endif
