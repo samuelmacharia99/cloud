@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\ResellerPackage;
+use App\Models\Invoice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
