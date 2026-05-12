@@ -20,12 +20,12 @@ class SecurityHeaders
         // Apply CSP in both development and production
         // Allow external resources: fonts.bunny.net, Google reCAPTCHA, CDN
         $csp = "default-src 'self'; " .
-               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; " .
                "style-src 'self' 'unsafe-inline' https://fonts.bunny.net; " .
-               "font-src https://fonts.bunny.net; " .
+               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; " .
+               "font-src 'self' https://fonts.bunny.net https://fonts.gstatic.com data:; " .
+               "frame-src https://www.google.com; " .
                "img-src 'self' data: https:; " .
-               "connect-src 'self' https: wss:; " .
-               "frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/; ";
+               "connect-src 'self' https: wss:; ";
 
         // Add stricter CSP rules for production
         if (!app()->environment('local', 'development')) {
