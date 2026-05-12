@@ -211,14 +211,16 @@
                                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Next Invoice</p>
                                 @php
                                     $nextInvoiceDate = $user->next_invoice_date;
-                                    $daysUntilInvoice = $nextInvoiceDate?->diffInDays(now());
+                                    $daysUntilInvoice = $nextInvoiceDate ? (int) $nextInvoiceDate->diffInDays(now()) : null;
                                 @endphp
                                 @if ($nextInvoiceDate && $daysUntilInvoice !== null)
                                     <p class="text-sm font-semibold {{ $daysUntilInvoice <= 3 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white' }}">
                                         {{ $nextInvoiceDate->format('M d, Y') }}
                                     </p>
-                                    @if ($daysUntilInvoice <= 3)
+                                    @if ($daysUntilInvoice > 0 && $daysUntilInvoice <= 3)
                                         <p class="text-xs text-amber-600 dark:text-amber-400">in {{ $daysUntilInvoice }} days</p>
+                                    @elseif ($daysUntilInvoice <= 0)
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ abs($daysUntilInvoice) }} days overdue</p>
                                     @endif
                                 @else
                                     <p class="text-sm text-slate-500">—</p>
