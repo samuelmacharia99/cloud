@@ -1510,9 +1510,9 @@
 
                         <div class="space-y-4">
                             <div>
-                                <input type="hidden" name="settings[recaptcha_enabled]" value="false">
+                                <input type="hidden" name="settings[recaptcha_enabled]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[recaptcha_enabled]" value="true" @checked(($settings['recaptcha_enabled'] ?? 'false') === 'true')" class="rounded" />
+                                    <input type="checkbox" name="settings[recaptcha_enabled]" value="1" @checked(($settings['recaptcha_enabled'] ?? '0') == '1')" class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Enable reCAPTCHA for registration</span>
                                 </label>
                             </div>

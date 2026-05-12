@@ -18,7 +18,7 @@ class RecaptchaService
 
     public function isEnabled(): bool
     {
-        return Setting::getValue('recaptcha_enabled', 'false') === 'true'
+        return Setting::getValue('recaptcha_enabled', '0') == '1'
             && !empty(Setting::getValue('recaptcha_secret_key', ''))
             && !empty(Setting::getValue('recaptcha_site_key', ''));
     }
