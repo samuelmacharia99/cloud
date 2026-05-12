@@ -1581,12 +1581,14 @@
         try {
             const formData = new FormData(form);
 
-            // Fix checkbox handling: ensure recaptcha_enabled is sent as "1" or "0", not as array
-            const recaptchaCheckbox = form.querySelector('input[name="settings[recaptcha_enabled]"]');
-            if (recaptchaCheckbox && recaptchaCheckbox.type === 'checkbox') {
-                formData.delete('settings[recaptcha_enabled]');
-                formData.append('settings[recaptcha_enabled]', recaptchaCheckbox.checked ? '1' : '0');
-            }
+            // Fix checkbox handling: ensure all checkboxes are sent as "1" or "0", not as arrays
+            form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                const name = checkbox.name;
+                if (name && name.startsWith('settings[')) {
+                    formData.delete(name);
+                    formData.append(name, checkbox.checked ? '1' : '0');
+                }
+            });
 
             const response = await fetch(form.action, {
                 method: 'POST',
@@ -1637,10 +1639,13 @@
                 }
             });
 
-            if (response.ok) {
-                alert('Test email sent successfully!');
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                alert('✅ ' + data.message);
+                document.getElementById('test_email').value = '';
             } else {
-                alert('Failed to send test email');
+                alert('❌ ' + (data.message || 'Failed to send test email'));
             }
         } catch (error) {
             alert('Error: ' + error.message);

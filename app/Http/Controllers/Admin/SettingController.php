@@ -216,7 +216,11 @@ class SettingController extends Controller
                 'created_at' => now(),
             ]);
 
-            return back()->with('success', 'Test email sent successfully to ' . $toEmail);
+            $message = 'Test email sent successfully to ' . $toEmail;
+            if ($request->wantsJson()) {
+                return response()->json(['success' => true, 'message' => $message]);
+            }
+            return back()->with('success', $message);
         } catch (\Exception $e) {
             // Log the failed email
             \App\Models\Email::create([
@@ -229,7 +233,11 @@ class SettingController extends Controller
                 'created_at' => now(),
             ]);
 
-            return back()->with('error', 'Failed to send test email: ' . $e->getMessage());
+            $message = 'Failed to send test email: ' . $e->getMessage();
+            if ($request->wantsJson()) {
+                return response()->json(['success' => false, 'message' => $message], 400);
+            }
+            return back()->with('error', $message);
         }
     }
 
