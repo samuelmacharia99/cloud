@@ -10,12 +10,15 @@ use App\Models\Service;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
 {
+    public function __construct(private NotificationService $notificationService) {}
+
     public function index(Request $request)
     {
         $query = Invoice::query();
@@ -69,7 +72,11 @@ class InvoiceController extends Controller
         $validated['invoice_number'] = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
         $validated['tax'] ??= 0;
 
-        Invoice::create($validated);
+        $invoice = Invoice::create($validated);
+
+        if ($invoice->status !== 'draft') {
+            $this->notificationService->notifyInvoiceGenerated($invoice);
+        }
 
         return redirect()->route('admin.invoices.index')
             ->with('success', 'Invoice created successfully.');
