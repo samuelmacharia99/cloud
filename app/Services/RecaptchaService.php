@@ -26,33 +26,47 @@ class RecaptchaService
     public function verify(string $token, string $action = 'register', float $threshold = 0.5): bool
     {
         if (!$this->isEnabled()) {
+            Log::info('reCAPTCHA verification skipped: CAPTCHA disabled');
             return true;
         }
 
         if (empty($token)) {
-            Log::warning('reCAPTCHA verification: missing token');
+            Log::warning('reCAPTCHA verification failed: missing token');
             return false;
         }
 
         try {
+            Log::info('reCAPTCHA verification starting', [
+                'action' => $action,
+                'threshold' => $threshold,
+            ]);
+
             $response = $this->recaptcha->verify($token);
 
             if (!$response->isSuccess()) {
-                Log::warning('reCAPTCHA verification failed', [
-                    'errors' => $response->getErrorCodes(),
+                $errors = $response->getErrorCodes();
+                Log::warning('reCAPTCHA API returned failure', [
+                    'errors' => $errors,
+                    'token_length' => strlen($token),
                 ]);
                 return false;
             }
 
-            if ($response->getAction() !== $action) {
+            $responseAction = $response->getAction();
+            if ($responseAction !== $action) {
                 Log::warning('reCAPTCHA verification: action mismatch', [
                     'expected' => $action,
-                    'got' => $response->getAction(),
+                    'got' => $responseAction,
                 ]);
                 return false;
             }
 
             $score = $response->getScore();
+            Log::info('reCAPTCHA verification score', [
+                'score' => $score,
+                'threshold' => $threshold,
+            ]);
+
             if ($score < $threshold) {
                 Log::warning('reCAPTCHA verification: score below threshold', [
                     'score' => $score,
@@ -61,9 +75,15 @@ class RecaptchaService
                 return false;
             }
 
+            Log::info('reCAPTCHA verification success');
             return true;
         } catch (\Exception $e) {
-            Log::error('reCAPTCHA verification exception: ' . $e->getMessage());
+            Log::error('reCAPTCHA verification exception', [
+                'message' => $e->getMessage(),
+                'code' => $e->getCode(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
             return false;
         }
     }

@@ -217,18 +217,49 @@ async function handleRegisterSubmit(event) {
     const form = document.getElementById('register-form');
     const btn = document.getElementById('register-btn');
     const originalText = btn.textContent;
+    const siteKey = '{{ $recaptchaService->getSiteKey() }}';
 
     try {
+        // Check if reCAPTCHA script loaded
+        if (typeof grecaptcha === 'undefined') {
+            console.error('reCAPTCHA script failed to load');
+            alert('Security verification unavailable. Please refresh the page and try again.');
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return;
+        }
+
+        // Check if site key is configured
+        if (!siteKey || siteKey.trim() === '') {
+            console.error('reCAPTCHA site key not configured');
+            alert('Registration temporarily unavailable. Please try again later.');
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return;
+        }
+
         btn.disabled = true;
         btn.textContent = 'Verifying security...';
 
-        const token = await grecaptcha.execute('{{ $recaptchaService->getSiteKey() }}', { action: 'register' });
+        const token = await grecaptcha.execute(siteKey, { action: 'register' });
+
+        if (!token) {
+            console.error('reCAPTCHA failed to generate token');
+            alert('Security verification failed. Please refresh and try again.');
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return;
+        }
+
         document.getElementById('recaptcha_token').value = token;
+        console.log('reCAPTCHA token generated successfully');
 
         form.submit();
     } catch (error) {
         console.error('reCAPTCHA error:', error);
-        alert('Security verification failed. Please refresh and try again.');
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        alert('Security verification failed. Please refresh the page and try again. Error: ' + (error.message || 'Unknown error'));
         btn.disabled = false;
         btn.textContent = originalText;
     }
