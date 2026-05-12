@@ -77,7 +77,7 @@
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: 'overview', addDomainModal: false, upgradeModal: false }"
+    <div x-data="{ activeTab: 'overview', addDomainModal: false, upgradeModal: false, editBillingModal: false }"
          x-init="@if($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
@@ -186,10 +186,15 @@
                     <div class="bg-gradient-to-br from-blue-50 to-blue-50/50 dark:from-blue-950/20 dark:to-blue-950/10 border border-blue-200 dark:border-blue-900/30 rounded-lg p-6">
                         <div class="flex items-start justify-between mb-6">
                             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Package Details</h3>
-                            <button @click="upgradeModal = true" class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition inline-flex items-center gap-1.5">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                                <span>Upgrade Plan</span>
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <button @click="editBillingModal = true" class="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded transition" title="Edit billing dates">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                                </button>
+                                <button @click="upgradeModal = true" class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition inline-flex items-center gap-1.5">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                    <span>Upgrade Plan</span>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -681,6 +686,81 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Edit Billing Dates Modal -->
+        <div x-show="editBillingModal" x-transition fixed inset-0 bg-black/50 z-50 flex items-end @click.self="editBillingModal = false">
+            <div class="bg-white dark:bg-slate-900 w-full max-w-2xl mx-auto rounded-t-2xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col">
+                <!-- Sticky Header -->
+                <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Edit Billing Dates</h2>
+                    <button @click="editBillingModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Form Content -->
+                <form action="{{ route('admin.resellers.update-billing', $user) }}" method="POST" class="flex-1 overflow-y-auto p-6">
+                    @csrf
+                    <div class="space-y-6">
+                        <!-- Next Invoice Date -->
+                        <div>
+                            <label for="next_invoice_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Invoice Date</label>
+                            <input type="date" id="next_invoice_date" name="next_invoice_date"
+                                   value="{{ $user->next_invoice_date?->format('Y-m-d') }}"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   required>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                                The date when the next invoice should be generated (suspension date will be automatically set to 10 days after)
+                            </p>
+                        </div>
+
+                        <!-- Suspension Date (Read-only Display) -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Suspension Date (Auto-calculated)</label>
+                            <div class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
+                                <p id="suspension-date-display">
+                                    @if ($user->package_suspend_date)
+                                        {{ $user->package_suspend_date->format('M d, Y') }}
+                                    @else
+                                        —
+                                    @endif
+                                </p>
+                            </div>
+                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                                Will be set to: <span id="suspension-date-preview">{{ $user->package_suspend_date?->format('M d, Y') ?? '—' }}</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Sticky Footer -->
+                    <div class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 mt-6 pt-4 flex items-center justify-end gap-3">
+                        <button type="button" @click="editBillingModal = false" class="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition font-medium">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+
+                <!-- JavaScript to update suspension date preview -->
+                <script>
+                    document.getElementById('next_invoice_date').addEventListener('change', function(e) {
+                        if (e.target.value) {
+                            const date = new Date(e.target.value);
+                            const suspensionDate = new Date(date);
+                            suspensionDate.setDate(suspensionDate.getDate() + 10);
+
+                            const options = { year: 'numeric', month: 'short', day: 'numeric' };
+                            const formatted = suspensionDate.toLocaleDateString('en-US', options);
+                            document.getElementById('suspension-date-preview').textContent = formatted;
+                        }
+                    });
+                </script>
             </div>
         </div>
     </div>

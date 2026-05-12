@@ -174,6 +174,22 @@ class ResellerController extends Controller
             ->with('success', "Package upgraded to {$newPackage->name}. Invoice #{$invoice->invoice_number} generated.");
     }
 
+    public function updateBilling(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'next_invoice_date' => 'required|date',
+        ]);
+
+        $user->update([
+            'package_expires_at' => \Carbon\Carbon::parse($validated['next_invoice_date'])->addDays(10),
+        ]);
+
+        return redirect()->route('admin.resellers.show', $user)
+            ->with('success', 'Billing dates updated successfully.');
+    }
+
     public function impersonate(User $user)
     {
         abort_if(!$user->is_reseller, 404);
