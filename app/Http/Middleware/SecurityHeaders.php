@@ -18,13 +18,14 @@ class SecurityHeaders
         $response = $next($request);
 
         // Apply CSP in both development and production
-        // Fonts need to be loaded from fonts.bunny.net even in development
+        // Allow external resources: fonts.bunny.net, Google reCAPTCHA, CDN
         $csp = "default-src 'self'; " .
-               "script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; " .
-               "style-src 'self' 'unsafe-inline' fonts.bunny.net; " .
-               "font-src fonts.bunny.net; " .
+               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; " .
+               "style-src 'self' 'unsafe-inline' https://fonts.bunny.net; " .
+               "font-src https://fonts.bunny.net; " .
                "img-src 'self' data: https:; " .
-               "connect-src 'self' https:; ";
+               "connect-src 'self' https: wss:; " .
+               "frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/; ";
 
         // Add stricter CSP rules for production
         if (!app()->environment('local', 'development')) {
