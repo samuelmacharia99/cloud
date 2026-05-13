@@ -13,7 +13,7 @@
         </div>
         <div>
             <h1 class="text-4xl font-bold tracking-tight mb-2">Verify your email</h1>
-            <p class="text-base text-slate-600 dark:text-slate-400 font-medium">We've sent a confirmation link to your address</p>
+            <p class="text-base text-slate-600 dark:text-slate-400 font-medium">We've sent a 6-digit code to your email address</p>
         </div>
     </div>
 
@@ -25,12 +25,42 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
                 <div>
-                    <p class="font-semibold text-xs">Verification link sent</p>
-                    <p class="text-xs mt-0.5 text-emerald-600 dark:text-emerald-400">Check your email for the confirmation link. It may take a few moments to arrive.</p>
+                    <p class="font-semibold text-xs">Verification code sent</p>
+                    <p class="text-xs mt-0.5 text-emerald-600 dark:text-emerald-400">Check your email for the 6-digit code. It may take a few moments to arrive.</p>
                 </div>
             </div>
         </div>
     @endif
+
+    <!-- Code Entry Form -->
+    <form method="POST" action="{{ route('verification.verify') }}" class="space-y-4">
+        @csrf
+        <div class="text-center">
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">We sent a 6-digit code to <strong>{{ auth()->user()->email }}</strong></p>
+            <div class="flex justify-center gap-2">
+                <input
+                    type="text"
+                    name="code"
+                    maxlength="6"
+                    pattern="[0-9]{6}"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    autofocus
+                    placeholder="000000"
+                    class="w-48 py-3 text-center text-3xl font-bold tracking-widest border-2 border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-purple-500 dark:focus:border-purple-400 transition-colors"
+                />
+            </div>
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Code expires in 15 minutes</p>
+        </div>
+        @error('code')
+            <div class="p-3 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40">
+                <p class="text-sm text-red-700 dark:text-red-300">{{ $message }}</p>
+            </div>
+        @enderror
+        <button type="submit" class="auth-btn-primary">
+            Verify Email
+        </button>
+    </form>
 
     <!-- Info Box -->
     <div class="p-4 rounded-md bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700/50 text-sm">
@@ -39,8 +69,8 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
             </svg>
             <div>
-                <p class="font-semibold text-xs text-slate-900 dark:text-white">Didn't receive the email?</p>
-                <p class="text-xs mt-0.5 text-slate-600 dark:text-slate-400">Check your spam folder, or request a new verification link below.</p>
+                <p class="font-semibold text-xs text-slate-900 dark:text-white">Didn't receive the code?</p>
+                <p class="text-xs mt-0.5 text-slate-600 dark:text-slate-400">Check your spam folder, or request a new code below.</p>
             </div>
         </div>
     </div>

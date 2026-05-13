@@ -142,7 +142,7 @@
                 class="w-4 h-4 mt-1.5 rounded-md border-slate-300 dark:border-slate-600 text-purple-600 dark:text-purple-500 focus:ring-0 focus:border-purple-500 transition cursor-pointer flex-shrink-0"
             >
             <label for="agree" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed cursor-pointer">
-                I agree to the <a href="#" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Terms of Service</a> and <a href="#" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Privacy Policy</a>
+                I agree to the <a href="{{ route('terms') }}" target="_blank" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Terms of Service</a> and <a href="{{ route('privacy') }}" target="_blank" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Privacy Policy</a>
             </label>
         </div>
 

@@ -3,24 +3,37 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmailVerificationCode;
 use Illuminate\Auth\Events\Verified;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
 
 class VerifyEmailController extends Controller
 {
-    /**
-     * Mark the authenticated user's email address as verified.
-     */
-    public function __invoke(EmailVerificationRequest $request): RedirectResponse
+    public function __invoke(Request $request): RedirectResponse
     {
-        if ($request->user()->hasVerifiedEmail()) {
-            return redirect()->intended(route('dashboard', absolute: false).'?verified=1');
+        $request->validate(['code' => 'required|string|size:6']);
+
+        $user = $request->user();
+
+        if ($user->hasVerifiedEmail()) {
+            return redirect()->intended(route('dashboard', absolute: false));
         }
 
-        if ($request->user()->markEmailAsVerified()) {
-            event(new Verified($request->user()));
+        $record = EmailVerificationCode::where('user_id', $user->id)
+            ->valid()
+            ->where('code', $request->input('code'))
+            ->first();
+
+        if (!$record) {
+            return back()->withErrors(['code' => 'Invalid or expired verification code.']);
         }
+
+        if ($user->markEmailAsVerified()) {
+            event(new Verified($user));
+        }
+
+        $record->delete();
 
         return redirect()->intended(route('dashboard', absolute: false).'?verified=1');
     }

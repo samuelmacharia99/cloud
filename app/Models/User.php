@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Mail;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -233,7 +234,17 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function sendEmailVerificationNotification(): void
     {
-        $this->notify(new \App\Notifications\VerifyEmailNotification());
+        EmailVerificationCode::where('user_id', $this->id)->delete();
+
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        EmailVerificationCode::create([
+            'user_id' => $this->id,
+            'code' => $code,
+            'expires_at' => now()->addMinutes(15),
+        ]);
+
+        Mail::mailer('smtp')->to($this->email)->send(new \App\Mail\VerifyEmailOtpMail($this, $code));
     }
 
     public function sendPasswordResetNotification($token): void

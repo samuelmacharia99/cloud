@@ -42,6 +42,10 @@ Route::post('/webhooks/mpesa/callback', [\App\Http\Controllers\Customer\PaymentC
 Route::post('/webhooks/stripe', [\App\Http\Controllers\Customer\PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
 Route::post('/webhooks/paypal', [\App\Http\Controllers\Customer\PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
 
+// Legal pages (public, no authentication required)
+Route::get('/terms', fn() => view('legal.terms'))->name('terms');
+Route::get('/privacy', fn() => view('legal.privacy'))->name('privacy');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
