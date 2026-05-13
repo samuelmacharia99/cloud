@@ -12,7 +12,7 @@ class DomainController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Domain::with('user', 'domainExtension');
+        $query = Domain::with('user', 'domainExtension', 'reseller');
 
         // Search by domain name
         if ($request->filled('search')) {
@@ -249,8 +249,8 @@ class DomainController extends Controller
                     ->with('error', 'Domain owner not found. Cannot generate invoice.');
             }
 
-            // Get renewal price
-            $pricing = $domain->domainExtension->getRetailPricing(1);
+            // Get renewal price (wholesale for resellers, retail for customers)
+            $pricing = $domain->domainExtension->getPricingForUser($domain->user, 1);
             if (!$pricing || !$pricing->renewal_price) {
                 return redirect()->route('admin.domains.show', $domain)
                     ->with('error', 'No pricing available for renewal. Please configure domain extension pricing.');

@@ -25,9 +25,11 @@ class DomainController extends Controller
             ->pluck('user_id');
 
         // Get all domains: those owned by the reseller or their managed customers
+        // Also include domains where reseller_id = $resellerId (manually added domains)
         $domains = Domain::where(function ($q) use ($resellerId, $customerIds) {
             $q->where('user_id', $resellerId)
-              ->orWhereIn('user_id', $customerIds);
+              ->orWhereIn('user_id', $customerIds)
+              ->orWhere('reseller_id', $resellerId);
         })
             ->with('domainExtension', 'user')
             ->orderByDesc('created_at')

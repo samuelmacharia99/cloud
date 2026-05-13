@@ -364,6 +364,7 @@
                                         <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Expires</th>
                                         <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Next Invoice</th>
                                         <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Status</th>
+                                        <th class="text-center py-3 px-4 font-semibold text-slate-900 dark:text-white">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -390,6 +391,12 @@
                                                 <span class="inline-block px-2.5 py-0.5 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
                                                     {{ ucfirst($domain->status) }}
                                                 </span>
+                                            </td>
+                                            <td class="py-3 px-4 text-center">
+                                                <a href="{{ route('admin.domains.edit', $domain) }}"
+                                                   class="inline-block px-3 py-1.5 text-xs font-medium bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 rounded-lg transition">
+                                                    Edit
+                                                </a>
                                             </td>
                                         </tr>
                                     @endforeach

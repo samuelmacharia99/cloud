@@ -119,6 +119,7 @@
                     <tr>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Domain</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Owner</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Reseller</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Extension</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Registrar</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
@@ -143,6 +144,21 @@
                                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->user->email }}</p>
                                     </div>
                                 </div>
+                            </td>
+                            <td class="px-6 py-4 text-sm">
+                                @if ($domain->reseller)
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-7 h-7 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                                            {{ strtoupper(substr($domain->reseller->name, 0, 1)) }}
+                                        </div>
+                                        <div>
+                                            <p class="text-xs font-medium text-slate-900 dark:text-white">{{ $domain->reseller->name }}</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->reseller->email }}</p>
+                                        </div>
+                                    </div>
+                                @else
+                                    <span class="text-slate-500 dark:text-slate-400">—</span>
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {{ $domain->extension ?? '—' }}
@@ -190,7 +206,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-6 py-12 text-center">
+                            <td colspan="9" class="px-6 py-12 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No domains found.</p>
                             </td>
                         </tr>

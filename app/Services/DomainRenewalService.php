@@ -19,7 +19,7 @@ class DomainRenewalService
             throw new \Exception('Domain extension not found');
         }
 
-        $pricing = $extension->getRetailPricing($years);
+        $pricing = $extension->getPricingForUser($customer, $years);
         if (!$pricing) {
             throw new \Exception('No pricing available for this domain extension');
         }

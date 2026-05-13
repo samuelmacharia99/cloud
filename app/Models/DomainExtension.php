@@ -68,4 +68,12 @@ class DomainExtension extends Model
             ->get()
             ->keyBy('tier');
     }
+
+    public function getPricingForUser(User $user, int $periodYears)
+    {
+        if ($user->is_reseller) {
+            return $this->getWholesalePricing($periodYears) ?? $this->getRetailPricing($periodYears);
+        }
+        return $this->getRetailPricing($periodYears);
+    }
 }

@@ -82,7 +82,13 @@ class GenerateDomainInvoicesCommand extends BaseCronCommand
             return 0;
         }
 
-        $pricing = $extension->getRetailPricing(1); // 1 year renewal
+        $domain->loadMissing('user');
+        $user = $domain->user;
+        if (!$user) {
+            return 0;
+        }
+
+        $pricing = $extension->getPricingForUser($user, 1);
         return (float) ($pricing->renewal_price ?? $pricing->price ?? 0);
     }
 }

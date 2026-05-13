@@ -55,8 +55,11 @@ class ResellerController extends Controller
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
 
         // Get domains associated with this reseller and their customers
+        // Also include domains where reseller_id = $user->id (manually added domains)
         $domains = Domain::where(function ($q) use ($customerIds, $user) {
-            $q->whereIn('user_id', $customerIds)->orWhere('user_id', $user->id);
+            $q->whereIn('user_id', $customerIds)
+              ->orWhere('user_id', $user->id)
+              ->orWhere('reseller_id', $user->id);
         })->with('user')->latest()->get();
 
         // Get enabled domain extensions for the add domain form
