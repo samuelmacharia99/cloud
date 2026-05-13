@@ -214,11 +214,11 @@
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('-', ' ', $service->billing_cycle)) }}</td>
                                     <td class="px-6 py-4">
                                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                            @if($service->status === 'active') bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                            @elseif($service->status === 'suspended') bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                            @elseif($service->status === 'terminated') bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                            @if($service->status->value === 'active') bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                                            @elseif($service->status->value === 'suspended') bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                                            @elseif($service->status->value === 'terminated') bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                                             @else bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400 @endif">
-                                            {{ ucfirst($service->status) }}
+                                            {{ ucfirst($service->status->value) }}
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->commenced_at ? $service->commenced_at->format('M d, Y') : '-' }}</td>
