@@ -36,6 +36,7 @@ class Service extends Model
         'commenced_at' => 'datetime',
         'suspend_date' => 'datetime',
         'terminate_date' => 'datetime',
+        'status' => \App\Enums\ServiceStatus::class,
     ];
 
     // Relationships

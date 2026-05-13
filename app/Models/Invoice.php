@@ -28,6 +28,7 @@ class Invoice extends Model
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
+        'status' => \App\Enums\InvoiceStatus::class,
     ];
 
     public function user()

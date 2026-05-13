@@ -13,6 +13,9 @@ use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\DB;
+use App\Enums\ServiceStatus;
+use App\Enums\InvoiceStatus;
 
 class ServiceController extends Controller
 {
@@ -248,6 +251,29 @@ class ServiceController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Termination failed: ' . $e->getMessage());
         }
+    }
+
+    public function cancel(Service $service)
+    {
+        if (in_array($service->status->value, ['cancelled', 'terminated'])) {
+            return back()->with('error', 'Service is already cancelled or terminated.');
+        }
+
+        DB::transaction(function () use ($service) {
+            $service->update([
+                'status' => ServiceStatus::Cancelled,
+                'terminate_date' => now(),
+            ]);
+
+            if ($service->invoice_id) {
+                $invoice = $service->invoice;
+                if ($invoice && in_array($invoice->status->value, ['unpaid', 'draft', 'overdue'])) {
+                    $invoice->update(['status' => InvoiceStatus::Cancelled]);
+                }
+            }
+        });
+
+        return back()->with('success', 'Service "' . $service->name . '" has been cancelled.');
     }
 
     public function update(Request $request, Service $service)

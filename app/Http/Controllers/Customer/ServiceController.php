@@ -16,7 +16,11 @@ class ServiceController extends Controller
 {
     public function index()
     {
-        $services = auth()->user()->services()->with('product')->latest()->get();
+        $services = auth()->user()->services()
+            ->with('product')
+            ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->latest()
+            ->get();
         return view('customer.services.index', compact('services'));
     }
 

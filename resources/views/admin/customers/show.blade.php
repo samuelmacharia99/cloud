@@ -224,7 +224,16 @@
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->commenced_at ? $service->commenced_at->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->next_due_date ? $service->next_due_date->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-right">
-                                        <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
+                                        <div class="flex items-center justify-end gap-4">
+                                            <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
+                                            @if (!in_array($service->status->value, ['cancelled', 'terminated']))
+                                            <button type="button"
+                                                @click="cancelServiceModal = true; cancelServiceId = {{ $service->id }}; cancelServiceName = '{{ addslashes($service->name) }}'"
+                                                class="text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 text-sm font-medium transition-colors">
+                                                Cancel
+                                            </button>
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -954,6 +963,62 @@
             </form>
         </div>
     </div>
+
+    <!-- Cancel Service Confirmation Modal -->
+    <div x-show="cancelServiceModal"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-50 flex items-end"
+         @click.self="cancelServiceModal = false"
+         style="display: none;">
+        <div class="w-full bg-white dark:bg-slate-900 rounded-t-2xl shadow-2xl p-6 space-y-5"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="translate-y-full"
+             x-transition:enter-end="translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="translate-y-0"
+             x-transition:leave-end="translate-y-full">
+
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-red-600 dark:text-red-400">Cancel Service</h3>
+                <button @click="cancelServiceModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="p-4 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/40">
+                <p class="text-sm text-red-700 dark:text-red-300">
+                    Are you sure you want to cancel <strong x-text="cancelServiceName"></strong>?
+                </p>
+                <ul class="mt-2 text-xs text-red-600 dark:text-red-400 space-y-1 list-disc list-inside">
+                    <li>The service will be marked as cancelled immediately</li>
+                    <li>Any linked unpaid invoices will also be cancelled</li>
+                    <li>No further charges will be generated for this service</li>
+                    <li>This action cannot be undone</li>
+                </ul>
+            </div>
+
+            <div class="flex gap-3">
+                <button @click="cancelServiceModal = false"
+                    class="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium transition-colors">
+                    Keep Service
+                </button>
+                <form :action="'/admin/services/' + cancelServiceId + '/cancel'" method="POST" class="flex-1">
+                    @csrf
+                    <button type="submit"
+                        class="w-full px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                        Cancel Service
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -963,6 +1028,9 @@ function initCustomerData() {
         addServiceModal: false,
         addDomainModal: false,
         createInvoiceModal: false,
+        cancelServiceModal: false,
+        cancelServiceId: null,
+        cancelServiceName: '',
         productName: '',
         password_visible: false,
         selectedProductType: '',

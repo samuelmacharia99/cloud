@@ -157,6 +157,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('admin/services/{service}/suspend', [\App\Http\Controllers\Admin\ServiceController::class, 'suspend'])->name('admin.services.suspend');
         Route::post('admin/services/{service}/unsuspend', [\App\Http\Controllers\Admin\ServiceController::class, 'unsuspend'])->name('admin.services.unsuspend');
         Route::post('admin/services/{service}/terminate', [\App\Http\Controllers\Admin\ServiceController::class, 'terminate'])->name('admin.services.terminate');
+        Route::post('admin/services/{service}/cancel', [\App\Http\Controllers\Admin\ServiceController::class, 'cancel'])->name('admin.services.cancel');
         Route::post('admin/services/{service}/refresh-status', [\App\Http\Controllers\Admin\ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
         Route::post('admin/services/{service}/resend-credentials', [\App\Http\Controllers\Admin\ServiceController::class, 'resendCredentials'])->name('admin.services.resend-credentials');
 
