@@ -70,7 +70,7 @@
                                 <div>
                                     <p class="font-medium text-slate-900 dark:text-white" x-text="result.domain"></p>
                                     <p class="text-sm text-slate-600 dark:text-slate-400">
-                                        <span x-text="'$' + parseFloat(result.price).toFixed(2)"></span>
+                                        <span x-text="result.currency + ' ' + parseFloat(result.price).toFixed(2)"></span>
                                         <span class="text-xs text-slate-500">/ year</span>
                                     </p>
                                 </div>
@@ -239,12 +239,13 @@ function domainSearchManager() {
                 if (pricingRes.ok) {
                     const pricingData = await pricingRes.json();
                     if (pricingData.available) {
-                        // For demo, assume domain is available
-                        const price = pricingData.retail_price || pricingData.wholesale_price;
+                        // Wholesale pricing for resellers
+                        const price = pricingData.price;
                         this.searchResults.push({
                             domain: input,
                             extension: extension,
                             price: price * this.selectedPeriod,
+                            currency: pricingData.currency || 'KES',
                             available: true
                         });
                     }

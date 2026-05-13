@@ -69,33 +69,19 @@ class DomainController extends Controller
     public function getPricing(DomainExtension $extension, Request $request)
     {
         $period = $request->get('period', 1);
-        $resellerId = auth()->id();
 
-        // Get wholesale pricing from admin
+        // Get wholesale pricing from admin (resellers always pay wholesale)
         $wholesalePricing = $extension->pricing()
             ->where('tier', 'wholesale')
             ->where('period_years', $period)
             ->first();
 
-        // Get reseller's custom pricing (if set)
-        $resellerPricing = $extension->resellerPricing()
-            ->where('reseller_id', $resellerId)
-            ->where('period_years', $period)
-            ->first();
-
-        // Use reseller pricing if available and enabled, otherwise use wholesale
-        $retailPrice = null;
-        if ($resellerPricing && $resellerPricing->enabled) {
-            $retailPrice = $resellerPricing->retail_price;
-        } else {
-            // If no reseller pricing, use wholesale (or you could mark as unavailable)
-            $retailPrice = $wholesalePricing?->price;
-        }
+        $price = $wholesalePricing?->price ?? 0;
 
         return response()->json([
-            'wholesale_price' => $wholesalePricing?->price ?? 0,
-            'retail_price' => $retailPrice ?? 0,
-            'available' => !is_null($retailPrice),
+            'price' => $price,
+            'currency' => 'KES',
+            'available' => $price > 0,
         ]);
     }
 }
