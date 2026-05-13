@@ -22,21 +22,21 @@
                 <!-- Status badge -->
                 <div class="mt-4">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        @if($invoice->status === 'paid')
+                        @if($invoice->status->value === 'paid')
                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                        @elseif($invoice->status === 'unpaid')
+                        @elseif($invoice->status->value === 'unpaid')
                             bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                        @elseif($invoice->status === 'draft')
+                        @elseif($invoice->status->value === 'draft')
                             bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
-                        @elseif($invoice->status === 'overdue')
+                        @elseif($invoice->status->value === 'overdue')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                        @elseif($invoice->status === 'cancelled')
+                        @elseif($invoice->status->value === 'cancelled')
                             bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                         @else
                             bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
                         @endif
                     ">
-                        {{ ucfirst($invoice->status) }}
+                        {{ ucfirst($invoice->status->value) }}
                     </span>
                 </div>
             </div>
@@ -101,7 +101,7 @@
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Status</p>
-                        <p class="text-lg font-semibold text-slate-900 dark:text-white mt-1">{{ ucfirst($invoice->status) }}</p>
+                        <p class="text-lg font-semibold text-slate-900 dark:text-white mt-1">{{ ucfirst($invoice->status->value) }}</p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Issue Date</p>

@@ -16,10 +16,10 @@
         <div>
             <label class="block text-sm font-medium text-slate-900 mb-2">Status</label>
             <select name="status" required class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                <option value="unpaid" {{ $invoice->status === 'unpaid' ? 'selected' : '' }}>Unpaid</option>
-                <option value="paid" {{ $invoice->status === 'paid' ? 'selected' : '' }}>Paid</option>
-                <option value="overdue" {{ $invoice->status === 'overdue' ? 'selected' : '' }}>Overdue</option>
-                <option value="cancelled" {{ $invoice->status === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                <option value="unpaid" {{ $invoice->status->value === 'unpaid' ? 'selected' : '' }}>Unpaid</option>
+                <option value="paid" {{ $invoice->status->value === 'paid' ? 'selected' : '' }}>Paid</option>
+                <option value="overdue" {{ $invoice->status->value === 'overdue' ? 'selected' : '' }}>Overdue</option>
+                <option value="cancelled" {{ $invoice->status->value === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
             </select>
             @error('status') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
         </div>

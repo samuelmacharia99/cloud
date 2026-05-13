@@ -17,8 +17,8 @@
             </div>
             <div class="text-right">
                 <p class="text-sm font-medium text-slate-600 uppercase mb-2">Status</p>
-                <span class="inline-block px-3 py-1 rounded-full text-sm font-medium {{ $invoice->status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }}">
-                    {{ ucfirst($invoice->status) }}
+                <span class="inline-block px-3 py-1 rounded-full text-sm font-medium {{ $invoice->status->value === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }}">
+                    {{ ucfirst($invoice->status->value) }}
                 </span>
             </div>
         </div>

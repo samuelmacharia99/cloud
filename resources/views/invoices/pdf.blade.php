@@ -461,7 +461,7 @@
     </style>
 </head>
 <body>
-    @if($invoice->status === 'paid')
+    @if($invoice->status->value === 'paid')
         <div class="watermark">PAID</div>
     @endif
 
@@ -500,7 +500,7 @@
                         @endif
                     </div>
                     <div class="status-badge status-{{ $invoice->status }}">
-                        {{ ucfirst($invoice->status) }}
+                        {{ ucfirst($invoice->status->value) }}
                     </div>
                 </div>
             </div>

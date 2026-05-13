@@ -162,8 +162,8 @@
                                 </div>
                                 <div class="text-right">
                                     <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 {{ $invoice->status === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($invoice->status === 'unpaid' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
-                                        {{ ucfirst($invoice->status) }}
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 {{ $invoice->status->value === 'paid' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($invoice->status->value === 'unpaid' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
+                                        {{ ucfirst($invoice->status->value) }}
                                     </span>
                                 </div>
                             </div>

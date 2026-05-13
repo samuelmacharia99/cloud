@@ -45,8 +45,8 @@
                                 <p class="font-semibold text-slate-900">KSH {{ number_format($invoice->total, 2) }}</p>
                             </td>
                             <td class="px-6 py-4">
-                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium {{ $invoice->status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }}">
-                                    {{ ucfirst($invoice->status) }}
+                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium {{ $invoice->status->value === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }}">
+                                    {{ ucfirst($invoice->status->value) }}
                                 </span>
                             </td>
                             <td class="px-6 py-4">

@@ -39,11 +39,11 @@
     <tr>
         <td><strong>Status:</strong></td>
         <td>
-            @if($invoice->status === 'paid')
+            @if($invoice->status->value === 'paid')
                 <span style="display: inline-block; padding: 4px 12px; background-color: #dcfce7; color: #166534; border-radius: 4px; font-size: 12px; font-weight: bold;">
                     PAID
                 </span>
-            @elseif($invoice->status === 'overdue')
+            @elseif($invoice->status->value === 'overdue')
                 <span style="display: inline-block; padding: 4px 12px; background-color: #fee2e2; color: #991b1b; border-radius: 4px; font-size: 12px; font-weight: bold;">
                     OVERDUE
                 </span>
