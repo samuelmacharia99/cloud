@@ -105,6 +105,7 @@ class AppServiceProvider extends ServiceProvider
             // Override mail config if database values exist
             if ($smtpHost) {
                 config([
+                    'mail.default' => 'smtp',
                     'mail.mailers.smtp.host' => $smtpHost,
                     'mail.mailers.smtp.port' => $smtpPort ?: 587,
                     'mail.mailers.smtp.encryption' => $smtpEncryption ?: 'tls',
