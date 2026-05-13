@@ -435,21 +435,21 @@
                                             <x-currency-formatter :amount="$invoice->total" currency="KES" />
                                         </td>
                                         <td class="py-3 px-4">
-                                            @if ($invoice->status === 'paid')
+                                            @if ($invoice->status->value === 'paid')
                                                 <span class="inline-block px-2.5 py-0.5 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-xs font-medium">
                                                     Paid
                                                 </span>
-                                            @elseif ($invoice->status === 'unpaid')
+                                            @elseif ($invoice->status->value === 'unpaid')
                                                 <span class="inline-block px-2.5 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded-full text-xs font-medium">
                                                     Unpaid
                                                 </span>
-                                            @elseif ($invoice->status === 'overdue')
+                                            @elseif ($invoice->status->value === 'overdue')
                                                 <span class="inline-block px-2.5 py-0.5 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full text-xs font-medium">
                                                     Overdue
                                                 </span>
                                             @else
                                                 <span class="inline-block px-2.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full text-xs font-medium">
-                                                    {{ ucfirst($invoice->status) }}
+                                                    {{ ucfirst($invoice->status->value) }}
                                                 </span>
                                             @endif
                                         </td>

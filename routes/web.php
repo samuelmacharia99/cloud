@@ -235,6 +235,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/packages', [\App\Http\Controllers\Reseller\PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [\App\Http\Controllers\Reseller\PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
 
+        // Invoice Management
+        Route::resource('reseller/invoices', \App\Http\Controllers\Reseller\InvoiceController::class)->only(['index', 'show'])->names('reseller.invoices');
+        Route::get('reseller/invoices/{invoice}/download', [\App\Http\Controllers\Reseller\InvoiceController::class, 'download'])->name('reseller.invoices.download');
+
         // Wallet Management
         Route::get('reseller/wallet', [\App\Http\Controllers\Reseller\WalletController::class, 'index'])->name('reseller.wallet.index');
         Route::post('reseller/wallet/topup', [\App\Http\Controllers\Reseller\WalletController::class, 'initiateTopup'])->name('reseller.wallet.topup');

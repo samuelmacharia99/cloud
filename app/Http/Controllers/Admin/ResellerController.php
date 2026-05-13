@@ -72,9 +72,8 @@ class ResellerController extends Controller
             ->push(['id' => $user->id, 'label' => $user->name . ' (' . $user->email . ') — Reseller'])
             ->merge($customers->map(fn($c) => ['id' => $c->id, 'label' => $c->name . ' (' . $c->email . ')']));
 
-        // Get reseller's own subscription invoices
+        // Get all invoices for this reseller (includes domain renewals, subscriptions, etc.)
         $resellerInvoices = Invoice::where('user_id', $user->id)
-            ->resellerSubscription()
             ->latest()
             ->get();
 

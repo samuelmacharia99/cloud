@@ -108,6 +108,12 @@
                             </svg>
                             <span class="text-sm font-medium">My Package</span>
                         </a>
+                        <a href="{{ route('reseller.invoices.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.invoices.*') ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                            <span class="text-sm font-medium">My Invoices</span>
+                        </a>
                     </div>
 
                     <!-- Account -->
@@ -238,6 +244,24 @@
                         </div>
                     </div>
                 </header>
+
+                @if (session('impersonating'))
+                <!-- Admin Impersonation Banner -->
+                <div class="h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex items-center px-6 justify-between">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0m-.5 4.5h.01"/>
+                        </svg>
+                        <span class="text-sm font-medium text-amber-900 dark:text-amber-100">You are viewing as a reseller. <strong>{{ auth()->user()->name }}</strong></span>
+                    </div>
+                    <form method="POST" action="{{ route('admin.exit-impersonation') }}" class="flex items-center gap-2">
+                        @csrf
+                        <button type="submit" class="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">
+                            Exit View
+                        </button>
+                    </form>
+                </div>
+                @endif
 
                 <!-- Flash Messages -->
                 @if (session('success'))

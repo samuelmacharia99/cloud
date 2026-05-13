@@ -56,13 +56,13 @@
                                 <span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold">.{{ $extension->extension }}</span>
                             </td>
                             <td class="px-6 py-4 text-sm text-right text-slate-600 dark:text-slate-400">
-                                <span x-text="'$' + formatPrice(getWholesalePrice({{ $extension->id }}))"></span>
+                                <span x-text="'KES ' + formatPrice(getWholesalePrice({{ $extension->id }}))"></span>
                             </td>
                             <td class="px-6 py-4 text-sm text-right text-slate-900 dark:text-white font-medium">
-                                <span x-text="'$' + formatPrice(getRetailPrice({{ $extension->id }}))"></span>
+                                <span x-text="'KES ' + formatPrice(getRetailPrice({{ $extension->id }}))"></span>
                             </td>
                             <td class="px-6 py-4 text-sm text-right">
-                                <span x-text="'$' + formatPrice(getMargin({{ $extension->id }}))"></span>
+                                <span x-text="'KES ' + formatPrice(getMargin({{ $extension->id }}))"></span>
                                 <br>
                                 <span class="text-emerald-600 dark:text-emerald-400 text-xs">
                                     <span x-text="getMarginPercent({{ $extension->id }}) + '%'"></span>
@@ -111,8 +111,8 @@
                 <div>
                     <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Wholesale Price</label>
                     <div class="relative">
-                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                        <input type="text" x-model="wholesalePrice" disabled class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 text-sm">
+                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KES</span>
+                        <input type="text" x-model="wholesalePrice" disabled class="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 text-sm">
                     </div>
                 </div>
 
@@ -120,8 +120,8 @@
                 <div>
                     <label for="modal_retail_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Your Price</label>
                     <div class="relative">
-                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                        <input type="number" id="modal_retail_price" x-model.number="retailPrice" @input="calculateModalMargin()" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KES</span>
+                        <input type="number" id="modal_retail_price" x-model.number="retailPrice" @input="calculateModalMargin()" step="0.01" min="0" class="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
                     </div>
                 </div>
 
@@ -129,7 +129,7 @@
                 <div class="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <p class="text-xs font-semibold text-emerald-900 dark:text-emerald-300 uppercase tracking-wide mb-2">Your Margin</p>
                     <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                        <span x-text="'$' + modalMargin.toFixed(2)"></span>
+                        <span x-text="'KES ' + modalMargin.toFixed(2)"></span>
                         <span x-text="'(' + modalMarginPercent.toFixed(1) + '%)'"></span>
                     </p>
                 </div>
