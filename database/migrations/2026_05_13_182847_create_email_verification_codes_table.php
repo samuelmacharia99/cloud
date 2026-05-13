@@ -11,14 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('email_verification_codes', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('code', 6);
-            $table->dateTime('expires_at');
-            $table->timestamps();
-            $table->index(['user_id', 'code']);
-        });
+        if (!Schema::hasTable('email_verification_codes')) {
+            Schema::create('email_verification_codes', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+                $table->string('code', 6);
+                $table->dateTime('expires_at');
+                $table->timestamps();
+                $table->index(['user_id', 'code']);
+            });
+        }
     }
 
     /**
