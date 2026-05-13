@@ -46,7 +46,7 @@ Route::post('/webhooks/paypal', [\App\Http\Controllers\Customer\PaymentControlle
 Route::get('/terms', fn() => view('legal.terms'))->name('terms');
 Route::get('/privacy', fn() => view('legal.privacy'))->name('privacy');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     // Admin-only routes

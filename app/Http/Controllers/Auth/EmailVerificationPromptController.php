@@ -14,6 +14,11 @@ class EmailVerificationPromptController extends Controller
      */
     public function __invoke(Request $request): RedirectResponse|View
     {
+        // If an admin or reseller is impersonating a user, skip email verification
+        if (session('impersonating') || session('impersonating_reseller')) {
+            return redirect()->intended(route('dashboard', absolute: false));
+        }
+
         return $request->user()->hasVerifiedEmail()
                     ? redirect()->intended(route('dashboard', absolute: false))
                     : view('auth.verify-email-premium');

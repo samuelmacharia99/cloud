@@ -33,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'customer' => \App\Http\Middleware\CheckCustomerRole::class,
             'reseller' => \App\Http\Middleware\CheckResellerRole::class,
             'reseller.limits' => \App\Http\Middleware\EnforceResellerLimits::class,
+            'skip.verification.if.impersonating' => \App\Http\Middleware\SkipVerificationIfImpersonating::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
