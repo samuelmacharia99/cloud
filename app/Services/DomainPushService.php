@@ -143,15 +143,20 @@ class DomainPushService
         return $pushed;
     }
 
-    public function completeOrder(ResellerDomainOrder $order): void
+    public function completeOrder(ResellerDomainOrder $order, string $registrar): void
     {
-        $this->db->transaction(function () use ($order) {
+        $this->db->transaction(function () use ($order, $registrar) {
             $domain = Domain::find($order->domain_id);
 
             if ($domain) {
+                $registrationDate = now();
+                $expiryDate = $registrationDate->addYears($order->years);
+
                 $domain->update([
                     'status' => 'active',
-                    'registered_at' => now(),
+                    'registrar' => $registrar,
+                    'registered_at' => $registrationDate,
+                    'expires_at' => $expiryDate,
                 ]);
             }
 

@@ -133,16 +133,26 @@
 
     <!-- Actions -->
     @if($order->status === 'pushed')
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Complete Order -->
-        <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" onsubmit="return confirm('Mark this domain as completed?');">
+    <!-- Complete Order Form -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Complete Domain Order</h3>
+        <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" class="space-y-4">
             @csrf
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registrar</label>
+                <input type="text" name="registrar" required placeholder="e.g., GoDaddy, Namecheap" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                @error('registrar')
+                    <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                @enderror
+            </div>
             <button type="submit" class="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
                 ✓ Mark as Completed
             </button>
         </form>
+    </div>
 
-        <!-- Fail Order -->
+    <!-- Fail Order -->
+    <div>
         <button type="button" onclick="document.getElementById('failForm').style.display = document.getElementById('failForm').style.display === 'none' ? 'block' : 'none'" class="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
             ✗ Mark as Failed
         </button>

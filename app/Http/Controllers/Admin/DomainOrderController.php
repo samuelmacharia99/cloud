@@ -60,8 +60,12 @@ class DomainOrderController extends Controller
 
     public function complete(Request $request, ResellerDomainOrder $order)
     {
+        $validated = $request->validate([
+            'registrar' => 'required|string|max:255',
+        ]);
+
         try {
-            $this->domainPushService->completeOrder($order);
+            $this->domainPushService->completeOrder($order, $validated['registrar']);
 
             return redirect()->route('admin.domain-orders.show', $order)
                 ->with('success', "Domain {$order->domain_name} marked as completed!");
