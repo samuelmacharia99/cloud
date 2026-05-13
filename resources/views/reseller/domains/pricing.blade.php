@@ -53,7 +53,7 @@
                         @endphp
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition" x-show="filteredExtensions.some(e => e.id === {{ $extension->id }})">
                             <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">
-                                <span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold">.{{ $extension->extension }}</span>
+                                <span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-xs font-semibold">{{ $extension->extension }}</span>
                             </td>
                             <td class="px-6 py-4 text-sm text-right text-slate-600 dark:text-slate-400">
                                 <span x-text="'KES ' + formatPrice(getWholesalePrice({{ $extension->id }}))"></span>
