@@ -11,21 +11,21 @@
             <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice dated {{ $invoice->created_at->format('F d, Y') }}</p>
         </div>
         <span class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium
-            @if($invoice->status === 'paid')
+            @if($invoice->status->value === 'paid')
                 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-            @elseif($invoice->status === 'unpaid')
+            @elseif($invoice->status->value === 'unpaid')
                 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-            @elseif($invoice->status === 'draft')
+            @elseif($invoice->status->value === 'draft')
                 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
-            @elseif($invoice->status === 'overdue')
+            @elseif($invoice->status->value === 'overdue')
                 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-            @elseif($invoice->status === 'cancelled')
+            @elseif($invoice->status->value === 'cancelled')
                 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
             @else
                 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400
             @endif
         ">
-            {{ ucfirst($invoice->status) }}
+            {{ ucfirst($invoice->status->value) }}
         </span>
     </div>
 
@@ -33,13 +33,13 @@
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <!-- Top Stripe -->
         <div class="h-1 bg-gradient-to-r
-            @if($invoice->status === 'paid')
+            @if($invoice->status->value === 'paid')
                 from-emerald-500 to-emerald-600
-            @elseif($invoice->status === 'unpaid')
+            @elseif($invoice->status->value === 'unpaid')
                 from-amber-500 to-amber-600
-            @elseif($invoice->status === 'draft')
+            @elseif($invoice->status->value === 'draft')
                 from-slate-500 to-slate-600
-            @elseif($invoice->status === 'overdue')
+            @elseif($invoice->status->value === 'overdue')
                 from-red-500 to-red-600
             @else
                 from-slate-500 to-slate-600
