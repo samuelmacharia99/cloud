@@ -10,7 +10,7 @@ class CustomerController extends Controller
 {
     public function index(Request $request)
     {
-        $query = User::where('is_admin', false)->latest();
+        $query = User::where('is_admin', false)->where('is_reseller', false)->latest();
 
         // Search
         if ($request->filled('search')) {
@@ -72,6 +72,11 @@ class CustomerController extends Controller
 
     public function show(User $customer)
     {
+        if ($customer->is_reseller) {
+            return redirect()->route('admin.resellers.show', $customer)
+                ->with('info', 'This user is a reseller. Showing reseller profile.');
+        }
+
         if ($customer->is_admin) {
             abort(404);
         }

@@ -13,6 +13,11 @@ class CheckCustomerRole
             abort(403, 'Unauthorized access');
         }
 
+        if (auth()->user()->is_reseller) {
+            return redirect()->route('dashboard')
+                ->with('info', 'Please use your reseller portal to manage your account.');
+        }
+
         return $next($request);
     }
 }
