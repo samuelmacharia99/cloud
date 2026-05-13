@@ -21,6 +21,7 @@ class ResellerController extends Controller
             ->withCount(['services as managed_services_count' => function ($query) {
                 $query->whereColumn('reseller_id', 'users.id');
             }])
+            ->withCount(['managedDomains as managed_domains_count'])
             ->latest()
             ->paginate(15)
             ->withQueryString();

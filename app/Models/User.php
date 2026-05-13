@@ -87,6 +87,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(Domain::class);
     }
 
+    public function managedDomains()
+    {
+        return $this->hasMany(Domain::class, 'reseller_id');
+    }
+
     public function resellerPackage()
     {
         return $this->belongsTo(ResellerPackage::class, 'reseller_package_id');

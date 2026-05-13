@@ -44,6 +44,7 @@
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Reseller</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
                         <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Services</th>
+                        <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Domains</th>
                         <th class="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">Customers</th>
                         <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Revenue</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Created</th>
@@ -75,6 +76,13 @@
                             <td class="px-6 py-4 text-center">
                                 <span class="inline-block px-3 py-1 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 rounded-full text-sm font-medium">
                                     {{ $reseller->managed_services_count ?? 0 }}
+                                </span>
+                            </td>
+
+                            <!-- Domains Count -->
+                            <td class="px-6 py-4 text-center">
+                                <span class="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded-full text-sm font-medium">
+                                    {{ $reseller->managed_domains_count ?? 0 }}
                                 </span>
                             </td>
 
@@ -116,7 +124,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-6 py-12 text-center">
+                            <td colspan="8" class="px-6 py-12 text-center">
                                 <div class="space-y-2">
                                     <svg class="mx-auto w-12 h-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 10H9"/>
