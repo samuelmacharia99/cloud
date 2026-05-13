@@ -206,9 +206,10 @@
 
 @php
     $recaptchaService = new \App\Services\RecaptchaService();
+    $siteKey = $recaptchaService->getSiteKey();
 @endphp
 
-@if($recaptchaService->isEnabled())
+<!-- Always load reCAPTCHA for bot protection -->
 <script src="https://www.google.com/recaptcha/api.js"></script>
 <script>
 async function handleRegisterSubmit(event) {
@@ -217,9 +218,16 @@ async function handleRegisterSubmit(event) {
     const form = document.getElementById('register-form');
     const btn = document.getElementById('register-btn');
     const originalText = btn.textContent;
-    const siteKey = '{{ $recaptchaService->getSiteKey() }}';
+    const siteKey = '{{ $siteKey }}';
 
     try {
+        // Require reCAPTCHA verification for bot protection
+        if (!siteKey || siteKey.trim() === '') {
+            console.error('reCAPTCHA site key not configured');
+            alert('Registration is temporarily unavailable. Please contact support.');
+            return;
+        }
+
         // Check if reCAPTCHA script loaded
         if (typeof grecaptcha === 'undefined') {
             console.error('reCAPTCHA script failed to load');
@@ -229,18 +237,10 @@ async function handleRegisterSubmit(event) {
             return;
         }
 
-        // Check if site key is configured
-        if (!siteKey || siteKey.trim() === '') {
-            console.error('reCAPTCHA site key not configured');
-            alert('Registration temporarily unavailable. Please try again later.');
-            btn.disabled = false;
-            btn.textContent = originalText;
-            return;
-        }
-
         btn.disabled = true;
         btn.textContent = 'Verifying security...';
 
+        // Execute reCAPTCHA verification (required)
         const token = await grecaptcha.execute(siteKey, { action: 'register' });
 
         if (!token) {
@@ -251,26 +251,18 @@ async function handleRegisterSubmit(event) {
             return;
         }
 
+        // Populate hidden token field
         document.getElementById('recaptcha_token').value = token;
-        console.log('reCAPTCHA token generated successfully');
+        console.log('reCAPTCHA verification successful');
 
+        // Submit form
         form.submit();
     } catch (error) {
         console.error('reCAPTCHA error:', error);
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-        alert('Security verification failed. Please refresh the page and try again. Error: ' + (error.message || 'Unknown error'));
+        alert('Security verification failed. Please refresh the page and try again.');
         btn.disabled = false;
         btn.textContent = originalText;
     }
 }
 </script>
-@else
-<script>
-function handleRegisterSubmit(event) {
-    event.preventDefault();
-    document.getElementById('register-form').submit();
-}
-</script>
-@endif
 @endsection

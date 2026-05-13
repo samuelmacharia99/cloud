@@ -39,16 +39,15 @@ class RegisteredUserController extends Controller
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'agree' => ['required', 'accepted'],
-            'recaptcha_token' => ['nullable', 'string'],
+            'recaptcha_token' => ['required', 'string'],
         ]);
 
-        if ($recaptchaService->isEnabled()) {
-            $token = $validated['recaptcha_token'] ?? '';
-            if (!$recaptchaService->verify($token, 'register', 0.5)) {
-                throw ValidationException::withMessages([
-                    'recaptcha_token' => 'Security verification failed. Please try again.',
-                ]);
-            }
+        // Always verify reCAPTCHA token (required for bot protection)
+        $token = $validated['recaptcha_token'];
+        if (!$recaptchaService->verify($token, 'register', 0.5)) {
+            throw ValidationException::withMessages([
+                'recaptcha_token' => 'Security verification failed. Please try again.',
+            ]);
         }
 
         $user = User::create([
