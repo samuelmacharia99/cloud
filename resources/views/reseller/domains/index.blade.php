@@ -31,7 +31,7 @@
                         <input type="text"
                             x-model="domainName"
                             @keyup.enter="searchDomains()"
-                            placeholder="e.g., example"
+                            placeholder="e.g., example.com"
                             class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
                         <button @click="searchDomains()"
                             class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
@@ -50,23 +50,6 @@
                         <option value="5">5 Years</option>
                         <option value="10">10 Years</option>
                     </select>
-                </div>
-            </div>
-
-            <!-- Extension Selection -->
-            <div>
-                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Extensions</label>
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                    @forelse($extensions as $ext)
-                        <button type="button"
-                            @click="toggleExtension('{{ $ext->extension }}')"
-                            :class="{ 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950': selectedExtensions.includes('{{ $ext->extension }}'), 'bg-slate-100 dark:bg-slate-800': !selectedExtensions.includes('{{ $ext->extension }}') }"
-                            class="px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-900 dark:text-white transition hover:border-blue-500">
-                            .{{ $ext->extension }}
-                        </button>
-                    @empty
-                        <p class="text-slate-600 dark:text-slate-400 col-span-full">No domain extensions available</p>
-                    @endforelse
                 </div>
             </div>
 
@@ -210,27 +193,31 @@ function domainSearchManager() {
     return {
         domainName: '',
         selectedPeriod: '1',
-        selectedExtensions: [],
         searching: false,
         searchPerformed: false,
         searchResults: [],
 
-        toggleExtension(ext) {
-            if (this.selectedExtensions.includes(ext)) {
-                this.selectedExtensions = this.selectedExtensions.filter(e => e !== ext);
-            } else {
-                this.selectedExtensions.push(ext);
-            }
-        },
-
         async searchDomains() {
-            if (!this.domainName.trim()) {
+            const input = this.domainName.trim().toLowerCase();
+
+            if (!input) {
                 alert('Please enter a domain name');
                 return;
             }
 
-            if (this.selectedExtensions.length === 0) {
-                alert('Please select at least one extension');
+            // Check if input contains a dot (extension)
+            if (!input.includes('.')) {
+                alert('Please enter a full domain name with extension (e.g., example.com)');
+                return;
+            }
+
+            // Extract domain name and extension
+            const lastDotIndex = input.lastIndexOf('.');
+            const domainName = input.substring(0, lastDotIndex);
+            const extension = input.substring(lastDotIndex);
+
+            if (!domainName) {
+                alert('Invalid domain name');
                 return;
             }
 
@@ -239,36 +226,31 @@ function domainSearchManager() {
             this.searchResults = [];
 
             try {
-                // Simulate domain availability check
-                // In production, this would call an API
-                for (const ext of this.selectedExtensions) {
-                    // Get pricing for this extension
-                    const pricingRes = await fetch(
-                        `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', ext.substring(1)),
-                        {
-                            headers: {
-                                'Accept': 'application/json',
-                            }
-                        }
-                    );
-
-                    if (pricingRes.ok) {
-                        const pricingData = await pricingRes.json();
-                        if (pricingData.available) {
-                            // For demo, assume domain is available
-                            const price = pricingData.retail_price || pricingData.wholesale_price;
-                            this.searchResults.push({
-                                domain: this.domainName + ext,
-                                extension: ext,
-                                price: price * this.selectedPeriod,
-                                available: true
-                            });
+                // Get pricing for this extension
+                const pricingRes = await fetch(
+                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension.substring(1)),
+                    {
+                        headers: {
+                            'Accept': 'application/json',
                         }
                     }
-                }
+                );
 
-                // Sort results by extension
-                this.searchResults.sort((a, b) => a.domain.localeCompare(b.domain));
+                if (pricingRes.ok) {
+                    const pricingData = await pricingRes.json();
+                    if (pricingData.available) {
+                        // For demo, assume domain is available
+                        const price = pricingData.retail_price || pricingData.wholesale_price;
+                        this.searchResults.push({
+                            domain: input,
+                            extension: extension,
+                            price: price * this.selectedPeriod,
+                            available: true
+                        });
+                    }
+                } else {
+                    alert('Extension not found or pricing unavailable');
+                }
             } catch (error) {
                 console.error('Search error:', error);
                 alert('Error searching domains. Please try again.');
@@ -281,10 +263,13 @@ function domainSearchManager() {
             // Get existing cart or create new one
             let cart = JSON.parse(localStorage.getItem('cart') || '[]');
 
+            // Extract domain name (without extension)
+            const domainName = domain.substring(0, domain.lastIndexOf('.'));
+
             // Add domain to cart
             cart.push({
                 type: 'domain',
-                domain: domain.split(extension)[0],
+                domain: domainName,
                 extension: extension,
                 full_domain: domain,
                 years: parseInt(period),
