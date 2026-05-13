@@ -214,7 +214,6 @@ class DomainController extends Controller
                 'status' => 'required|in:pending,active,expired,suspended',
                 'registered_at' => 'nullable|date',
                 'expires_at' => 'nullable|date',
-                'auto_renew' => 'nullable|boolean',
                 'nameserver_1' => 'nullable|string',
                 'nameserver_2' => 'nullable|string',
                 'notes' => 'nullable|string',
@@ -222,7 +221,7 @@ class DomainController extends Controller
 
             \Log::info('Validation passed', ['validated' => $validated]);
 
-            $validated['auto_renew'] = $request->has('auto_renew');
+            $validated['auto_renew'] = (bool) $request->has('auto_renew');
 
             $domain->update($validated);
 
