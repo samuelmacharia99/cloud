@@ -107,9 +107,12 @@
 
                             <!-- Actions -->
                             <td class="px-6 py-4 text-center">
-                                <div class="flex items-center justify-center gap-3">
+                                <div class="flex items-center justify-center gap-2">
                                     <a href="{{ route('admin.resellers.show', $reseller) }}" class="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium" title="View reseller">
                                         View
+                                    </a>
+                                    <a href="{{ route('admin.resellers.edit', $reseller) }}" class="text-blue-600 dark:text-blue-400 hover:underline text-sm font-medium" title="Edit reseller">
+                                        Edit
                                     </a>
                                     <form method="POST" action="{{ route('admin.resellers.impersonate', $reseller) }}" class="inline">
                                         @csrf

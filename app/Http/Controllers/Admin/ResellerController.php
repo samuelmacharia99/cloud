@@ -126,6 +126,40 @@ class ResellerController extends Controller
             ->with('success', "Reseller '{$user->name}' created successfully.");
     }
 
+    public function edit(User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+        return view('admin.resellers.edit', compact('user', 'packages'));
+    }
+
+    public function update(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'name'                => 'required|string|max:255',
+            'email'               => 'required|email|unique:users,email,' . $user->id,
+            'password'            => 'nullable|min:8|confirmed',
+            'phone'               => 'nullable|string|max:30',
+            'company'             => 'nullable|string|max:255',
+            'country'             => 'nullable|string|max:100',
+            'reseller_package_id' => 'nullable|exists:reseller_packages,id',
+            'notes'               => 'nullable|string|max:1000',
+        ]);
+
+        // Only update password if provided
+        if (empty($validated['password'])) {
+            unset($validated['password']);
+        }
+
+        $user->update($validated);
+
+        return redirect()->route('admin.resellers.show', $user)
+            ->with('success', "Reseller '{$user->name}' updated successfully.");
+    }
+
     public function assignPackage(Request $request, User $user)
     {
         abort_if(!$user->is_reseller, 404);

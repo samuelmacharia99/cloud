@@ -95,6 +95,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/resellers', [\App\Http\Controllers\Admin\ResellerController::class, 'index'])->name('admin.resellers.index');
         Route::get('admin/resellers/create', [\App\Http\Controllers\Admin\ResellerController::class, 'create'])->name('admin.resellers.create');
         Route::post('admin/resellers', [\App\Http\Controllers\Admin\ResellerController::class, 'store'])->name('admin.resellers.store');
+        Route::get('admin/resellers/{user}/edit', [\App\Http\Controllers\Admin\ResellerController::class, 'edit'])->name('admin.resellers.edit');
+        Route::put('admin/resellers/{user}', [\App\Http\Controllers\Admin\ResellerController::class, 'update'])->name('admin.resellers.update');
         Route::get('admin/resellers/{user}', [\App\Http\Controllers\Admin\ResellerController::class, 'show'])->name('admin.resellers.show');
         Route::post('admin/resellers/{user}/promote', [\App\Http\Controllers\Admin\ResellerController::class, 'promote'])->name('admin.resellers.promote');
         Route::post('admin/resellers/{user}/demote', [\App\Http\Controllers\Admin\ResellerController::class, 'demote'])->name('admin.resellers.demote');
