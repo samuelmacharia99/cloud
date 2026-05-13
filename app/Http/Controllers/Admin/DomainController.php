@@ -203,23 +203,44 @@ class DomainController extends Controller
 
     public function update(Request $request, Domain $domain)
     {
-        $validated = $request->validate([
-            'registrar' => 'nullable|string',
-            'status' => 'required|in:pending,active,expired,suspended',
-            'registered_at' => 'nullable|date',
-            'expires_at' => 'nullable|date',
-            'auto_renew' => 'nullable|boolean',
-            'nameserver_1' => 'nullable|string',
-            'nameserver_2' => 'nullable|string',
-            'notes' => 'nullable|string',
+        \Log::info('Domain update request', [
+            'domain_id' => $domain->id,
+            'request_data' => $request->all(),
         ]);
 
-        $validated['auto_renew'] = $request->has('auto_renew');
+        try {
+            $validated = $request->validate([
+                'registrar' => 'nullable|string',
+                'status' => 'required|in:pending,active,expired,suspended',
+                'registered_at' => 'nullable|date',
+                'expires_at' => 'nullable|date',
+                'auto_renew' => 'nullable|boolean',
+                'nameserver_1' => 'nullable|string',
+                'nameserver_2' => 'nullable|string',
+                'notes' => 'nullable|string',
+            ]);
 
-        $domain->update($validated);
+            \Log::info('Validation passed', ['validated' => $validated]);
 
-        return redirect()->route('admin.domains.show', $domain)
-            ->with('success', 'Domain updated successfully.');
+            $validated['auto_renew'] = $request->has('auto_renew');
+
+            $domain->update($validated);
+
+            \Log::info('Domain updated successfully', ['domain_id' => $domain->id]);
+
+            return redirect()->route('admin.domains.show', $domain)
+                ->with('success', 'Domain updated successfully.');
+        } catch (\Exception $e) {
+            \Log::error('Domain update failed', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to update domain: ' . $e->getMessage());
+        }
     }
 
     public function destroy(Domain $domain)

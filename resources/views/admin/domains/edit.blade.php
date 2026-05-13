@@ -23,6 +23,23 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Update domain settings and information.</p>
     </div>
 
+    @if ($errors->any())
+        <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <h3 class="text-sm font-semibold text-red-900 dark:text-red-200 mb-2">Errors:</h3>
+            <ul class="text-sm text-red-700 dark:text-red-300 space-y-1">
+                @foreach ($errors->all() as $error)
+                    <li>• {{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <p class="text-sm font-semibold text-red-900 dark:text-red-200">{{ session('error') }}</p>
+        </div>
+    @endif
+
     <form method="POST" action="{{ route('admin.domains.update', $domain) }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
         @csrf
         @method('PATCH')
