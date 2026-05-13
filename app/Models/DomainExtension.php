@@ -8,6 +8,16 @@ class DomainExtension extends Model
 {
     protected $table = 'domain_extensions';
 
+    protected $primaryKey = 'id';
+    public $incrementing = true;
+    protected $keyType = 'int';
+
+    // Use 'extension' field for route model binding (e.g., .com, .co.ke)
+    public function getRouteKeyName()
+    {
+        return 'extension';
+    }
+
     protected $fillable = [
         'extension',
         'description',

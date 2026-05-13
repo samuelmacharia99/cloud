@@ -226,9 +226,9 @@ function domainSearchManager() {
             this.searchResults = [];
 
             try {
-                // Get pricing for this extension
+                // Get pricing for this extension (pass with dot, e.g., .com)
                 const pricingRes = await fetch(
-                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension.substring(1)),
+                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension),
                     {
                         headers: {
                             'Accept': 'application/json',
