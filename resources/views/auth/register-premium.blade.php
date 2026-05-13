@@ -11,9 +11,8 @@
     </div>
 
     <!-- Registration Form -->
-    <form method="POST" action="{{ route('register') }}" class="space-y-5" id="register-form">
+    <form method="POST" action="{{ route('register') }}" class="space-y-5">
         @csrf
-        <input type="hidden" id="recaptcha_token" name="recaptcha_token" value="" />
 
         <!-- Full Name -->
         <div class="space-y-2.5">
@@ -147,16 +146,9 @@
         </div>
 
         <!-- Sign Up Button -->
-        <button type="button" onclick="handleRegisterSubmit(event)" class="auth-btn-primary mt-2" id="register-btn">
+        <button type="submit" class="auth-btn-primary mt-2">
             Create account
         </button>
-
-        <!-- reCAPTCHA Error Message -->
-        @error('recaptcha_token')
-            <div class="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/30 rounded-lg text-sm text-red-700 dark:text-red-200">
-                Security verification failed. Please try again.
-            </div>
-        @enderror
     </form>
 
     <!-- Divider -->
@@ -204,65 +196,4 @@
     </div>
 </div>
 
-@php
-    $recaptchaService = new \App\Services\RecaptchaService();
-    $siteKey = $recaptchaService->getSiteKey();
-@endphp
-
-<!-- Always load reCAPTCHA for bot protection -->
-<script src="https://www.google.com/recaptcha/api.js"></script>
-<script>
-async function handleRegisterSubmit(event) {
-    event.preventDefault();
-
-    const form = document.getElementById('register-form');
-    const btn = document.getElementById('register-btn');
-    const originalText = btn.textContent;
-    const siteKey = '{{ $siteKey }}';
-
-    try {
-        // Require reCAPTCHA verification for bot protection
-        if (!siteKey || siteKey.trim() === '') {
-            console.error('reCAPTCHA site key not configured');
-            alert('Registration is temporarily unavailable. Please contact support.');
-            return;
-        }
-
-        // Check if reCAPTCHA script loaded
-        if (typeof grecaptcha === 'undefined') {
-            console.error('reCAPTCHA script failed to load');
-            alert('Security verification unavailable. Please refresh the page and try again.');
-            btn.disabled = false;
-            btn.textContent = originalText;
-            return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = 'Verifying security...';
-
-        // Execute reCAPTCHA verification (required)
-        const token = await grecaptcha.execute(siteKey, { action: 'register' });
-
-        if (!token) {
-            console.error('reCAPTCHA failed to generate token');
-            alert('Security verification failed. Please refresh and try again.');
-            btn.disabled = false;
-            btn.textContent = originalText;
-            return;
-        }
-
-        // Populate hidden token field
-        document.getElementById('recaptcha_token').value = token;
-        console.log('reCAPTCHA verification successful');
-
-        // Submit form
-        form.submit();
-    } catch (error) {
-        console.error('reCAPTCHA error:', error);
-        alert('Security verification failed. Please refresh the page and try again.');
-        btn.disabled = false;
-        btn.textContent = originalText;
-    }
-}
-</script>
 @endsection

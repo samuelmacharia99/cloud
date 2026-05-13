@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\EmailVerificationCodeController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
@@ -18,6 +19,16 @@ Route::middleware('guest')->group(function () {
 
     Route::post('register', [RegisteredUserController::class, 'store'])
         ->middleware('throttle:5,1');
+
+    // Email verification code routes
+    Route::get('verify-email-code', [EmailVerificationCodeController::class, 'show'])
+        ->name('verification.code.show');
+
+    Route::post('verify-email-code', [EmailVerificationCodeController::class, 'verify'])
+        ->name('verification.code.verify');
+
+    Route::post('resend-verification-code', [EmailVerificationCodeController::class, 'resend'])
+        ->name('verification.code.resend');
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');

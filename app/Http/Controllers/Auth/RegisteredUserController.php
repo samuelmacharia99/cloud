@@ -4,12 +4,11 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
-use App\Services\RecaptchaService;
-use Illuminate\Auth\Events\Registered;
+use App\Models\EmailVerificationCode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -31,36 +30,45 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        $recaptchaService = new RecaptchaService();
-
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'company' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
             'agree' => ['required', 'accepted'],
-            'recaptcha_token' => ['required', 'string'],
         ]);
 
-        // Always verify reCAPTCHA token (required for bot protection)
-        $token = $validated['recaptcha_token'];
-        if (!$recaptchaService->verify($token, 'register', 0.5)) {
-            throw ValidationException::withMessages([
-                'recaptcha_token' => 'Security verification failed. Please try again.',
-            ]);
-        }
-
+        // Create user with unverified email
         $user = User::create([
-            'name' => $request->name,
-            'company' => $request->company,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
+            'name' => $validated['name'],
+            'company' => $validated['company'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'email_verified_at' => null,
         ]);
 
-        event(new Registered($user));
+        // Generate verification code (6 digits)
+        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-        Auth::login($user);
+        // Store verification code
+        EmailVerificationCode::create([
+            'user_id' => $user->id,
+            'code' => $code,
+            'expires_at' => now()->addMinutes(30),
+        ]);
 
-        return redirect(route('dashboard', absolute: false));
+        // Send verification email with code
+        Mail::send('emails.verification-code', [
+            'name' => $user->name,
+            'code' => $code,
+        ], function ($message) use ($user) {
+            $message->to($user->email)
+                    ->subject('Verify Your Email Address');
+        });
+
+        // Redirect to verification page
+        return redirect()->route('verification.code.show')
+                        ->with('email', $user->email)
+                        ->with('message', 'We sent a verification code to your email. Please enter it below.');
     }
 }
