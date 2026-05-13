@@ -198,15 +198,12 @@ class DomainController extends Controller
 
     public function edit(Domain $domain)
     {
-        $extensions = DomainExtension::where('enabled', true)->orderBy('extension')->pluck('extension');
-
-        return view('admin.domains.edit', compact('domain', 'extensions'));
+        return view('admin.domains.edit', compact('domain'));
     }
 
     public function update(Request $request, Domain $domain)
     {
         $validated = $request->validate([
-            'extension' => 'required|exists:domain_extensions,extension',
             'registrar' => 'nullable|string',
             'status' => 'required|in:pending,active,expired,suspended',
             'registered_at' => 'nullable|date',
