@@ -124,6 +124,7 @@ class CheckoutController extends Controller
                 'user_id' => $reseller->id,
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'status' => 'unpaid',
+                'due_date' => now()->addDays((int) \App\Models\Setting::getValue('invoice_due_days', 30)),
                 'subtotal' => $subtotal,
                 'tax' => $taxEnabled ? $tax : 0,
                 'total' => $total,
