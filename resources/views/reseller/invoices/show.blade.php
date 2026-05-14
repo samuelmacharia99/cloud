@@ -290,10 +290,9 @@
             </div>
         </div>
     </div>
-</div>
 
-<!-- Payment Method Modal -->
-<div x-show="showPaymentModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" @click.outside="closePaymentModal()">
+    <!-- Payment Method Modal -->
+    <div x-show="showPaymentModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center" @click.outside="closePaymentModal()">
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-lg w-full mx-4">
         <!-- Header -->
         <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
@@ -355,6 +354,7 @@
                 </div>
             </template>
         </div>
+    </div>
     </div>
 </div>
 
