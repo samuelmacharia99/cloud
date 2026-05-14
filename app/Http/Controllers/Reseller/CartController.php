@@ -34,36 +34,32 @@ class CartController extends Controller
 
     public function add(Request $request)
     {
-        if ($request->wantsJson()) {
-            $validated = $request->validate([
-                'domain' => 'required|string|max:255',
-                'extension' => 'required|string',
-                'years' => 'required|integer|min:1|max:10',
-                'price' => 'required|numeric|min:0',
-            ]);
+        $validated = $request->validate([
+            'domain' => 'required|string|max:255',
+            'extension' => 'required|string',
+            'years' => 'required|integer|min:1|max:10',
+            'price' => 'required|numeric|min:0',
+        ]);
 
-            $cart = session()->get(self::CART_KEY, []);
-            $key = uniqid();
+        $cart = session()->get(self::CART_KEY, []);
+        $key = uniqid();
 
-            $cart[$key] = [
-                'type' => 'domain',
-                'domain' => strtolower($validated['domain']),
-                'extension' => $validated['extension'],
-                'years' => (int) $validated['years'],
-                'price' => (float) $validated['price'],
-                'added_at' => now()->toIso8601String(),
-            ];
+        $cart[$key] = [
+            'type' => 'domain',
+            'domain' => strtolower($validated['domain']),
+            'extension' => $validated['extension'],
+            'years' => (int) $validated['years'],
+            'price' => (float) $validated['price'],
+            'added_at' => now()->toIso8601String(),
+        ];
 
-            session()->put(self::CART_KEY, $cart);
+        session()->put(self::CART_KEY, $cart);
 
-            return response()->json([
-                'success' => true,
-                'item_count' => count($cart),
-                'message' => 'Domain added to cart',
-            ]);
-        }
-
-        return redirect()->route('reseller.cart.index');
+        return response()->json([
+            'success' => true,
+            'item_count' => count($cart),
+            'message' => 'Domain added to cart',
+        ]);
     }
 
     public function remove(string $key)

@@ -280,6 +280,7 @@ function domainSearchManager() {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
                     },
                     body: JSON.stringify({
@@ -289,6 +290,20 @@ function domainSearchManager() {
                         price: price
                     })
                 });
+
+                if (!res.ok) {
+                    const contentType = res.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const errorData = await res.json();
+                        console.error('Server error:', errorData);
+                        alert(errorData.message || 'Failed to add to cart');
+                    } else {
+                        const errorText = await res.text();
+                        console.error('Server error:', errorText);
+                        alert('Server error: ' + res.status + ' ' + res.statusText);
+                    }
+                    return;
+                }
 
                 const data = await res.json();
                 if (data.success) {
@@ -307,7 +322,7 @@ function domainSearchManager() {
                 }
             } catch (error) {
                 console.error('Cart error:', error);
-                alert('Error adding to cart. Please try again.');
+                alert('Error adding to cart: ' + error.message);
             } finally {
                 this.adding = false;
             }
