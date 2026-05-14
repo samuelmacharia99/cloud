@@ -85,7 +85,16 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
-        return view('reseller.payment.verify-mpesa', compact('invoice'));
+        try {
+            return view('reseller.payment.verify-mpesa', compact('invoice'));
+        } catch (\Exception $e) {
+            \Log::error('verifyMpesa error', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            throw $e;
+        }
     }
 
     public function mpesaStatus(Invoice $invoice)
