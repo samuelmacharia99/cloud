@@ -140,6 +140,7 @@ class CheckoutController extends Controller
                     'description' => $itemData['description'],
                     'quantity' => $itemData['quantity'],
                     'unit_price' => $itemData['unit_price'],
+                    'amount' => $itemData['quantity'] * $itemData['unit_price'],
                     'custom_options' => $itemData['custom_options'],
                 ]);
             }
