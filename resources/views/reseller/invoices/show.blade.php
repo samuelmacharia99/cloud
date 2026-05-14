@@ -328,12 +328,12 @@
             <template x-if="!loadingGateways && Object.keys(gateways).length > 0">
                 <form @submit.prevent="submitPayment()">
                     <div class="space-y-3">
-                        <template x-for="(gateway, key) in Object.entries(gateways)" :key="key">
-                            <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition" :class="selectedGateway === key[0] ? 'border-purple-500 bg-purple-50 dark:bg-purple-950' : 'border-slate-200 dark:border-slate-700 hover:border-purple-300'">
-                                <input type="radio" name="method" :value="key[0]" x-model="selectedGateway" class="w-5 h-5 mt-1 rounded-full border-slate-300 text-purple-600 focus:ring-0 focus:border-purple-500 transition">
+                        <template x-for="(entry, index) in Object.entries(gateways)" :key="index">
+                            <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition" :class="selectedGateway === entry[0] ? 'border-purple-500 bg-purple-50 dark:bg-purple-950' : 'border-slate-200 dark:border-slate-700 hover:border-purple-300'">
+                                <input type="radio" name="method" :value="entry[0]" x-model="selectedGateway" class="w-5 h-5 mt-1 rounded-full border-slate-300 text-purple-600 focus:ring-0 focus:border-purple-500 transition">
                                 <div class="ml-4 flex-1">
-                                    <p class="font-semibold text-slate-900 dark:text-white" x-text="key[1].label"></p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="key[1].description"></p>
+                                    <p class="font-semibold text-slate-900 dark:text-white" x-text="entry[1].label"></p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="entry[1].description"></p>
                                 </div>
                             </label>
                         </template>
