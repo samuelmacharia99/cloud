@@ -27,6 +27,10 @@ class PaymentController extends Controller
 
         $gateways = $this->gatewayFactory->getAvailableGateways();
 
+        if (request()->wantsJson()) {
+            return response()->json(['gateways' => $gateways]);
+        }
+
         return view('reseller.payment.select-method', compact('invoice', 'gateways'));
     }
 
@@ -34,7 +38,11 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
-        $request->validate(['method' => 'required|string']);
+        $request->validate([
+            'method' => 'required|string|in:mpesa,stripe,paypal,manual',
+            'phone' => 'required_if:method,mpesa|nullable|string',
+        ]);
+
         $method = $request->input('method');
 
         try {
@@ -55,7 +63,7 @@ class PaymentController extends Controller
             return redirect()->route('reseller.invoices.show', $invoice)
                 ->with('error', 'Payment initiation failed');
         } catch (\Exception $e) {
-            return redirect()->route('reseller.payment.select-method', $invoice)
+            return redirect()->back()
                 ->with('error', 'Payment initiation failed: ' . $e->getMessage());
         }
     }
