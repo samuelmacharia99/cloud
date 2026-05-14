@@ -192,4 +192,21 @@ class DomainPushService
             $this->notificationService->sendDomainFailedNotification($order);
         });
     }
+
+    public function pushOrderWithDirectPayment(ResellerDomainOrder $order): void
+    {
+        $this->db->transaction(function () use ($order) {
+            // No wallet debit — payment received directly via M-Pesa/Stripe/etc.
+            $adminOrder = $this->createAdminOrderForDomain($order, $order->reseller);
+
+            $order->update([
+                'status' => 'pushed',
+                'pushed_at' => now(),
+                'admin_order_id' => $adminOrder->id,
+                'admin_invoice_id' => $adminOrder->invoice_id ?? null,
+            ]);
+
+            $this->notificationService->sendDomainPushedNotification($order);
+        });
+    }
 }

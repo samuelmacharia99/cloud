@@ -190,7 +190,7 @@
                         <h1 class="hidden sm:block text-lg font-semibold">@yield('title')</h1>
                     </div>
 
-                    <!-- Right: Dark Mode + Account -->
+                    <!-- Right: Dark Mode + Cart + Account -->
                     <div class="flex items-center gap-4 ml-auto">
                         <!-- Dark Mode Toggle Switch -->
                         <div class="flex items-center gap-2 px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
@@ -204,6 +204,19 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 015.646 5.646 9.001 9.001 0 0120.354 15.354z"/>
                             </svg>
                         </div>
+
+                        <!-- Shopping Cart Icon -->
+                        <a href="{{ route('reseller.cart.index') }}" class="relative p-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+                            </svg>
+                            @php $cartCount = session('reseller_cart') ? count(session('reseller_cart')) : 0; @endphp
+                            @if($cartCount > 0)
+                                <span id="cart-count-badge" class="absolute -top-1 -right-1 bg-purple-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">{{ $cartCount }}</span>
+                            @else
+                                <span id="cart-count-badge" class="absolute -top-1 -right-1 bg-purple-600 text-white text-xs font-bold rounded-full w-5 h-5 items-center justify-center hidden"></span>
+                            @endif
+                        </a>
 
                         <!-- Account Dropdown -->
                         <div class="relative" x-data="{ accountOpen: false }">

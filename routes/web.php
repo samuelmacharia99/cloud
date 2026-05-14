@@ -250,6 +250,27 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/domain-orders', [\App\Http\Controllers\Reseller\DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
         Route::post('reseller/domain-orders/{order}/push', [\App\Http\Controllers\Reseller\DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
         Route::post('reseller/domain-orders/{order}/retry', [\App\Http\Controllers\Reseller\DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
+
+        // Reseller Cart
+        Route::get('reseller/cart', [\App\Http\Controllers\Reseller\CartController::class, 'index'])->name('reseller.cart.index');
+        Route::post('reseller/cart/add', [\App\Http\Controllers\Reseller\CartController::class, 'add'])->name('reseller.cart.add');
+        Route::delete('reseller/cart/{key}', [\App\Http\Controllers\Reseller\CartController::class, 'remove'])->name('reseller.cart.remove');
+        Route::post('reseller/cart/clear', [\App\Http\Controllers\Reseller\CartController::class, 'clear'])->name('reseller.cart.clear');
+
+        // Reseller Checkout
+        Route::get('reseller/checkout', [\App\Http\Controllers\Reseller\CheckoutController::class, 'show'])->name('reseller.checkout.show');
+        Route::post('reseller/checkout', [\App\Http\Controllers\Reseller\CheckoutController::class, 'process'])->name('reseller.checkout.process');
+
+        // Reseller Payments
+        Route::get('reseller/invoices/{invoice}/pay', [\App\Http\Controllers\Reseller\PaymentController::class, 'selectMethod'])->name('reseller.payment.select-method');
+        Route::post('reseller/invoices/{invoice}/pay', [\App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->name('reseller.payment.initiate');
+        Route::get('reseller/invoices/{invoice}/pay/mpesa/verify', [\App\Http\Controllers\Reseller\PaymentController::class, 'verifyMpesa'])->name('reseller.payment.verify-mpesa');
+        Route::get('reseller/invoices/{invoice}/pay/mpesa/status', [\App\Http\Controllers\Reseller\PaymentController::class, 'mpesaStatus'])->name('reseller.payment.mpesa-status');
+        Route::get('reseller/invoices/{invoice}/payment/success', [\App\Http\Controllers\Reseller\PaymentController::class, 'success'])->name('reseller.payment.success');
+        Route::get('reseller/invoices/{invoice}/payment/stripe/success', [\App\Http\Controllers\Reseller\PaymentController::class, 'stripeSuccess'])->name('reseller.payment.stripe.success');
+        Route::get('reseller/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Reseller\PaymentController::class, 'stripeCancel'])->name('reseller.payment.stripe.cancel');
+        Route::get('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualForm'])->name('reseller.payment.manual-form');
+        Route::post('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualSubmit'])->name('reseller.payment.manual-submit');
     });
 
     // Customer-only routes

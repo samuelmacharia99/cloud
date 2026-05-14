@@ -23,6 +23,11 @@
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-6">Register a New Domain</h2>
 
         <div class="space-y-6">
+            <!-- Success Flash Message -->
+            <div x-show="addedMessage" x-transition class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                <p class="text-sm text-emerald-900 dark:text-emerald-300" x-text="addedMessage"></p>
+            </div>
+
             <!-- Search Form -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div class="md:col-span-2">
@@ -32,9 +37,9 @@
                             x-model="domainName"
                             @keyup.enter="searchDomains()"
                             placeholder="e.g., example.com"
-                            class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                            class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">
                         <button @click="searchDomains()"
-                            class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                            class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
                             Search
                         </button>
                     </div>
@@ -43,7 +48,7 @@
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Period</label>
                     <select x-model="selectedPeriod" @change="searchDomains()"
-                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">
                         <option value="1">1 Year</option>
                         <option value="2">2 Years</option>
                         <option value="3">3 Years</option>
@@ -56,7 +61,7 @@
             <!-- Search Results -->
             <div x-show="searchPerformed" x-transition class="mt-6 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                 <div x-show="searching" class="flex items-center justify-center gap-2">
-                    <div class="w-4 h-4 bg-blue-600 rounded-full animate-bounce"></div>
+                    <div class="w-4 h-4 bg-purple-600 rounded-full animate-bounce"></div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Checking domain availability...</p>
                 </div>
 
@@ -75,8 +80,10 @@
                                     </p>
                                 </div>
                                 <button @click="addToCart(result.domain, result.extension, result.price, selectedPeriod)"
-                                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm transition">
-                                    Add
+                                    :disabled="adding"
+                                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 text-white font-medium rounded-lg text-sm transition">
+                                    <span x-show="!adding">Add to Cart</span>
+                                    <span x-show="adding">Adding...</span>
                                 </button>
                             </div>
                         </template>
@@ -196,6 +203,8 @@ function domainSearchManager() {
         searching: false,
         searchPerformed: false,
         searchResults: [],
+        adding: false,
+        addedMessage: '',
 
         async searchDomains() {
             const input = this.domainName.trim().toLowerCase();
@@ -260,31 +269,48 @@ function domainSearchManager() {
             }
         },
 
-        addToCart(domain, extension, price, period) {
-            // Get existing cart or create new one
-            let cart = JSON.parse(localStorage.getItem('cart') || '[]');
+        async addToCart(domain, extension, price, period) {
+            this.adding = true;
 
-            // Extract domain name (without extension)
-            const domainName = domain.substring(0, domain.lastIndexOf('.'));
+            try {
+                // Extract domain name (without extension)
+                const domainName = domain.substring(0, domain.lastIndexOf('.'));
 
-            // Add domain to cart
-            cart.push({
-                type: 'domain',
-                domain: domainName,
-                extension: extension,
-                full_domain: domain,
-                years: parseInt(period),
-                price: price
-            });
+                const res = await fetch('{{ route("reseller.cart.add") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                    },
+                    body: JSON.stringify({
+                        domain: domainName,
+                        extension: extension,
+                        years: parseInt(period),
+                        price: price
+                    })
+                });
 
-            // Save to localStorage
-            localStorage.setItem('cart', JSON.stringify(cart));
+                const data = await res.json();
+                if (data.success) {
+                    // Update nav cart badge
+                    const badge = document.getElementById('cart-count-badge');
+                    if (badge) {
+                        badge.textContent = data.item_count;
+                        badge.classList.remove('hidden');
+                    }
 
-            // Show success message
-            alert(`${domain} added to cart!`);
-
-            // Optionally redirect to checkout
-            // window.location.href = '{{ route("checkout.show.public") }}';
+                    // Show success message
+                    this.addedMessage = `${domain} added to cart!`;
+                    setTimeout(() => this.addedMessage = '', 3000);
+                } else {
+                    alert(data.message || 'Failed to add to cart');
+                }
+            } catch (error) {
+                console.error('Cart error:', error);
+                alert('Error adding to cart. Please try again.');
+            } finally {
+                this.adding = false;
+            }
         }
     }
 }
