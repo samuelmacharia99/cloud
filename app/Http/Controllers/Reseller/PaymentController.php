@@ -52,16 +52,25 @@ class PaymentController extends Controller
                 'phone' => $request->input('phone'),
             ]);
 
+            if (!($initiateData['success'] ?? false)) {
+                return redirect()->back()
+                    ->with('error', $initiateData['message'] ?? 'Payment initiation failed');
+            }
+
+            if ($method === 'mpesa') {
+                return redirect()->route('reseller.payment.verify-mpesa', $invoice);
+            }
+
+            if (isset($initiateData['checkout_url'])) {
+                return redirect($initiateData['checkout_url']);
+            }
+
             if (isset($initiateData['redirect_url'])) {
                 return redirect($initiateData['redirect_url']);
             }
 
-            if (isset($initiateData['requires_verification'])) {
-                return redirect()->route('reseller.payment.verify-mpesa', $invoice);
-            }
-
             return redirect()->route('reseller.invoices.show', $invoice)
-                ->with('error', 'Payment initiation failed');
+                ->with('success', 'Payment initiated. Please check your email for payment instructions.');
         } catch (\Exception $e) {
             return redirect()->back()
                 ->with('error', 'Payment initiation failed: ' . $e->getMessage());
@@ -80,7 +89,7 @@ class PaymentController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403);
 
         $payment = Payment::where('invoice_id', $invoice->id)
-            ->where('method', 'mpesa')
+            ->where('payment_method', 'mpesa')
             ->where('status', '!=', PaymentStatus::Completed)
             ->latest()
             ->first();
@@ -128,7 +137,7 @@ class PaymentController extends Controller
 
         try {
             $payment = Payment::where('invoice_id', $invoice->id)
-                ->where('method', 'stripe')
+                ->where('payment_method', 'stripe')
                 ->where('status', '!=', PaymentStatus::Completed)
                 ->latest()
                 ->first();
