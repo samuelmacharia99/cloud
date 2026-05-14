@@ -64,7 +64,44 @@
         this.showPaymentModal = false;
     },
 
-    async submitPayment() {
+    submitPayment() {
+        if (!this.selectedGateway) {
+            alert('Please select a payment method');
+            return;
+        }
+
+        this.submitting = true;
+
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ route("reseller.payment.initiate", $invoice) }}';
+
+        const methodInput = document.createElement('input');
+        methodInput.type = 'hidden';
+        methodInput.name = 'method';
+        methodInput.value = this.selectedGateway;
+        form.appendChild(methodInput);
+
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = '_token';
+        csrfInput.value = document.querySelector('meta[name=csrf-token]').content;
+        form.appendChild(csrfInput);
+
+        if (this.selectedGateway === 'mpesa' && this.mpesaPhone) {
+            const phoneInput = document.createElement('input');
+            phoneInput.type = 'hidden';
+            phoneInput.name = 'phone';
+            phoneInput.value = this.mpesaPhone;
+            form.appendChild(phoneInput);
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+    },
+
+    async submitPaymentOld() {
+        // Keep old version for reference
         if (!this.selectedGateway) {
             alert('Please select a payment method');
             return;
