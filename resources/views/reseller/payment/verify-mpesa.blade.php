@@ -26,7 +26,7 @@
                 </p>
             </div>
 
-            <div x-data="{ checking: true, message: 'Waiting for payment confirmation...', completed: false }"
+            <div x-data="{ checking: true, message: 'Waiting for payment confirmation...', completed: false, failed: false }"
                  x-init="async function() {
                      let attempts = 0;
                      const maxAttempts = 120; // 2 minutes
@@ -42,8 +42,13 @@
                                  setTimeout(() => {
                                      window.location.href = '{{ route('reseller.payment.success', $invoice) }}';
                                  }, 2000);
+                             } else if (data.status === 'failed') {
+                                 this.checking = false;
+                                 this.failed = true;
+                                 this.message = data.message || 'Payment was cancelled or failed';
                              } else if (data.status === 'error') {
                                  this.checking = false;
+                                 this.failed = true;
                                  this.message = 'Payment verification failed: ' + (data.message || 'Unknown error');
                              }
                          } catch (e) {
@@ -70,7 +75,7 @@
                 <p :class="{
                     'text-green-700 dark:text-green-300': completed,
                     'text-slate-600 dark:text-slate-400': !completed && checking,
-                    'text-red-700 dark:text-red-300': !completed && !checking
+                    'text-red-700 dark:text-red-300': failed
                 }" class="text-sm font-medium" x-text="message">
                 </p>
 

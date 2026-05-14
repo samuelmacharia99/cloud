@@ -103,12 +103,24 @@ class PaymentController extends Controller
 
         $payment = Payment::where('invoice_id', $invoice->id)
             ->where('payment_method', 'mpesa')
-            ->where('status', '!=', PaymentStatus::Completed)
             ->latest()
             ->first();
 
         if (!$payment) {
             return response()->json(['status' => 'error', 'message' => 'Payment not found']);
+        }
+
+        // Check current payment status first (may have been updated by callback)
+        if ($payment->status->value === 'completed') {
+            return response()->json(['status' => 'completed']);
+        }
+
+        if ($payment->status->value === 'failed') {
+            $notes = json_decode($payment->notes, true) ?? [];
+            return response()->json([
+                'status' => 'failed',
+                'message' => $notes['result_desc'] ?? 'Payment was cancelled or failed'
+            ]);
         }
 
         try {
@@ -117,7 +129,6 @@ class PaymentController extends Controller
 
             if ($result['status'] === 'completed') {
                 $this->processPaymentCompletion($payment, $invoice);
-
                 return response()->json(['status' => 'completed']);
             }
 
