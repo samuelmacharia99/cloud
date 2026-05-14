@@ -3,91 +3,91 @@
 @section('title', 'Invoice ' . $invoice->invoice_number)
 
 @section('content')
-<script>
-window.invoicePaymentModal = function() {
-    return {
-        showPaymentModal: false,
-        loadingGateways: false,
-        gateways: {},
-        selectedGateway: '',
-        mpesaPhone: '',
-        submitting: false,
+<div class="space-y-6" @load.window="
+    $watch('showPaymentModal', function(val) {
+        if (val) {
+            // Modal opened, don't need to do anything
+        }
+    })
+" x-data="{
+    showPaymentModal: false,
+    loadingGateways: false,
+    gateways: {},
+    selectedGateway: '',
+    mpesaPhone: '',
+    submitting: false,
 
-        async openPaymentModal() {
-            this.showPaymentModal = true;
-            this.loadingGateways = true;
-            this.selectedGateway = '';
-            this.mpesaPhone = '';
+    async openPaymentModal() {
+        this.showPaymentModal = true;
+        this.loadingGateways = true;
+        this.selectedGateway = '';
+        this.mpesaPhone = '';
 
-            try {
-                const res = await fetch('{{ route("reseller.payment.select-method", $invoice) }}', {
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    this.gateways = data.gateways || {};
-                    if (Object.keys(this.gateways).length > 0) {
-                        this.selectedGateway = Object.keys(this.gateways)[0];
-                    }
-                } else {
-                    alert('Failed to load payment methods');
+        try {
+            const res = await fetch('{{ route("reseller.payment.select-method", $invoice) }}', {
+                headers: {
+                    'Accept': 'application/json'
                 }
-            } catch (error) {
-                console.error('Error loading gateways:', error);
-                alert('Error loading payment methods');
-            } finally {
-                this.loadingGateways = false;
-            }
-        },
+            });
 
-        closePaymentModal() {
-            this.showPaymentModal = false;
-        },
-
-        async submitPayment() {
-            if (!this.selectedGateway) {
-                alert('Please select a payment method');
-                return;
-            }
-
-            this.submitting = true;
-
-            try {
-                const formData = new FormData();
-                formData.append('method', this.selectedGateway);
-                if (this.selectedGateway === 'mpesa' && this.mpesaPhone) {
-                    formData.append('phone', this.mpesaPhone);
+            if (res.ok) {
+                const data = await res.json();
+                this.gateways = data.gateways || {};
+                if (Object.keys(this.gateways).length > 0) {
+                    this.selectedGateway = Object.keys(this.gateways)[0];
                 }
-
-                const res = await fetch('{{ route("reseller.payment.initiate", $invoice) }}', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
-                    },
-                    body: formData
-                });
-
-                if (res.ok) {
-                    window.location.href = res.url || '{{ route("reseller.invoices.show", $invoice) }}';
-                } else {
-                    const text = await res.text();
-                    alert('Payment initiation failed: ' + text);
-                }
-            } catch (error) {
-                console.error('Payment error:', error);
-                alert('Error initiating payment: ' + error.message);
-            } finally {
-                this.submitting = false;
+            } else {
+                alert('Failed to load payment methods');
             }
+        } catch (error) {
+            console.error('Error loading gateways:', error);
+            alert('Error loading payment methods');
+        } finally {
+            this.loadingGateways = false;
+        }
+    },
+
+    closePaymentModal() {
+        this.showPaymentModal = false;
+    },
+
+    async submitPayment() {
+        if (!this.selectedGateway) {
+            alert('Please select a payment method');
+            return;
+        }
+
+        this.submitting = true;
+
+        try {
+            const formData = new FormData();
+            formData.append('method', this.selectedGateway);
+            if (this.selectedGateway === 'mpesa' && this.mpesaPhone) {
+                formData.append('phone', this.mpesaPhone);
+            }
+
+            const res = await fetch('{{ route("reseller.payment.initiate", $invoice) }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                },
+                body: formData
+            });
+
+            if (res.ok) {
+                window.location.href = res.url || '{{ route("reseller.invoices.show", $invoice) }}';
+            } else {
+                const text = await res.text();
+                alert('Payment initiation failed: ' + text);
+            }
+        } catch (error) {
+            console.error('Payment error:', error);
+            alert('Error initiating payment: ' + error.message);
+        } finally {
+            this.submitting = false;
         }
     }
-};
-</script>
-
-<div class="space-y-6" x-data="invoicePaymentModal()">
+}">
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
