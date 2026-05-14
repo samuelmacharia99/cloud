@@ -312,7 +312,7 @@
                 </div>
             </template>
 
-            <template x-if="!loadingGateways && gateways.length > 0">
+            <template x-if="!loadingGateways && Object.keys(gateways).length > 0">
                 <form @submit.prevent="submitPayment()">
                     <div class="space-y-3">
                         <template x-for="(gateway, key) in Object.entries(gateways)" :key="key">
@@ -348,7 +348,7 @@
                 </form>
             </template>
 
-            <template x-if="!loadingGateways && gateways.length === 0">
+            <template x-if="!loadingGateways && Object.keys(gateways).length === 0">
                 <div class="text-center py-8">
                     <p class="text-slate-600 dark:text-slate-400">No payment methods available. Please contact support.</p>
                 </div>
