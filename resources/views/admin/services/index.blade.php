@@ -86,21 +86,21 @@
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst($service->billing_cycle) }}</td>
                             <td class="px-6 py-4">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                    @if($service->status === 'active')
+                                    @if($service->status->value === 'active')
                                         bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                    @elseif($service->status === 'pending')
+                                    @elseif($service->status->value === 'pending')
                                         bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                    @elseif($service->status === 'provisioning')
+                                    @elseif($service->status->value === 'provisioning')
                                         bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                    @elseif($service->status === 'suspended')
+                                    @elseif($service->status->value === 'suspended')
                                         bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                                    @elseif($service->status === 'terminated')
+                                    @elseif($service->status->value === 'terminated')
                                         bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                    @elseif($service->status === 'failed')
+                                    @elseif($service->status->value === 'failed')
                                         bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                                     @endif
                                 ">
-                                    {{ ucfirst($service->status) }}
+                                    {{ ucfirst($service->status->value) }}
                                 </span>
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
