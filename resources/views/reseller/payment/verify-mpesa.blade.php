@@ -71,8 +71,7 @@
                     'text-green-700 dark:text-green-300': completed,
                     'text-slate-600 dark:text-slate-400': !completed && checking,
                     'text-red-700 dark:text-red-300': !completed && !checking
-                }" class="text-sm font-medium">
-                    {{ message }}
+                }" class="text-sm font-medium" x-text="message">
                 </p>
 
                 <div v-if="!checking && !completed" class="flex gap-3 pt-4">
