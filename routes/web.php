@@ -271,6 +271,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Reseller\PaymentController::class, 'stripeCancel'])->name('reseller.payment.stripe.cancel');
         Route::get('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualForm'])->name('reseller.payment.manual-form');
         Route::post('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualSubmit'])->name('reseller.payment.manual-submit');
+        Route::get('reseller/payments/{payment}/submitted', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualSubmitted'])->name('reseller.payment.manual-submitted');
     });
 
     // Customer-only routes

@@ -46,6 +46,10 @@ class PaymentController extends Controller
         $method = $request->input('method');
 
         try {
+            if ($method === 'manual') {
+                return redirect()->route('reseller.payment.manual-form', $invoice);
+            }
+
             $gateway = $this->gatewayFactory->make($method);
 
             $initiateData = $gateway->initiate($invoice, [
@@ -195,6 +199,15 @@ class PaymentController extends Controller
                 ->withInput()
                 ->with('error', 'Failed to submit payment proof: ' . $e->getMessage());
         }
+    }
+
+    public function manualSubmitted(Payment $payment)
+    {
+        abort_if($payment->user_id !== auth()->id(), 403);
+
+        $payment->load('invoice');
+
+        return view('reseller.payment.manual-submitted', ['payment' => $payment]);
     }
 
     private function processPaymentCompletion(Payment $payment, Invoice $invoice)
