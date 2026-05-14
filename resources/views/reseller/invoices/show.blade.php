@@ -24,24 +24,37 @@
         this.mpesaPhone = '';
 
         try {
-            const res = await fetch('{{ route("reseller.payment.select-method", $invoice) }}', {
+            const url = '{{ route("reseller.payment.select-method", $invoice) }}';
+            console.log('Fetching gateways from:', url);
+
+            const res = await fetch(url, {
                 headers: {
                     'Accept': 'application/json'
                 }
             });
 
+            console.log('Response status:', res.status);
+
             if (res.ok) {
                 const data = await res.json();
+                console.log('Gateways received:', data);
                 this.gateways = data.gateways || {};
+                console.log('Gateways set to:', this.gateways);
+
                 if (Object.keys(this.gateways).length > 0) {
                     this.selectedGateway = Object.keys(this.gateways)[0];
+                    console.log('Selected gateway:', this.selectedGateway);
+                } else {
+                    console.warn('No gateways available');
                 }
             } else {
-                alert('Failed to load payment methods');
+                const text = await res.text();
+                console.error('Server error:', res.status, text);
+                alert('Failed to load payment methods: ' + res.status);
             }
         } catch (error) {
             console.error('Error loading gateways:', error);
-            alert('Error loading payment methods');
+            alert('Error loading payment methods: ' + error.message);
         } finally {
             this.loadingGateways = false;
         }
