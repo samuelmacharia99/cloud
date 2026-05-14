@@ -64,7 +64,7 @@
             @endforelse
         </div>
 
-        @if($gateways->isNotEmpty())
+        @if(count($gateways) > 0)
             <div class="flex gap-3 pt-6">
                 <a href="{{ route('reseller.invoices.show', $invoice) }}" class="flex-1 px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition text-center">
                     Back
