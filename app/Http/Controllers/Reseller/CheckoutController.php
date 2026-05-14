@@ -122,6 +122,7 @@ class CheckoutController extends Controller
             // Create invoice
             $invoice = Invoice::create([
                 'user_id' => $reseller->id,
+                'invoice_number' => $this->generateInvoiceNumber(),
                 'status' => 'unpaid',
                 'subtotal' => $subtotal,
                 'tax' => $taxEnabled ? $tax : 0,
@@ -155,5 +156,14 @@ class CheckoutController extends Controller
                 ->withInput()
                 ->with('error', 'Failed to create order: ' . $e->getMessage());
         }
+    }
+
+    private function generateInvoiceNumber(): string
+    {
+        $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+        $date = now()->format('Ymd');
+        $count = Invoice::whereDate('created_at', now())->count() + 1;
+
+        return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
     }
 }
