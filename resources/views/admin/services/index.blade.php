@@ -10,14 +10,16 @@
 <div class="space-y-6" x-data="{
     editOpen: false,
     editId: null,
+    editStatus: '',
     editBillingCycle: '',
     editNextDue: '',
     editCommencedAt: '',
     editUsername: '',
     editPassword: '',
     showPassword: false,
-    openEdit(id, billingCycle, nextDue, commencedAt, username, password) {
+    openEdit(id, status, billingCycle, nextDue, commencedAt, username, password) {
         this.editId = id;
+        this.editStatus = status;
         this.editBillingCycle = billingCycle;
         this.editNextDue = nextDue;
         this.editCommencedAt = commencedAt;
@@ -136,7 +138,7 @@
                                         $credPassword = $credentials['password'] ?? '';
                                     @endphp
 
-                                    <button @click="openEdit({{ $service->id }}, '{{ addslashes($service->billing_cycle) }}', '{{ $service->next_due_date?->format('Y-m-d') }}', '{{ $service->commenced_at?->format('Y-m-d') }}', '{{ addslashes($credUsername) }}', '{{ addslashes($credPassword) }}')" class="px-3 py-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition">
+                                    <button @click="openEdit({{ $service->id }}, '{{ $service->status->value }}', '{{ addslashes($service->billing_cycle) }}', '{{ $service->next_due_date?->format('Y-m-d') }}', '{{ $service->commenced_at?->format('Y-m-d') }}', '{{ addslashes($credUsername) }}', '{{ addslashes($credPassword) }}')" class="px-3 py-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition">
                                         Edit
                                     </button>
 
@@ -198,6 +200,17 @@
         <form :action="`{{ url('admin/services') }}/${editId}`" method="POST" class="p-6 space-y-6">
             @csrf
             @method('PUT')
+
+            <!-- Status -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
+                <select x-model="editStatus" name="status" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                    <option value="">No Change</option>
+                    @foreach(\App\Enums\ServiceStatus::cases() as $status)
+                        <option value="{{ $status->value }}">{{ $status->label() }}</option>
+                    @endforeach
+                </select>
+            </div>
 
             <!-- Billing Cycle -->
             <div>

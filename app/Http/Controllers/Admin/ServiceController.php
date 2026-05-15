@@ -279,6 +279,7 @@ class ServiceController extends Controller
     public function update(Request $request, Service $service)
     {
         $validated = $request->validate([
+            'status'         => 'nullable|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
             'billing_cycle'  => 'required|in:monthly,quarterly,semi-annual,annual',
             'next_due_date'  => 'required|date',
             'commenced_at'   => 'nullable|date',
