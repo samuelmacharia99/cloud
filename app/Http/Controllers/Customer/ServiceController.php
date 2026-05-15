@@ -19,6 +19,9 @@ class ServiceController extends Controller
         $services = auth()->user()->services()
             ->with('product')
             ->whereNotIn('status', ['cancelled', 'terminated'])
+            ->whereHas('product', function ($q) {
+                $q->where('type', '!=', 'domain');
+            })
             ->latest()
             ->get();
         return view('customer.services.index', compact('services'));

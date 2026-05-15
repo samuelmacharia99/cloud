@@ -21,7 +21,10 @@ class ServiceController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Service::with(['user', 'product']);
+        $query = Service::with(['user', 'product'])
+            ->whereHas('product', function ($q) {
+                $q->where('type', '!=', 'domain');
+            });
 
         // Search by customer name or service ID
         if ($request->filled('search')) {

@@ -59,7 +59,6 @@
                     <option value="all">All Types</option>
                     <option value="shared_hosting" @selected(request('type') === 'shared_hosting')>Shared Hosting</option>
                     <option value="container_hosting" @selected(request('type') === 'container_hosting')>Container Hosting</option>
-                    <option value="domain" @selected(request('type') === 'domain')>Domain</option>
                     <option value="ssl" @selected(request('type') === 'ssl')>SSL Certificate</option>
                     <option value="email_hosting" @selected(request('type') === 'email_hosting')>Email Hosting</option>
                     <option value="sms_bundle" @selected(request('type') === 'sms_bundle')>SMS Bundle</option>
