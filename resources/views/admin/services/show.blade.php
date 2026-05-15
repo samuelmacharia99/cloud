@@ -22,37 +22,37 @@
                 <!-- Status badge -->
                 <div class="mt-4">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        @if($service->status === 'active')
+                        @if(\$service->status->value === 'active')
                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                        @elseif($service->status === 'pending')
+                        @elseif(\$service->status->value === 'pending')
                             bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                        @elseif($service->status === 'provisioning')
+                        @elseif(\$service->status->value === 'provisioning')
                             bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                        @elseif($service->status === 'suspended')
+                        @elseif(\$service->status->value === 'suspended')
                             bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                        @elseif($service->status === 'terminated')
+                        @elseif(\$service->status->value === 'terminated')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                        @elseif($service->status === 'failed')
+                        @elseif(\$service->status->value === 'failed')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                         @endif
                     ">
-                        {{ ucfirst($service->status) }}
+                        {{ ucfirst(\$service->status->value) }}
                     </span>
                 </div>
             </div>
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
-                @if (in_array($service->status, ['pending', 'provisioning']))
+                @if (in_array(\$service->status->value, ['pending', 'provisioning']))
                     <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="inline">
                         @csrf
-                        <button type="submit" class="px-4 py-2 {{ $service->status === 'provisioning' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700' }} text-white font-medium rounded-lg transition text-sm">
-                            {{ $service->status === 'provisioning' ? 'Retry Provisioning' : 'Provision' }}
+                        <button type="submit" class="px-4 py-2 {{ \$service->status->value === 'provisioning' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700' }} text-white font-medium rounded-lg transition text-sm">
+                            {{ \$service->status->value === 'provisioning' ? 'Retry Provisioning' : 'Provision' }}
                         </button>
                     </form>
                 @endif
 
-                @if ($service->status === 'active')
+                @if (\$service->status->value === 'active')
                     <form method="POST" action="{{ route('admin.services.suspend', $service) }}" class="inline">
                         @csrf
                         <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
@@ -61,7 +61,7 @@
                     </form>
                 @endif
 
-                @if ($service->status === 'suspended')
+                @if (\$service->status->value === 'suspended')
                     <form method="POST" action="{{ route('admin.services.unsuspend', $service) }}" class="inline">
                         @csrf
                         <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
@@ -70,7 +70,7 @@
                     </form>
                 @endif
 
-                @if (in_array($service->status, ['active', 'suspended', 'pending']))
+                @if (in_array(\$service->status->value, ['active', 'suspended', 'pending']))
                     <form method="POST" action="{{ route('admin.services.terminate', $service) }}" class="inline" onsubmit="return confirm('Are you sure you want to terminate this service?');">
                         @csrf
                         <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm">
@@ -105,7 +105,7 @@
                 <div class="grid grid-cols-2 gap-6">
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Status</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ ucfirst($service->status) }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ ucfirst(\$service->status->value) }}</p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Billing Cycle</p>
@@ -138,7 +138,7 @@
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Configuration</h2>
-                    @if ($service->status === 'provisioning')
+                    @if (\$service->status->value === 'provisioning')
                         <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="inline">
                             @csrf
                             <button type="submit" class="px-3 py-1 text-xs bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900 font-medium rounded transition">
