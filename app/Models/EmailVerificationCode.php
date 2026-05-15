@@ -21,4 +21,9 @@ class EmailVerificationCode extends Model
     {
         return $this->expires_at->isPast();
     }
+
+    public function scopeValid($query)
+    {
+        return $query->where('expires_at', '>', now());
+    }
 }
