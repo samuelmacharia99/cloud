@@ -284,13 +284,38 @@ class ServiceController extends Controller
             'commenced_at'   => 'nullable|date',
             'suspend_date'   => 'nullable|date',
             'terminate_date' => 'nullable|date',
+            'username'       => 'nullable|string|max:255',
+            'password'       => 'nullable|string|max:255',
             'notes'          => 'nullable|string|max:2000',
         ]);
 
+        // Merge username/password into credentials JSON if provided
+        if (!empty($validated['username']) || !empty($validated['password'])) {
+            $credentials = is_string($service->credentials)
+                ? json_decode($service->credentials, true) ?? []
+                : ($service->credentials ?? []);
+
+            if (!empty($validated['username'])) {
+                $credentials['username'] = $validated['username'];
+            }
+            if (!empty($validated['password'])) {
+                $credentials['password'] = $validated['password'];
+            }
+
+            $validated['credentials'] = json_encode($credentials);
+        }
+
+        unset($validated['username'], $validated['password']);
         $service->update($validated);
 
-        return redirect()->route('admin.services.show', $service)
-            ->with('success', 'Service updated successfully.');
+        return back()->with('success', 'Service updated successfully.');
+    }
+
+    public function destroy(Service $service)
+    {
+        $service->delete();
+        return redirect()->route('admin.services.index')
+            ->with('success', "Service #{$service->id} deleted.");
     }
 
     public function refreshStatus(Service $service)

@@ -7,7 +7,25 @@
 @endsection
 
 @section('content')
-<div class="space-y-6">
+<div class="space-y-6" x-data="{
+    editOpen: false,
+    editId: null,
+    editBillingCycle: '',
+    editNextDue: '',
+    editCommencedAt: '',
+    editUsername: '',
+    editPassword: '',
+    showPassword: false,
+    openEdit(id, billingCycle, nextDue, commencedAt, username, password) {
+        this.editId = id;
+        this.editBillingCycle = billingCycle;
+        this.editNextDue = nextDue;
+        this.editCommencedAt = commencedAt;
+        this.editUsername = username;
+        this.editPassword = password;
+        this.editOpen = true;
+    }
+}">
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Services</h1>
@@ -111,6 +129,40 @@
                                     <a href="{{ route('admin.services.show', $service) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
                                         View
                                     </a>
+
+                                    @php
+                                        $credentials = is_string($service->credentials) ? json_decode($service->credentials, true) : ($service->credentials ?? []);
+                                        $credUsername = $credentials['username'] ?? '';
+                                        $credPassword = $credentials['password'] ?? '';
+                                    @endphp
+
+                                    <button @click="openEdit({{ $service->id }}, '{{ addslashes($service->billing_cycle) }}', '{{ $service->next_due_date?->format('Y-m-d') }}', '{{ $service->commenced_at?->format('Y-m-d') }}', '{{ addslashes($credUsername) }}', '{{ addslashes($credPassword) }}')" class="px-3 py-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition">
+                                        Edit
+                                    </button>
+
+                                    @if($service->status->value === 'suspended')
+                                        <form method="POST" action="{{ route('admin.services.unsuspend', $service) }}" class="inline">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition">
+                                                Unsuspend
+                                            </button>
+                                        </form>
+                                    @elseif(in_array($service->status->value, ['active', 'pending', 'provisioning', 'failed']))
+                                        <form method="POST" action="{{ route('admin.services.suspend', $service) }}" class="inline">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 transition">
+                                                Suspend
+                                            </button>
+                                        </form>
+                                    @endif
+
+                                    <form method="POST" action="{{ route('admin.services.destroy', $service) }}" class="inline" onsubmit="return confirm('Delete service #{{ $service->id }}? This cannot be undone.')">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">
+                                            Delete
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -129,6 +181,74 @@
     <!-- Pagination -->
     <div class="mt-6">
         {{ $services->links() }}
+    </div>
+
+    <!-- Edit Service Modal -->
+    <div x-show="editOpen" x-transition class="fixed inset-0 bg-black/50 dark:bg-black/70 z-40" @click="editOpen = false" style="display: none;"></div>
+    <div x-show="editOpen" x-transition class="fixed right-0 top-0 bottom-0 w-full max-w-md bg-white dark:bg-slate-900 shadow-2xl z-50 overflow-y-auto" style="display: none;">
+        <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-900">
+            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Edit Service</h2>
+            <button @click="editOpen = false" class="text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <form :action="`{{ url('admin/services') }}/${editId}`" method="POST" class="p-6 space-y-6">
+            @csrf
+            @method('PUT')
+
+            <!-- Billing Cycle -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Billing Cycle</label>
+                <select x-model="editBillingCycle" name="billing_cycle" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="semi-annual">Semi-Annual</option>
+                    <option value="annual">Annual</option>
+                </select>
+            </div>
+
+            <!-- Commenced Date -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Commenced Date</label>
+                <input type="date" x-model="editCommencedAt" name="commenced_at" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+            </div>
+
+            <!-- Next Due Date -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Next Due Date</label>
+                <input type="date" x-model="editNextDue" name="next_due_date" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+            </div>
+
+            <!-- Username -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Username</label>
+                <input type="text" x-model="editUsername" name="username" placeholder="Leave empty to keep current" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+            </div>
+
+            <!-- Password with Toggle -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300">Password</label>
+                    <button type="button" @click="showPassword = !showPassword" class="text-xs text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300">
+                        <span x-text="showPassword ? 'Hide' : 'Show'"></span>
+                    </button>
+                </div>
+                <input :type="showPassword ? 'text' : 'password'" x-model="editPassword" name="password" placeholder="Leave empty to keep current" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                <button type="button" @click="editOpen = false" class="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition">
+                    Cancel
+                </button>
+                <button type="submit" class="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
+                    Save Changes
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 @endsection
