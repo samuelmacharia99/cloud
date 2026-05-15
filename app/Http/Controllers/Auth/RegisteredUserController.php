@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\VerificationCodeMail;
 use App\Models\User;
 use App\Models\EmailVerificationCode;
 use Illuminate\Http\RedirectResponse;
@@ -58,13 +59,7 @@ class RegisteredUserController extends Controller
         ]);
 
         // Send verification email with code
-        Mail::send('emails.verification-code', [
-            'name' => $user->name,
-            'code' => $code,
-        ], function ($message) use ($user) {
-            $message->to($user->email)
-                    ->subject('Verify Your Email Address');
-        });
+        Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
 
         // Redirect to verification page
         return redirect()->route('verification.code.show')

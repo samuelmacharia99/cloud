@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\VerificationCodeMail;
 use App\Models\User;
 use App\Models\EmailVerificationCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class EmailVerificationCodeController extends Controller
@@ -92,13 +94,7 @@ class EmailVerificationCodeController extends Controller
         ]);
 
         // Send verification email
-        \Illuminate\Support\Facades\Mail::send('emails.verification-code', [
-            'name' => $user->name,
-            'code' => $code,
-        ], function ($message) use ($user) {
-            $message->to($user->email)
-                    ->subject('Verify Your Email Address - New Code');
-        });
+        Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
 
         return back()->with('success', 'New verification code sent to your email.');
     }
