@@ -8,7 +8,6 @@ class EmailVerificationCode extends Model
 {
     protected $table = 'email_verification_codes';
     protected $guarded = ['id'];
-    public $timestamps = false;
     protected $casts = [
         'expires_at' => 'datetime',
     ];
