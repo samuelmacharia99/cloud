@@ -132,8 +132,8 @@
                                         <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $service->product?->name ?? 'Product' }} • {{ ucfirst($service->billing_cycle) }}</p>
                                     </div>
                                     <div class="flex items-center gap-3">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $service->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($service->status === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
-                                            {{ ucfirst($service->status) }}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $service->status->value === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($service->status->value === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
+                                            {{ ucfirst($service->status->value) }}
                                         </span>
                                     </div>
                                 </div>

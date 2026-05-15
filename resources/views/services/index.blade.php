@@ -41,8 +41,8 @@
                                 <p class="text-sm text-slate-600">{{ $service->product->name }}</p>
                             </td>
                             <td class="px-6 py-4">
-                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium {{ $service->status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">
-                                    {{ ucfirst($service->status) }}
+                                <span class="inline-block px-3 py-1 rounded-full text-xs font-medium {{ $service->status->value === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">
+                                    {{ ucfirst($service->status->value) }}
                                 </span>
                             </td>
                             <td class="px-6 py-4">

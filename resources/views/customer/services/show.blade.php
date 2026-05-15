@@ -14,21 +14,21 @@
                 <!-- Status badge -->
                 <div class="mt-4">
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        @if($service->status === 'active')
+                        @if($service->status->value === 'active')
                             bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                        @elseif($service->status === 'pending')
+                        @elseif($service->status->value === 'pending')
                             bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                        @elseif($service->status === 'provisioning')
+                        @elseif($service->status->value === 'provisioning')
                             bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                        @elseif($service->status === 'suspended')
+                        @elseif($service->status->value === 'suspended')
                             bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                        @elseif($service->status === 'terminated')
+                        @elseif($service->status->value === 'terminated')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                        @elseif($service->status === 'failed')
+                        @elseif($service->status->value === 'failed')
                             bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
                         @endif
                     ">
-                        {{ ucfirst($service->status) }}
+                        {{ ucfirst($service->status->value) }}
                     </span>
                 </div>
             </div>
@@ -74,7 +74,7 @@
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-slate-600 dark:text-slate-400">Status</span>
-                                <span class="text-slate-900 dark:text-white font-medium">{{ ucfirst($service->status) }}</span>
+                                <span class="text-slate-900 dark:text-white font-medium">{{ ucfirst($service->status->value) }}</span>
                             </div>
                             <div class="flex justify-between">
                                 <span class="text-slate-600 dark:text-slate-400">Created</span>
@@ -118,7 +118,7 @@
                             Cancel Service
                         </button>
                     @endif
-                    @if ($service->status === 'active')
+                    @if ($service->status->value === 'active')
                         <form action="{{ route('customer.services.renew', $service) }}" method="POST" onsubmit="return confirm('Are you sure you want to renew this service? An invoice will be created.');">
                             @csrf
                             <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
@@ -213,7 +213,7 @@
                 </div>
 
                 <!-- Server Credentials (VPS / Dedicated Server) -->
-                @if ($service->status === 'active' && $service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
+                @if ($service->status->value === 'active' && $service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
                         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Server Login Credentials</h3>
                         <div class="space-y-3">
@@ -253,7 +253,7 @@
                             </p>
                         </div>
                     </div>
-                @elseif ($service->status === 'active' && $service->credentials)
+                @elseif ($service->status->value === 'active' && $service->credentials)
                     <!-- Generic credentials display for other product types -->
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
                         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Access Information</h3>

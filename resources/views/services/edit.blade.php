@@ -22,10 +22,10 @@
         <div>
             <label class="block text-sm font-medium text-slate-900 mb-2">Status</label>
             <select name="status" required class="w-full px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                <option value="active" {{ $service->status === 'active' ? 'selected' : '' }}>Active</option>
-                <option value="suspended" {{ $service->status === 'suspended' ? 'selected' : '' }}>Suspended</option>
-                <option value="terminated" {{ $service->status === 'terminated' ? 'selected' : '' }}>Terminated</option>
-                <option value="cancelled" {{ $service->status === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
+                <option value="active" {{ $service->status->value === 'active' ? 'selected' : '' }}>Active</option>
+                <option value="suspended" {{ $service->status->value === 'suspended' ? 'selected' : '' }}>Suspended</option>
+                <option value="terminated" {{ $service->status->value === 'terminated' ? 'selected' : '' }}>Terminated</option>
+                <option value="cancelled" {{ $service->status->value === 'cancelled' ? 'selected' : '' }}>Cancelled</option>
             </select>
             @error('status') <p class="text-red-600 text-sm mt-1">{{ $message }}</p> @enderror
         </div>
