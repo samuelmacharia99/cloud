@@ -214,6 +214,7 @@ class CheckoutController extends Controller
 
                         // Prepare service metadata
                         $serviceMeta = [];
+                        $nodeId = null;
 
                         // For container products, collect environment variables and database selection
                         if ($product->type === 'container_hosting') {
@@ -228,6 +229,13 @@ class CheckoutController extends Controller
                             if (!empty($techstack['database_id'])) {
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
+                        }
+
+                        // For DirectAdmin shared hosting, prepare credentials and node assignment
+                        if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
+                            $daSetup = $this->setupDirectAdminService($product, $user);
+                            $serviceMeta = array_merge($serviceMeta, $daSetup['meta']);
+                            $nodeId = $daSetup['node_id'];
                         }
 
                         // Determine provisioning driver
@@ -246,6 +254,7 @@ class CheckoutController extends Controller
                             'billing_cycle' => $item['billing_cycle'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
                             'provisioning_driver_key' => $provisioningDriver,
+                            'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
                         ]);
 
@@ -387,6 +396,93 @@ class CheckoutController extends Controller
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
         return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Setup DirectAdmin service with node assignment and credentials
+     */
+    private function setupDirectAdminService(Product $product, User $user): array
+    {
+        // Find an active DirectAdmin node (prefer one with fewer services)
+        $node = \App\Models\Node::where('type', 'directadmin')
+            ->where('is_active', true)
+            ->where('status', 'online')
+            ->withCount('services')
+            ->orderBy('services_count')
+            ->first();
+
+        if (!$node) {
+            throw new \Exception('No active DirectAdmin nodes available for provisioning.');
+        }
+
+        // Generate username from customer name/email
+        $baseUsername = $this->generateDirectAdminUsername($user);
+
+        // Generate password (16 chars, complex)
+        $password = $this->generateDirectAdminPassword();
+
+        // Use customer's primary domain or generate one
+        $domain = $user->email ? explode('@', $user->email)[0] . '.local' : $baseUsername . '.local';
+
+        return [
+            'node_id' => $node->id,
+            'meta' => [
+                'username' => $baseUsername,
+                'password' => $password,
+                'domain' => $domain,
+                'node_id' => $node->id,
+                'node_name' => $node->name,
+            ],
+        ];
+    }
+
+    /**
+     * Generate DirectAdmin-safe username
+     */
+    private function generateDirectAdminUsername(User $user): string
+    {
+        // Use first part of email or customer name, sanitized to 16 chars, lowercase
+        $base = explode('@', $user->email)[0] ?? Str::slug($user->name);
+        $username = strtolower(Str::slug(substr($base, 0, 16), ''));
+
+        // Ensure it's not already taken (shouldn't be in practice, but check anyway)
+        $count = Service::where('service_meta->username', $username)->count();
+        if ($count > 0) {
+            $username = $username . substr(uniqid(), -3);
+            $username = substr($username, 0, 16);
+        }
+
+        return $username;
+    }
+
+    /**
+     * Generate DirectAdmin-safe password (16 chars, complex)
+     */
+    private function generateDirectAdminPassword(): string
+    {
+        $chars = [
+            'lower' => 'abcdefghijkmnpqrstuvwxyz', // no o or l
+            'upper' => 'ABCDEFGHJKMNPQRSTUVWXYZ', // no O or I
+            'digit' => '23456789', // no 0 or 1
+            'symbol' => '!@#$%^&*', // avoid ambiguous chars
+        ];
+
+        $password = '';
+        $password .= $chars['lower'][rand(0, strlen($chars['lower']) - 1)];
+        $password .= $chars['upper'][rand(0, strlen($chars['upper']) - 1)];
+        $password .= $chars['digit'][rand(0, strlen($chars['digit']) - 1)];
+        $password .= $chars['symbol'][rand(0, strlen($chars['symbol']) - 1)];
+
+        // Fill rest with random chars
+        for ($i = 4; $i < 16; $i++) {
+            $all = $chars['lower'] . $chars['upper'] . $chars['digit'] . $chars['symbol'];
+            $password .= $all[rand(0, strlen($all) - 1)];
+        }
+
+        // Shuffle to avoid predictable pattern
+        $password = str_shuffle($password);
+
+        return $password;
     }
 
     /**
@@ -635,6 +731,16 @@ class CheckoutController extends Controller
                             'custom_options' => [],
                         ]);
 
+                        // Prepare service metadata and node for DirectAdmin
+                        $serviceMeta = [];
+                        $nodeId = null;
+
+                        if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
+                            $daSetup = $this->setupDirectAdminService($product, $user);
+                            $serviceMeta = $daSetup['meta'];
+                            $nodeId = $daSetup['node_id'];
+                        }
+
                         // Create Service
                         $service = Service::create([
                             'user_id' => $user->id,
@@ -645,6 +751,8 @@ class CheckoutController extends Controller
                             'billing_cycle' => $item['billing_cycle'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
                             'provisioning_driver_key' => $product->provisioning_driver_key,
+                            'node_id' => $nodeId,
+                            'service_meta' => $serviceMeta,
                         ]);
 
                         // Create InvoiceItem
