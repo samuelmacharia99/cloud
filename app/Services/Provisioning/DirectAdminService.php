@@ -66,8 +66,6 @@ class DirectAdminService
     public function createHostingAccount(Service $service, string $username, string $password, string $domain, string $package): array
     {
         try {
-            // STUBBED: In production, uncomment and configure with actual DirectAdmin API
-            /*
             $response = Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
                     'action' => 'create',
@@ -90,20 +88,6 @@ class DirectAdminService
                     'package' => $package,
                 ],
             ];
-            */
-
-            // STUB: Return mock success for now
-            return [
-                'success' => true,
-                'message' => 'Hosting account provisioned (DirectAdmin not configured)',
-                'credentials' => [
-                    'username' => $username,
-                    'password' => $password,
-                    'domain' => $domain,
-                    'package' => $package,
-                    'note' => 'This is a mock response. Configure DirectAdmin credentials in settings.',
-                ],
-            ];
         } catch (\Exception $e) {
             return [
                 'success' => false,
@@ -118,8 +102,6 @@ class DirectAdminService
     public function suspendAccount(Service $service): bool
     {
         try {
-            // STUBBED
-            /*
             $reference = $service->external_reference;
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
@@ -127,7 +109,6 @@ class DirectAdminService
                     'user' => $reference,
                 ])
                 ->throw();
-            */
 
             return true;
         } catch (\Exception $e) {
@@ -145,8 +126,6 @@ class DirectAdminService
     public function unsuspendAccount(Service $service): bool
     {
         try {
-            // STUBBED
-            /*
             $reference = $service->external_reference;
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
@@ -154,7 +133,6 @@ class DirectAdminService
                     'user' => $reference,
                 ])
                 ->throw();
-            */
 
             return true;
         } catch (\Exception $e) {
@@ -172,8 +150,6 @@ class DirectAdminService
     public function terminateAccount(Service $service): bool
     {
         try {
-            // STUBBED
-            /*
             $reference = $service->external_reference;
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
@@ -182,7 +158,6 @@ class DirectAdminService
                     'secure' => 'yes',
                 ])
                 ->throw();
-            */
 
             return true;
         } catch (\Exception $e) {
