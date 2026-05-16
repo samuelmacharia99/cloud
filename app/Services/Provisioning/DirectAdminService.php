@@ -150,6 +150,8 @@ class DirectAdminService
     public function terminateAccount(Service $service): bool
     {
         try {
+            // STUBBED: Termination feature deferred to Phase 2
+            /*
             $reference = $service->external_reference;
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
@@ -158,6 +160,7 @@ class DirectAdminService
                     'secure' => 'yes',
                 ])
                 ->throw();
+            */
 
             return true;
         } catch (\Exception $e) {
