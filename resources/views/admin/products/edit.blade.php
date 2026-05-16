@@ -69,7 +69,7 @@
                     <!-- Type -->
                     <div>
                         <label for="type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type</label>
-                        <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="productType = $el.value" disabled>
+                        <select id="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="productType = $el.value" disabled>
                             <option value="">Select a type...</option>
                             <option value="shared_hosting" @selected(old('type', $product->type) === 'shared_hosting')>Shared Hosting</option>
                             <option value="container_hosting" @selected(old('type', $product->type) === 'container_hosting')>Container Hosting</option>
@@ -78,6 +78,7 @@
                             <option value="ssl" @selected(old('type', $product->type) === 'ssl')>SSL Certificate</option>
                             <option value="email_hosting" @selected(old('type', $product->type) === 'email_hosting')>Email Hosting</option>
                         </select>
+                        <input type="hidden" name="type" value="{{ old('type', $product->type) }}">
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Product type cannot be changed after creation</p>
                         @error('type')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
