@@ -55,7 +55,7 @@ class ProvisioningService
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin' && $service->external_reference) {
-                $daService = new DirectAdminService();
+                $daService = new DirectAdminService($service->node);
                 $daService->suspendAccount($service);
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService();
@@ -85,7 +85,7 @@ class ProvisioningService
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin' && $service->external_reference) {
-                $daService = new DirectAdminService();
+                $daService = new DirectAdminService($service->node);
                 $daService->unsuspendAccount($service);
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService();
@@ -112,7 +112,7 @@ class ProvisioningService
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin' && $service->external_reference) {
-                $daService = new DirectAdminService();
+                $daService = new DirectAdminService($service->node);
                 $daService->terminateAccount($service);
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService();
