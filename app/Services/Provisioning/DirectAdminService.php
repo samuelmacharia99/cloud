@@ -19,12 +19,21 @@ class DirectAdminService
 
     public function __construct(?Node $node = null)
     {
+        \Log::info("DA_CONSTRUCTOR: Initializing DirectAdminService", ['node_id' => $node?->id]);
+
         if ($node) {
             $this->node = $node;
             $this->apiUrl = $node->api_url ?? '';
             // DirectAdmin API requires admin username and login key
             $this->username = $node->da_admin_username ?? Setting::getValue('directadmin_api_user', 'admin');
             $this->password = $node->da_login_key ?? Setting::getValue('directadmin_api_password', '');
+
+            \Log::info("DA_CONSTRUCTOR_LOADED", [
+                'node_id' => $node->id,
+                'api_url' => $this->apiUrl,
+                'username' => $this->username,
+                'has_password' => !empty($this->password),
+            ]);
         } else {
             $this->node = null;
             $this->apiUrl = Setting::getValue('directadmin_api_url', '');
@@ -197,8 +206,12 @@ class DirectAdminService
     public function suspendAccount(Service $service): bool
     {
         try {
+            \Log::info("DA_SUSPEND_START: Service {$service->id} suspend method called");
+
             // Use external_reference if set, otherwise use username from service_meta
             $reference = $service->external_reference ?? $service->service_meta['username'] ?? null;
+
+            \Log::info("DA_SUSPEND_REFERENCE: Service {$service->id} reference = {$reference}");
 
             if (!$reference) {
                 throw new \Exception('No username found for DirectAdmin account');

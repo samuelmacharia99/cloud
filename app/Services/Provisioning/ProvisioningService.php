@@ -52,10 +52,14 @@ class ProvisioningService
     public function suspend(Service $service): void
     {
         try {
+            \Log::info("SUSPEND_START: Service {$service->id} suspend initiated");
+
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
+            \Log::info("SUSPEND_DRIVER: Service {$service->id} driver = {$driver}");
 
             // Check for external_reference OR username in service_meta (for linked existing accounts)
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
+            \Log::info("SUSPEND_REFERENCE: Service {$service->id} hasReference = " . ($hasReference ? 'true' : 'false'));
 
             $suspended = false;
 
