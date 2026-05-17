@@ -66,6 +66,7 @@ class DirectAdminService
     public function createHostingAccount(Service $service, string $username, string $password, string $domain, string $package): array
     {
         try {
+            // Use correct DirectAdmin API endpoint for account creation
             $response = Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
                     'action' => 'create',
@@ -74,9 +75,14 @@ class DirectAdminService
                     'passwd' => $password,
                     'domain' => $domain,
                     'package' => $package,
-                    'notify' => 'yes',
                 ])
                 ->throw();
+
+            \Log::info("DirectAdmin account created: {$username}", [
+                'service_id' => $service->id,
+                'domain' => $domain,
+                'package' => $package,
+            ]);
 
             return [
                 'success' => true,
@@ -89,6 +95,11 @@ class DirectAdminService
                 ],
             ];
         } catch (\Exception $e) {
+            \Log::error("Failed to create DirectAdmin account: {$e->getMessage()}", [
+                'service_id' => $service->id,
+                'username' => $username,
+            ]);
+
             return [
                 'success' => false,
                 'message' => 'Failed to create hosting account: ' . $e->getMessage(),
@@ -110,16 +121,21 @@ class DirectAdminService
             }
 
             Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
+                ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
                     'action' => 'suspend',
-                    'user' => $reference,
+                    'select0' => $reference,
                 ])
                 ->throw();
+
+            \Log::info("DirectAdmin account suspended: {$reference}", [
+                'service_id' => $service->id,
+            ]);
 
             return true;
         } catch (\Exception $e) {
             \Log::error("Failed to suspend DirectAdmin account: {$e->getMessage()}", [
                 'service_id' => $service->id,
+                'username' => $reference ?? 'unknown',
             ]);
 
             return false;
@@ -140,16 +156,21 @@ class DirectAdminService
             }
 
             Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
+                ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
                     'action' => 'unsuspend',
-                    'user' => $reference,
+                    'select0' => $reference,
                 ])
                 ->throw();
+
+            \Log::info("DirectAdmin account unsuspended: {$reference}", [
+                'service_id' => $service->id,
+            ]);
 
             return true;
         } catch (\Exception $e) {
             \Log::error("Failed to unsuspend DirectAdmin account: {$e->getMessage()}", [
                 'service_id' => $service->id,
+                'username' => $reference ?? 'unknown',
             ]);
 
             return false;
