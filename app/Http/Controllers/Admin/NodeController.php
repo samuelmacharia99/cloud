@@ -94,6 +94,8 @@ class NodeController extends Controller
                 'ip_address'         => 'required|ip|unique:nodes,ip_address',
                 'type'               => 'required|in:directadmin',
                 'da_port'            => 'required|string|max:10',
+                'ssh_username'       => 'nullable|string|max:100',
+                'ssh_password'       => 'nullable|string',
                 'da_admin_username'  => 'required|string|max:255',
                 'da_login_key'       => 'required|string',
                 'region'             => 'nullable|string|max:50',

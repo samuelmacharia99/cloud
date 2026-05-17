@@ -100,6 +100,35 @@
                     </div>
                 </div>
 
+                <!-- SSH Credentials (for monitoring) -->
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">SSH Credentials for Monitoring</h2>
+                    <div class="mb-6 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-lg p-4">
+                        <p class="text-sm text-blue-900 dark:text-blue-100">
+                            🔍 <span class="font-medium">Optional for API-only setup.</span> Provide SSH credentials if you want the system to monitor DirectAdmin server health (CPU, RAM, storage, uptime) every 2 minutes.
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- SSH Username -->
+                        <div>
+                            <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Username</label>
+                            <input type="text" id="ssh_username" name="ssh_username" value="{{ old('ssh_username') }}" placeholder="root" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_username') border-red-500 @enderror">
+                            @error('ssh_username')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- SSH Password -->
+                        <div>
+                            <label for="ssh_password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Password</label>
+                            <input type="password" id="ssh_password" name="ssh_password" placeholder="SSH password for root user" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_password') border-red-500 @enderror">
+                            @error('ssh_password')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    </div>
+                </div>
+
                 <!-- API Credentials -->
                 <div>
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">API Authentication</h2>
