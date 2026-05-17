@@ -204,7 +204,7 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            $endpoint = "{$this->apiUrl}/CMD_SELECT_USERS";
+            $endpoint = "{$this->apiUrl}/CMD_API_SELECT_USERS";
 
             \Log::info("DirectAdmin suspend request", [
                 'service_id' => $service->id,
@@ -272,7 +272,7 @@ class DirectAdminService
             }
 
             $response = Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
+                ->post("{$this->apiUrl}/CMD_API_SELECT_USERS", [
                     'action' => 'unsuspend',
                     'select0' => $reference,
                 ]);

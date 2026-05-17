@@ -294,10 +294,31 @@ class ServiceController extends Controller
             'notes'          => 'nullable|string|max:2000',
         ]);
 
+        \Log::info("Service update request", [
+            'service_id' => $service->id,
+            'username_submitted' => $validated['username'] ?? null,
+            'password_submitted' => !empty($validated['password']),
+            'product_type' => $service->product->type,
+            'service_provisioning_driver_key' => $service->provisioning_driver_key,
+            'product_provisioning_driver_key' => $service->product->provisioning_driver_key,
+        ]);
+
         // Handle username/password for DirectAdmin products (stored in service_meta)
         $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
+        \Log::info("Service update - driver resolution", [
+            'service_id' => $service->id,
+            'resolved_driver' => $driver,
+            'has_username' => !empty($validated['username']),
+            'has_password' => !empty($validated['password']),
+        ]);
+
         if ($driver === 'directadmin' && (!empty($validated['username']) || !empty($validated['password']))) {
+            \Log::info("Service update - saving DirectAdmin credentials", [
+                'service_id' => $service->id,
+                'username' => $validated['username'],
+            ]);
+
             $meta = is_array($service->service_meta) ? $service->service_meta : ($service->service_meta ?? []);
 
             if (!empty($validated['username'])) {
@@ -313,6 +334,12 @@ class ServiceController extends Controller
         }
         // Handle username/password for other products (stored in credentials JSON)
         elseif (!empty($validated['username']) || !empty($validated['password'])) {
+            \Log::info("Service update - saving non-DirectAdmin credentials", [
+                'service_id' => $service->id,
+                'driver' => $driver,
+                'username' => $validated['username'],
+            ]);
+
             $credentials = is_string($service->credentials)
                 ? json_decode($service->credentials, true) ?? []
                 : ($service->credentials ?? []);
@@ -325,6 +352,10 @@ class ServiceController extends Controller
             }
 
             $validated['credentials'] = json_encode($credentials);
+        } else {
+            \Log::info("Service update - no credentials to save", [
+                'service_id' => $service->id,
+            ]);
         }
 
         unset($validated['username'], $validated['password']);
