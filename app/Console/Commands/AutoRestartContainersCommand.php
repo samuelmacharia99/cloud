@@ -61,6 +61,14 @@ class AutoRestartContainersCommand extends Command
                         $newStatus = trim($ssh->exec($statusCmd));
 
                         if ($newStatus === 'running') {
+                            // If this was a recovery from previous failures, notify customer
+                            if ($deployment->restart_attempts > 0) {
+                                app(NotificationService::class)->notifyContainerAutoRestarted(
+                                    $deployment->service,
+                                    $deployment->restart_attempts
+                                );
+                            }
+
                             // Reset attempt counter on success
                             $deployment->update([
                                 'restart_attempts' => 0,

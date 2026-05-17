@@ -635,4 +635,33 @@ class NotificationService
             }
         }
     }
+
+    public function notifyContainerAutoRestarted(Service $service, int $attemptCount): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_container_restart')) {
+            return;
+        }
+
+        try {
+            Mail::to($service->user->email)->send(new \App\Mail\ContainerAutoRestartedMail($service, $attemptCount));
+            $this->logEmail($service->user->email, 'Container Auto-Restarted: ' . $service->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($service->user->email, 'Container Auto-Restarted: ' . $service->name, 'failed', $e->getMessage());
+            Log::error('Failed to send container auto-restart notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_restart')) {
+            try {
+                $message = $this->renderTemplate('container_restarted', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'attempt_count' => (string) $attemptCount,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Your container service "' . $service->name . '" was automatically restarted after ' . $attemptCount . ' failed attempt(s).');
+                $this->smsService->send($service->user->phone, $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to send container auto-restart SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
 }
