@@ -44,27 +44,48 @@ class DirectAdminService
     public function testConnection(): array
     {
         if (!$this->isConfigured()) {
+            $message = 'DirectAdmin API not configured. Missing API URL or credentials.';
+            Log::warning("DirectAdmin API test: {$message}", [
+                'api_url' => $this->apiUrl,
+                'username' => $this->username,
+                'has_password' => !empty($this->password),
+            ]);
             return [
                 'success' => false,
-                'message' => 'DirectAdmin API not configured. Missing API URL or credentials.',
+                'message' => $message,
                 'hint' => 'Set the DirectAdmin API URL and credentials in the Node settings.',
                 'api_url' => $this->apiUrl,
+                'endpoint' => 'Not called - missing credentials',
             ];
         }
+
+        $endpoint = "{$this->apiUrl}/CMD_API_PACKAGES_USER";
+
+        Log::info("DirectAdmin API test connection", [
+            'endpoint' => $endpoint,
+            'username' => $this->username,
+            'api_url' => $this->apiUrl,
+        ]);
 
         try {
             $response = Http::timeout(10)
                 ->withBasicAuth($this->username, $this->password)
-                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+                ->get($endpoint, [
                     'json' => 'yes',
                 ])
                 ->throw();
+
+            Log::info("DirectAdmin API test successful", [
+                'endpoint' => $endpoint,
+                'username' => $this->username,
+            ]);
 
             return [
                 'success' => true,
                 'message' => 'DirectAdmin API connection successful',
                 'username' => $this->username,
                 'api_url' => $this->apiUrl,
+                'endpoint' => $endpoint,
             ];
         } catch (\Exception $e) {
             $statusCode = null;
@@ -72,6 +93,13 @@ class DirectAdminService
                 preg_match('/status code (\d+)/', $e->getMessage(), $matches);
                 $statusCode = $matches[1] ?? null;
             }
+
+            Log::error("DirectAdmin API test failed", [
+                'endpoint' => $endpoint,
+                'username' => $this->username,
+                'status_code' => $statusCode,
+                'error' => $e->getMessage(),
+            ]);
 
             $hint = match ($statusCode) {
                 401 => 'Invalid DirectAdmin API credentials. Make sure you are using the DirectAdmin ADMIN panel username and password/API token, not a hosting account. Update the Node settings with the correct credentials.',
@@ -85,6 +113,7 @@ class DirectAdminService
                 'message' => "DirectAdmin API connection failed: {$e->getMessage()}",
                 'username' => $this->username,
                 'api_url' => $this->apiUrl,
+                'endpoint' => $endpoint,
                 'status_code' => $statusCode,
                 'hint' => $hint,
                 'details' => 'If you just set up the credentials, make sure you are using the DirectAdmin admin account (the one you use to log into the control panel), not a hosting account username.',
@@ -175,8 +204,18 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
+            $endpoint = "{$this->apiUrl}/CMD_SELECT_USERS";
+
+            \Log::info("DirectAdmin suspend request", [
+                'service_id' => $service->id,
+                'username' => $reference,
+                'endpoint' => $endpoint,
+                'api_url' => $this->apiUrl,
+                'api_username' => $this->username,
+            ]);
+
             $response = Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
+                ->post($endpoint, [
                     'action' => 'suspend',
                     'select0' => $reference,
                 ]);
@@ -185,10 +224,18 @@ class DirectAdminService
                 $statusCode = $response->status();
                 $body = $response->body();
 
+                \Log::error("DirectAdmin suspend API response failed", [
+                    'service_id' => $service->id,
+                    'username' => $reference,
+                    'endpoint' => $endpoint,
+                    'status_code' => $statusCode,
+                    'response_body' => substr($body, 0, 500),
+                ]);
+
                 if ($statusCode === 401) {
-                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct.");
+                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct. Endpoint: {$endpoint}");
                 } elseif ($statusCode === 404) {
-                    throw new \Exception("API endpoint not found (404). Check API URL is correct and DirectAdmin is running.");
+                    throw new \Exception("API endpoint not found (404). Endpoint: {$endpoint}. Check API URL is correct and DirectAdmin is running.");
                 } else {
                     throw new \Exception("HTTP {$statusCode}: {$body}");
                 }
@@ -196,6 +243,7 @@ class DirectAdminService
 
             \Log::info("DirectAdmin account suspended: {$reference}", [
                 'service_id' => $service->id,
+                'endpoint' => $endpoint,
             ]);
 
             return true;
@@ -203,6 +251,7 @@ class DirectAdminService
             \Log::error("Failed to suspend DirectAdmin account: {$e->getMessage()}", [
                 'service_id' => $service->id,
                 'username' => $reference ?? 'unknown',
+                'endpoint' => $endpoint ?? 'unknown',
             ]);
 
             return false;

@@ -247,6 +247,56 @@
                 </div>
             </div>
 
+            <!-- DirectAdmin API Endpoint Debug Info -->
+            @if ($service->node && $service->node->type === 'directadmin')
+                <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">🔧 DirectAdmin API Debug Info</h2>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">API URL (Base)</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1 break-all">{{ $service->node->api_url ?? 'Not set' }}</p>
+                        </div>
+
+                        <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">API Endpoint (Suspend)</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1 break-all">{{ ($service->node->api_url ?? 'NOT SET') }}/CMD_SELECT_USERS</p>
+                        </div>
+
+                        <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Admin Username</p>
+                            <p class="text-sm mt-1">
+                                @if($service->node->da_admin_username)
+                                    <span class="text-slate-900 dark:text-white font-mono">{{ $service->node->da_admin_username }}</span>
+                                @else
+                                    <span class="text-red-600 dark:text-red-400 font-mono">⚠ NOT SET</span>
+                                @endif
+                            </p>
+                        </div>
+
+                        <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Login Key Status</p>
+                            <p class="text-sm mt-1">
+                                @if($service->node->da_login_key)
+                                    <span class="text-emerald-600 dark:text-emerald-400">✓ Set</span>
+                                @else
+                                    <span class="text-red-600 dark:text-red-400">⚠ NOT SET</span>
+                                @endif
+                            </p>
+                        </div>
+
+                        <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Hosting Account Username</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $service->external_reference ?? $service->service_meta['username'] ?? '⚠ No username found' }}</p>
+                        </div>
+
+                        <div class="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <p class="text-xs font-medium text-amber-800 dark:text-amber-300 mb-2">💡 Check laravel.log for detailed API request logs when testing</p>
+                            <p class="text-xs text-amber-700 dark:text-amber-400">All API calls are logged with endpoint URL, status codes, and error details. Check <code>storage/logs/laravel.log</code> on the server.</p>
+                        </div>
+                    </div>
+                </div>
+            @endif
+
             <!-- Service Metadata -->
             @if ($service->service_meta)
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
