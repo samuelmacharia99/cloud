@@ -354,28 +354,38 @@ class ServiceController extends Controller
         $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
         if ($driver !== 'directadmin') {
-            return back()->with('error', 'This service is not configured for DirectAdmin');
+            return response()->json([
+                'success' => false,
+                'message' => 'This service is not configured for DirectAdmin',
+            ], 400);
         }
 
         if (!$service->node_id) {
-            return back()->with('error', 'No DirectAdmin node assigned to this service');
+            return response()->json([
+                'success' => false,
+                'message' => 'No DirectAdmin node assigned to this service',
+                'hint' => 'Assign a DirectAdmin server in the Configuration section',
+            ], 400);
         }
 
-        if (!$service->service_meta['username'] ?? null) {
-            return back()->with('error', 'No DirectAdmin username set for this service');
+        if (!($service->service_meta['username'] ?? null)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No DirectAdmin username set for this service',
+                'hint' => 'Enter the DirectAdmin username in the Configuration section',
+            ], 400);
         }
 
         try {
             $daService = new \App\Services\Provisioning\DirectAdminService($service->node);
             $result = $daService->testConnection();
 
-            if ($result['success']) {
-                return back()->with('success', $result['message']);
-            } else {
-                return back()->with('error', $result['message'] . ($result['hint'] ?? ''));
-            }
+            return response()->json($result);
         } catch (\Exception $e) {
-            return back()->with('error', 'Test connection failed: ' . $e->getMessage());
+            return response()->json([
+                'success' => false,
+                'message' => 'Test connection failed: ' . $e->getMessage(),
+            ], 500);
         }
     }
 
