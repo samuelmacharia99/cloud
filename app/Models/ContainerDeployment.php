@@ -21,6 +21,10 @@ class ContainerDeployment extends Model
         'last_status_check_output',
         'deployed_at',
         'terminated_at',
+        'auto_restart',
+        'restart_policy',
+        'restart_attempts',
+        'last_restart_at',
     ];
 
     protected $casts = [
@@ -30,6 +34,9 @@ class ContainerDeployment extends Model
         'terminated_at' => 'datetime',
         'last_status_check_at' => 'datetime',
         'migrated_at' => 'datetime',
+        'auto_restart' => 'boolean',
+        'restart_attempts' => 'integer',
+        'last_restart_at' => 'datetime',
     ];
 
     // Relationships

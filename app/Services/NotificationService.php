@@ -606,4 +606,33 @@ class NotificationService
             }
         }
     }
+
+    public function notifyContainerFailed(Service $service, string $reason): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_container_failure')) {
+            return;
+        }
+
+        try {
+            Mail::to($service->user->email)->send(new \App\Mail\ContainerFailedMail($service, $reason));
+            $this->logEmail($service->user->email, 'Container Failure Alert: ' . $service->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($service->user->email, 'Container Failure Alert: ' . $service->name, 'failed', $e->getMessage());
+            Log::error('Failed to send container failed notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_failure')) {
+            try {
+                $message = $this->renderTemplate('container_failed', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'reason' => $reason,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'ALERT: Your container service "' . $service->name . '" has failed. ' . Str::limit($reason, 50));
+                $this->smsService->send($service->user->phone, $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to send container failed SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
 }
