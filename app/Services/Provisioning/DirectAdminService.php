@@ -22,8 +22,11 @@ class DirectAdminService
         if ($node) {
             $this->node = $node;
             $this->apiUrl = $node->api_url ?? '';
-            $this->username = $node->ssh_username ?? Setting::getValue('directadmin_api_user', 'admin');
-            $this->password = $node->da_login_key ?? Setting::getValue('directadmin_api_password', '');
+            // DirectAdmin API requires admin username (from da_login_key field) and password/API token
+            // Note: da_login_key stores the DirectAdmin admin username, not SSH username
+            $this->username = $node->da_login_key ?? Setting::getValue('directadmin_api_user', 'admin');
+            // Try api_token first (modern DirectAdmin), fall back to da_login_key if it's actually the password
+            $this->password = $node->api_token ?? Setting::getValue('directadmin_api_password', '');
         } else {
             $this->node = null;
             $this->apiUrl = Setting::getValue('directadmin_api_url', '');
@@ -46,7 +49,7 @@ class DirectAdminService
             return [
                 'success' => false,
                 'message' => 'DirectAdmin API not configured. Missing API URL or credentials.',
-                'username' => $this->username,
+                'hint' => 'Set the DirectAdmin API URL and credentials in the Node settings.',
                 'api_url' => $this->apiUrl,
             ];
         }
@@ -72,15 +75,21 @@ class DirectAdminService
                 $statusCode = $matches[1] ?? null;
             }
 
+            $hint = match ($statusCode) {
+                401 => 'Invalid DirectAdmin API credentials. Make sure you are using the DirectAdmin ADMIN panel username and password/API token, not a hosting account. Update the Node settings with the correct credentials.',
+                403 => 'Access denied. The credentials may not have API access enabled in DirectAdmin.',
+                404 => 'The API endpoint is not found. Check the API URL is correct and DirectAdmin is running.',
+                default => 'Check if the DirectAdmin server is reachable and the API URL is correct.',
+            };
+
             return [
                 'success' => false,
                 'message' => "DirectAdmin API connection failed: {$e->getMessage()}",
                 'username' => $this->username,
                 'api_url' => $this->apiUrl,
                 'status_code' => $statusCode,
-                'hint' => $statusCode === 401
-                    ? 'Invalid credentials. Verify the username and password/API key in the Node settings.'
-                    : 'Check if the DirectAdmin server is reachable and the API URL is correct.',
+                'hint' => $hint,
+                'details' => 'If you just set up the credentials, make sure you are using the DirectAdmin admin account (the one you use to log into the control panel), not a hosting account username.',
             ];
         }
     }
