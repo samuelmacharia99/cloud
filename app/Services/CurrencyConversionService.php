@@ -47,28 +47,45 @@ class CurrencyConversionService
     }
 
     /**
-     * Fetch rates from API
+     * Fetch rates from API with retry logic
      */
     private function fetchRatesFromAPI(): array
     {
-        try {
-            $response = Http::timeout(10)->get(self::API_URL . self::BASE_CURRENCY);
+        $maxRetries = 3;
+        $attempt = 0;
+        $lastException = null;
 
-            if ($response->failed()) {
-                throw new \Exception("API request failed with status {$response->status()}");
+        while ($attempt < $maxRetries) {
+            try {
+                $response = Http::timeout(10)->get(self::API_URL . self::BASE_CURRENCY);
+
+                if ($response->failed()) {
+                    throw new \Exception("API request failed with status {$response->status()}");
+                }
+
+                $data = $response->json();
+
+                if (!isset($data['rates']) || !is_array($data['rates'])) {
+                    throw new \Exception('Invalid API response format');
+                }
+
+                return $data['rates'];
+            } catch (\Exception $e) {
+                $attempt++;
+                $lastException = $e;
+
+                if ($attempt < $maxRetries) {
+                    // Exponential backoff: 1s, 2s, 4s
+                    $delay = pow(2, $attempt - 1);
+                    Log::warning("Currency API error (attempt {$attempt}/{$maxRetries}), retrying in {$delay}s: {$e->getMessage()}");
+                    sleep($delay);
+                } else {
+                    Log::error('Currency API error after retries: ' . $e->getMessage());
+                }
             }
-
-            $data = $response->json();
-
-            if (!isset($data['rates']) || !is_array($data['rates'])) {
-                throw new \Exception('Invalid API response format');
-            }
-
-            return $data['rates'];
-        } catch (\Exception $e) {
-            Log::error('Currency API error: ' . $e->getMessage());
-            throw $e;
         }
+
+        throw $lastException;
     }
 
     /**

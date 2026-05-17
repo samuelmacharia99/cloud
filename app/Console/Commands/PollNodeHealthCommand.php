@@ -26,8 +26,8 @@ class PollNodeHealthCommand extends BaseCronCommand
 
         foreach ($nodes as $node) {
             try {
-                // Skip if SSH credentials not configured
-                if (!$node->ssh_username || (!$node->ssh_password && !$node->da_login_key)) {
+                // Skip if SSH credentials not configured (SSH password or key required)
+                if (!$node->ssh_username || !$node->ssh_password) {
                     Log::warning("NODE POLL SKIPPED: {$node->name} - SSH credentials not configured");
                     continue;
                 }

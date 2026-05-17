@@ -2,6 +2,7 @@
 
 use App\Helpers\CurrencyHelper;
 use App\Helpers\CronHelper;
+use App\Models\Setting;
 
 /**
  * Generate the dynamic cron command for the current environment
@@ -73,4 +74,12 @@ function convertToBase($amount): float
 function isBaseCurrency(): bool
 {
     return CurrencyHelper::isBaseCurrency();
+}
+
+/**
+ * Get a setting value by key with optional default
+ */
+function setting(string $key, $default = null)
+{
+    return Setting::getValue($key, $default);
 }

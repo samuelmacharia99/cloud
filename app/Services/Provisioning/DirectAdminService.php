@@ -175,12 +175,24 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            Http::withBasicAuth($this->username, $this->password)
+            $response = Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
                     'action' => 'suspend',
                     'select0' => $reference,
-                ])
-                ->throw();
+                ]);
+
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $body = $response->body();
+
+                if ($statusCode === 401) {
+                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct.");
+                } elseif ($statusCode === 404) {
+                    throw new \Exception("API endpoint not found (404). Check API URL is correct and DirectAdmin is running.");
+                } else {
+                    throw new \Exception("HTTP {$statusCode}: {$body}");
+                }
+            }
 
             \Log::info("DirectAdmin account suspended: {$reference}", [
                 'service_id' => $service->id,
@@ -210,12 +222,24 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            Http::withBasicAuth($this->username, $this->password)
+            $response = Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_SELECT_USERS", [
                     'action' => 'unsuspend',
                     'select0' => $reference,
-                ])
-                ->throw();
+                ]);
+
+            if (!$response->successful()) {
+                $statusCode = $response->status();
+                $body = $response->body();
+
+                if ($statusCode === 401) {
+                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct.");
+                } elseif ($statusCode === 404) {
+                    throw new \Exception("API endpoint not found (404). Check API URL is correct and DirectAdmin is running.");
+                } else {
+                    throw new \Exception("HTTP {$statusCode}: {$body}");
+                }
+            }
 
             \Log::info("DirectAdmin account unsuspended: {$reference}", [
                 'service_id' => $service->id,

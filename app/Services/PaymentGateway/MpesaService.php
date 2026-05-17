@@ -148,11 +148,24 @@ class MpesaService implements PaymentGatewayInterface
             ])->post("{$this->baseUrl}/mpesa/stkpushquery/v1/query", $payload);
 
             if (!$response->successful()) {
-                Log::error('M-Pesa query request failed', [
-                    'checkout_request_id' => $transactionReference,
-                    'status_code' => $response->status(),
-                    'response' => $response->json(),
-                ]);
+                $data = $response->json();
+                $errorCode = $data['errorCode'] ?? null;
+
+                // Transaction within processing limit is expected - only log at debug level
+                if ($errorCode === '500.001.1001') {
+                    Log::debug('M-Pesa transaction still processing', [
+                        'checkout_request_id' => $transactionReference,
+                        'status_code' => $response->status(),
+                    ]);
+                } else {
+                    Log::warning('M-Pesa query request failed', [
+                        'checkout_request_id' => $transactionReference,
+                        'status_code' => $response->status(),
+                        'error_code' => $errorCode,
+                        'response' => $data,
+                    ]);
+                }
+
                 return [
                     'success' => false,
                     'status' => 'pending',
