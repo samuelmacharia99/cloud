@@ -216,7 +216,7 @@ class DirectAdminService
                 ->asForm()
                 ->post($endpoint, [
                     'location' => 'CMD_SELECT_USERS',
-                    'suspend' => 'yes',
+                    'suspend' => 'Suspend',
                     'select0' => $username,
                 ]);
 
@@ -267,7 +267,7 @@ class DirectAdminService
                 ->asForm()
                 ->post($endpoint, [
                     'location' => 'CMD_SELECT_USERS',
-                    'suspend' => 'no',
+                    'unsuspend' => 'Unsuspend',
                     'select0' => $username,
                 ]);
 
