@@ -540,4 +540,70 @@ class NotificationService
             ]);
         }
     }
+
+    public function notifyContainerBackupCompleted(Service $service, \App\Models\ContainerBackup $backup): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_container_backup')) {
+            return;
+        }
+
+        try {
+            Mail::to($service->user->email)->send(new \App\Mail\ContainerBackupCompletedMail($service, $backup));
+            $this->logEmail($service->user->email, 'Container Backup Completed: ' . $service->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($service->user->email, 'Container Backup Completed: ' . $service->name, 'failed', $e->getMessage());
+            Log::error('Failed to send container backup completed notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_backup')) {
+            try {
+                $message = $this->renderTemplate('container_backup_completed', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'backup_name' => $backup->backup_name,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Backup of "' . $service->name . '" completed successfully.');
+                $this->smsService->send($service->user->phone, $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to send container backup completed SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyContainerBackupFailed(Service $service, string $error): void
+    {
+        if (!$this->smtpConfigured() || !$this->settingEnabled('notify_container_backup_failure')) {
+            return;
+        }
+
+        try {
+            $adminEmail = \App\Models\Setting::getValue('admin_email', 'admin@talksasa.cloud');
+            Mail::to($adminEmail)->send(new \App\Mail\ContainerBackupFailedMail($service, $error));
+            $this->logEmail($adminEmail, 'Container Backup Failed: ' . $service->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($adminEmail, 'Container Backup Failed: ' . $service->name, 'failed', $e->getMessage());
+            Log::error('Failed to send container backup failed notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_container_backup_failure')) {
+            try {
+                $adminUsers = \App\Models\User::where('is_admin', true)
+                    ->whereNotNull('notification_phones')
+                    ->get();
+
+                foreach ($adminUsers as $admin) {
+                    if (!empty($admin->notification_phones) && is_array($admin->notification_phones)) {
+                        try {
+                            $message = 'ALERT: Backup failed for service "' . $service->name . '". Error: ' . Str::limit($error, 50);
+                            $this->smsService->send($admin->notification_phones, $message);
+                        } catch (\Exception $e) {
+                            Log::error('Failed to send backup failure SMS to admin', ['error' => $e->getMessage()]);
+                        }
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to notify admins about backup failure', ['error' => $e->getMessage()]);
+            }
+        }
+    }
 }

@@ -176,6 +176,11 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('admin/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Admin\ContainerController::class, 'unbindDomain'])->name('admin.services.container.domains.unbind');
         Route::post('admin/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Admin\ContainerController::class, 'enableSsl'])->name('admin.services.container.domains.ssl');
 
+        // Container backups
+        Route::post('admin/services/{service}/container/backups', [\App\Http\Controllers\Admin\ContainerController::class, 'createBackup'])->name('admin.services.container.backups.create');
+        Route::post('admin/services/{service}/container/backups/{backup}/restore', [\App\Http\Controllers\Admin\ContainerController::class, 'restoreBackup'])->name('admin.services.container.backups.restore');
+        Route::delete('admin/services/{service}/container/backups/{backup}', [\App\Http\Controllers\Admin\ContainerController::class, 'deleteBackup'])->name('admin.services.container.backups.delete');
+
         // Container migration
         Route::get('admin/services/{service}/container/migrate', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'index'])->name('admin.services.container.migrate');
         Route::post('admin/services/{service}/container/migrate', [\App\Http\Controllers\Admin\ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
@@ -356,6 +361,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/domains', [\App\Http\Controllers\Customer\ContainerController::class, 'bindDomain'])->name('customer.services.container.domains.bind');
         Route::delete('my/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Customer\ContainerController::class, 'unbindDomain'])->name('customer.services.container.domains.unbind');
         Route::post('my/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');
+        Route::post('my/services/{service}/container/backups', [\App\Http\Controllers\Customer\ContainerController::class, 'createBackup'])->name('customer.services.container.backups.create');
+        Route::post('my/services/{service}/container/backups/{backup}/restore', [\App\Http\Controllers\Customer\ContainerController::class, 'restoreBackup'])->name('customer.services.container.backups.restore');
+        Route::delete('my/services/{service}/container/backups/{backup}', [\App\Http\Controllers\Customer\ContainerController::class, 'deleteBackup'])->name('customer.services.container.backups.delete');
 
         Route::get('/my/domains/available', fn() => view('customer.domains.available', ['extensions' => \App\Models\DomainExtension::where('enabled', true)->get()]))->name('customer.domains.available');
 

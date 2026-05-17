@@ -58,6 +58,11 @@ class ContainerDeployment extends Model
         return $this->hasMany(ContainerDomain::class);
     }
 
+    public function backups()
+    {
+        return $this->hasMany(ContainerBackup::class);
+    }
+
     // Status Helpers
     public function isRunning(): bool
     {

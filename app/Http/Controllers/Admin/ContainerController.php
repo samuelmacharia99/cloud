@@ -247,4 +247,43 @@ class ContainerController
             return back()->withErrors(['error' => 'Failed to enable SSL: ' . $e->getMessage()]);
         }
     }
+
+    public function createBackup(Service $service)
+    {
+        try {
+            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backup = $backupService->createBackup($service, 'manual');
+
+            return back()->with('success', "Backup '{$backup->backup_name}' created successfully.");
+        } catch (\Exception $e) {
+            \Log::error("Failed to create backup for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Backup failed: ' . $e->getMessage()]);
+        }
+    }
+
+    public function restoreBackup(Service $service, \App\Models\ContainerBackup $backup)
+    {
+        try {
+            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService->restoreBackup($backup);
+
+            return back()->with('success', "Container restored from backup '{$backup->backup_name}'.");
+        } catch (\Exception $e) {
+            \Log::error("Failed to restore backup {$backup->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Restore failed: ' . $e->getMessage()]);
+        }
+    }
+
+    public function deleteBackup(Service $service, \App\Models\ContainerBackup $backup)
+    {
+        try {
+            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService->deleteBackup($backup);
+
+            return back()->with('success', "Backup '{$backup->backup_name}' deleted.");
+        } catch (\Exception $e) {
+            \Log::error("Failed to delete backup {$backup->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Delete failed: ' . $e->getMessage()]);
+        }
+    }
 }

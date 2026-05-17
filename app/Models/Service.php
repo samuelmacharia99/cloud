@@ -70,6 +70,11 @@ class Service extends Model
         return $this->hasOne(ContainerDeployment::class);
     }
 
+    public function containerBackups()
+    {
+        return $this->hasMany(ContainerBackup::class);
+    }
+
     // Status helpers
     public function isActive(): bool
     {
