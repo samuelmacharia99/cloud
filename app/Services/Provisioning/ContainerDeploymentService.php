@@ -68,7 +68,7 @@ class ContainerDeploymentService
 
             // Collect environment variables
             $envValues = $service->service_meta['env_values'] ?? [];
-            $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate);
+            $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
             // Render docker-compose.yml
             $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate);
@@ -107,6 +107,21 @@ class ContainerDeploymentService
                 // Wait for container to start and health check
                 $this->waitForContainerHealth($ssh, $containerName);
 
+                // Execute setup commands
+                if ($template->setup_commands && is_array($template->setup_commands)) {
+                    foreach ($template->setup_commands as $command) {
+                        if (!empty($command)) {
+                            try {
+                                $ssh->exec("cd {$containerPath} && {$command}", self::DEPLOY_TIMEOUT);
+                            } catch (\Exception $e) {
+                                \Log::warning("Setup command failed for service {$service->id}: {$command}", [
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
+                    }
+                }
+
                 // Get container status
                 $status = $this->getContainerStatus($ssh, $containerName);
                 $internalIp = $status['internal_ip'] ?? null;
@@ -126,6 +141,9 @@ class ContainerDeploymentService
                     'status' => 'active',
                     'credentials' => json_encode($credentials),
                 ]);
+
+                // Increment container count on node
+                $node->increment('container_count');
 
                 // Notify user
                 app(NotificationService::class)->notifyServiceActivated($service->fresh());
@@ -186,6 +204,9 @@ class ContainerDeploymentService
 
                 $service->update(['status' => 'suspended']);
 
+                // Notify user of suspension
+                app(NotificationService::class)->notifyServiceSuspended($service->fresh());
+
                 \Log::info("Container suspended for service {$service->id}");
             } finally {
                 $ssh->disconnect();
@@ -242,7 +263,8 @@ class ContainerDeploymentService
             $deployment = $service->containerDeployment;
 
             if ($deployment && $deployment->node) {
-                $ssh = SSHService::forNode($deployment->node);
+                $node = $deployment->node;
+                $ssh = SSHService::forNode($node);
 
                 try {
                     $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
@@ -258,6 +280,9 @@ class ContainerDeploymentService
                         'terminated_at' => now(),
                     ]);
 
+                    // Decrement container count on node
+                    $node->decrement('container_count');
+
                     \Log::info("Container terminated for service {$service->id}");
                 } finally {
                     $ssh->disconnect();
@@ -268,6 +293,9 @@ class ContainerDeploymentService
                 'status' => 'terminated',
                 'terminate_date' => now(),
             ]);
+
+            // Notify user of termination
+            app(NotificationService::class)->notifyServiceTerminated($service->fresh());
         } catch (\Exception $e) {
             \Log::error("Failed to terminate container for service {$service->id}: " . $e->getMessage());
 
@@ -403,7 +431,7 @@ class ContainerDeploymentService
     /**
      * Build complete environment variables including system vars and database connection
      */
-    private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null): array
+    private function buildEnvironmentVariables($template, array $userValues, Service $service, ?DatabaseTemplate $databaseTemplate = null, ?int $port = null): array
     {
         $env = [];
 
@@ -416,7 +444,7 @@ class ContainerDeploymentService
         }
 
         // Add system variables
-        $env['APP_PORT'] = (string) $this->assignPort($service->node);
+        $env['APP_PORT'] = (string) ($port ?? $this->assignPort($service->node));
         $env['DATA_DIR'] = '/data';
         $env['COMPOSE_PROJECT_NAME'] = 'talksasa-' . $service->id;
 

@@ -33,7 +33,7 @@ class NginxProxyService
 
             // Upload config
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
-            $ssh->exec("cat > {$configPath}", $config);
+            $ssh->upload($config, $configPath);
 
             // Test nginx configuration
             $testResult = $ssh->exec("nginx -t 2>&1");
@@ -147,7 +147,7 @@ class NginxProxyService
             // Regenerate config with SSL blocks
             $config = $this->generateConfig($domain, true);
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
-            $ssh->exec("cat > {$configPath}", $config);
+            $ssh->upload($config, $configPath);
 
             // Test and reload
             $testResult = $ssh->exec("nginx -t 2>&1");
