@@ -267,7 +267,7 @@ class DirectAdminService
                 ->asForm()
                 ->post($endpoint, [
                     'location' => 'CMD_SELECT_USERS',
-                    'unsuspend' => 'Unsuspend',
+                    'suspend' => 'Unsuspend',
                     'select0' => $username,
                 ]);
 
