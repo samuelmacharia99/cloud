@@ -238,6 +238,57 @@
             </form>
         </div>
 
+        <!-- Backups Section -->
+        <div class="mb-6 border rounded-lg p-4">
+            <h4 class="font-semibold mb-4">Container Backups</h4>
+
+            @php
+                $backups = $deployment->backups()->whereNotIn('status', ['deleted'])->orderByDesc('created_at')->get();
+            @endphp
+
+            @if ($backups->count() > 0)
+                <div class="space-y-2 mb-4">
+                    @foreach ($backups as $backup)
+                    <div class="flex items-center justify-between bg-gray-50 p-3 rounded text-sm">
+                        <div>
+                            <p class="font-mono">{{ $backup->backup_name }}</p>
+                            <p class="text-gray-600 text-xs">
+                                {{ $backup->status === 'completed' ? 'Size: ' . formatBytes($backup->size_bytes) : ucfirst($backup->status) }}
+                            </p>
+                            <p class="text-gray-500 text-xs">{{ $backup->created_at->diffForHumans() }}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            @if ($backup->status === 'completed')
+                            <form method="POST" action="{{ route('admin.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
+                                @csrf
+                                <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700" onclick="return confirm('Restore from this backup?')">
+                                    Restore
+                                </button>
+                            </form>
+                            @endif
+                            <form method="POST" action="{{ route('admin.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700" onclick="return confirm('Delete this backup?')">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            @else
+                <p class="text-gray-500 text-sm mb-4">No backups yet</p>
+            @endif
+
+            <form method="POST" action="{{ route('admin.services.container.backups.create', $service) }}" style="display:inline;">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                    Create Backup Now
+                </button>
+            </form>
+        </div>
+
         <!-- Docker Compose YAML -->
         <div class="mb-6 border rounded-lg p-4">
             <button type="button" class="flex items-center justify-between w-full font-semibold mb-2" onclick="toggleCompose()">

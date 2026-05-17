@@ -27,6 +27,7 @@ class ContainerDeployment extends Model
         'last_restart_at',
         'cpu_limit',
         'memory_limit_mb',
+        'selected_version',
     ];
 
     protected $casts = [

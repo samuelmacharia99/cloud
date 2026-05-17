@@ -66,6 +66,9 @@ class ContainerDeploymentService
                 $databaseTemplate = DatabaseTemplate::find($service->service_meta['database_id']);
             }
 
+            // Get selected version for templated containers
+            $selectedVersion = $service->service_meta['selected_version'] ?? null;
+
             // Collect environment variables
             $envValues = $service->service_meta['env_values'] ?? [];
             $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
@@ -79,10 +82,11 @@ class ContainerDeploymentService
                 'docker_compose_content' => '', // Will be set after rendering
                 'assigned_port' => $port,
                 'env_values' => $envVars,
+                'selected_version' => $selectedVersion,
             ]);
 
             // Render docker-compose.yml with deployment
-            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment);
+            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion);
             $deployment->update(['docker_compose_content' => $composeYaml]);
 
             // Update service status
@@ -548,7 +552,7 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null): string
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null): string
     {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -562,11 +566,23 @@ class ContainerDeploymentService
         $cpuReservation = (string) ($cpuLimit * 0.5);
         $memoryReservation = (int) ($memoryLimit * 0.5) . 'M';
 
+        // Resolve docker image with selected version
+        $dockerImage = $template->docker_image;
+        if ($selectedVersion && $template->versions) {
+            // Handle versions as array or JSON string
+            $versions = is_array($template->versions) ? $template->versions : json_decode($template->versions, true) ?? [];
+            if (in_array($selectedVersion, $versions)) {
+                // Extract image name from docker_image (e.g., "node" from "node:latest")
+                $imageName = explode(':', $dockerImage)[0];
+                $dockerImage = $imageName . ':' . $selectedVersion;
+            }
+        }
+
         $compose = [
             'version' => '3.9',
             'services' => [
                 $containerName => [
-                    'image' => $template->docker_image,
+                    'image' => $dockerImage,
                     'container_name' => $containerName,
                     'restart' => $deployment?->restart_policy ?? 'unless-stopped',
                     'environment' => $envVars,

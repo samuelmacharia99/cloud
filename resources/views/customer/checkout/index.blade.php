@@ -43,45 +43,73 @@
                             @php
                                 $template = $product['container_template'] ?? null;
                             @endphp
-                            @if ($template && $template->environment_variables)
+                            @if ($template)
                                 <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0">
                                     <h3 class="font-semibold text-slate-900 dark:text-white mb-4">{{ $product['name'] }}</h3>
 
                                     <div class="space-y-4">
-                                        @foreach($template->environment_variables as $envVar)
-                                            @php
-                                                $isRequired = $envVar['required'] ?? false;
-                                                $isSecret = $envVar['secret'] ?? false;
-                                                $fieldName = "env_values[{$key}][{$envVar['key']}]";
-                                                $inputType = $isSecret ? 'password' : 'text';
-                                            @endphp
-
+                                        @if ($template->versions && count($template->versions) > 0)
                                             <div>
                                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                                                    {{ $envVar['label'] ?? $envVar['key'] }}
-                                                    @if ($isRequired)
-                                                        <span class="text-red-600 dark:text-red-400">*</span>
-                                                    @endif
+                                                    Select {{ $template->name }} Version
+                                                    <span class="text-red-600 dark:text-red-400">*</span>
                                                 </label>
-
-                                                <input
-                                                    type="{{ $inputType }}"
-                                                    name="{{ $fieldName }}"
-                                                    value="{{ old($fieldName, $envVar['default'] ?? '') }}"
-                                                    placeholder="{{ $envVar['default'] ?? '' }}"
-                                                    {{ $isRequired ? 'required' : '' }}
+                                                <select
+                                                    name="selected_version[{{ $key }}]"
+                                                    required
                                                     class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition"
-                                                />
-
-                                                @if (isset($envVar['description']))
-                                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $envVar['description'] }}</p>
-                                                @endif
-
-                                                @error($fieldName)
+                                                >
+                                                    <option value="">-- Choose a version --</option>
+                                                    @foreach($template->versions as $version)
+                                                        <option value="{{ $version }}" @selected(old("selected_version.{$key}") === $version)>
+                                                            {{ $version }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                @error("selected_version.{$key}")
                                                     <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
                                                 @enderror
                                             </div>
-                                        @endforeach
+                                        @endif
+                                    </div>
+
+                                    <div class="space-y-4 mt-4">
+                                        @if ($template->environment_variables)
+                                            @foreach($template->environment_variables as $envVar)
+                                                @php
+                                                    $isRequired = $envVar['required'] ?? false;
+                                                    $isSecret = $envVar['secret'] ?? false;
+                                                    $fieldName = "env_values[{$key}][{$envVar['key']}]";
+                                                    $inputType = $isSecret ? 'password' : 'text';
+                                                @endphp
+
+                                                <div>
+                                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                        {{ $envVar['label'] ?? $envVar['key'] }}
+                                                        @if ($isRequired)
+                                                            <span class="text-red-600 dark:text-red-400">*</span>
+                                                        @endif
+                                                    </label>
+
+                                                    <input
+                                                        type="{{ $inputType }}"
+                                                        name="{{ $fieldName }}"
+                                                        value="{{ old($fieldName, $envVar['default'] ?? '') }}"
+                                                        placeholder="{{ $envVar['default'] ?? '' }}"
+                                                        {{ $isRequired ? 'required' : '' }}
+                                                        class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition"
+                                                    />
+
+                                                    @if (isset($envVar['description']))
+                                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $envVar['description'] }}</p>
+                                                    @endif
+
+                                                    @error($fieldName)
+                                                        <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                                                    @enderror
+                                                </div>
+                                            @endforeach
+                                        @endif
                                     </div>
                                 </div>
                             @endif

@@ -172,6 +172,60 @@
             </div>
         </div>
 
+        <!-- Backups Section -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 class="text-lg font-bold mb-4">Container Backups</h3>
+
+            @php
+                $backups = $deployment->backups()->whereNotIn('status', ['deleted'])->orderByDesc('created_at')->get();
+            @endphp
+
+            @if ($backups->count() > 0)
+                <div class="space-y-2 mb-4">
+                    @foreach ($backups as $backup)
+                    <div class="flex items-center justify-between bg-gray-50 p-3 rounded text-sm">
+                        <div>
+                            <p class="font-mono font-semibold">{{ $backup->backup_name }}</p>
+                            <p class="text-gray-600 text-xs mt-1">
+                                @if ($backup->status === 'completed')
+                                    Size: {{ formatBytes($backup->size_bytes) }} • Created {{ $backup->created_at->diffForHumans() }}
+                                @else
+                                    Status: {{ ucfirst($backup->status) }}
+                                @endif
+                            </p>
+                        </div>
+                        <div class="flex gap-2">
+                            @if ($backup->status === 'completed')
+                            <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
+                                @csrf
+                                <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700" onclick="return confirm('Restore your container from this backup? This will replace current data.')">
+                                    Restore
+                                </button>
+                            </form>
+                            @endif
+                            <form method="POST" action="{{ route('customer.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700" onclick="return confirm('Delete this backup permanently?')">
+                                    Delete
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+            @else
+                <p class="text-gray-500 text-sm mb-4">No backups yet. Create your first backup to protect your data.</p>
+            @endif
+
+            <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                    Create Backup
+                </button>
+            </form>
+        </div>
+
         <!-- Custom Domains -->
         <div class="bg-white rounded-lg shadow p-6 mb-8">
             <h3 class="text-lg font-bold mb-4">Custom Domains</h3>

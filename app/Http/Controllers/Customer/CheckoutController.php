@@ -216,12 +216,19 @@ class CheckoutController extends Controller
                         $serviceMeta = [];
                         $nodeId = null;
 
-                        // For container products, collect environment variables and database selection
+                        // For container products, collect environment variables, version, and database selection
                         if ($product->type === 'container_hosting') {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
                             if (!empty($envValues)) {
                                 $serviceMeta['env_values'] = $envValues;
+                            }
+
+                            // Store selected version for templated containers
+                            $selectedVersionKey = "selected_version[{$item['key']}]";
+                            $selectedVersion = $request->input($selectedVersionKey);
+                            if (!empty($selectedVersion)) {
+                                $serviceMeta['selected_version'] = $selectedVersion;
                             }
 
                             // Store selected database for provisioning
@@ -652,7 +659,7 @@ class CheckoutController extends Controller
     /**
      * Helper to process checkout for both authenticated and public users
      */
-    private function processCheckout(User $user, array $cart, Request $request)
+    private function processCheckout(User $user, array $cart, Request $request = null)
     {
         try {
             $order = \DB::transaction(function () use ($cart, $user) {
@@ -735,9 +742,31 @@ class CheckoutController extends Controller
                         $serviceMeta = [];
                         $nodeId = null;
 
+                        // For container products, collect environment variables, version, and database selection
+                        if ($product->type === 'container_hosting' && $request) {
+                            $envValuesKey = "env_values[{$item['key']}]";
+                            $envValues = $request->input($envValuesKey, []);
+                            if (!empty($envValues)) {
+                                $serviceMeta['env_values'] = $envValues;
+                            }
+
+                            // Store selected version for templated containers
+                            $selectedVersionKey = "selected_version[{$item['key']}]";
+                            $selectedVersion = $request->input($selectedVersionKey);
+                            if (!empty($selectedVersion)) {
+                                $serviceMeta['selected_version'] = $selectedVersion;
+                            }
+
+                            // Store selected database for provisioning
+                            $techstack = session('selected_techstack', []);
+                            if (!empty($techstack['database_id'])) {
+                                $serviceMeta['database_id'] = (int) $techstack['database_id'];
+                            }
+                        }
+
                         if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
                             $daSetup = $this->setupDirectAdminService($product, $user);
-                            $serviceMeta = $daSetup['meta'];
+                            $serviceMeta = array_merge($serviceMeta, $daSetup['meta']);
                             $nodeId = $daSetup['node_id'];
                         }
 
