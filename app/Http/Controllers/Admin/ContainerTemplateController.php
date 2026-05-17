@@ -194,6 +194,19 @@ class ContainerTemplateController
     }
 
     /**
+     * Show container template details
+     */
+    public function show(ContainerTemplate $containerTemplate): View
+    {
+        $containerTemplate->load('products', 'versions');
+        $deploymentCount = \App\Models\ContainerDeployment::whereHas('service.product', function ($q) use ($containerTemplate) {
+            $q->where('container_template_id', $containerTemplate->id);
+        })->count();
+
+        return view('admin.container-templates.show', compact('containerTemplate', 'deploymentCount'));
+    }
+
+    /**
      * Delete container template
      */
     public function destroy(ContainerTemplate $containerTemplate): RedirectResponse
