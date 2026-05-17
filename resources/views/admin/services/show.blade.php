@@ -11,7 +11,36 @@
 @endsection
 
 @section('content')
-<div class="space-y-6" x-data="{ editDetailsModal: false }">
+<div class="space-y-6" x-data="{
+    editDetailsModal: false,
+    testConnectionModal: false,
+    testConnectionLoading: false,
+    testConnectionResult: null,
+    async testDirectAdminConnection() {
+        if (!{{ $service->id }}) return;
+        this.testConnectionLoading = true;
+        try {
+            const response = await fetch('{{ route('admin.services.test-directadmin', $service) }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const data = await response.json();
+            this.testConnectionResult = data;
+            this.testConnectionModal = true;
+        } catch (error) {
+            this.testConnectionResult = {
+                success: false,
+                message: 'Network error: ' + error.message
+            };
+            this.testConnectionModal = true;
+        } finally {
+            this.testConnectionLoading = false;
+        }
+    }
+}">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <div class="flex items-start justify-between">
@@ -320,6 +349,50 @@
         </div>
     </div>
 
+    <!-- Test Connection Result Modal -->
+    <div x-show="testConnectionModal" x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="testConnectionModal = false">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <!-- Header -->
+            <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+                <div class="flex items-center gap-3">
+                    <div x-show="testConnectionResult?.success" class="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    </div>
+                    <div x-show="!testConnectionResult?.success" class="w-10 h-10 rounded-full bg-red-100 dark:bg-red-950 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </div>
+                    <h2 class="text-lg font-bold text-slate-900 dark:text-white" x-text="testConnectionResult?.success ? 'Connection Successful' : 'Connection Failed'"></h2>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6 space-y-4">
+                <div>
+                    <p class="text-sm text-slate-700 dark:text-slate-300" x-text="testConnectionResult?.message || ''"></p>
+                </div>
+
+                <div x-show="testConnectionResult?.hint" class="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                    <p class="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Hint:</p>
+                    <p class="text-xs text-amber-700 dark:text-amber-400" x-text="testConnectionResult?.hint || ''"></p>
+                </div>
+
+                <div x-show="testConnectionResult?.details" class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                    <p class="text-xs font-mono text-slate-600 dark:text-slate-400 break-words" x-text="testConnectionResult?.details || ''"></p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="p-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                <button type="button" @click="testConnectionModal = false"
+                        class="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 font-medium transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Edit Details Modal -->
     <div x-show="editDetailsModal" x-transition
          class="fixed inset-0 bg-black/50 z-50 flex items-end"
@@ -395,7 +468,15 @@
                 <!-- DirectAdmin Configuration (if shared hosting or can be configured) -->
                 @if ($service->product && $service->product->type === 'shared_hosting')
                     <div class="border-t border-slate-200 dark:border-slate-600 pt-6 mt-6">
-                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Configuration</h3>
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-sm font-semibold text-slate-900 dark:text-white">DirectAdmin Configuration</h3>
+                            <button type="button" @click="testDirectAdminConnection()"
+                                    :disabled="testConnectionLoading"
+                                    class="px-3 py-1 text-xs bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 hover:bg-cyan-200 dark:hover:bg-cyan-900 disabled:opacity-50 disabled:cursor-not-allowed font-medium rounded transition inline-flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5a4 4 0 100-8 4 4 0 000 8z"/></svg>
+                                <span x-text="testConnectionLoading ? 'Testing...' : 'Test Connection'"></span>
+                            </button>
+                        </div>
 
                         <!-- DirectAdmin Node -->
                         <div class="mb-4">
