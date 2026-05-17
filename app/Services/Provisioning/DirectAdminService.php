@@ -102,7 +102,13 @@ class DirectAdminService
     public function suspendAccount(Service $service): bool
     {
         try {
-            $reference = $service->external_reference;
+            // Use external_reference if set, otherwise use username from service_meta
+            $reference = $service->external_reference ?? $service->service_meta['username'] ?? null;
+
+            if (!$reference) {
+                throw new \Exception('No username found for DirectAdmin account');
+            }
+
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
                     'action' => 'suspend',
@@ -126,7 +132,13 @@ class DirectAdminService
     public function unsuspendAccount(Service $service): bool
     {
         try {
-            $reference = $service->external_reference;
+            // Use external_reference if set, otherwise use username from service_meta
+            $reference = $service->external_reference ?? $service->service_meta['username'] ?? null;
+
+            if (!$reference) {
+                throw new \Exception('No username found for DirectAdmin account');
+            }
+
             Http::withBasicAuth($this->username, $this->password)
                 ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
                     'action' => 'unsuspend',

@@ -302,6 +302,8 @@ class ServiceController extends Controller
 
             if (!empty($validated['username'])) {
                 $meta['username'] = $validated['username'];
+                // Also set external_reference for DirectAdmin operations
+                $validated['external_reference'] = $validated['username'];
             }
             if (!empty($validated['password'])) {
                 $meta['password'] = $validated['password'];
