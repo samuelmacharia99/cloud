@@ -25,6 +25,8 @@ class ContainerDeployment extends Model
         'restart_policy',
         'restart_attempts',
         'last_restart_at',
+        'cpu_limit',
+        'memory_limit_mb',
     ];
 
     protected $casts = [
@@ -37,6 +39,8 @@ class ContainerDeployment extends Model
         'auto_restart' => 'boolean',
         'restart_attempts' => 'integer',
         'last_restart_at' => 'datetime',
+        'cpu_limit' => 'decimal:2',
+        'memory_limit_mb' => 'integer',
     ];
 
     // Relationships

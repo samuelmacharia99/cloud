@@ -70,19 +70,20 @@ class ContainerDeploymentService
             $envValues = $service->service_meta['env_values'] ?? [];
             $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
-            // Render docker-compose.yml
-            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate);
-
             // Create deployment record
             $deployment = ContainerDeployment::create([
                 'service_id' => $service->id,
                 'node_id' => $node->id,
                 'container_name' => $containerName,
                 'status' => 'deploying',
-                'docker_compose_content' => $composeYaml,
+                'docker_compose_content' => '', // Will be set after rendering
                 'assigned_port' => $port,
                 'env_values' => $envVars,
             ]);
+
+            // Render docker-compose.yml with deployment
+            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment);
+            $deployment->update(['docker_compose_content' => $composeYaml]);
 
             // Update service status
             $service->update(['status' => 'provisioning']);
@@ -547,22 +548,38 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null): string
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null): string
     {
+        // Determine resource limits (override > template)
+        $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
+        $memoryLimit = $deployment?->memory_limit_mb ?? $template->required_ram_mb ?? 256;
+
+        // Convert to docker compose format
+        $cpuLimitStr = (string) $cpuLimit;
+        $memoryLimitStr = $memoryLimit . 'M';
+
+        // Reservations at 50% of limits
+        $cpuReservation = (string) ($cpuLimit * 0.5);
+        $memoryReservation = (int) ($memoryLimit * 0.5) . 'M';
+
         $compose = [
             'version' => '3.9',
             'services' => [
                 $containerName => [
                     'image' => $template->docker_image,
                     'container_name' => $containerName,
-                    'restart' => 'unless-stopped',
+                    'restart' => $deployment?->restart_policy ?? 'unless-stopped',
                     'environment' => $envVars,
                     'ports' => ["{$port}:" . $template->default_port],
                     'deploy' => [
                         'resources' => [
                             'limits' => [
-                                'cpus' => (string) $template->required_cpu_cores,
-                                'memory' => $template->required_ram_mb . 'M',
+                                'cpus' => $cpuLimitStr,
+                                'memory' => $memoryLimitStr,
+                            ],
+                            'reservations' => [
+                                'cpus' => $cpuReservation,
+                                'memory' => $memoryReservation,
                             ],
                         ],
                     ],
