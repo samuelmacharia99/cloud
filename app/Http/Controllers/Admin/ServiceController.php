@@ -225,6 +225,8 @@ class ServiceController extends Controller
 
     public function suspend(Service $service)
     {
+        die("SUSPEND_ENDPOINT_REACHED: Service " . $service->id);
+
         try {
             $provisioningService = new ProvisioningService();
             $provisioningService->suspend($service);
