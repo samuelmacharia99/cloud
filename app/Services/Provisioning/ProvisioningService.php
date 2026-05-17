@@ -51,6 +51,8 @@ class ProvisioningService
      */
     public function suspend(Service $service): void
     {
+        \Log::warning("SUSPEND_METHOD_ENTERED: Service {$service->id} suspend() method entered BEFORE try block");
+
         try {
             \Log::info("SUSPEND_START: Service {$service->id} suspend initiated");
 
