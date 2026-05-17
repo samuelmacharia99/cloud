@@ -204,7 +204,7 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            $endpoint = "{$this->apiUrl}/CMD_API_SELECT_USERS";
+            $endpoint = "{$this->apiUrl}/CMD_API_MODIFY_USER";
 
             \Log::info("DirectAdmin suspend request", [
                 'service_id' => $service->id,
@@ -215,9 +215,10 @@ class DirectAdminService
             ]);
 
             $response = Http::withBasicAuth($this->username, $this->password)
+                ->asForm()
                 ->post($endpoint, [
                     'action' => 'suspend',
-                    'select0' => $reference,
+                    'user' => $reference,
                 ]);
 
             if (!$response->successful()) {
@@ -271,15 +272,32 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
+            $endpoint = "{$this->apiUrl}/CMD_API_MODIFY_USER";
+
+            \Log::info("DirectAdmin unsuspend request", [
+                'service_id' => $service->id,
+                'username' => $reference,
+                'endpoint' => $endpoint,
+            ]);
+
             $response = Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_SELECT_USERS", [
+                ->asForm()
+                ->post($endpoint, [
                     'action' => 'unsuspend',
-                    'select0' => $reference,
+                    'user' => $reference,
                 ]);
 
             if (!$response->successful()) {
                 $statusCode = $response->status();
                 $body = $response->body();
+
+                \Log::error("DirectAdmin unsuspend API response failed", [
+                    'service_id' => $service->id,
+                    'username' => $reference,
+                    'endpoint' => $endpoint,
+                    'status_code' => $statusCode,
+                    'response_body' => substr($body, 0, 500),
+                ]);
 
                 if ($statusCode === 401) {
                     throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct.");
@@ -292,6 +310,7 @@ class DirectAdminService
 
             \Log::info("DirectAdmin account unsuspended: {$reference}", [
                 'service_id' => $service->id,
+                'endpoint' => $endpoint,
             ]);
 
             return true;
@@ -299,6 +318,7 @@ class DirectAdminService
             \Log::error("Failed to unsuspend DirectAdmin account: {$e->getMessage()}", [
                 'service_id' => $service->id,
                 'username' => $reference ?? 'unknown',
+                'endpoint' => $endpoint ?? 'unknown',
             ]);
 
             return false;

@@ -258,8 +258,8 @@
                         </div>
 
                         <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
-                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">API Endpoint (Suspend)</p>
-                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1 break-all">{{ ($service->node->api_url ?? 'NOT SET') }}/CMD_API_SELECT_USERS</p>
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">API Endpoint (Suspend/Unsuspend)</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1 break-all">{{ ($service->node->api_url ?? 'NOT SET') }}/CMD_API_MODIFY_USER</p>
                         </div>
 
                         <div class="p-3 bg-white dark:bg-slate-800 rounded-lg">
