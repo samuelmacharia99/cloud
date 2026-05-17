@@ -204,7 +204,8 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            $endpoint = "{$this->apiUrl}/CMD_API_MODIFY_USER";
+            // Strip trailing slash from API URL to avoid double slashes
+            $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_MODIFY_USER';
 
             \Log::info("DirectAdmin suspend request", [
                 'service_id' => $service->id,
@@ -214,12 +215,26 @@ class DirectAdminService
                 'api_username' => $this->username,
             ]);
 
-            $response = Http::withBasicAuth($this->username, $this->password)
+            $response = Http::withOptions([
+                    'allow_redirects' => false,
+                ])
+                ->withBasicAuth($this->username, $this->password)
+                ->withoutVerifying()
                 ->asForm()
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                ])
                 ->post($endpoint, [
                     'action' => 'suspend',
                     'user' => $reference,
                 ]);
+
+            \Log::info("DirectAdmin suspend response debug", [
+                'service_id' => $service->id,
+                'endpoint' => $endpoint,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
 
             if (!$response->successful()) {
                 $statusCode = $response->status();
@@ -272,7 +287,8 @@ class DirectAdminService
                 throw new \Exception('No username found for DirectAdmin account');
             }
 
-            $endpoint = "{$this->apiUrl}/CMD_API_MODIFY_USER";
+            // Strip trailing slash from API URL to avoid double slashes
+            $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_MODIFY_USER';
 
             \Log::info("DirectAdmin unsuspend request", [
                 'service_id' => $service->id,
@@ -280,12 +296,26 @@ class DirectAdminService
                 'endpoint' => $endpoint,
             ]);
 
-            $response = Http::withBasicAuth($this->username, $this->password)
+            $response = Http::withOptions([
+                    'allow_redirects' => false,
+                ])
+                ->withBasicAuth($this->username, $this->password)
+                ->withoutVerifying()
                 ->asForm()
+                ->withHeaders([
+                    'Accept' => 'application/json',
+                ])
                 ->post($endpoint, [
                     'action' => 'unsuspend',
                     'user' => $reference,
                 ]);
+
+            \Log::info("DirectAdmin unsuspend response debug", [
+                'service_id' => $service->id,
+                'endpoint' => $endpoint,
+                'status' => $response->status(),
+                'body' => $response->body(),
+            ]);
 
             if (!$response->successful()) {
                 $statusCode = $response->status();
