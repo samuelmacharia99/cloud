@@ -21,6 +21,7 @@ class Node extends Model
         'ssh_port',
         'ssh_username',
         'ssh_password',
+        'da_admin_username',
         'da_login_key',
         'da_port',
         'api_url',

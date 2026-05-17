@@ -22,11 +22,9 @@ class DirectAdminService
         if ($node) {
             $this->node = $node;
             $this->apiUrl = $node->api_url ?? '';
-            // DirectAdmin API requires admin username (from da_login_key field) and password/API token
-            // Note: da_login_key stores the DirectAdmin admin username, not SSH username
-            $this->username = $node->da_login_key ?? Setting::getValue('directadmin_api_user', 'admin');
-            // Try api_token first (modern DirectAdmin), fall back to da_login_key if it's actually the password
-            $this->password = $node->api_token ?? Setting::getValue('directadmin_api_password', '');
+            // DirectAdmin API requires admin username and login key
+            $this->username = $node->da_admin_username ?? Setting::getValue('directadmin_api_user', 'admin');
+            $this->password = $node->da_login_key ?? Setting::getValue('directadmin_api_password', '');
         } else {
             $this->node = null;
             $this->apiUrl = Setting::getValue('directadmin_api_url', '');
