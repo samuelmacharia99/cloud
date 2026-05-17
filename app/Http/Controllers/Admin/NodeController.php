@@ -89,23 +89,23 @@ class NodeController extends Controller
 
         if ($type === 'directadmin') {
             $validated = $request->validate([
-                'name'           => 'required|string|max:255',
-                'hostname'       => 'required|string|unique:nodes,hostname',
-                'ip_address'     => 'required|ip|unique:nodes,ip_address',
-                'type'           => 'required|in:directadmin',
-                'da_port'        => 'required|string|max:10',
-                'da_login_key'   => 'required|string',
-                'region'         => 'nullable|string|max:50',
-                'datacenter'     => 'nullable|string|max:255',
-                'description'    => 'nullable|string',
-                'is_active'      => 'nullable|boolean',
+                'name'               => 'required|string|max:255',
+                'hostname'           => 'required|string|unique:nodes,hostname',
+                'ip_address'         => 'required|ip|unique:nodes,ip_address',
+                'type'               => 'required|in:directadmin',
+                'da_port'            => 'required|string|max:10',
+                'da_admin_username'  => 'required|string|max:255',
+                'da_login_key'       => 'required|string',
+                'region'             => 'nullable|string|max:50',
+                'datacenter'         => 'nullable|string|max:255',
+                'description'        => 'nullable|string',
+                'is_active'          => 'nullable|boolean',
             ]);
             $validated['status'] = 'offline';
             $validated['cpu_cores'] = 0;
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
             $validated['ssh_port'] = $validated['da_port'];
-            $validated['ssh_username'] = 'admin';
             $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}/api";
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
@@ -221,6 +221,7 @@ class NodeController extends Controller
             'ssh_password' => 'nullable|string',
             'api_url' => 'nullable|url',
             'api_token' => 'nullable|string',
+            'da_admin_username' => 'nullable|string|max:255',
             'da_login_key' => 'nullable|string',
             'verify_ssl' => 'nullable|boolean',
             'description' => 'nullable|string',
