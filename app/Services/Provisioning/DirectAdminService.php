@@ -19,21 +19,11 @@ class DirectAdminService
 
     public function __construct(?Node $node = null)
     {
-        \Log::info("DA_CONSTRUCTOR: Initializing DirectAdminService", ['node_id' => $node?->id]);
-
         if ($node) {
             $this->node = $node;
             $this->apiUrl = $node->api_url ?? '';
-            // DirectAdmin API requires admin username and login key
             $this->username = $node->da_admin_username ?? Setting::getValue('directadmin_api_user', 'admin');
             $this->password = $node->da_login_key ?? Setting::getValue('directadmin_api_password', '');
-
-            \Log::info("DA_CONSTRUCTOR_LOADED", [
-                'node_id' => $node->id,
-                'api_url' => $this->apiUrl,
-                'username' => $this->username,
-                'has_password' => !empty($this->password),
-            ]);
         } else {
             $this->node = null;
             $this->apiUrl = Setting::getValue('directadmin_api_url', '');
@@ -201,169 +191,103 @@ class DirectAdminService
     }
 
     /**
-     * Suspend a hosting account
+     * Suspend a hosting account using correct DirectAdmin API
      */
     public function suspendAccount(Service $service): bool
     {
+        $username = $service->external_reference ?? ($service->service_meta['username'] ?? null);
+
+        if (!$username) {
+            \Log::error("SUSPEND_FAILED: No username for service {$service->id}");
+            return false;
+        }
+
+        $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_SELECT_USERS';
+
+        \Log::info("SUSPEND_API_CALL", [
+            'service_id' => $service->id,
+            'username' => $username,
+            'endpoint' => $endpoint,
+        ]);
+
         try {
-            \Log::info("DA_SUSPEND_START: Service {$service->id} suspend method called");
-
-            // Use external_reference if set, otherwise use username from service_meta
-            $reference = $service->external_reference ?? $service->service_meta['username'] ?? null;
-
-            \Log::info("DA_SUSPEND_REFERENCE: Service {$service->id} reference = {$reference}");
-
-            if (!$reference) {
-                throw new \Exception('No username found for DirectAdmin account');
-            }
-
-            // Strip trailing slash from API URL to avoid double slashes
-            $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_MODIFY_USER';
-
-            \Log::info("DirectAdmin suspend request", [
-                'service_id' => $service->id,
-                'username' => $reference,
-                'endpoint' => $endpoint,
-                'api_url' => $this->apiUrl,
-                'api_username' => $this->username,
-            ]);
-
-            $response = Http::withOptions([
-                    'allow_redirects' => false,
-                ])
-                ->withBasicAuth($this->username, $this->password)
+            $response = Http::withBasicAuth($this->username, $this->password)
                 ->withoutVerifying()
                 ->asForm()
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                ])
                 ->post($endpoint, [
-                    'action' => 'suspend',
-                    'user' => $reference,
+                    'location' => 'CMD_SELECT_USERS',
+                    'suspend' => 'yes',
+                    'select0' => $username,
                 ]);
 
-            \Log::info("DirectAdmin suspend response debug", [
+            $body = $response->body();
+
+            \Log::info("SUSPEND_API_RESPONSE", [
                 'service_id' => $service->id,
-                'endpoint' => $endpoint,
                 'status' => $response->status(),
-                'body' => $response->body(),
+                'body' => $body,
             ]);
 
-            if (!$response->successful()) {
-                $statusCode = $response->status();
-                $body = $response->body();
-
-                \Log::error("DirectAdmin suspend API response failed", [
-                    'service_id' => $service->id,
-                    'username' => $reference,
-                    'endpoint' => $endpoint,
-                    'status_code' => $statusCode,
-                    'response_body' => substr($body, 0, 500),
-                ]);
-
-                if ($statusCode === 401) {
-                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct. Endpoint: {$endpoint}");
-                } elseif ($statusCode === 404) {
-                    throw new \Exception("API endpoint not found (404). Endpoint: {$endpoint}. Check API URL is correct and DirectAdmin is running.");
-                } else {
-                    throw new \Exception("HTTP {$statusCode}: {$body}");
-                }
+            if (str_contains($body, 'error=0')) {
+                \Log::info("SUSPEND_SUCCESS", ['service_id' => $service->id, 'username' => $username]);
+                return true;
+            } else {
+                \Log::error("SUSPEND_API_ERROR", ['service_id' => $service->id, 'response' => $body]);
+                return false;
             }
-
-            \Log::info("DirectAdmin account suspended: {$reference}", [
-                'service_id' => $service->id,
-                'endpoint' => $endpoint,
-            ]);
-
-            return true;
         } catch (\Exception $e) {
-            \Log::error("Failed to suspend DirectAdmin account: {$e->getMessage()}", [
-                'service_id' => $service->id,
-                'username' => $reference ?? 'unknown',
-                'endpoint' => $endpoint ?? 'unknown',
-            ]);
-
+            \Log::error("SUSPEND_EXCEPTION", ['service_id' => $service->id, 'error' => $e->getMessage()]);
             return false;
         }
     }
 
     /**
-     * Unsuspend a hosting account
+     * Unsuspend a hosting account using correct DirectAdmin API
      */
     public function unsuspendAccount(Service $service): bool
     {
+        $username = $service->external_reference ?? ($service->service_meta['username'] ?? null);
+
+        if (!$username) {
+            \Log::error("UNSUSPEND_FAILED: No username for service {$service->id}");
+            return false;
+        }
+
+        $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_SELECT_USERS';
+
+        \Log::info("UNSUSPEND_API_CALL", [
+            'service_id' => $service->id,
+            'username' => $username,
+            'endpoint' => $endpoint,
+        ]);
+
         try {
-            // Use external_reference if set, otherwise use username from service_meta
-            $reference = $service->external_reference ?? $service->service_meta['username'] ?? null;
-
-            if (!$reference) {
-                throw new \Exception('No username found for DirectAdmin account');
-            }
-
-            // Strip trailing slash from API URL to avoid double slashes
-            $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_MODIFY_USER';
-
-            \Log::info("DirectAdmin unsuspend request", [
-                'service_id' => $service->id,
-                'username' => $reference,
-                'endpoint' => $endpoint,
-            ]);
-
-            $response = Http::withOptions([
-                    'allow_redirects' => false,
-                ])
-                ->withBasicAuth($this->username, $this->password)
+            $response = Http::withBasicAuth($this->username, $this->password)
                 ->withoutVerifying()
                 ->asForm()
-                ->withHeaders([
-                    'Accept' => 'application/json',
-                ])
                 ->post($endpoint, [
-                    'action' => 'unsuspend',
-                    'user' => $reference,
+                    'location' => 'CMD_SELECT_USERS',
+                    'suspend' => 'no',
+                    'select0' => $username,
                 ]);
 
-            \Log::info("DirectAdmin unsuspend response debug", [
+            $body = $response->body();
+
+            \Log::info("UNSUSPEND_API_RESPONSE", [
                 'service_id' => $service->id,
-                'endpoint' => $endpoint,
                 'status' => $response->status(),
-                'body' => $response->body(),
+                'body' => $body,
             ]);
 
-            if (!$response->successful()) {
-                $statusCode = $response->status();
-                $body = $response->body();
-
-                \Log::error("DirectAdmin unsuspend API response failed", [
-                    'service_id' => $service->id,
-                    'username' => $reference,
-                    'endpoint' => $endpoint,
-                    'status_code' => $statusCode,
-                    'response_body' => substr($body, 0, 500),
-                ]);
-
-                if ($statusCode === 401) {
-                    throw new \Exception("Authentication failed (401). Check DirectAdmin admin username and login key are correct.");
-                } elseif ($statusCode === 404) {
-                    throw new \Exception("API endpoint not found (404). Check API URL is correct and DirectAdmin is running.");
-                } else {
-                    throw new \Exception("HTTP {$statusCode}: {$body}");
-                }
+            if (str_contains($body, 'error=0')) {
+                \Log::info("UNSUSPEND_SUCCESS", ['service_id' => $service->id, 'username' => $username]);
+                return true;
+            } else {
+                \Log::error("UNSUSPEND_API_ERROR", ['service_id' => $service->id, 'response' => $body]);
+                return false;
             }
-
-            \Log::info("DirectAdmin account unsuspended: {$reference}", [
-                'service_id' => $service->id,
-                'endpoint' => $endpoint,
-            ]);
-
-            return true;
         } catch (\Exception $e) {
-            \Log::error("Failed to unsuspend DirectAdmin account: {$e->getMessage()}", [
-                'service_id' => $service->id,
-                'username' => $reference ?? 'unknown',
-                'endpoint' => $endpoint ?? 'unknown',
-            ]);
-
+            \Log::error("UNSUSPEND_EXCEPTION", ['service_id' => $service->id, 'error' => $e->getMessage()]);
             return false;
         }
     }

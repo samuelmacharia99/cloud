@@ -51,38 +51,21 @@ class ProvisioningService
      */
     public function suspend(Service $service): void
     {
-        \Log::warning("SUSPEND_METHOD_ENTERED: Service {$service->id} suspend() method entered BEFORE try block");
-
         try {
-            \Log::info("SUSPEND_START: Service {$service->id} suspend initiated");
-
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
-            \Log::info("SUSPEND_DRIVER: Service {$service->id} driver = {$driver}");
 
             // Check for external_reference OR username in service_meta (for linked existing accounts)
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
-            \Log::info("SUSPEND_REFERENCE: Service {$service->id} hasReference = " . ($hasReference ? 'true' : 'false'));
 
             $suspended = false;
 
-            \Log::info("SUSPEND_CONDITION_CHECK: driver={$driver}, hasReference=" . ($hasReference ? 'true' : 'false'));
-
             if ($driver === 'directadmin' && $hasReference) {
-                \Log::info("SUSPEND_DIRECTADMIN_PATH: Entering DirectAdmin suspend path");
-
                 if (!$service->node) {
                     throw new \Exception('Service has no DirectAdmin node assigned');
                 }
 
-                \Log::info("SUSPEND_NODE_EXISTS: Node {$service->node->id} exists, creating DirectAdminService");
-
                 $daService = new DirectAdminService($service->node);
-
-                \Log::info("SUSPEND_CALLING_API: Calling suspendAccount() for service {$service->id}");
-
                 $suspended = $daService->suspendAccount($service);
-
-                \Log::info("SUSPEND_API_RETURNED: suspendAccount() returned " . ($suspended ? 'true' : 'false'));
                 if (!$suspended) {
                     throw new \Exception('DirectAdmin API failed to suspend account');
                 }

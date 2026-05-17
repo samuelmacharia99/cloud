@@ -225,19 +225,11 @@ class ServiceController extends Controller
 
     public function suspend(Service $service)
     {
-        \Log::warning("CONTROLLER_SUSPEND: Service {$service->id} suspend endpoint called");
-
         try {
-            \Log::warning("CONTROLLER_TRY_START: About to create ProvisioningService");
             $provisioningService = new ProvisioningService();
-            \Log::warning("CONTROLLER_PROVISIONING_CREATED: ProvisioningService created");
-
             $provisioningService->suspend($service);
-            \Log::warning("CONTROLLER_SUSPEND_COMPLETED: suspend() returned successfully");
-
             return back()->with('success', 'Service suspended successfully.');
         } catch (\Exception $e) {
-            \Log::error("CONTROLLER_SUSPEND_EXCEPTION: Exception caught: " . $e->getMessage(), ['exception' => $e]);
             return back()->with('error', 'Suspension failed: ' . $e->getMessage());
         }
     }
