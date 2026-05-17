@@ -397,6 +397,21 @@
                     <div class="border-t border-slate-200 dark:border-slate-600 pt-6 mt-6">
                         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Configuration</h3>
 
+                        <!-- DirectAdmin Node -->
+                        <div class="mb-4">
+                            <label for="node_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Server</label>
+                            <select id="node_id" name="node_id"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">-- Select a DirectAdmin Server --</option>
+                                @foreach(\App\Models\Node::where('type', 'directadmin')->where('is_active', true)->get() as $node)
+                                    <option value="{{ $node->id }}" @selected($service->node_id === $node->id)>
+                                        {{ $node->name }} ({{ $node->status }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Select the DirectAdmin server where the account exists</p>
+                        </div>
+
                         <!-- Username -->
                         <div class="mb-4">
                             <label for="username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Username</label>
@@ -407,9 +422,9 @@
                             <input type="text" id="username" name="username"
                                    value="{{ $username }}"
                                    maxlength="16"
-                                   placeholder="DirectAdmin username (max 16 chars)"
+                                   placeholder="DirectAdmin username"
                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Max 16 characters, lowercase letters/numbers/underscore only</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter the exact username from your DirectAdmin server</p>
                         </div>
 
                         <!-- Password -->
@@ -422,7 +437,7 @@
                                    value="{{ $password }}"
                                    placeholder="DirectAdmin password"
                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Complex password with mixed case, numbers, and symbols</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter the exact password from your DirectAdmin server</p>
                         </div>
                     </div>
                 @endif

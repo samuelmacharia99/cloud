@@ -288,6 +288,7 @@ class ServiceController extends Controller
             'commenced_at'   => 'nullable|date',
             'suspend_date'   => 'nullable|date',
             'terminate_date' => 'nullable|date',
+            'node_id'        => 'nullable|exists:nodes,id',
             'username'       => 'nullable|string|max:255',
             'password'       => 'nullable|string|max:255',
             'notes'          => 'nullable|string|max:2000',
