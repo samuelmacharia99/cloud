@@ -161,6 +161,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/terminate', [\App\Http\Controllers\Admin\ServiceController::class, 'terminate'])->name('admin.services.terminate');
         Route::post('admin/services/{service}/cancel', [\App\Http\Controllers\Admin\ServiceController::class, 'cancel'])->name('admin.services.cancel');
         Route::post('admin/services/{service}/refresh-status', [\App\Http\Controllers\Admin\ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
+        Route::post('admin/services/{service}/test-directadmin', [\App\Http\Controllers\Admin\ServiceController::class, 'testDirectAdminConnection'])->name('admin.services.test-directadmin');
         Route::post('admin/services/{service}/resend-credentials', [\App\Http\Controllers\Admin\ServiceController::class, 'resendCredentials'])->name('admin.services.resend-credentials');
 
         // Container management

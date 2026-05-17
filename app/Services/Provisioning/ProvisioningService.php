@@ -57,16 +57,28 @@ class ProvisioningService
             // Check for external_reference OR username in service_meta (for linked existing accounts)
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
 
+            $suspended = false;
+
             if ($driver === 'directadmin' && $hasReference) {
+                if (!$service->node) {
+                    throw new \Exception('Service has no DirectAdmin node assigned');
+                }
                 $daService = new DirectAdminService($service->node);
-                $daService->suspendAccount($service);
+                $suspended = $daService->suspendAccount($service);
+                if (!$suspended) {
+                    throw new \Exception('DirectAdmin API failed to suspend account');
+                }
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService();
                 $containerService->suspend($service);
+                $suspended = true;
+            } else {
+                // For drivers without active suspension, just update status
+                $suspended = true;
             }
 
-            // Update status if not already updated by driver
-            if ($service->status !== 'suspended') {
+            // Only update status if suspension was successful
+            if ($suspended && $service->status !== 'suspended') {
                 $service->update(['status' => 'suspended']);
             }
 

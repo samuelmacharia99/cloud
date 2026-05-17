@@ -38,6 +38,54 @@ class DirectAdminService
     }
 
     /**
+     * Test DirectAdmin API connection and credentials
+     */
+    public function testConnection(): array
+    {
+        if (!$this->isConfigured()) {
+            return [
+                'success' => false,
+                'message' => 'DirectAdmin API not configured. Missing API URL or credentials.',
+                'username' => $this->username,
+                'api_url' => $this->apiUrl,
+            ];
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->withBasicAuth($this->username, $this->password)
+                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+                    'json' => 'yes',
+                ])
+                ->throw();
+
+            return [
+                'success' => true,
+                'message' => 'DirectAdmin API connection successful',
+                'username' => $this->username,
+                'api_url' => $this->apiUrl,
+            ];
+        } catch (\Exception $e) {
+            $statusCode = null;
+            if (str_contains($e->getMessage(), 'status code')) {
+                preg_match('/status code (\d+)/', $e->getMessage(), $matches);
+                $statusCode = $matches[1] ?? null;
+            }
+
+            return [
+                'success' => false,
+                'message' => "DirectAdmin API connection failed: {$e->getMessage()}",
+                'username' => $this->username,
+                'api_url' => $this->apiUrl,
+                'status_code' => $statusCode,
+                'hint' => $statusCode === 401
+                    ? 'Invalid credentials. Verify the username and password/API key in the Node settings.'
+                    : 'Check if the DirectAdmin server is reachable and the API URL is correct.',
+            ];
+        }
+    }
+
+    /**
      * Get detailed connection diagnostics for debugging
      */
     public function getConnectionDiagnostics(): array

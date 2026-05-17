@@ -346,6 +346,39 @@ class ServiceController extends Controller
         return back()->with('success', 'Service status refreshed.');
     }
 
+    /**
+     * Test DirectAdmin connection for a service
+     */
+    public function testDirectAdminConnection(Service $service)
+    {
+        $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
+
+        if ($driver !== 'directadmin') {
+            return back()->with('error', 'This service is not configured for DirectAdmin');
+        }
+
+        if (!$service->node_id) {
+            return back()->with('error', 'No DirectAdmin node assigned to this service');
+        }
+
+        if (!$service->service_meta['username'] ?? null) {
+            return back()->with('error', 'No DirectAdmin username set for this service');
+        }
+
+        try {
+            $daService = new \App\Services\Provisioning\DirectAdminService($service->node);
+            $result = $daService->testConnection();
+
+            if ($result['success']) {
+                return back()->with('success', $result['message']);
+            } else {
+                return back()->with('error', $result['message'] . ($result['hint'] ?? ''));
+            }
+        } catch (\Exception $e) {
+            return back()->with('error', 'Test connection failed: ' . $e->getMessage());
+        }
+    }
+
     public function resendCredentials(Service $service)
     {
         // Only allow for VPS and Dedicated Server products
