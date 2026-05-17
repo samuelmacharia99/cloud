@@ -108,7 +108,9 @@ class NodeController extends Controller
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
             $validated['ssh_port'] = $validated['da_port'];
-            $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}/api";
+            // DirectAdmin API endpoints are accessed directly on the control panel port (e.g., https://hostname:2222/CMD_SELECT_USERS)
+            // Do NOT add /api suffix - DirectAdmin doesn't use /api in the path
+            $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}";
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
                 'name'           => 'required|string|max:255',
