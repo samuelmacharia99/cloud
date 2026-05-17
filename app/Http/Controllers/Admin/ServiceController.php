@@ -293,8 +293,23 @@ class ServiceController extends Controller
             'notes'          => 'nullable|string|max:2000',
         ]);
 
-        // Merge username/password into credentials JSON if provided
-        if (!empty($validated['username']) || !empty($validated['password'])) {
+        // Handle username/password for DirectAdmin products (stored in service_meta)
+        $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
+
+        if ($driver === 'directadmin' && (!empty($validated['username']) || !empty($validated['password']))) {
+            $meta = is_array($service->service_meta) ? $service->service_meta : ($service->service_meta ?? []);
+
+            if (!empty($validated['username'])) {
+                $meta['username'] = $validated['username'];
+            }
+            if (!empty($validated['password'])) {
+                $meta['password'] = $validated['password'];
+            }
+
+            $validated['service_meta'] = $meta;
+        }
+        // Handle username/password for other products (stored in credentials JSON)
+        elseif (!empty($validated['username']) || !empty($validated['password'])) {
             $credentials = is_string($service->credentials)
                 ? json_decode($service->credentials, true) ?? []
                 : ($service->credentials ?? []);

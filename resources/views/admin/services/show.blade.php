@@ -392,6 +392,41 @@
                               placeholder="Add any notes about this service...">{{ $service->notes }}</textarea>
                 </div>
 
+                <!-- DirectAdmin Configuration (if shared hosting or can be configured) -->
+                @if ($service->product && $service->product->type === 'shared_hosting')
+                    <div class="border-t border-slate-200 dark:border-slate-600 pt-6 mt-6">
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Configuration</h3>
+
+                        <!-- Username -->
+                        <div class="mb-4">
+                            <label for="username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Username</label>
+                            @php
+                                $creds = is_array($service->credentials) ? $service->credentials : (is_string($service->credentials) ? json_decode($service->credentials, true) : []);
+                                $username = $creds['username'] ?? ($service->service_meta['username'] ?? '');
+                            @endphp
+                            <input type="text" id="username" name="username"
+                                   value="{{ $username }}"
+                                   maxlength="16"
+                                   placeholder="DirectAdmin username (max 16 chars)"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Max 16 characters, lowercase letters/numbers/underscore only</p>
+                        </div>
+
+                        <!-- Password -->
+                        <div class="mb-4">
+                            <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password</label>
+                            @php
+                                $password = $creds['password'] ?? ($service->service_meta['password'] ?? '');
+                            @endphp
+                            <input type="text" id="password" name="password"
+                                   value="{{ $password }}"
+                                   placeholder="DirectAdmin password"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Complex password with mixed case, numbers, and symbols</p>
+                        </div>
+                    </div>
+                @endif
+
                 <!-- Form Actions (Sticky Footer) -->
                 <div class="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800 sticky bottom-0 bg-white dark:bg-slate-900">
                     <button type="button" @click="editDetailsModal = false"
