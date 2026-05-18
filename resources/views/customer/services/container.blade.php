@@ -163,9 +163,7 @@
         @include('customer.services.partials.enhanced-stats')
 
         <!-- File Manager -->
-        <div class="mb-8">
-            @include('customer.services.partials.file-manager')
-        </div>
+        @include('customer.services.partials.file-manager')
 
         <!-- Backups Section -->
         <div class="bg-white rounded-lg shadow p-6 mb-8">

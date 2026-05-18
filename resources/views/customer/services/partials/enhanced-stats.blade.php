@@ -1,3 +1,6 @@
+<div class="bg-white rounded-lg shadow p-6 mb-8">
+    <h3 class="text-lg font-bold mb-6">Resource Usage & Metrics</h3>
+
 <div x-data="containerStats()" x-init="init()" class="space-y-6">
     <!-- Time range tabs -->
     <div class="flex gap-2 border-b border-gray-200">
@@ -93,6 +96,7 @@
             <div class="text-sm text-gray-600" x-text="storageText"></div>
         </div>
     </div>
+</div>
 </div>
 
 @push('scripts')

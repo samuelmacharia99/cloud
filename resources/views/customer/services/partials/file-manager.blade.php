@@ -1,11 +1,12 @@
-<div x-data="fileManager()" class="bg-white border border-gray-200 rounded-lg">
-    <!-- Header -->
-    <div class="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <button @click="open = !open" class="flex items-center gap-2 font-medium text-gray-700 hover:text-gray-900">
-            <span x-text="open ? '▼' : '▶'" class="text-sm"></span>
-            <span>📁 File Manager</span>
-        </button>
-    </div>
+<div class="bg-white rounded-lg shadow mb-8">
+    <div x-data="fileManager()" class="border border-gray-200 rounded-lg">
+        <!-- Header -->
+        <div class="border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+            <button @click="open = !open" class="flex items-center gap-2 font-medium text-gray-700 hover:text-gray-900">
+                <span x-text="open ? '▼' : '▶'" class="text-sm"></span>
+                <span>📁 File Manager</span>
+            </button>
+        </div>
 
     <!-- Manager content -->
     <template x-if="open">
@@ -115,6 +116,7 @@
             </template>
         </div>
     </template>
+    </div>
 </div>
 
 @push('scripts')
