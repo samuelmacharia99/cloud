@@ -74,17 +74,33 @@ class ContainerDeploymentService
             $envValues = $service->service_meta['env_values'] ?? [];
             $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
-            // Create deployment record
-            $deployment = ContainerDeployment::create([
-                'service_id' => $service->id,
-                'node_id' => $node->id,
-                'container_name' => $containerName,
-                'status' => 'deploying',
-                'docker_compose_content' => '', // Will be set after rendering
-                'assigned_port' => $port,
-                'env_values' => $envVars,
-                'selected_version' => $selectedVersion,
-            ]);
+            // Check if deployment already exists for this service and reuse it
+            $existingDeployment = ContainerDeployment::where('service_id', $service->id)->first();
+
+            if ($existingDeployment) {
+                // Update existing deployment (in case of retry after failure)
+                $deployment = $existingDeployment;
+                $deployment->update([
+                    'node_id' => $node->id,
+                    'status' => 'deploying',
+                    'docker_compose_content' => '',
+                    'assigned_port' => $port,
+                    'env_values' => $envVars,
+                    'selected_version' => $selectedVersion,
+                ]);
+            } else {
+                // Create new deployment record
+                $deployment = ContainerDeployment::create([
+                    'service_id' => $service->id,
+                    'node_id' => $node->id,
+                    'container_name' => $containerName,
+                    'status' => 'deploying',
+                    'docker_compose_content' => '', // Will be set after rendering
+                    'assigned_port' => $port,
+                    'env_values' => $envVars,
+                    'selected_version' => $selectedVersion,
+                ]);
+            }
 
             // Render docker-compose.yml with deployment
             $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion);
