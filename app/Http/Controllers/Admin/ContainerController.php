@@ -34,9 +34,9 @@ class ContainerController
     }
 
     /**
-     * Stop a running container
+     * Suspend a running container (change status to suspended)
      */
-    public function stop(Service $service): RedirectResponse
+    public function suspend(Service $service): RedirectResponse
     {
         try {
             if ($service->product?->type !== 'container_hosting') {
@@ -46,11 +46,19 @@ class ContainerController
             $containerService = new ContainerDeploymentService();
             $containerService->suspend($service);
 
-            return back()->with('success', 'Container stopped successfully');
+            return back()->with('success', 'Container suspended successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to stop container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to stop container: ' . $e->getMessage()]);
+            \Log::error("Failed to suspend container for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to suspend container: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Stop a running container (alias for suspend)
+     */
+    public function stop(Service $service): RedirectResponse
+    {
+        return $this->suspend($service);
     }
 
     /**

@@ -167,6 +167,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Container management
         Route::resource('admin/container-templates', \App\Http\Controllers\Admin\ContainerTemplateController::class)->names('admin.container-templates');
         Route::post('admin/services/{service}/container/restart', [\App\Http\Controllers\Admin\ContainerController::class, 'restart'])->name('admin.services.container.restart');
+        Route::post('admin/services/{service}/container/suspend', [\App\Http\Controllers\Admin\ContainerController::class, 'suspend'])->name('admin.services.container.suspend');
         Route::post('admin/services/{service}/container/stop', [\App\Http\Controllers\Admin\ContainerController::class, 'stop'])->name('admin.services.container.stop');
         Route::post('admin/services/{service}/container/start', [\App\Http\Controllers\Admin\ContainerController::class, 'start'])->name('admin.services.container.start');
         Route::get('admin/services/{service}/container/logs', [\App\Http\Controllers\Admin\ContainerController::class, 'logs'])->name('admin.services.container.logs');

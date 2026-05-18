@@ -141,20 +141,20 @@
                     </button>
                 </form>
             @elseif ($deployment->isRunning())
-                <form method="POST" action="{{ route('admin.services.container.stop', $service) }}" style="display:inline;">
+                <form method="POST" action="{{ route('admin.services.container.suspend', $service) }}" style="display:inline;">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
-                        Stop
+                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700" onclick="return confirm('Suspend this container?')">
+                        Suspend
                     </button>
                 </form>
 
                 <form method="POST" action="{{ route('admin.services.container.restart', $service) }}" style="display:inline;">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="return confirm('Restart this container?')">
                         Restart
                     </button>
                 </form>
-            @elseif ($deployment->status === 'stopped')
+            @elseif ($deployment->status === 'stopped' || $deployment->status === 'suspended')
                 <form method="POST" action="{{ route('admin.services.container.start', $service) }}" style="display:inline;">
                     @csrf
                     <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
