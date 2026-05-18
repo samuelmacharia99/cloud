@@ -136,7 +136,7 @@ class CheckoutController extends Controller
         $user = auth()->user();
 
         try {
-            $order = \DB::transaction(function () use ($cart, $user) {
+            $order = \DB::transaction(function () use ($cart, $user, $request) {
                 // Get cart items with details
                 $cartItems = [];
                 $subtotal = 0;
