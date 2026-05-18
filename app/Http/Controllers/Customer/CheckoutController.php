@@ -664,7 +664,7 @@ class CheckoutController extends Controller
     private function processCheckout(User $user, array $cart, Request $request = null)
     {
         try {
-            $order = \DB::transaction(function () use ($cart, $user) {
+            $order = \DB::transaction(function () use ($cart, $user, $request) {
                 // Get cart items with details
                 $cartItems = [];
                 $subtotal = 0;
