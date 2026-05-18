@@ -659,11 +659,25 @@ class ContainerDeploymentService
         for ($attempt = 0; $attempt < self::HEALTH_CHECK_RETRIES; $attempt++) {
             try {
                 $status = $this->getContainerStatus($ssh, $containerName);
+
+                \Log::info("Health check attempt", [
+                    'attempt' => $attempt + 1,
+                    'max_attempts' => self::HEALTH_CHECK_RETRIES,
+                    'container_name' => $containerName,
+                    'running' => $status['running'] ?? false,
+                    'state' => $status['state'] ?? 'unknown',
+                ]);
+
                 if (isset($status['running']) && $status['running']) {
+                    \Log::info("Container health check passed", ['container_name' => $containerName]);
                     return;
                 }
             } catch (\Exception $e) {
-                // Check failed, retry
+                \Log::warning("Health check exception", [
+                    'attempt' => $attempt + 1,
+                    'container_name' => $containerName,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
             if ($attempt < self::HEALTH_CHECK_RETRIES - 1) {
