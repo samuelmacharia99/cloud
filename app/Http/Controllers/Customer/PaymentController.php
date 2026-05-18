@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Order;
+use App\Models\Service;
 use App\Services\CreditService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
