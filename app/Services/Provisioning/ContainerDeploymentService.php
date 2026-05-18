@@ -23,7 +23,7 @@ class ContainerDeploymentService
     private const PORT_RANGE_START = 30000;
     private const PORT_RANGE_END = 40000;
     private const DEPLOY_TIMEOUT = 120;
-    private const HEALTH_CHECK_RETRIES = 3;
+    private const HEALTH_CHECK_RETRIES = 9;
     private const HEALTH_CHECK_DELAY = 5;
 
     /**
