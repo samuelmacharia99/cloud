@@ -32,10 +32,24 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Suspend Services on Due Date',
+                'description' => 'Suspends active services when their invoice due date arrives.',
+                'command' => 'cron:suspend-on-due',
+                'schedule' => '0 8 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Suspend Services',
                 'description' => 'Suspends active services with overdue invoices past the grace period.',
                 'command' => 'cron:suspend-services',
                 'schedule' => '0 4 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Unsuspend Paid Services',
+                'description' => 'Unsuspends services whose invoices have been paid.',
+                'command' => 'cron:unsuspend-paid-services',
+                'schedule' => '*/10 * * * *',
                 'enabled' => true,
             ],
             [
