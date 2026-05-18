@@ -172,6 +172,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/services/{service}/container/logs', [\App\Http\Controllers\Admin\ContainerController::class, 'logs'])->name('admin.services.container.logs');
         Route::get('admin/services/{service}/container/metrics', [\App\Http\Controllers\Admin\ContainerController::class, 'metrics'])->name('admin.services.container.metrics');
         Route::post('admin/services/{service}/container/redeploy', [\App\Http\Controllers\Admin\ContainerController::class, 'redeploy'])->name('admin.services.container.redeploy');
+        Route::get('admin/services/{service}/container/edit', [\App\Http\Controllers\Admin\ContainerController::class, 'edit'])->name('admin.services.container.edit');
+        Route::patch('admin/services/{service}/container', [\App\Http\Controllers\Admin\ContainerController::class, 'update'])->name('admin.services.container.update');
+        Route::post('admin/services/{service}/container/provision', [\App\Http\Controllers\Admin\ContainerController::class, 'provision'])->name('admin.services.container.provision');
         Route::post('admin/services/{service}/container/domains', [\App\Http\Controllers\Admin\ContainerController::class, 'bindDomain'])->name('admin.services.container.domains.bind');
         Route::delete('admin/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Admin\ContainerController::class, 'unbindDomain'])->name('admin.services.container.domains.unbind');
         Route::post('admin/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Admin\ContainerController::class, 'enableSsl'])->name('admin.services.container.domains.ssl');

@@ -286,4 +286,98 @@ class ContainerController
             return back()->withErrors(['error' => 'Delete failed: ' . $e->getMessage()]);
         }
     }
+
+    /**
+     * Show container edit form
+     */
+    public function edit(Service $service)
+    {
+        if ($service->product?->type !== 'container_hosting') {
+            return back()->withErrors(['error' => 'Service is not a container hosting service']);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (!$deployment) {
+            return back()->withErrors(['error' => 'Container not deployed yet']);
+        }
+
+        return view('admin.services.containers.edit', [
+            'service' => $service,
+            'deployment' => $deployment,
+            'statuses' => ['pending', 'provisioning', 'running', 'stopped', 'failed', 'terminated'],
+        ]);
+    }
+
+    /**
+     * Update container deployment details
+     */
+    public function update(Service $service, Request $request): RedirectResponse
+    {
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            $validated = $request->validate([
+                'status' => 'required|in:pending,provisioning,running,stopped,failed,terminated',
+            ]);
+
+            $oldStatus = $deployment->status;
+            $deployment->update($validated);
+
+            \Log::info('Container deployment status updated', [
+                'service_id' => $service->id,
+                'deployment_id' => $deployment->id,
+                'old_status' => $oldStatus,
+                'new_status' => $deployment->status,
+                'updated_by' => auth()->id(),
+            ]);
+
+            return back()->with('success', "Container status updated from {$oldStatus} to {$validated['status']}");
+        } catch (\Exception $e) {
+            \Log::error("Failed to update container for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to update container: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Provision a pending container
+     */
+    public function provision(Service $service): RedirectResponse
+    {
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            if ($deployment->status !== 'pending') {
+                return back()->withErrors(['error' => "Container must be in pending status to provision. Current status: {$deployment->status}"]);
+            }
+
+            // Provision the container
+            $containerService = new ContainerDeploymentService();
+            $containerService->deploy($service);
+
+            \Log::info('Container provisioned via admin action', [
+                'service_id' => $service->id,
+                'deployment_id' => $deployment->id,
+                'provisioned_by' => auth()->id(),
+            ]);
+
+            return back()->with('success', 'Container provisioning started successfully');
+        } catch (\Exception $e) {
+            \Log::error("Failed to provision container for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to provision container: ' . $e->getMessage()]);
+        }
+    }
 }

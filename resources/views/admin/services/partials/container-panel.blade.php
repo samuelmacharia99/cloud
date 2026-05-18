@@ -133,7 +133,14 @@
 
         <!-- Action Buttons -->
         <div class="flex flex-wrap gap-3 mb-6">
-            @if ($deployment->isRunning())
+            @if ($deployment->status === 'pending')
+                <form method="POST" action="{{ route('admin.services.container.provision', $service) }}" style="display:inline;">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700" onclick="return confirm('Provision this container now?')">
+                        Provision
+                    </button>
+                </form>
+            @elseif ($deployment->isRunning())
                 <form method="POST" action="{{ route('admin.services.container.stop', $service) }}" style="display:inline;">
                     @csrf
                     <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
@@ -155,6 +162,10 @@
                     </button>
                 </form>
             @endif
+
+            <a href="{{ route('admin.services.container.edit', $service) }}" class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700">
+                Edit
+            </a>
 
             <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" style="display:inline;">
                 @csrf
