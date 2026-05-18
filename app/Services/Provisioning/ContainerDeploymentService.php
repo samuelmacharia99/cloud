@@ -54,8 +54,9 @@ class ContainerDeploymentService
                 throw new \DomainException('No active container host node available');
             }
 
-            // Generate container name
-            $containerName = 'talksasa-' . $service->id . '-' . strtolower(Str::random(6));
+            // Generate container name: user-{user_id}-service-{service_id}-{template_type}
+            $templateSlug = strtolower(str_replace(' ', '-', $template->slug));
+            $containerName = "user-{$service->user_id}-service-{$service->id}-{$templateSlug}";
 
             // Assign port
             $port = $this->assignPort($node);
