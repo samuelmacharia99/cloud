@@ -255,6 +255,60 @@ class SSHService
     }
 
     /**
+     * List directory contents
+     */
+    public function listDir(string $path): array
+    {
+        $this->ensureConnected();
+
+        try {
+            $this->initSFTP();
+
+            $raw = $this->sftp->rawlist($path);
+            if ($raw === false) {
+                return [];
+            }
+
+            $entries = [];
+            foreach ($raw as $name => $attrs) {
+                // Skip . and .. entries
+                if ($name === '.' || $name === '..') {
+                    continue;
+                }
+
+                // Skip symlinks (type 3 in phpseclib3)
+                if (($attrs['type'] ?? 0) === 3) {
+                    continue;
+                }
+
+                $entries[] = [
+                    'name' => $name,
+                    'type' => ($attrs['type'] ?? 1) === 2 ? 'dir' : 'file',
+                    'size' => $attrs['size'] ?? 0,
+                    'modified' => $attrs['mtime'] ?? 0,
+                ];
+            }
+
+            // Sort: directories first, then alphabetically
+            usort($entries, function ($a, $b) {
+                $typeSort = ($a['type'] === 'dir' ? 0 : 1) - ($b['type'] === 'dir' ? 0 : 1);
+                if ($typeSort !== 0) {
+                    return $typeSort;
+                }
+                return strcmp($a['name'], $b['name']);
+            });
+
+            return $entries;
+        } catch (\Exception $e) {
+            throw new \RuntimeException(
+                "Failed to list directory {$path}: " . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
      * Initialize SFTP subsystem
      */
     private function initSFTP(): void

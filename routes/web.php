@@ -362,6 +362,17 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
         Route::get('my/services/{service}/container/metrics', [\App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
+        Route::get('my/services/{service}/container/storage-stats', [\App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('customer.services.container.storage-stats');
+
+        // Container file manager (throttled)
+        Route::middleware(['throttle:60,1'])->group(function () {
+            Route::get('my/services/{service}/container/files', [\App\Http\Controllers\Customer\ContainerFileController::class, 'index'])->name('customer.services.container.files.index');
+            Route::get('my/services/{service}/container/files/download', [\App\Http\Controllers\Customer\ContainerFileController::class, 'download'])->name('customer.services.container.files.download');
+            Route::post('my/services/{service}/container/files/upload', [\App\Http\Controllers\Customer\ContainerFileController::class, 'upload'])->middleware('throttle:10,1')->name('customer.services.container.files.upload');
+            Route::delete('my/services/{service}/container/files', [\App\Http\Controllers\Customer\ContainerFileController::class, 'delete'])->name('customer.services.container.files.delete');
+            Route::post('my/services/{service}/container/files/mkdir', [\App\Http\Controllers\Customer\ContainerFileController::class, 'mkdir'])->name('customer.services.container.files.mkdir');
+        });
+
         Route::post('my/services/{service}/container/domains', [\App\Http\Controllers\Customer\ContainerController::class, 'bindDomain'])->name('customer.services.container.domains.bind');
         Route::delete('my/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Customer\ContainerController::class, 'unbindDomain'])->name('customer.services.container.domains.unbind');
         Route::post('my/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');

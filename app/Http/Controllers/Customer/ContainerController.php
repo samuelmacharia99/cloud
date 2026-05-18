@@ -6,7 +6,9 @@ use App\Models\Service;
 use App\Models\ContainerMetric;
 use App\Models\ContainerDomain;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\NginxProxyService;
+use App\Services\SSH\SSHService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -133,7 +135,7 @@ class ContainerController
     /**
      * Get container metrics for chart display
      */
-    public function metrics(Service $service): JsonResponse
+    public function metrics(Service $service, Request $request): JsonResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
 
@@ -144,27 +146,117 @@ class ContainerController
 
             $deployment = $service->containerDeployment;
             if (!$deployment) {
-                return response()->json(['labels' => [], 'cpu' => [], 'memory' => []]);
+                return response()->json([
+                    'labels' => [],
+                    'cpu' => [],
+                    'memory' => [],
+                    'net_rx' => [],
+                    'net_tx' => [],
+                    'disk_read' => [],
+                    'disk_write' => [],
+                    'summary' => null,
+                ]);
             }
 
-            // Get last 24 hours of metrics
+            // Parse hours parameter (1, 6, 24, 168 for 7 days)
+            $hours = (int) $request->query('hours', 24);
+            $validHours = [1, 6, 24, 168];
+            if (!in_array($hours, $validHours)) {
+                $hours = 24;
+            }
+
+            // Fetch metrics for the requested period
             $metrics = ContainerMetric::where('container_deployment_id', $deployment->id)
-                ->where('recorded_at', '>=', now()->subHours(24))
+                ->where('recorded_at', '>=', now()->subHours($hours))
                 ->orderBy('recorded_at')
                 ->get();
 
             $labels = $metrics->map(fn($m) => $m->recorded_at->format('H:i'))->toArray();
             $cpuData = $metrics->map(fn($m) => round($m->cpu_percentage, 2))->toArray();
             $memoryData = $metrics->map(fn($m) => $m->memory_used_mb)->toArray();
+            $netRxData = $metrics->map(fn($m) => $m->net_io_rx_bytes ?? 0)->toArray();
+            $netTxData = $metrics->map(fn($m) => $m->net_io_tx_bytes ?? 0)->toArray();
+            $diskReadData = $metrics->map(fn($m) => $m->block_io_read_bytes ?? 0)->toArray();
+            $diskWriteData = $metrics->map(fn($m) => $m->block_io_write_bytes ?? 0)->toArray();
+
+            // Calculate summary stats
+            $summary = null;
+            if ($metrics->count() > 0) {
+                $summary = [
+                    'cpu_avg' => round($metrics->avg('cpu_percentage'), 2),
+                    'memory_avg' => round($metrics->avg('memory_used_mb'), 0),
+                    'memory_limit_mb' => $metrics->first()?->memory_limit_mb ?? 0,
+                    'net_rx_total' => $metrics->sum('net_io_rx_bytes'),
+                    'net_tx_total' => $metrics->sum('net_io_tx_bytes'),
+                    'uptime_seconds' => $deployment->getUptimeSeconds(),
+                    'uptime_human' => $this->formatUptime($deployment->getUptimeSeconds()),
+                ];
+            }
 
             return response()->json([
                 'labels' => $labels,
                 'cpu' => $cpuData,
                 'memory' => $memoryData,
+                'net_rx' => $netRxData,
+                'net_tx' => $netTxData,
+                'disk_read' => $diskReadData,
+                'disk_write' => $diskWriteData,
+                'summary' => $summary,
             ]);
         } catch (\Exception $e) {
             \Log::error("Failed to fetch metrics for service {$service->id}: " . $e->getMessage());
             return response()->json(['error' => 'Failed to fetch metrics'], 500);
+        }
+    }
+
+    /**
+     * Get storage usage stats for the container
+     */
+    public function storageStats(Service $service): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return response()->json(['error' => 'Invalid service type'], 400);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return response()->json(['error' => 'Container not deployed yet'], 400);
+            }
+
+            $ssh = SSHService::forNode($deployment->node);
+            $fileService = new ContainerFileService($ssh);
+
+            $stats = $fileService->getStorageUsage($deployment);
+
+            return response()->json([
+                'used_bytes' => $stats['used_bytes'],
+                'human' => $stats['human'],
+                'container_name' => $deployment->container_name,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to fetch storage stats for service {$service->id}: " . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch storage stats'], 500);
+        }
+    }
+
+    /**
+     * Format uptime in human-readable format
+     */
+    private function formatUptime(int $seconds): string
+    {
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+
+        if ($days > 0) {
+            return "{$days}d {$hours}h {$minutes}m";
+        } elseif ($hours > 0) {
+            return "{$hours}h {$minutes}m";
+        } else {
+            return "{$minutes}m";
         }
     }
 

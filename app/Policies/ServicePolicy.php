@@ -105,4 +105,14 @@ class ServicePolicy
             ? Response::allow()
             : Response::deny('Only administrators can refresh service status.');
     }
+
+    /**
+     * Customer can manage files for their own container services. Admin can manage any.
+     */
+    public function manageFiles(User $user, Service $service): Response
+    {
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only manage files for your own services.');
+    }
 }
