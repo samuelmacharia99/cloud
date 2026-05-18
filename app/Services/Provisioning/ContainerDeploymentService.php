@@ -126,8 +126,12 @@ class ContainerDeploymentService
                     self::DEPLOY_TIMEOUT
                 );
 
-                // Wait for container to start and health check
-                $this->waitForContainerHealth($ssh, $containerName);
+                // Note: Skip blocking health check. Containers may take 10-30+ seconds to fully start.
+                // Background cron job (cron:check-container-health) will verify health periodically.
+                \Log::info("Container deployed successfully, health verification via background job", [
+                    'service_id' => $service->id,
+                    'container_name' => $containerName,
+                ]);
 
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
