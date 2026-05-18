@@ -62,6 +62,17 @@ class Product extends Model
         'dedicated_server' => 'Dedicated Server',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::saving(function ($product) {
+            if ($product->type === 'container_hosting' && !$product->provisioning_driver_key) {
+                $product->provisioning_driver_key = 'container';
+            }
+        });
+    }
+
     public function services()
     {
         return $this->hasMany(Service::class);
