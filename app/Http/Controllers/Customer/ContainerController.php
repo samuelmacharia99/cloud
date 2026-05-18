@@ -9,12 +9,13 @@ use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
+use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
-class ContainerController
+class ContainerController extends Controller
 {
     /**
      * Show container dashboard
