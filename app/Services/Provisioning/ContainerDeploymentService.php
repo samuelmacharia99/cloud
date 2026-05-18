@@ -642,7 +642,7 @@ class ContainerDeploymentService
         for ($attempt = 0; $attempt < self::HEALTH_CHECK_RETRIES; $attempt++) {
             try {
                 $status = $this->getContainerStatus($ssh, $containerName);
-                if (isset($status['state']) && in_array($status['state'], ['running', 'Up'])) {
+                if (isset($status['running']) && $status['running']) {
                     return;
                 }
             } catch (\Exception $e) {
