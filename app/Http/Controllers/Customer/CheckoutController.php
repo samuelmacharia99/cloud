@@ -142,6 +142,8 @@ class CheckoutController extends Controller
                 $subtotal = 0;
 
                 foreach ($cart as $key => $item) {
+                    $item['key'] = $key;
+
                     if ($item['type'] === 'product') {
                         $product = Product::find($item['product_id']);
                         if (!$product) continue;
@@ -668,6 +670,8 @@ class CheckoutController extends Controller
                 $subtotal = 0;
 
                 foreach ($cart as $key => $item) {
+                    $item['key'] = $key;
+
                     if ($item['type'] === 'product') {
                         $product = Product::find($item['product_id']);
                         if (!$product) continue;
