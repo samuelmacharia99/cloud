@@ -220,6 +220,17 @@ class ContainerTemplateSeeder extends Seeder
                 'required_ram_mb' => 256,
                 'required_cpu_cores' => 0.5,
                 'required_storage_gb' => 2,
+                'versions' => [
+                    '18-alpine',
+                    '20-alpine',
+                    '22-alpine',
+                    '18-slim',
+                    '20-slim',
+                    '22-slim',
+                    '18',
+                    '20',
+                    '22',
+                ],
                 'environment_variables' => [
                     [
                         'key' => 'NODE_ENV',
