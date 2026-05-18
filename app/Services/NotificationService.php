@@ -14,6 +14,7 @@ use App\Mail\InvoiceOverdueMail;
 use App\Mail\PaymentReceivedMail;
 use App\Mail\ServiceActivatedMail;
 use App\Mail\ServiceSuspendedMail;
+use App\Mail\ServiceUnsuspendedMail;
 use App\Mail\ServiceTerminatedMail;
 use App\Mail\DomainExpiryMail;
 use App\Mail\TicketCreatedMail;
@@ -238,6 +239,34 @@ class NotificationService
                 $this->smsService->send($service->user->phone, $message);
             } catch (\Exception $e) {
                 Log::error('Failed to send service suspended SMS', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyServiceUnsuspended(Service $service): void
+    {
+        if (!$this->smtpConfigured()) {
+            return;
+        }
+
+        try {
+            Mail::to($service->user->email)->send(new ServiceUnsuspendedMail($service));
+            $this->logEmail($service->user->email, 'Service Restored: ' . $service->name, 'sent');
+        } catch (\Exception $e) {
+            $this->logEmail($service->user->email, 'Service Restored: ' . $service->name, 'failed', $e->getMessage());
+            Log::error('Failed to send service unsuspended notification', ['error' => $e->getMessage()]);
+        }
+
+        if ($this->smsService->isConfigured() && $service->user->phone) {
+            try {
+                $message = $this->renderTemplate('service_unsuspended', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'site_name' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                ], 'Your service "' . $service->name . '" has been restored. Your account is now active again.');
+                $this->smsService->send($service->user->phone, $message);
+            } catch (\Exception $e) {
+                Log::error('Failed to send service unsuspended SMS', ['error' => $e->getMessage()]);
             }
         }
     }

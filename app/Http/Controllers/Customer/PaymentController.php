@@ -471,6 +471,9 @@ class PaymentController extends Controller
         // Trigger service provisioning
         $this->provisionServices($invoice);
 
+        // Unsuspend any suspended services now that invoice is paid
+        $this->unsuspendServices($invoice);
+
         // Process domain orders for reseller customers
         $this->processDomainOrdersForReseller($invoice);
 
@@ -586,6 +589,41 @@ class PaymentController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Service provisioning trigger failed', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Unsuspend suspended services linked to a paid invoice.
+     */
+    private function unsuspendServices(Invoice $invoice): void
+    {
+        try {
+            $provisioningService = new \App\Services\Provisioning\ProvisioningService();
+            $notificationService = app(\App\Services\NotificationService::class);
+
+            // Find all suspended services for this invoice
+            $services = Service::where('invoice_id', $invoice->id)
+                ->where('status', 'suspended')
+                ->get();
+
+            foreach ($services as $service) {
+                try {
+                    $provisioningService->unsuspend($service);
+                    $notificationService->notifyServiceUnsuspended($service->fresh());
+
+                    Log::info('Service unsuspended - invoice paid', [
+                        'service_id' => $service->id,
+                        'invoice_id' => $invoice->id,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Service unsuspension trigger failed', [
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
             ]);
