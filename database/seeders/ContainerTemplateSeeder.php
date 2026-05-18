@@ -267,7 +267,38 @@ class ContainerTemplateSeeder extends Seeder
             ]
         );
 
-        // 5. Static Website
+        // 5. Python Application (Disabled - use Node.js instead)
+        ContainerTemplate::firstOrCreate(
+            ['slug' => 'python'],
+            [
+                'name' => 'Python Application',
+                'description' => 'Python runtime for Flask, Django, FastAPI applications. (Disabled - use Node.js instead)',
+                'category' => 'web',
+                'docker_image' => 'python:3.11-slim',
+                'default_port' => 8000,
+                'required_ram_mb' => 256,
+                'required_cpu_cores' => 0.5,
+                'required_storage_gb' => 2,
+                'environment_variables' => [
+                    [
+                        'key' => 'PYTHONUNBUFFERED',
+                        'label' => 'Python Output Buffering',
+                        'default' => '1',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                ],
+                'volume_paths' => [
+                    'app_data' => '/app',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'is_active' => false,
+                'order' => 5,
+            ]
+        );
+
+        // 7. Static Website
         ContainerTemplate::firstOrCreate(
             ['slug' => 'static-site'],
             [
@@ -286,7 +317,7 @@ class ContainerTemplateSeeder extends Seeder
                 'compose_services' => [],
                 'setup_commands' => [],
                 'is_active' => true,
-                'order' => 5,
+                'order' => 6,
             ]
         );
     }
