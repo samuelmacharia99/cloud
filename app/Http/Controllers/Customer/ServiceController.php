@@ -34,6 +34,11 @@ class ServiceController extends Controller
             abort(403);
         }
 
+        // Redirect container services to their dedicated dashboard
+        if ($service->product?->type === 'container_hosting') {
+            return redirect()->route('customer.services.container.show', $service);
+        }
+
         $service->load(['product', 'invoice']);
         return view('customer.services.show', compact('service'));
     }
