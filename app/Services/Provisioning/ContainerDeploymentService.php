@@ -659,16 +659,17 @@ class ContainerDeploymentService
     }
 
     /**
-     * Get container status from docker compose ps
+     * Get container status from docker ps
      */
     private function getContainerStatus(SSHService $ssh, string $containerName): array
     {
-        $containerPath = self::CONTAINER_BASE_PATH . '/' . $containerName;
-        $output = $ssh->exec("cd {$containerPath} && docker compose ps --format json 2>/dev/null || echo '[]'", 10);
+        // Use docker ps to check container status (more reliable than docker compose ps)
+        $output = $ssh->exec("docker ps -a --filter 'name={$containerName}' --format json 2>/dev/null || echo '[]'", 10);
 
         $containers = json_decode($output, true) ?? [];
 
         if (empty($containers)) {
+            \Log::debug("Container not found in docker ps", ['container_name' => $containerName]);
             return [
                 'state' => 'unknown',
                 'running' => false,
@@ -677,11 +678,20 @@ class ContainerDeploymentService
         }
 
         $mainContainer = $containers[0];
+        $state = $mainContainer['State'] ?? 'unknown';
+        $isRunning = stripos($state, 'up') !== false;
+
+        \Log::debug("Container status check", [
+            'container_name' => $containerName,
+            'state' => $state,
+            'running' => $isRunning,
+            'full_data' => $mainContainer,
+        ]);
 
         return [
-            'state' => $mainContainer['State'] ?? 'unknown',
-            'running' => stripos($mainContainer['State'] ?? '', 'up') !== false,
-            'internal_ip' => $mainContainer['Publisher'] ?? null,
+            'state' => $state,
+            'running' => $isRunning,
+            'internal_ip' => $mainContainer['Ports'] ?? null,
             'full_data' => $mainContainer,
         ];
     }
