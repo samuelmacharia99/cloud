@@ -267,12 +267,12 @@ class ContainerTemplateSeeder extends Seeder
             ]
         );
 
-        // 5. Python Application (Disabled - use Node.js instead)
+        // 5. Python Application
         ContainerTemplate::firstOrCreate(
             ['slug' => 'python'],
             [
                 'name' => 'Python Application',
-                'description' => 'Python runtime for Flask, Django, FastAPI applications. (Disabled - use Node.js instead)',
+                'description' => 'Python runtime for Flask, Django, FastAPI applications.',
                 'category' => 'web',
                 'docker_image' => 'python:3.11-slim',
                 'default_port' => 8000,
@@ -293,7 +293,7 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
-                'is_active' => false,
+                'is_active' => true,
                 'order' => 5,
             ]
         );
