@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Product;
+use App\Models\ContainerTemplate;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -10,6 +11,9 @@ class ProductSeeder extends Seeder
 {
     public function run(): void
     {
+        // Get the Node.js container template for linking
+        $nodeTemplate = ContainerTemplate::where('slug', 'nodejs')->first();
+
         $products = [
             [
                 'name' => 'Shared Hosting Starter',
@@ -59,7 +63,7 @@ class ProductSeeder extends Seeder
                 'billing_cycle' => 'monthly',
                 'features' => ['2GB RAM', '2 vCPU', '50GB SSD', '2TB Bandwidth', 'Root Access', 'Snapshots'],
                 'setup_fee' => 10.00,
-                'provisioning_driver_key' => 'proxmox',
+                'provisioning_driver_key' => 'container',
                 'resource_limits' => ['cpu' => 2, 'memory' => 2048, 'disk' => 50],
                 'is_active' => true,
                 'visible_to_resellers' => true,
@@ -122,6 +126,14 @@ class ProductSeeder extends Seeder
 
         foreach ($products as $product) {
             Product::create($product);
+        }
+
+        // Link Cloud VPS product to Node.js template
+        if ($nodeTemplate) {
+            $cloudVps = Product::where('slug', 'cloud-vps-1')->first();
+            if ($cloudVps) {
+                $cloudVps->update(['container_template_id' => $nodeTemplate->id]);
+            }
         }
     }
 }
