@@ -89,7 +89,7 @@
                                                 <!-- radio toggle -->
                                                 <div class="space-y-2">
                                                     <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                                        <input type="radio" :value="true" x-model="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                        <input type="radio" name="ns_mode_{{ $item['key'] }}" @change="useDefault = true" :checked="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
                                                         <div>
                                                             <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
                                                                 Use Talksasa Cloud Nameservers
@@ -102,7 +102,7 @@
                                                     </label>
 
                                                     <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                                        <input type="radio" :value="false" x-model="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                        <input type="radio" name="ns_mode_{{ $item['key'] }}" @change="useDefault = false" :checked="!useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
                                                         <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Use Custom Nameservers</p>
                                                     </label>
                                                 </div>
