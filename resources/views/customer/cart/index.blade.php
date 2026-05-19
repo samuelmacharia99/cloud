@@ -108,26 +108,45 @@
                                                 </div>
 
                                                 <!-- custom ns fields -->
-                                                <div x-show="!useDefault" x-transition class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                    <div>
-                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS1 <span class="text-red-500">*</span></label>
-                                                        <input type="text" x-model="customNs1" placeholder="ns1.yourdomain.com"
-                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                <div x-show="!useDefault" x-transition class="mt-4">
+                                                    <div class="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            x-model="nsInput"
+                                                            @keydown.enter.prevent="addNs()"
+                                                            placeholder="Type a nameserver (e.g. ns1.yourdomain.com)"
+                                                            :disabled="customNs.length >= 4"
+                                                            class="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                                                        >
+                                                        <button
+                                                            type="button"
+                                                            @click="addNs()"
+                                                            :disabled="!nsInput.trim() || customNs.length >= 4"
+                                                            class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-medium transition"
+                                                        >
+                                                            + Add
+                                                        </button>
                                                     </div>
-                                                    <div>
-                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS2</label>
-                                                        <input type="text" x-model="customNs2" placeholder="ns2.yourdomain.com"
-                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS3 <span class="text-slate-400 font-normal">(optional)</span></label>
-                                                        <input type="text" x-model="customNs3" placeholder="ns3.yourdomain.com"
-                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                                                    </div>
-                                                    <div>
-                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS4 <span class="text-slate-400 font-normal">(optional)</span></label>
-                                                        <input type="text" x-model="customNs4" placeholder="ns4.yourdomain.com"
-                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    <p x-show="nsInputError" class="text-xs text-red-600 dark:text-red-400 mt-1" x-text="nsInputError"></p>
+                                                    <p class="text-xs mt-1" :class="customNs.length === 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'">
+                                                        <template x-if="customNs.length === 0"><span>At least one nameserver is required</span></template>
+                                                        <template x-if="customNs.length > 0 && customNs.length < 4"><span x-text="`${customNs.length}/4 nameservers added`"></span></template>
+                                                        <template x-if="customNs.length === 4"><span>Maximum 4 nameservers reached</span></template>
+                                                    </p>
+                                                    <div x-show="customNs.length > 0" class="flex flex-wrap gap-2 mt-3">
+                                                        <template x-for="(ns, idx) in customNs" :key="idx">
+                                                            <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-full text-xs font-mono text-slate-700 dark:text-slate-300">
+                                                                <svg class="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 10-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                                </svg>
+                                                                <span x-text="ns"></span>
+                                                                <button type="button" @click="removeNs(idx)" class="ml-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 p-0.5 transition">
+                                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/>
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
+                                                        </template>
                                                     </div>
                                                 </div>
 
@@ -137,7 +156,7 @@
                                                         <p x-show="error" class="text-xs text-red-600 dark:text-red-400" x-text="error"></p>
                                                         <p x-show="saved && !error" class="text-xs text-emerald-600 dark:text-emerald-400">✓ Nameservers saved</p>
                                                     </div>
-                                                    <button @click="save()" :disabled="saving"
+                                                    <button @click="save()" :disabled="saving || (!useDefault && customNs.length === 0)"
                                                         class="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
                                                         <span x-show="!saving">Save Nameservers</span>
                                                         <span x-show="saving">Saving...</span>
@@ -370,29 +389,54 @@ function nameserverConfig(cartKey, stored, defaults) {
         cartKey,
         defaults,
         useDefault: usingDefault,
-        customNs1: usingDefault ? '' : (stored.ns1 || ''),
-        customNs2: usingDefault ? '' : (stored.ns2 || ''),
-        customNs3: usingDefault ? '' : (stored.ns3 || ''),
-        customNs4: usingDefault ? '' : (stored.ns4 || ''),
+        nsInput: '',
+        nsInputError: null,
+        customNs: [],
         saving: false,
         saved: false,
         error: null,
+
+        init() {
+            if (!usingDefault) {
+                [stored.ns1, stored.ns2, stored.ns3, stored.ns4]
+                    .filter(Boolean)
+                    .forEach(ns => this.customNs.push(ns));
+            }
+        },
+
+        addNs() {
+            const val = this.nsInput.trim().toLowerCase();
+            if (!val) return;
+            if (this.customNs.length >= 4) { this.nsInputError = 'Maximum 4 nameservers'; return; }
+            if (this.customNs.includes(val)) { this.nsInputError = 'Already added'; return; }
+            if (!/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/.test(val)) {
+                this.nsInputError = 'Invalid hostname format';
+                return;
+            }
+            this.customNs.push(val);
+            this.nsInput = '';
+            this.nsInputError = null;
+        },
+
+        removeNs(idx) {
+            this.customNs.splice(idx, 1);
+        },
 
         async save() {
             this.error = null;
             this.saved = false;
 
-            if (!this.useDefault && !this.customNs1.trim()) {
-                this.error = 'NS1 is required when using custom nameservers';
+            if (!this.useDefault && this.customNs.length === 0) {
+                this.error = 'Please add at least one nameserver';
                 return;
             }
 
             const payload = {
                 use_default: this.useDefault,
-                ns1: this.useDefault ? this.defaults.ns1 : this.customNs1.trim(),
-                ns2: this.useDefault ? (this.defaults.ns2 || null) : (this.customNs2.trim() || null),
-                ns3: this.useDefault ? (this.defaults.ns3 || null) : (this.customNs3.trim() || null),
-                ns4: this.useDefault ? (this.defaults.ns4 || null) : (this.customNs4.trim() || null),
+                ns1: this.useDefault ? this.defaults.ns1 : (this.customNs[0] || null),
+                ns2: this.useDefault ? (this.defaults.ns2 || null) : (this.customNs[1] || null),
+                ns3: this.useDefault ? (this.defaults.ns3 || null) : (this.customNs[2] || null),
+                ns4: this.useDefault ? (this.defaults.ns4 || null) : (this.customNs[3] || null),
             };
 
             this.saving = true;

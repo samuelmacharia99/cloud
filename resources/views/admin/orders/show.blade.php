@@ -169,6 +169,40 @@
                                         <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center">{{ $item->billing_cycle ? ucfirst($item->billing_cycle) : '-' }}</td>
                                         <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white text-right">KSH {{ number_format($item->amount, 2) }}</td>
                                     </tr>
+                                    @if(!empty($item->custom_options['nameservers']))
+                                    @php
+                                        $ns = $item->custom_options['nameservers'];
+                                        $activeNs = array_filter([$ns['ns1'] ?? null, $ns['ns2'] ?? null, $ns['ns3'] ?? null, $ns['ns4'] ?? null]);
+                                        $isDefault = $ns['use_default'] ?? true;
+                                    @endphp
+                                    <tr class="bg-slate-50/60 dark:bg-slate-800/30">
+                                        <td colspan="5" class="px-6 pb-4 pt-0">
+                                            <div class="mt-1 p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                                                <div class="flex items-center gap-2 mb-2">
+                                                    <svg class="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 10-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                    </svg>
+                                                    <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Name Servers</span>
+                                                    @if($isDefault)
+                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Talksasa Default</span>
+                                                    @else
+                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">Custom</span>
+                                                    @endif
+                                                </div>
+                                                <div class="flex flex-wrap gap-1.5">
+                                                    @foreach($activeNs as $ns_entry)
+                                                        <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 dark:bg-slate-700 rounded-full text-xs font-mono text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                                                            {{ $ns_entry }}
+                                                        </span>
+                                                    @endforeach
+                                                    @if(empty($activeNs))
+                                                        <span class="text-xs text-slate-400 dark:text-slate-500 italic">No nameservers configured</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    @endif
                                 @endforeach
                             </tbody>
                         </table>
