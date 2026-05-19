@@ -63,6 +63,9 @@ class AuthenticatedSessionController extends Controller
     {
         Auth::guard('web')->logout();
 
+        // Explicitly remove impersonation session keys before invalidating the session
+        $request->session()->forget(['impersonating', 'impersonating_user_id']);
+
         $request->session()->invalidate();
 
         $request->session()->regenerateToken();

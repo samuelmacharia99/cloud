@@ -3,7 +3,10 @@
 namespace App\Services;
 
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 class TwoFactorService
 {
@@ -72,9 +75,9 @@ class TwoFactorService
             // Generate 6-digit code
             $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
-            // Store code with 5-minute expiry
+            // Store hashed code with 5-minute expiry
             $user->update([
-                'two_factor_code' => $code,
+                'two_factor_code' => Hash::make($code),
                 'two_factor_code_expires_at' => now()->addMinutes(5),
             ]);
 
@@ -111,6 +114,8 @@ class TwoFactorService
 
     /**
      * Verify 2FA code
+     *
+     * @throws \Illuminate\Validation\ValidationException when rate limit is exceeded
      */
     public function verifyCode(User $user, string $code): bool
     {
@@ -118,21 +123,37 @@ class TwoFactorService
             return false;
         }
 
+        $rateLimiterKey = '2fa|' . $user->id;
+
+        // Check rate limit: max 5 attempts per minute
+        if (RateLimiter::tooManyAttempts($rateLimiterKey, 5)) {
+            $seconds = RateLimiter::availableIn($rateLimiterKey);
+            Log::warning('2FA rate limit exceeded', ['user_id' => $user->id, 'retry_after' => $seconds]);
+            throw ValidationException::withMessages([
+                'code' => ['Too many attempts. Please wait before trying again.'],
+            ]);
+        }
+
         // Check if code has expired
         if (!$user->two_factor_code_expires_at || now()->isAfter($user->two_factor_code_expires_at)) {
+            RateLimiter::hit($rateLimiterKey);
             Log::warning('2FA code expired', [
                 'user_id' => $user->id,
             ]);
             return false;
         }
 
-        // Check if code matches
-        if ($user->two_factor_code !== $code) {
+        // Check if code matches using Hash::check (bcrypt constant-time comparison)
+        if (!Hash::check($code, (string) $user->two_factor_code)) {
+            RateLimiter::hit($rateLimiterKey);
             Log::warning('Invalid 2FA code attempt', [
                 'user_id' => $user->id,
             ]);
             return false;
         }
+
+        // Clear the rate limiter on successful verification
+        RateLimiter::clear($rateLimiterKey);
 
         // Clear the code
         $user->update([
@@ -190,14 +211,22 @@ class TwoFactorService
     }
 
     /**
-     * Generate recovery codes
+     * Generate recovery codes using cryptographically secure randomness
      */
     private function generateRecoveryCodes(int $count = 10): array
     {
+        $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        $charLen = strlen($chars);
         $codes = [];
+
         for ($i = 0; $i < $count; $i++) {
-            $codes[] = strtoupper(substr(str_shuffle('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 0, 8));
+            $code = '';
+            for ($j = 0; $j < 8; $j++) {
+                $code .= $chars[random_int(0, $charLen - 1)];
+            }
+            $codes[] = $code;
         }
+
         return $codes;
     }
 

@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 
 class CustomerController extends Controller
@@ -210,6 +212,15 @@ class CustomerController extends Controller
 
         $adminId = session('impersonating');
 
+        // Verify that the stored ID belongs to an actual admin before restoring
+        $admin = User::find($adminId);
+        if (!$admin || !$admin->is_admin) {
+            // Potentially tampered session — clear everything and log out safely
+            session()->forget(['impersonating', 'impersonating_user_id']);
+            auth()->logout();
+            abort(403, 'Invalid impersonation session');
+        }
+
         // Clear impersonation session data
         session()->forget(['impersonating', 'impersonating_user_id']);
 
@@ -226,14 +237,14 @@ class CustomerController extends Controller
      */
     public function addDomain(Request $request, User $customer)
     {
-        \Log::info('addDomain() called', [
+        Log::info('addDomain() called', [
             'customer_id' => $customer->id,
             'customer_name' => $customer->name,
             'request_data' => $request->all(),
         ]);
 
         if ($customer->is_admin) {
-            \Log::warning('addDomain() aborted - customer is admin', ['customer_id' => $customer->id]);
+            Log::warning('addDomain() aborted - customer is admin', ['customer_id' => $customer->id]);
             abort(404);
         }
 
@@ -249,13 +260,13 @@ class CustomerController extends Controller
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        \Log::info('addDomain() validation passed', [
+        Log::info('addDomain() validation passed', [
             'customer_id' => $customer->id,
             'validated_data' => $validated,
         ]);
 
         try {
-            \DB::transaction(function () use ($validated, $customer) {
+            DB::transaction(function () use ($validated, $customer) {
                 // Parse domain name (e.g., example.co.ke → name=example, extension=.co.ke)
                 $domainName = $validated['domain_name'];
                 if (strpos($domainName, '.') !== false) {
@@ -267,14 +278,14 @@ class CustomerController extends Controller
                     $extension = '.com';
                 }
 
-                \Log::info('addDomain() domain parsed', [
+                Log::info('addDomain() domain parsed', [
                     'domain_name' => $domainName,
                     'name' => $name,
                     'extension' => $extension,
                 ]);
 
                 // Create domain
-                \Log::info('addDomain() creating domain record', [
+                Log::info('addDomain() creating domain record', [
                     'user_id' => $customer->id,
                     'name' => $name,
                     'extension' => $extension,
@@ -295,7 +306,7 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'],
                 ]);
 
-                \Log::info('addDomain() domain created successfully', [
+                Log::info('addDomain() domain created successfully', [
                     'domain_id' => $domain->id,
                     'customer_id' => $customer->id,
                     'domain_name' => "{$domain->name}{$domain->extension}",
@@ -313,7 +324,7 @@ class CustomerController extends Controller
 
                     $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
 
-                    \Log::info('addDomain() creating invoice', [
+                    Log::info('addDomain() creating invoice', [
                         'customer_id' => $customer->id,
                         'domain_id' => $domain->id,
                         'next_due_date' => $validated['next_due_date'],
@@ -333,7 +344,7 @@ class CustomerController extends Controller
                         'total' => $total,
                     ]);
 
-                    \Log::info('addDomain() invoice created', [
+                    Log::info('addDomain() invoice created', [
                         'invoice_id' => $invoice->id,
                         'invoice_number' => $invoice->invoice_number,
                     ]);
@@ -346,18 +357,18 @@ class CustomerController extends Controller
                         'amount' => $price,
                     ]);
 
-                    \Log::info('addDomain() invoice item created', [
+                    Log::info('addDomain() invoice item created', [
                         'invoice_id' => $invoice->id,
                         'domain_name' => $domainName,
                     ]);
                 } else {
-                    \Log::info('addDomain() no invoice created - next_due_date not provided', [
+                    Log::info('addDomain() no invoice created - next_due_date not provided', [
                         'domain_id' => $domain->id,
                     ]);
                 }
             });
 
-            \Log::info('addDomain() completed successfully', [
+            Log::info('addDomain() completed successfully', [
                 'customer_id' => $customer->id,
                 'domain_name' => $validated['domain_name'],
             ]);
@@ -365,7 +376,7 @@ class CustomerController extends Controller
             return redirect()->route('admin.customers.show', $customer)
                 ->with('success', "Domain {$validated['domain_name']} added successfully.");
         } catch (\Exception $e) {
-            \Log::error('addDomain() failed with exception', [
+            Log::error('addDomain() failed with exception', [
                 'customer_id' => $customer->id,
                 'domain_name' => $validated['domain_name'] ?? 'unknown',
                 'error_message' => $e->getMessage(),
@@ -388,7 +399,7 @@ class CustomerController extends Controller
      */
     public function addService(Request $request, User $customer)
     {
-        \Log::info('addService() called', [
+        Log::info('addService() called', [
             'customer_id' => $customer->id,
             'customer_name' => $customer->name,
             'request_data' => array_diff_key($request->all(), [
@@ -398,7 +409,7 @@ class CustomerController extends Controller
         ]);
 
         if ($customer->is_admin) {
-            \Log::warning('addService() aborted - customer is admin', ['customer_id' => $customer->id]);
+            Log::warning('addService() aborted - customer is admin', ['customer_id' => $customer->id]);
             abort(404);
         }
 
@@ -444,7 +455,7 @@ class CustomerController extends Controller
 
         $validated = $request->validate($rules, $messages);
 
-        \Log::info('addService() validation passed', [
+        Log::info('addService() validation passed', [
             'customer_id' => $customer->id,
             'service_name' => $validated['name'],
             'product_id' => $validated['product_id'],
@@ -463,7 +474,7 @@ class CustomerController extends Controller
                     ->firstOrFail();
             }
 
-            $createdService = \DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting, $selectedPackage) {
+            $createdService = DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting, $selectedPackage) {
                 $serviceMeta = [];
                 $nodeId = null;
 
@@ -492,7 +503,7 @@ class CustomerController extends Controller
                     }
                 }
 
-                \Log::info('addService() creating service', [
+                Log::info('addService() creating service', [
                     'user_id' => $customer->id,
                     'product_id' => $product->id,
                     'service_name' => $validated['name'],
@@ -521,7 +532,7 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
-                \Log::info('addService() service created successfully', [
+                Log::info('addService() service created successfully', [
                     'service_id' => $service->id,
                     'customer_id' => $customer->id,
                     'service_name' => $service->name,
@@ -532,7 +543,7 @@ class CustomerController extends Controller
                     $invoice = $this->createServiceInvoice($customer, $product, $service, $validated);
                     $service->update(['invoice_id' => $invoice->id]);
 
-                    \Log::info('addService() service updated with invoice_id', [
+                    Log::info('addService() service updated with invoice_id', [
                         'service_id' => $service->id,
                         'invoice_id' => $invoice->id,
                     ]);
@@ -556,7 +567,7 @@ class CustomerController extends Controller
                 }
             }
 
-            \Log::info('addService() completed successfully', [
+            Log::info('addService() completed successfully', [
                 'customer_id' => $customer->id,
                 'service_name' => $validated['name'],
             ]);
@@ -564,7 +575,7 @@ class CustomerController extends Controller
             return redirect()->route('admin.customers.show', $customer)
                 ->with('success', $message);
         } catch (\Exception $e) {
-            \Log::error('addService() failed with exception', [
+            Log::error('addService() failed with exception', [
                 'customer_id' => $customer->id,
                 'service_name' => $validated['name'] ?? 'unknown',
                 'error_message' => $e->getMessage(),
@@ -652,7 +663,7 @@ class CustomerController extends Controller
 
             return $result;
         } catch (\Exception $e) {
-            \Log::error('provisionDirectAdminAccount() failed', [
+            Log::error('provisionDirectAdminAccount() failed', [
                 'service_id' => $service->id,
                 'error' => $e->getMessage(),
             ]);
@@ -792,7 +803,7 @@ class CustomerController extends Controller
         }
 
         try {
-            \DB::transaction(function () use ($customer, $targetReseller) {
+            DB::transaction(function () use ($customer, $targetReseller) {
                 // Transfer all services
                 \App\Models\Service::where('user_id', $customer->id)
                     ->update(['user_id' => $targetReseller->id]);
@@ -835,7 +846,7 @@ class CustomerController extends Controller
         ]);
 
         try {
-            $invoice = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $customer) {
+            $invoice = \Illuminate\Support\FacadesDB::transaction(function () use ($validated, $customer) {
                 // Calculate totals
                 $subtotal = 0;
                 foreach ($validated['items'] as $item) {

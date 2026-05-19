@@ -99,9 +99,14 @@ class ResellerSslService
             // Get admin email
             $adminEmail = \App\Models\Setting::getValue('admin_email', 'admin@talksasa.cloud');
 
-            // Run certbot
+            // Run certbot — escape all user-supplied and system-derived values
             $webroot = public_path();
-            $command = "certbot certonly --webroot -d {$customDomain} --webroot-path {$webroot} --non-interactive --agree-tos --email {$adminEmail} 2>&1";
+            $command = "certbot certonly --webroot"
+                . " -d " . escapeshellarg($customDomain)
+                . " --webroot-path " . escapeshellarg($webroot)
+                . " --non-interactive --agree-tos"
+                . " --email " . escapeshellarg($adminEmail)
+                . " 2>&1";
 
             Log::info('Running certbot for reseller', [
                 'reseller_id' => $reseller->id,
@@ -210,7 +215,7 @@ class ResellerSslService
                 ];
             }
 
-            $command = "certbot renew --cert-name {$customDomain} --quiet 2>&1";
+            $command = "certbot renew --cert-name " . escapeshellarg($customDomain) . " --quiet 2>&1";
 
             Log::info('Running certbot renew for reseller', [
                 'reseller_id' => $reseller->id,
@@ -308,7 +313,7 @@ class ResellerSslService
                 return null;
             }
 
-            exec("openssl x509 -enddate -noout -in {$certPath} 2>/dev/null", $output, $exitCode);
+            exec("openssl x509 -enddate -noout -in " . escapeshellarg($certPath) . " 2>/dev/null", $output, $exitCode);
 
             if ($exitCode !== 0 || empty($output)) {
                 return null;

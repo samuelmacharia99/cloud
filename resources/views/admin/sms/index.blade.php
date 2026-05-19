@@ -228,7 +228,7 @@ function smsManager() {
         charCount: 0,
         searchQuery: '',
         selectedCustomers: [],
-        allCustomers: {!! json_encode($customers) !!},
+        allCustomers: {{ Js::from($customers) }},
         filteredCustomers: [],
 
         init() {

@@ -8,6 +8,10 @@ $colorMap = [
     'violet' => 'bg-violet-100 dark:bg-violet-950 text-violet-600 dark:text-violet-400',
     'red' => 'bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400',
 ];
+
+// Security: strip any <script> tags from the icon prop to prevent XSS.
+// $icon should always be an inline SVG string from admin-controlled Blade templates only.
+$icon = preg_replace('/<script[\s\S]*?<\/script>/i', '', $icon ?? '');
 @endphp
 
 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-lg">

@@ -8,6 +8,9 @@ use App\Models\Setting;
 use Stripe\Stripe;
 use Stripe\Checkout\Session;
 use Stripe\PaymentIntent;
+use Stripe\Webhook;
+use Stripe\Exception\SignatureVerificationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class StripeService implements PaymentGatewayInterface
@@ -156,6 +159,25 @@ class StripeService implements PaymentGatewayInterface
     public function handleCallback(array $data): array
     {
         return $this->handleWebhook($data);
+    }
+
+    /**
+     * Verify the Stripe-Signature header and construct the Stripe event.
+     * Returns the verified event array or throws on failure.
+     *
+     * @throws \UnexpectedValueException|\Stripe\Exception\SignatureVerificationException
+     */
+    public function verifyWebhookSignature(string $rawPayload, string $signature): array
+    {
+        $secret = Setting::getValue('stripe_webhook_secret', '');
+
+        if (empty($secret)) {
+            throw new \UnexpectedValueException('Stripe webhook secret is not configured');
+        }
+
+        $event = Webhook::constructEvent($rawPayload, $signature, $secret);
+
+        return $event->toArray();
     }
 
     /**

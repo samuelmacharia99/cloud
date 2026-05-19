@@ -38,9 +38,11 @@ class ContainerFileService
         $basePath = self::BASE . $deployment->container_name;
         $absPath = $basePath . (count($resolved) > 0 ? '/' . implode('/', $resolved) : '');
 
-        // Verify the path stays within the container directory
+        // Verify the path stays within the container directory.
+        // Append '/' to both sides before the prefix check to prevent the confusion
+        // where '/opt/containers/user-1' would incorrectly match '/opt/containers/user-10'.
         $realBase = rtrim($basePath, '/');
-        if (strpos(rtrim($absPath, '/'), $realBase) !== 0) {
+        if (strpos(rtrim($absPath, '/') . '/', $realBase . '/') !== 0) {
             throw new \InvalidArgumentException('Path traversal detected');
         }
 

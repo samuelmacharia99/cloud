@@ -25,8 +25,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'postal_code',
         'vat_number',
         'notes',
-        'is_admin',
-        'is_reseller',
+        // is_admin and is_reseller are intentionally excluded from $fillable
+        // to prevent privilege escalation via mass assignment.
         'reseller_id',
         'status',
         'email_verified_at',

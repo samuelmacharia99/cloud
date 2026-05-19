@@ -16,6 +16,7 @@ use App\Models\Currency;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use App\Http\Controllers\Controller;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 
@@ -512,6 +513,13 @@ class CheckoutController extends Controller
             return response()->json(['error' => 'Invalid cart format'], 400);
         }
 
+        // Enforce maximum cart size
+        if (count($cartItems) > 20) {
+            return response()->json(['error' => 'Cart cannot contain more than 20 items'], 422);
+        }
+
+        $allowedTypes = ['domain', 'hosting', 'vps', 'dedicated', 'container', 'product'];
+
         // Convert domain items to proper format
         $processedCart = [];
         foreach ($cartItems as $item) {
@@ -519,7 +527,30 @@ class CheckoutController extends Controller
                 continue;
             }
 
-            $itemType = $item['type'] ?? null;
+            // Validate required keys are present
+            if (!isset($item['type'])) {
+                continue;
+            }
+
+            // Whitelist item types
+            $itemType = $item['type'];
+            if (!in_array($itemType, $allowedTypes, true)) {
+                \Log::warning('syncCart: rejected unknown item type', [
+                    'type' => $itemType,
+                    'user_id' => auth()->id(),
+                    'ip' => $request->ip(),
+                ]);
+                continue;
+            }
+
+            // Validate amount when present
+            if (isset($item['price']) || isset($item['amount'])) {
+                $amount = $item['price'] ?? $item['amount'];
+                if (!is_numeric($amount) || (float)$amount < 0) {
+                    return response()->json(['error' => 'Invalid item amount'], 422);
+                }
+            }
+
             $fullDomain = $item['full_domain'] ?? null;
 
             if ($itemType === 'domain' || $fullDomain) {
@@ -646,13 +677,16 @@ class CheckoutController extends Controller
                 'agree_terms' => 'required|accepted',
             ]);
 
-            // Create user account
+            // Create user account — do NOT auto-verify email; trigger normal verification flow
             $user = User::create([
                 'name' => $request->name,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
-                'email_verified_at' => now(), // Auto-verify for checkout
+                'email_verified_at' => null,
             ]);
+
+            // Fire Registered event so the default email verification notification is sent
+            event(new Registered($user));
 
             // Log the user in
             Auth::login($user);

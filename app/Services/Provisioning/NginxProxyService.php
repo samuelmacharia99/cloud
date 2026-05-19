@@ -31,7 +31,8 @@ class NginxProxyService
             // Create sites-enabled directory if needed
             $ssh->exec("mkdir -p /etc/nginx/sites-enabled");
 
-            // Upload config
+            // Upload config — path is built from domain name, must be escaped
+            $safeConfPath = escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf");
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
             $ssh->upload($config, $configPath);
 
@@ -39,7 +40,7 @@ class NginxProxyService
             $testResult = $ssh->exec("nginx -t 2>&1");
             if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
                 // Config test failed, remove the bad config
-                $ssh->exec("rm -f {$configPath}");
+                $ssh->exec("rm -f {$safeConfPath}");
                 throw new Exception("Nginx configuration test failed: {$testResult}");
             }
 
@@ -78,11 +79,11 @@ class NginxProxyService
         try {
             $ssh = SSHService::forNode($node);
 
-            // Remove config file
+            // Remove config file — escape the path to prevent injection
             if ($domain->nginx_config_path) {
-                $ssh->exec("rm -f {$domain->nginx_config_path}");
+                $ssh->exec("rm -f " . escapeshellarg($domain->nginx_config_path));
             } else {
-                $ssh->exec("rm -f /etc/nginx/sites-enabled/{$domain->domain}.conf");
+                $ssh->exec("rm -f " . escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf"));
             }
 
             // Reload nginx
@@ -116,20 +117,22 @@ class NginxProxyService
             // Get admin email from settings
             $adminEmail = setting('admin_email', 'admin@talksasa.cloud');
 
-            // Run certbot to obtain certificate
-            $certbotCmd = "certbot certonly --nginx -d {$domain->domain} --non-interactive --agree-tos --email {$adminEmail} --redirect 2>&1";
+            // Run certbot to obtain certificate — escape all user-supplied values
+            $certbotCmd = "certbot certonly --nginx -d " . escapeshellarg($domain->domain)
+                . " --non-interactive --agree-tos --email " . escapeshellarg($adminEmail)
+                . " --redirect 2>&1";
             $certbotResult = $ssh->exec($certbotCmd);
 
             if (strpos($certbotResult, 'error') !== false || strpos($certbotResult, 'Error') !== false) {
                 throw new Exception("Certbot failed: {$certbotResult}");
             }
 
-            // Set certificate paths
+            // Set certificate paths — derived from domain name, escape in commands
             $certPath = "/etc/letsencrypt/live/{$domain->domain}/fullchain.pem";
             $keyPath = "/etc/letsencrypt/live/{$domain->domain}/privkey.pem";
 
             // Verify certificates exist
-            $checkCmd = "[ -f {$certPath} ] && [ -f {$keyPath} ] && echo 'ok' || echo 'fail'";
+            $checkCmd = "[ -f " . escapeshellarg($certPath) . " ] && [ -f " . escapeshellarg($keyPath) . " ] && echo 'ok' || echo 'fail'";
             $checkResult = trim($ssh->exec($checkCmd));
 
             if ($checkResult !== 'ok') {
@@ -147,7 +150,7 @@ class NginxProxyService
             // Regenerate config with SSL blocks
             $config = $this->generateConfig($domain, true);
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
-            $ssh->upload($config, $configPath);
+            $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
 
             // Test and reload
             $testResult = $ssh->exec("nginx -t 2>&1");
@@ -181,8 +184,8 @@ class NginxProxyService
         try {
             $ssh = SSHService::forNode($node);
 
-            // Renew certificate
-            $renewCmd = "certbot renew --cert-name {$domain->domain} --quiet 2>&1";
+            // Renew certificate — escape domain name to prevent injection
+            $renewCmd = "certbot renew --cert-name " . escapeshellarg($domain->domain) . " --quiet 2>&1";
             $renewResult = $ssh->exec($renewCmd);
 
             if (strpos($renewResult, 'error') !== false) {

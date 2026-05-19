@@ -233,6 +233,97 @@ class PayPalService implements PaymentGatewayInterface
     }
 
     /**
+     * Retrieve a PayPal order by ID (without capturing).
+     * Returns the decoded order array, or null on failure.
+     */
+    public function getOrder(string $orderId): ?array
+    {
+        try {
+            $token = $this->getAccessToken();
+            if (!$token) {
+                return null;
+            }
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+            ])->get("{$this->baseUrl}/v2/checkout/orders/{$orderId}");
+
+            if ($response->successful()) {
+                return $response->json();
+            }
+
+            Log::warning('PayPal getOrder failed', [
+                'order_id' => $orderId,
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::error('PayPal getOrder exception', ['order_id' => $orderId, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    /**
+     * Verify a PayPal webhook event using the PayPal verify-webhook-signature API.
+     * Returns true only when PayPal responds with verificationStatus == SUCCESS.
+     */
+    public function verifyWebhook(\Illuminate\Http\Request $request): bool
+    {
+        try {
+            $webhookId = Setting::getValue('paypal_webhook_id', '');
+
+            if (empty($webhookId)) {
+                Log::warning('PayPal webhook_id setting is not configured — skipping signature verification');
+                return false;
+            }
+
+            $token = $this->getAccessToken();
+            if (!$token) {
+                Log::error('PayPal webhook verification: failed to obtain access token');
+                return false;
+            }
+
+            $payload = [
+                'auth_algo'        => $request->header('PAYPAL-AUTH-ALGO', ''),
+                'cert_url'         => $request->header('PAYPAL-CERT-URL', ''),
+                'transmission_id'  => $request->header('PAYPAL-TRANSMISSION-ID', ''),
+                'transmission_sig' => $request->header('PAYPAL-TRANSMISSION-SIG', ''),
+                'transmission_time'=> $request->header('PAYPAL-TRANSMISSION-TIME', ''),
+                'webhook_id'       => $webhookId,
+                'webhook_event'    => $request->json()->all(),
+            ];
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$token}",
+                'Content-Type'  => 'application/json',
+            ])->post("{$this->baseUrl}/v1/notifications/verify-webhook-signature", $payload);
+
+            if (!$response->successful()) {
+                Log::warning('PayPal webhook verification API call failed', [
+                    'status' => $response->status(),
+                    'body'   => $response->body(),
+                ]);
+                return false;
+            }
+
+            $verificationStatus = $response->json('verification_status');
+
+            if ($verificationStatus !== 'SUCCESS') {
+                Log::warning('PayPal webhook verification returned non-SUCCESS', [
+                    'verification_status' => $verificationStatus,
+                ]);
+                return false;
+            }
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('PayPal webhook verification exception', ['error' => $e->getMessage()]);
+            return false;
+        }
+    }
+
+    /**
      * Handle PayPal webhook callback
      */
     public function handleCallback(array $data): array

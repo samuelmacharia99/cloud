@@ -7,6 +7,7 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Enums\PaymentStatus;
 use App\Enums\InvoiceStatus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
@@ -226,62 +227,99 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             if ($resultCode == 0) {
-                $callbackMetadata = $stkCallback['CallbackMetadata'] ?? [];
-                $items = $callbackMetadata['Item'] ?? [];
-                $mpesaAmount = null;
-                $mpesaReceipt = null;
-                $mpesaTimestamp = null;
-                $mpesaPhone = null;
+                // Idempotency guard: if already completed, return success without re-processing
+                if ($payment->status === PaymentStatus::Completed->value || $payment->status === 'completed') {
+                    Log::info('M-Pesa callback: payment already completed (idempotency guard)', [
+                        'payment_id' => $payment->id,
+                        'checkout_request_id' => $checkoutRequestId,
+                    ]);
+                    return [
+                        'success' => true,
+                        'message' => 'Payment already processed',
+                        'payment_id' => $payment->id,
+                    ];
+                }
 
-                foreach ($items as $item) {
-                    if ($item['Name'] === 'Amount') {
-                        $mpesaAmount = $item['Value'];
-                    } elseif ($item['Name'] === 'MpesaReceiptNumber') {
-                        $mpesaReceipt = $item['Value'];
-                    } elseif ($item['Name'] === 'TransactionDate') {
-                        $mpesaTimestamp = $item['Value'];
-                    } elseif ($item['Name'] === 'PhoneNumber') {
-                        $mpesaPhone = $item['Value'];
+                // Wrap in a transaction with a pessimistic lock to prevent race conditions
+                $result = DB::transaction(function () use ($payment, $stkCallback) {
+                    // Re-fetch with lock to prevent concurrent duplicate processing
+                    $lockedPayment = Payment::where('id', $payment->id)->lockForUpdate()->first();
+
+                    if (!$lockedPayment) {
+                        return ['success' => false, 'message' => 'Payment record not found under lock'];
                     }
-                }
 
-                $payment->update([
-                    'status' => PaymentStatus::Completed->value,
-                    'paid_at' => now(),
-                    'notes' => json_encode([
-                        'mpesa_receipt' => $mpesaReceipt,
-                        'mpesa_timestamp' => $mpesaTimestamp,
-                        'mpesa_phone' => $mpesaPhone,
-                        'mpesa_amount' => $mpesaAmount,
-                    ]),
-                ]);
-
-                if ($payment->payment_purpose === 'wallet_topup') {
-                    app('wallet-service')->processTopupPayment($payment);
-                    return ['success' => true, 'payment_id' => $payment->id];
-                }
-
-                if ($payment->invoice) {
-                    $payment->invoice->update(['status' => InvoiceStatus::Paid->value]);
-
-                    if ($payment->invoice->order) {
-                        $payment->invoice->order->update([
-                            'status' => 'paid',
-                            'payment_status' => 'paid',
+                    // Double-check after acquiring lock
+                    if ($lockedPayment->status === PaymentStatus::Completed->value || $lockedPayment->status === 'completed') {
+                        Log::info('M-Pesa callback: already completed after lock (race condition prevented)', [
+                            'payment_id' => $lockedPayment->id,
                         ]);
+                        return [
+                            'success' => true,
+                            'message' => 'Payment already processed',
+                            'payment_id' => $lockedPayment->id,
+                        ];
                     }
-                }
 
-                Log::info('M-Pesa payment completed', [
-                    'payment_id' => $payment->id,
-                    'invoice_id' => $payment->invoice_id,
-                ]);
+                    $callbackMetadata = $stkCallback['CallbackMetadata'] ?? [];
+                    $items = $callbackMetadata['Item'] ?? [];
+                    $mpesaAmount = null;
+                    $mpesaReceipt = null;
+                    $mpesaTimestamp = null;
+                    $mpesaPhone = null;
 
-                return [
-                    'success' => true,
-                    'message' => 'Payment received',
-                    'payment_id' => $payment->id,
-                ];
+                    foreach ($items as $item) {
+                        if ($item['Name'] === 'Amount') {
+                            $mpesaAmount = $item['Value'];
+                        } elseif ($item['Name'] === 'MpesaReceiptNumber') {
+                            $mpesaReceipt = $item['Value'];
+                        } elseif ($item['Name'] === 'TransactionDate') {
+                            $mpesaTimestamp = $item['Value'];
+                        } elseif ($item['Name'] === 'PhoneNumber') {
+                            $mpesaPhone = $item['Value'];
+                        }
+                    }
+
+                    $lockedPayment->update([
+                        'status' => PaymentStatus::Completed->value,
+                        'paid_at' => now(),
+                        'notes' => json_encode([
+                            'mpesa_receipt' => $mpesaReceipt,
+                            'mpesa_timestamp' => $mpesaTimestamp,
+                            'mpesa_phone' => $mpesaPhone,
+                            'mpesa_amount' => $mpesaAmount,
+                        ]),
+                    ]);
+
+                    if ($lockedPayment->payment_purpose === 'wallet_topup') {
+                        app('wallet-service')->processTopupPayment($lockedPayment);
+                        return ['success' => true, 'payment_id' => $lockedPayment->id, 'wallet_topup' => true];
+                    }
+
+                    if ($lockedPayment->invoice) {
+                        $lockedPayment->invoice->update(['status' => InvoiceStatus::Paid->value]);
+
+                        if ($lockedPayment->invoice->order) {
+                            $lockedPayment->invoice->order->update([
+                                'status' => 'paid',
+                                'payment_status' => 'paid',
+                            ]);
+                        }
+                    }
+
+                    Log::info('M-Pesa payment completed', [
+                        'payment_id' => $lockedPayment->id,
+                        'invoice_id' => $lockedPayment->invoice_id,
+                    ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'Payment received',
+                        'payment_id' => $lockedPayment->id,
+                    ];
+                });
+
+                return $result;
             } else {
                 $payment->update([
                     'status' => PaymentStatus::Failed->value,

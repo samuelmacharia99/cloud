@@ -116,6 +116,20 @@ class SettingController extends Controller
         ));
     }
 
+    /**
+     * Allowed setting key prefixes. Any submitted key that doesn't start with
+     * one of these prefixes is rejected and logged as a potential injection attempt.
+     */
+    private const ALLOWED_SETTING_PREFIXES = [
+        'site_', 'admin_', 'mail_', 'smtp_', 'billing_', 'tax_', 'mpesa_',
+        'stripe_', 'paypal_', 'bank_', 'sms_', 'domain_', 'currency_',
+        'security_', 'recaptcha_', 'two_factor_', 'maintenance_',
+        'registration_', 'invoice_', 'support_', 'logo_', 'favicon_',
+        'primary_', 'company_', 'footer_', 'notify_', 'cron_',
+        'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
+        'provisioning_', 'directadmin_', 'timezone', 'date_format',
+    ];
+
     public function update(Request $request)
     {
         $this->authorize('batchUpdate', Setting::class);
@@ -136,6 +150,24 @@ class SettingController extends Controller
         ];
 
         foreach ($settings as $key => $value) {
+            // Whitelist check: only allow keys that start with a known prefix
+            $allowed = false;
+            foreach (self::ALLOWED_SETTING_PREFIXES as $prefix) {
+                if (str_starts_with($key, $prefix) || $key === $prefix) {
+                    $allowed = true;
+                    break;
+                }
+            }
+
+            if (!$allowed) {
+                \Log::warning('SettingController: rejected unknown setting key', [
+                    'key' => $key,
+                    'user_id' => auth()->id(),
+                    'ip' => request()->ip(),
+                ]);
+                continue;
+            }
+
             $trimmedValue = trim((string)$value);
 
             // Skip empty sensitive fields
@@ -307,6 +339,13 @@ class SettingController extends Controller
 
     public function debugLog(Request $request)
     {
+        // Only available in local/debug environments; return 404 in production
+        if (!app()->isLocal() && !config('app.debug')) {
+            abort(404);
+        }
+
+        $this->authorize('batchUpdate', Setting::class);
+
         $request->validate([
             'message' => 'required|string',
             'data' => 'nullable|array',

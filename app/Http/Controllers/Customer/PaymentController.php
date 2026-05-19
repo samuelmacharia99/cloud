@@ -212,6 +212,31 @@ class PaymentController extends Controller
         }
 
         try {
+            // Retrieve the session from Stripe to verify metadata invoice_id matches this invoice
+            try {
+                \Stripe\Stripe::setApiKey(\App\Models\Setting::getValue('stripe_secret_key', ''));
+                $session = \Stripe\Checkout\Session::retrieve($sessionId);
+                $metaInvoiceId = $session->metadata->invoice_id ?? null;
+
+                if ((string) $metaInvoiceId !== (string) $invoice->id) {
+                    Log::warning('Stripe session invoice_id mismatch', [
+                        'session_id' => $sessionId,
+                        'session_invoice_id' => $metaInvoiceId,
+                        'route_invoice_id' => $invoice->id,
+                        'user_id' => auth()->id(),
+                    ]);
+                    abort(403, 'Session does not match this invoice');
+                }
+            } catch (\Exception $e) {
+                Log::error('Stripe session retrieval for verification failed', [
+                    'invoice_id' => $invoice->id,
+                    'session_id' => $sessionId,
+                    'error' => $e->getMessage(),
+                ]);
+                return redirect()->route('customer.invoices.show', $invoice)
+                    ->with('error', 'Payment verification failed');
+            }
+
             $gateway = PaymentGatewayFactory::make('stripe');
             $result = $gateway->verify($sessionId);
 
@@ -281,7 +306,24 @@ class PaymentController extends Controller
         }
 
         try {
+            // Verify the PayPal order's custom_id matches this invoice before capturing
+            /** @var \App\Services\PaymentGateway\PayPalService $gateway */
             $gateway = PaymentGatewayFactory::make('paypal');
+            $orderDetails = $gateway->getOrder($orderId);
+
+            if ($orderDetails !== null) {
+                $customId = $orderDetails['purchase_units'][0]['custom_id'] ?? null;
+                if ((string) $customId !== (string) $invoice->id) {
+                    Log::warning('PayPal order custom_id mismatch', [
+                        'order_id' => $orderId,
+                        'order_custom_id' => $customId,
+                        'route_invoice_id' => $invoice->id,
+                        'user_id' => auth()->id(),
+                    ]);
+                    abort(403, 'PayPal order does not match this invoice');
+                }
+            }
+
             $result = $gateway->verify($orderId);
 
             if ($result['success']) {
@@ -382,9 +424,29 @@ class PaymentController extends Controller
      */
     public function stripeWebhook(Request $request)
     {
+        $signature = $request->header('Stripe-Signature', '');
+
+        if (empty($signature)) {
+            Log::warning('Stripe webhook received without signature header');
+            return response()->json(['error' => 'Missing signature'], 400);
+        }
+
         try {
+            /** @var \App\Services\PaymentGateway\StripeService $gateway */
             $gateway = PaymentGatewayFactory::make('stripe');
-            $result = $gateway->handleWebhook($request->all());
+
+            // Verify signature using raw body — must happen before any parsing
+            try {
+                $verifiedData = $gateway->verifyWebhookSignature($request->getContent(), $signature);
+            } catch (\Stripe\Exception\SignatureVerificationException $e) {
+                Log::warning('Stripe webhook signature verification failed', ['error' => $e->getMessage()]);
+                return response()->json(['error' => 'Invalid signature'], 400);
+            } catch (\UnexpectedValueException $e) {
+                Log::warning('Stripe webhook payload error', ['error' => $e->getMessage()]);
+                return response()->json(['error' => 'Invalid payload'], 400);
+            }
+
+            $result = $gateway->handleWebhook($verifiedData);
 
             // If payment was successful, trigger provisioning
             if ($result['success'] && isset($result['payment_id'])) {
@@ -414,7 +476,14 @@ class PaymentController extends Controller
     public function paypalWebhook(Request $request)
     {
         try {
+            /** @var \App\Services\PaymentGateway\PayPalService $gateway */
             $gateway = PaymentGatewayFactory::make('paypal');
+
+            if (!$gateway->verifyWebhook($request)) {
+                Log::warning('PayPal webhook signature verification failed');
+                return response()->json(['error' => 'Invalid webhook signature'], 400);
+            }
+
             $result = $gateway->handleWebhook($request->all());
 
             // If payment was successful, trigger provisioning
