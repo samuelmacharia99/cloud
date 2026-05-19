@@ -336,6 +336,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('/cart/{key}', [\App\Http\Controllers\Customer\CartController::class, 'remove'])->name('customer.cart.remove');
         Route::post('/cart/clear', [\App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
         Route::post('/cart/check-domain', [\App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
+        Route::post('/cart/{key}/nameservers', [\App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
 
         // Checkout
         Route::get('/checkout', [\App\Http\Controllers\Customer\CheckoutController::class, 'show'])->name('customer.checkout.show');

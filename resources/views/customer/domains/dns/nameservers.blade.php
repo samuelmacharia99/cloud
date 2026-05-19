@@ -52,6 +52,18 @@
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional</p>
                     </div>
 
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tertiary Nameserver</label>
+                        <input type="text" name="nameserver_3" value="{{ $domain->nameserver_3 ?? '' }}" placeholder="e.g., ns3.example.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Quaternary Nameserver</label>
+                        <input type="text" name="nameserver_4" value="{{ $domain->nameserver_4 ?? '' }}" placeholder="e.g., ns4.example.com" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional</p>
+                    </div>
+
                     <div class="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
                         <p class="text-sm text-amber-900 dark:text-amber-200">
                             <strong>Important:</strong> Changes may take up to 48 hours to propagate globally. Your domain will remain active during this period.
@@ -77,6 +89,18 @@
                         <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Secondary</p>
                         <p class="text-slate-900 dark:text-white font-medium">{{ $domain->nameserver_2 ?? 'Not configured' }}</p>
                     </div>
+                    @if($domain->nameserver_3)
+                    <div class="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Tertiary</p>
+                        <p class="text-slate-900 dark:text-white font-medium">{{ $domain->nameserver_3 }}</p>
+                    </div>
+                    @endif
+                    @if($domain->nameserver_4)
+                    <div class="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                        <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Quaternary</p>
+                        <p class="text-slate-900 dark:text-white font-medium">{{ $domain->nameserver_4 }}</p>
+                    </div>
+                    @endif
                 </div>
             </div>
         </div>

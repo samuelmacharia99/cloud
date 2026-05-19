@@ -24,6 +24,7 @@
                     <button @click="activeTab = 'cron'" :class="activeTab === 'cron' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Cron</button>
                     <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">SMS</button>
                     <button @click="activeTab = 'security'" :class="activeTab === 'security' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Security</button>
+                    <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Domains</button>
                 </div>
             </div>
 
@@ -1571,6 +1572,69 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                             </svg>
                             Save Security Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tab: Domains -->
+            <div x-show="activeTab === 'domains'" class="space-y-6">
+                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                    @csrf
+
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Default Nameservers</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Configure the default nameservers that customers will use when registering domains. These can be overridden per domain during checkout.</p>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Primary Nameserver (NS1) <span class="text-red-500">*</span></label>
+                                <input type="text" name="settings[domain_ns1]" value="{{ $settings['domain_ns1'] ?? 'ns1.talksasa.cloud' }}" placeholder="ns1.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Required. Used as the default for all new domain registrations.</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Secondary Nameserver (NS2)</label>
+                                <input type="text" name="settings[domain_ns2]" value="{{ $settings['domain_ns2'] ?? 'ns2.talksasa.cloud' }}" placeholder="ns2.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Recommended for DNS redundancy.</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tertiary Nameserver (NS3)</label>
+                                <input type="text" name="settings[domain_ns3]" value="{{ $settings['domain_ns3'] ?? '' }}" placeholder="ns3.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Additional nameserver for enhanced reliability.</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Quaternary Nameserver (NS4)</label>
+                                <input type="text" name="settings[domain_ns4]" value="{{ $settings['domain_ns4'] ?? '' }}" placeholder="ns4.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Additional nameserver for enhanced reliability.</p>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-lg p-4">
+                        <div class="flex gap-3">
+                            <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 8a1 1 0 000 2h6a1 1 0 000-2H8zm1 5a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"/></svg>
+                            <div class="text-sm text-blue-900 dark:text-blue-100">
+                                <p class="font-semibold">About nameservers:</p>
+                                <ul class="list-disc list-inside mt-2 space-y-1">
+                                    <li>Nameservers tell the internet where your domain is hosted</li>
+                                    <li>At least one nameserver (NS1) is required</li>
+                                    <li>Additional nameservers provide redundancy and load balancing</li>
+                                    <li>Customers can override these settings per domain during checkout</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
+                        <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
+                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                            </svg>
+                            Save Domain Settings
                         </button>
                     </div>
                 </form>

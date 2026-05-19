@@ -24,6 +24,8 @@ class Domain extends Model
         'auto_renew',
         'nameserver_1',
         'nameserver_2',
+        'nameserver_3',
+        'nameserver_4',
         'epp_code',
         'old_registrar',
         'old_registrar_url',

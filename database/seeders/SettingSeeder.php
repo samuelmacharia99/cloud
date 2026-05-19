@@ -103,6 +103,12 @@ class SettingSeeder extends Seeder
             ['key' => 'directadmin_api_user', 'value' => 'admin', 'description' => 'DirectAdmin admin username'],
             ['key' => 'directadmin_api_password', 'value' => '', 'description' => 'DirectAdmin admin password'],
             ['key' => 'directadmin_default_package', 'value' => 'default', 'description' => 'Default DirectAdmin package for hosting accounts'],
+
+            // Domain nameserver settings
+            ['key' => 'domain_ns1', 'value' => 'ns1.talksasa.cloud', 'description' => 'Default nameserver 1 for domain registrations'],
+            ['key' => 'domain_ns2', 'value' => 'ns2.talksasa.cloud', 'description' => 'Default nameserver 2 for domain registrations'],
+            ['key' => 'domain_ns3', 'value' => '', 'description' => 'Default nameserver 3 (optional)'],
+            ['key' => 'domain_ns4', 'value' => '', 'description' => 'Default nameserver 4 (optional)'],
         ];
 
         foreach ($settings as $setting) {

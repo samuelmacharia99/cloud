@@ -123,6 +123,13 @@ class CartController extends Controller
                 'domain' => strtolower($request->domain),
                 'extension' => $request->extension,
                 'years' => $request->years,
+                'nameservers' => [
+                    'ns1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
+                    'ns2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
+                    'ns3' => Setting::getValue('domain_ns3') ?: null,
+                    'ns4' => Setting::getValue('domain_ns4') ?: null,
+                    'use_default' => true,
+                ],
             ];
         } else {
             $response = [
@@ -234,5 +241,37 @@ class CartController extends Controller
             'annual' => (float) ($product->yearly_price ?? ((float) $product->monthly_price * 12)),
             default => 0,
         };
+    }
+
+    /**
+     * Update nameservers for a domain in cart
+     */
+    public function updateNameservers(string $key, Request $request): \Illuminate\Http\JsonResponse
+    {
+        $cart = session(self::CART_SESSION_KEY, []);
+
+        if (!isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
+            return response()->json(['success' => false, 'message' => 'Domain not found in cart'], 404);
+        }
+
+        $validated = $request->validate([
+            'use_default' => 'required|boolean',
+            'ns1' => 'required|string|min:3|max:253|regex:/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i',
+            'ns2' => 'nullable|string|min:3|max:253|regex:/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i',
+            'ns3' => 'nullable|string|min:3|max:253|regex:/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i',
+            'ns4' => 'nullable|string|min:3|max:253|regex:/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i',
+        ]);
+
+        $cart[$key]['nameservers'] = [
+            'ns1' => $validated['ns1'],
+            'ns2' => $validated['ns2'] ?? null,
+            'ns3' => $validated['ns3'] ?? null,
+            'ns4' => $validated['ns4'] ?? null,
+            'use_default' => (bool) $validated['use_default'],
+        ];
+
+        session([self::CART_SESSION_KEY => $cart]);
+
+        return response()->json(['success' => true, 'message' => 'Nameservers updated']);
     }
 }

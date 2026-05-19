@@ -41,13 +41,17 @@ class DnsController extends Controller
         abort_if($domain->user_id !== auth()->id(), 403);
 
         $validated = $request->validate([
-            'nameserver_1' => 'required|string|min:3',
-            'nameserver_2' => 'nullable|string|min:3',
+            'nameserver_1' => 'required|string|min:3|max:253',
+            'nameserver_2' => 'nullable|string|min:3|max:253',
+            'nameserver_3' => 'nullable|string|min:3|max:253',
+            'nameserver_4' => 'nullable|string|min:3|max:253',
         ]);
 
         $domain->update([
             'nameserver_1' => $validated['nameserver_1'],
             'nameserver_2' => $validated['nameserver_2'] ?? null,
+            'nameserver_3' => $validated['nameserver_3'] ?? null,
+            'nameserver_4' => $validated['nameserver_4'] ?? null,
         ]);
 
         return back()->with('success', 'Nameservers updated successfully. Changes may take up to 48 hours to propagate.');

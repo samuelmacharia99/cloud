@@ -279,6 +279,7 @@ class CheckoutController extends Controller
                         ]);
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
+                        $ns = $item['nameservers'] ?? [];
 
                         // Create Domain
                         $domain = Domain::create([
@@ -286,6 +287,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
+                            'nameserver_1' => $ns['ns1'] ?? Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
+                            'nameserver_2' => $ns['ns2'] ?? Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
+                            'nameserver_3' => $ns['ns3'] ?? null,
+                            'nameserver_4' => $ns['ns4'] ?? null,
                         ]);
 
                         // Get or create domain product
@@ -316,6 +321,7 @@ class CheckoutController extends Controller
                                 'domain' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
+                                'nameservers' => $ns,
                             ],
                         ]);
 
@@ -333,6 +339,7 @@ class CheckoutController extends Controller
                                 'domain_name' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
+                                'nameservers' => $ns,
                             ],
                         ]);
 
@@ -800,6 +807,7 @@ class CheckoutController extends Controller
                         ]);
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
+                        $ns = $item['nameservers'] ?? [];
 
                         // Create Domain
                         $domain = Domain::create([
@@ -807,6 +815,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
+                            'nameserver_1' => $ns['ns1'] ?? Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
+                            'nameserver_2' => $ns['ns2'] ?? Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
+                            'nameserver_3' => $ns['ns3'] ?? null,
+                            'nameserver_4' => $ns['ns4'] ?? null,
                         ]);
 
                         // Get or create domain product
@@ -837,6 +849,7 @@ class CheckoutController extends Controller
                                 'domain' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
+                                'nameservers' => $ns,
                             ],
                         ]);
 
@@ -854,6 +867,7 @@ class CheckoutController extends Controller
                                 'domain_name' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
+                                'nameservers' => $ns,
                             ],
                         ]);
 

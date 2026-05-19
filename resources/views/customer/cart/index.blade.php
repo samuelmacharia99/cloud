@@ -4,6 +4,12 @@
 
 @php
     $domainExtensions = \App\Models\DomainExtension::where('enabled', true)->orderBy('extension')->get();
+    $defaultNs = [
+        'ns1' => \App\Models\Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
+        'ns2' => \App\Models\Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
+        'ns3' => \App\Models\Setting::getValue('domain_ns3') ?: '',
+        'ns4' => \App\Models\Setting::getValue('domain_ns4') ?: '',
+    ];
 @endphp
 
 @section('content')
@@ -63,6 +69,84 @@
                                             </form>
                                         </td>
                                     </tr>
+                                    @if($item['type'] === 'domain')
+                                    <tr class="bg-slate-50/50 dark:bg-slate-800/50">
+                                        <td colspan="4" class="px-6 pb-5 pt-0">
+                                            <div x-data="nameserverConfig(
+                                                '{{ $item['key'] }}',
+                                                {{ Js::from($item['nameservers'] ?? []) }},
+                                                {{ Js::from($defaultNs) }}
+                                            )" class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-900 mt-1">
+                                                <!-- header -->
+                                                <div class="flex items-center gap-2 mb-3">
+                                                    <svg class="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 10-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                                                    </svg>
+                                                    <h4 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Name Servers</h4>
+                                                    <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">Sets DNS authority for this domain</span>
+                                                </div>
+
+                                                <!-- radio toggle -->
+                                                <div class="space-y-2">
+                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                                        <input type="radio" :value="true" x-model="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                        <div>
+                                                            <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                Use Talksasa Cloud Nameservers
+                                                                <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Recommended</span>
+                                                            </p>
+                                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
+                                                                <span x-text="defaults.ns1"></span><template x-if="defaults.ns2"><span class="ml-2" x-text="defaults.ns2"></span></template>
+                                                            </p>
+                                                        </div>
+                                                    </label>
+
+                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                                        <input type="radio" :value="false" x-model="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                        <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Use Custom Nameservers</p>
+                                                    </label>
+                                                </div>
+
+                                                <!-- custom ns fields -->
+                                                <div x-show="!useDefault" x-transition class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS1 <span class="text-red-500">*</span></label>
+                                                        <input type="text" x-model="customNs1" placeholder="ns1.yourdomain.com"
+                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS2</label>
+                                                        <input type="text" x-model="customNs2" placeholder="ns2.yourdomain.com"
+                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS3 <span class="text-slate-400 font-normal">(optional)</span></label>
+                                                        <input type="text" x-model="customNs3" placeholder="ns3.yourdomain.com"
+                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    </div>
+                                                    <div>
+                                                        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">NS4 <span class="text-slate-400 font-normal">(optional)</span></label>
+                                                        <input type="text" x-model="customNs4" placeholder="ns4.yourdomain.com"
+                                                            class="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                                    </div>
+                                                </div>
+
+                                                <!-- save bar -->
+                                                <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
+                                                    <div>
+                                                        <p x-show="error" class="text-xs text-red-600 dark:text-red-400" x-text="error"></p>
+                                                        <p x-show="saved && !error" class="text-xs text-emerald-600 dark:text-emerald-400">✓ Nameservers saved</p>
+                                                    </div>
+                                                    <button @click="save()" :disabled="saving"
+                                                        class="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
+                                                        <span x-show="!saving">Save Nameservers</span>
+                                                        <span x-show="saving">Saving...</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    @endif
                                 @endforeach
                             </tbody>
                         </table>
@@ -276,6 +360,60 @@ function domainChecker() {
         isValidDomain(domain) {
             const regex = /^[a-z0-9-]+$/i;
             return regex.test(domain) && !domain.startsWith('-') && !domain.endsWith('-');
+        },
+    };
+}
+
+function nameserverConfig(cartKey, stored, defaults) {
+    const usingDefault = stored.use_default !== false;
+    return {
+        cartKey,
+        defaults,
+        useDefault: usingDefault,
+        customNs1: usingDefault ? '' : (stored.ns1 || ''),
+        customNs2: usingDefault ? '' : (stored.ns2 || ''),
+        customNs3: usingDefault ? '' : (stored.ns3 || ''),
+        customNs4: usingDefault ? '' : (stored.ns4 || ''),
+        saving: false,
+        saved: false,
+        error: null,
+
+        async save() {
+            this.error = null;
+            this.saved = false;
+
+            if (!this.useDefault && !this.customNs1.trim()) {
+                this.error = 'NS1 is required when using custom nameservers';
+                return;
+            }
+
+            const payload = {
+                use_default: this.useDefault,
+                ns1: this.useDefault ? this.defaults.ns1 : this.customNs1.trim(),
+                ns2: this.useDefault ? (this.defaults.ns2 || null) : (this.customNs2.trim() || null),
+                ns3: this.useDefault ? (this.defaults.ns3 || null) : (this.customNs3.trim() || null),
+                ns4: this.useDefault ? (this.defaults.ns4 || null) : (this.customNs4.trim() || null),
+            };
+
+            this.saving = true;
+            try {
+                const res = await fetch(`/cart/${this.cartKey}/nameservers`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'Failed to save nameservers');
+                this.saved = true;
+                setTimeout(() => { this.saved = false; }, 4000);
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.saving = false;
+            }
         },
     };
 }
