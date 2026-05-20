@@ -170,7 +170,13 @@ class ServiceController extends Controller
     public function show(Service $service)
     {
         $service->load(['user', 'product', 'invoice']);
-        return view('admin.services.show', compact('service'));
+
+        $sameTypeProducts = Product::where('type', $service->product->type)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'monthly_price', 'yearly_price', 'provisioning_driver_key']);
+
+        return view('admin.services.show', compact('service', 'sameTypeProducts'));
     }
 
     public function provision(Service $service)
@@ -288,16 +294,28 @@ class ServiceController extends Controller
             'commenced_at'   => 'nullable|date',
             'suspend_date'   => 'nullable|date',
             'terminate_date' => 'nullable|date',
+            'product_id'     => 'nullable|exists:products,id',
             'node_id'        => 'nullable|exists:nodes,id',
             'username'       => 'nullable|string|max:255',
             'password'       => 'nullable|string|max:255',
             'notes'          => 'nullable|string|max:2000',
         ]);
 
+        // When product changes, sync the provisioning driver key from the new product
+        if (!empty($validated['product_id']) && (int) $validated['product_id'] !== $service->product_id) {
+            $newProduct = Product::find($validated['product_id']);
+            if ($newProduct && $newProduct->type === $service->product->type) {
+                $validated['provisioning_driver_key'] = $newProduct->provisioning_driver_key;
+            } else {
+                unset($validated['product_id']); // prevent cross-type reassignment
+            }
+        }
+
         \Log::info("Service update request", [
             'service_id' => $service->id,
             'username_submitted' => $validated['username'] ?? null,
             'password_submitted' => !empty($validated['password']),
+            'product_id_submitted' => $validated['product_id'] ?? null,
             'product_type' => $service->product->type,
             'service_provisioning_driver_key' => $service->provisioning_driver_key,
             'product_provisioning_driver_key' => $service->product->provisioning_driver_key,

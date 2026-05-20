@@ -474,6 +474,23 @@
                     </select>
                 </div>
 
+                <!-- Hosting Package -->
+                <div>
+                    <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting Package</label>
+                    <select id="product_id" name="product_id"
+                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        @foreach($sameTypeProducts as $product)
+                            <option value="{{ $product->id }}" @selected($service->product_id === $product->id)>
+                                {{ $product->name }}
+                                @if($product->monthly_price)
+                                    — KES {{ number_format($product->monthly_price, 2) }}/mo
+                                @endif
+                            </option>
+                        @endforeach
+                    </select>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Only packages of the same type ({{ ucfirst(str_replace('_', ' ', $service->product->type)) }}) are shown.</p>
+                </div>
+
                 <!-- Next Due Date -->
                 <div>
                     <label for="next_due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Due Date</label>
