@@ -248,6 +248,16 @@ class CheckoutController extends Controller
                             $nodeId = $daSetup['node_id'];
                         }
 
+                        // For server types, capture OS and IP count from cart item
+                        if (Product::isServerType($product->type)) {
+                            if (!empty($item['operating_system'])) {
+                                $serviceMeta['operating_system'] = $item['operating_system'];
+                            }
+                            if (!empty($item['ip_count'])) {
+                                $serviceMeta['ip_count'] = (int) $item['ip_count'];
+                            }
+                        }
+
                         // Determine provisioning driver
                         $provisioningDriver = $product->provisioning_driver_key;
                         if (! $provisioningDriver && Product::isServerType($product->type)) {
@@ -813,6 +823,16 @@ class CheckoutController extends Controller
                             $daSetup = $this->setupDirectAdminService($product, $user);
                             $serviceMeta = array_merge($serviceMeta, $daSetup['meta']);
                             $nodeId = $daSetup['node_id'];
+                        }
+
+                        // For server types, capture OS and IP count from cart item
+                        if (Product::isServerType($product->type)) {
+                            if (!empty($item['operating_system'])) {
+                                $serviceMeta['operating_system'] = $item['operating_system'];
+                            }
+                            if (!empty($item['ip_count'])) {
+                                $serviceMeta['ip_count'] = (int) $item['ip_count'];
+                            }
                         }
 
                         // Create Service

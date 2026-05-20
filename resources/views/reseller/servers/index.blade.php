@@ -50,11 +50,19 @@
                             @if($limits['specs'] ?? null)
                                 <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md font-mono">{{ $limits['specs'] }}</span>
                             @endif
-                            @if($limits['os'] ?? null)
-                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md font-mono">{{ $limits['os'] }}</span>
-                            @endif
                             @if($limits['location'] ?? null)
                                 <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md font-mono">{{ $limits['location'] }}</span>
+                            @endif
+                            @php
+                                $chosenOs  = $service->service_meta['operating_system'] ?? null;
+                                $chosenIps = $service->service_meta['ip_count'] ?? null;
+                                $osLabels  = config('server_options.linux_distributions', []);
+                            @endphp
+                            @if($chosenOs)
+                                <span class="px-2.5 py-1 text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-md font-mono">{{ $osLabels[$chosenOs] ?? $chosenOs }}</span>
+                            @endif
+                            @if($chosenIps)
+                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md font-mono">{{ $chosenIps }} {{ $chosenIps == 1 ? 'IP' : 'IPs' }}</span>
                             @endif
                         </div>
 
@@ -150,66 +158,72 @@
                     <template x-if="serverType === 'vps'">
                         <div class="space-y-4">
                             @forelse ($vpsProducts as $product)
-                                <div class="border border-slate-200 dark:border-slate-700 rounded-xl hover:border-purple-400 transition p-5 flex justify-between items-start gap-4">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-3 mb-2">
-                                            <h4 class="text-lg font-bold text-slate-900 dark:text-white">{{ $product->name }}</h4>
-                                            @if ($product->featured)
-                                                <span class="px-2.5 py-1 text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">Popular</span>
-                                            @endif
-                                        </div>
-
-                                        @php
-                                            $limits = $product->resource_limits ?? [];
-                                        @endphp
-                                        <div class="flex flex-wrap gap-2 mt-3">
-                                            @if($limits['specs'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['specs'] }}</span>
-                                            @endif
-                                            @if($limits['os'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['os'] }}</span>
-                                            @endif
-                                            @if($limits['location'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['location'] }}</span>
-                                            @endif
-                                        </div>
-
-                                        @if ($product->setup_fee > 0)
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Setup fee: {{ $currencyCode }} {{ number_format($product->setup_fee, 0) }}</p>
-                                        @endif
-                                    </div>
-
-                                    <div class="space-y-2 sm:min-w-[220px]">
-                                        <!-- Monthly Option -->
-                                        <form action="{{ route('reseller.servers.order') }}" method="POST">
-                                            @csrf
-                                            <input type="hidden" name="product_id" value="{{ $product->id }}">
-                                            <input type="hidden" name="billing_cycle" value="monthly">
-                                            <div class="text-right mb-2">
-                                                <p class="text-xs text-slate-600 dark:text-slate-400">Wholesale Monthly</p>
-                                                <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $currencyCode }} {{ number_format($product->wholesale_monthly_price, 0) }}/mo</p>
+                                <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-purple-400 transition">
+                                    <!-- Product header -->
+                                    <div class="flex items-start justify-between gap-4 mb-3">
+                                        <div class="flex-1">
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <h4 class="text-lg font-bold text-slate-900 dark:text-white">{{ $product->name }}</h4>
+                                                @if ($product->featured)
+                                                    <span class="px-2.5 py-1 text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">Popular</span>
+                                                @endif
                                             </div>
-                                            <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition">
-                                                Order Monthly
-                                            </button>
-                                        </form>
-
-                                        <!-- Annual Option -->
-                                        @if ($product->wholesale_yearly_price)
-                                            <form action="{{ route('reseller.servers.order') }}" method="POST">
-                                                @csrf
-                                                <input type="hidden" name="product_id" value="{{ $product->id }}">
-                                                <input type="hidden" name="billing_cycle" value="annual">
-                                                <div class="text-right mb-2">
-                                                    <p class="text-xs text-emerald-600 dark:text-emerald-400">Wholesale Yearly</p>
-                                                    <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{{ $currencyCode }} {{ number_format($product->wholesale_yearly_price, 0) }}/yr</p>
-                                                </div>
-                                                <button type="submit" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition">
-                                                    Order Annually
-                                                </button>
-                                            </form>
+                                            @php $limits = $product->resource_limits ?? []; @endphp
+                                            <div class="flex flex-wrap gap-2">
+                                                @if($limits['specs'] ?? null)
+                                                    <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['specs'] }}</span>
+                                                @endif
+                                                @if($limits['location'] ?? null)
+                                                    <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['location'] }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        @if ($product->setup_fee > 0)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencyCode }} {{ number_format($product->setup_fee, 0) }}</p>
                                         @endif
                                     </div>
+
+                                    <!-- Single form: OS + IP + billing choice -->
+                                    <form action="{{ route('reseller.servers.order') }}" method="POST" class="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        @csrf
+                                        <input type="hidden" name="product_id" value="{{ $product->id }}">
+
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <!-- OS Selection -->
+                                            <div>
+                                                <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Operating System <span class="text-red-500">*</span></label>
+                                                <select name="operating_system" required class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                                    <option value="">Select OS...</option>
+                                                    @foreach($linuxDistros as $osKey => $osLabel)
+                                                        <option value="{{ $osKey }}">{{ $osLabel }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <!-- IP Count -->
+                                            <div>
+                                                <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">IP Addresses</label>
+                                                <select name="ip_count" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                                    @for($i = 1; $i <= $maxIpCount; $i++)
+                                                        <option value="{{ $i }}">{{ $i }} {{ $i === 1 ? 'IP' : 'IPs' }}</option>
+                                                    @endfor
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- Billing Cycle Buttons (named submit buttons) -->
+                                        <div class="flex gap-2 pt-1">
+                                            <button type="submit" name="billing_cycle" value="monthly" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
+                                                <span class="block text-xs opacity-80">Wholesale Monthly</span>
+                                                <span class="font-bold">{{ $currencyCode }} {{ number_format($product->wholesale_monthly_price, 0) }}/mo</span>
+                                            </button>
+                                            @if ($product->wholesale_yearly_price)
+                                                <button type="submit" name="billing_cycle" value="annual" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
+                                                    <span class="block text-xs opacity-80">Wholesale Annual — Save!</span>
+                                                    <span class="font-bold">{{ $currencyCode }} {{ number_format($product->wholesale_yearly_price, 0) }}/yr</span>
+                                                </button>
+                                            @endif
+                                        </div>
+                                    </form>
                                 </div>
                             @empty
                                 <p class="text-center text-slate-600 dark:text-slate-400 py-8">No VPS products currently available</p>
@@ -221,66 +235,72 @@
                     <template x-if="serverType === 'dedicated_server'">
                         <div class="space-y-4">
                             @forelse ($dedicatedProducts as $product)
-                                <div class="border border-slate-200 dark:border-slate-700 rounded-xl hover:border-purple-400 transition p-5 flex justify-between items-start gap-4">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-3 mb-2">
-                                            <h4 class="text-lg font-bold text-slate-900 dark:text-white">{{ $product->name }}</h4>
-                                            @if ($product->featured)
-                                                <span class="px-2.5 py-1 text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">Popular</span>
-                                            @endif
-                                        </div>
-
-                                        @php
-                                            $limits = $product->resource_limits ?? [];
-                                        @endphp
-                                        <div class="flex flex-wrap gap-2 mt-3">
-                                            @if($limits['specs'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['specs'] }}</span>
-                                            @endif
-                                            @if($limits['os'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['os'] }}</span>
-                                            @endif
-                                            @if($limits['location'] ?? null)
-                                                <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['location'] }}</span>
-                                            @endif
-                                        </div>
-
-                                        @if ($product->setup_fee > 0)
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Setup fee: {{ $currencyCode }} {{ number_format($product->setup_fee, 0) }}</p>
-                                        @endif
-                                    </div>
-
-                                    <div class="space-y-2 sm:min-w-[220px]">
-                                        <!-- Monthly Option -->
-                                        <form action="{{ route('reseller.servers.order') }}" method="POST">
-                                            @csrf
-                                            <input type="hidden" name="product_id" value="{{ $product->id }}">
-                                            <input type="hidden" name="billing_cycle" value="monthly">
-                                            <div class="text-right mb-2">
-                                                <p class="text-xs text-slate-600 dark:text-slate-400">Wholesale Monthly</p>
-                                                <p class="text-lg font-bold text-slate-900 dark:text-white">{{ $currencyCode }} {{ number_format($product->wholesale_monthly_price, 0) }}/mo</p>
+                                <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-purple-400 transition">
+                                    <!-- Product header -->
+                                    <div class="flex items-start justify-between gap-4 mb-3">
+                                        <div class="flex-1">
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <h4 class="text-lg font-bold text-slate-900 dark:text-white">{{ $product->name }}</h4>
+                                                @if ($product->featured)
+                                                    <span class="px-2.5 py-1 text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">Popular</span>
+                                                @endif
                                             </div>
-                                            <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition">
-                                                Order Monthly
-                                            </button>
-                                        </form>
-
-                                        <!-- Annual Option -->
-                                        @if ($product->wholesale_yearly_price)
-                                            <form action="{{ route('reseller.servers.order') }}" method="POST">
-                                                @csrf
-                                                <input type="hidden" name="product_id" value="{{ $product->id }}">
-                                                <input type="hidden" name="billing_cycle" value="annual">
-                                                <div class="text-right mb-2">
-                                                    <p class="text-xs text-emerald-600 dark:text-emerald-400">Wholesale Yearly</p>
-                                                    <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{{ $currencyCode }} {{ number_format($product->wholesale_yearly_price, 0) }}/yr</p>
-                                                </div>
-                                                <button type="submit" class="w-full px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition">
-                                                    Order Annually
-                                                </button>
-                                            </form>
+                                            @php $limits = $product->resource_limits ?? []; @endphp
+                                            <div class="flex flex-wrap gap-2">
+                                                @if($limits['specs'] ?? null)
+                                                    <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['specs'] }}</span>
+                                                @endif
+                                                @if($limits['location'] ?? null)
+                                                    <span class="px-2.5 py-1 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-md">{{ $limits['location'] }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        @if ($product->setup_fee > 0)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencyCode }} {{ number_format($product->setup_fee, 0) }}</p>
                                         @endif
                                     </div>
+
+                                    <!-- Single form: OS + IP + billing choice -->
+                                    <form action="{{ route('reseller.servers.order') }}" method="POST" class="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                        @csrf
+                                        <input type="hidden" name="product_id" value="{{ $product->id }}">
+
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <!-- OS Selection -->
+                                            <div>
+                                                <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Operating System <span class="text-red-500">*</span></label>
+                                                <select name="operating_system" required class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                                    <option value="">Select OS...</option>
+                                                    @foreach($linuxDistros as $osKey => $osLabel)
+                                                        <option value="{{ $osKey }}">{{ $osLabel }}</option>
+                                                    @endforeach
+                                                </select>
+                                            </div>
+                                            <!-- IP Count -->
+                                            <div>
+                                                <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">IP Addresses</label>
+                                                <select name="ip_count" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                                    @for($i = 1; $i <= $maxIpCount; $i++)
+                                                        <option value="{{ $i }}">{{ $i }} {{ $i === 1 ? 'IP' : 'IPs' }}</option>
+                                                    @endfor
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <!-- Billing Cycle Buttons (named submit buttons) -->
+                                        <div class="flex gap-2 pt-1">
+                                            <button type="submit" name="billing_cycle" value="monthly" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
+                                                <span class="block text-xs opacity-80">Wholesale Monthly</span>
+                                                <span class="font-bold">{{ $currencyCode }} {{ number_format($product->wholesale_monthly_price, 0) }}/mo</span>
+                                            </button>
+                                            @if ($product->wholesale_yearly_price)
+                                                <button type="submit" name="billing_cycle" value="annual" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
+                                                    <span class="block text-xs opacity-80">Wholesale Annual — Save!</span>
+                                                    <span class="font-bold">{{ $currencyCode }} {{ number_format($product->wholesale_yearly_price, 0) }}/yr</span>
+                                                </button>
+                                            @endif
+                                        </div>
+                                    </form>
                                 </div>
                             @empty
                                 <p class="text-center text-slate-600 dark:text-slate-400 py-8">No dedicated server products currently available</p>

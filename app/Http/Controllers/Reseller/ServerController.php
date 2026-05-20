@@ -40,20 +40,28 @@ class ServerController extends Controller
             ->get();
 
         $currencyCode = Setting::getValue('currency', 'KES');
+        $linuxDistros = config('server_options.linux_distributions');
+        $maxIpCount   = config('server_options.max_ip_count', 8);
 
         return view('reseller.servers.index', compact(
             'services',
             'vpsProducts',
             'dedicatedProducts',
-            'currencyCode'
+            'currencyCode',
+            'linuxDistros',
+            'maxIpCount'
         ));
     }
 
     public function order(Request $request)
     {
+        $validOs = implode(',', array_keys(config('server_options.linux_distributions')));
+
         $validated = $request->validate([
-            'product_id'    => 'required|integer|exists:products,id',
-            'billing_cycle' => 'required|in:monthly,annual',
+            'product_id'       => 'required|integer|exists:products,id',
+            'billing_cycle'    => 'required|in:monthly,annual',
+            'operating_system' => 'required|string|in:' . $validOs,
+            'ip_count'         => 'required|integer|min:1|max:' . config('server_options.max_ip_count', 8),
         ]);
 
         $product = Product::findOrFail($validated['product_id']);
@@ -90,15 +98,19 @@ class ServerController extends Controller
             ]);
 
             $service = Service::create([
-                'user_id' => $reseller->id,
-                'reseller_id' => $reseller->id,
-                'product_id' => $product->id,
-                'invoice_id' => $invoice->id,
-                'name' => $product->name,
-                'billing_cycle' => $validated['billing_cycle'],
-                'status' => ServiceStatus::Pending,
-                'next_due_date' => $this->getNextDueDate($validated['billing_cycle']),
+                'user_id'                 => $reseller->id,
+                'reseller_id'             => $reseller->id,
+                'product_id'              => $product->id,
+                'invoice_id'              => $invoice->id,
+                'name'                    => $product->name,
+                'billing_cycle'           => $validated['billing_cycle'],
+                'status'                  => ServiceStatus::Pending,
+                'next_due_date'           => $this->getNextDueDate($validated['billing_cycle']),
                 'provisioning_driver_key' => $product->provisioning_driver_key,
+                'service_meta'            => [
+                    'operating_system' => $validated['operating_system'],
+                    'ip_count'         => (int) $validated['ip_count'],
+                ],
             ]);
 
             InvoiceItem::create([

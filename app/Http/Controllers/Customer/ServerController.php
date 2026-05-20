@@ -59,12 +59,17 @@ class ServerController extends Controller
             ->first();
         $currencySymbol = $currency?->symbol ?? $currencyCode;
 
+        $linuxDistros = config('server_options.linux_distributions');
+        $maxIpCount   = config('server_options.max_ip_count', 8);
+
         return view('customer.servers.index', compact(
             'services',
             'vpsProducts',
             'dedicatedProducts',
             'currencySymbol',
-            'selectedType'
+            'selectedType',
+            'linuxDistros',
+            'maxIpCount'
         ));
     }
 
@@ -73,9 +78,13 @@ class ServerController extends Controller
      */
     public function order(Request $request)
     {
+        $validOs = implode(',', array_keys(config('server_options.linux_distributions')));
+
         $validated = $request->validate([
-            'product_id' => 'required|integer|exists:products,id',
-            'billing_cycle' => 'required|in:monthly,annual',
+            'product_id'       => 'required|integer|exists:products,id',
+            'billing_cycle'    => 'required|in:monthly,annual',
+            'operating_system' => 'required|string|in:' . $validOs,
+            'ip_count'         => 'required|integer|min:1|max:' . config('server_options.max_ip_count', 8),
         ]);
 
         $product = Product::findOrFail($validated['product_id']);
@@ -99,10 +108,12 @@ class ServerController extends Controller
         $cart = session('cart', []);
         $cartKey = uniqid();
         $cart[$cartKey] = [
-            'type' => 'product',
-            'product_id' => $product->id,
-            'billing_cycle' => $validated['billing_cycle'],
-            'added_at' => now()->toIso8601String(),
+            'type'             => 'product',
+            'product_id'       => $product->id,
+            'billing_cycle'    => $validated['billing_cycle'],
+            'operating_system' => $validated['operating_system'],
+            'ip_count'         => (int) $validated['ip_count'],
+            'added_at'         => now()->toIso8601String(),
         ];
         session(['cart' => $cart]);
 
