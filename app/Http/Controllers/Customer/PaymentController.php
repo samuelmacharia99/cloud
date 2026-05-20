@@ -538,11 +538,14 @@ class PaymentController extends Controller
             ]);
         }
 
-        // Trigger service provisioning
+        // Trigger service provisioning (new services: pending → provisioning)
         $this->provisionServices($invoice);
 
         // Unsuspend any suspended services now that invoice is paid
         $this->unsuspendServices($invoice);
+
+        // Advance next_due_date for services that were renewed (active/suspended at payment time)
+        $this->advanceServiceBillingDates($invoice);
 
         // Process domain orders for reseller customers
         $this->processDomainOrdersForReseller($invoice);
@@ -696,6 +699,51 @@ class PaymentController extends Controller
             Log::error('Service unsuspension trigger failed', [
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Advance next_due_date for services that were manually renewed.
+     *
+     * Called after provisionServices() and unsuspendServices() so that suspended
+     * services have already transitioned back to active before we query.
+     * Only touches services that are active or suspended at query time — pending
+     * services are new purchases handled by provisionServices(), not renewals.
+     *
+     * Billing dates advance from the payment date (today), not from the previous
+     * due date, so a customer who renews on May 20 (monthly) is next due June 20.
+     */
+    private function advanceServiceBillingDates(Invoice $invoice): void
+    {
+        try {
+            // Re-query services directly so we see statuses after unsuspension.
+            $services = Service::where('invoice_id', $invoice->id)
+                ->whereIn('status', ['active', 'suspended'])
+                ->get();
+
+            foreach ($services as $service) {
+                $newDueDate = match ($service->billing_cycle) {
+                    'monthly'     => now()->addMonth(),
+                    'quarterly'   => now()->addMonths(3),
+                    'semi-annual' => now()->addMonths(6),
+                    'annual'      => now()->addYear(),
+                    default       => now()->addMonth(),
+                };
+
+                $service->update(['next_due_date' => $newDueDate]);
+
+                Log::info('Service billing date advanced after payment', [
+                    'service_id'    => $service->id,
+                    'invoice_id'    => $invoice->id,
+                    'billing_cycle' => $service->billing_cycle,
+                    'new_due_date'  => $newDueDate->toDateString(),
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to advance service billing dates', [
+                'invoice_id' => $invoice->id,
+                'error'      => $e->getMessage(),
             ]);
         }
     }

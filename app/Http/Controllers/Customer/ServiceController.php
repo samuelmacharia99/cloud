@@ -71,59 +71,73 @@ class ServiceController extends Controller
     public function renew(Request $request, Service $service)
     {
         abort_if($service->user_id !== auth()->id(), 403);
-        abort_if($service->status->value === 'terminated', 422);
+        abort_if(
+            !in_array($service->status->value, ['active', 'suspended']),
+            422,
+            'Only active or suspended services can be renewed.'
+        );
 
-        // Check for existing unpaid invoice
-        $existingInvoice = Invoice::where('id', $service->invoice_id)
-            ->whereIn('status', ['draft', 'unpaid'])
-            ->where('created_at', '>=', now()->subDays(7))
-            ->exists();
+        $service->load('product');
+
+        // If there is already an unpaid renewal invoice for this service, send the
+        // customer straight to its payment page rather than creating a duplicate.
+        $existingInvoice = InvoiceItem::where('service_id', $service->id)
+            ->whereHas('invoice', function ($q) {
+                $q->whereIn('status', ['draft', 'unpaid'])
+                  ->where('created_at', '>=', now()->subDays(30));
+            })
+            ->with('invoice')
+            ->latest('id')
+            ->first()
+            ?->invoice;
 
         if ($existingInvoice) {
-            return back()->with('error', 'You already have an outstanding invoice for this service. Please pay it before renewing.');
+            return redirect()->route('customer.payment.select-method', $existingInvoice)
+                ->with('info', 'You already have an outstanding renewal invoice. Complete the payment below to extend your service.');
         }
 
-        // Calculate price based on billing cycle
-        $price = $this->getPriceForCycle($service);
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $price      = $this->getPriceForCycle($service);
+        $taxRate    = (float) Setting::getValue('tax_rate', 0);
         $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-        $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-        $total = $price + $tax;
+        $tax        = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
+        $total      = $price + $tax;
+        $dueDate    = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
+        $prefix     = Setting::getValue('invoice_prefix', 'INV');
 
-        // Create invoice
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $year = now()->format('Y');
-        $count = Invoice::whereYear('created_at', $year)->count() + 1;
-        $invoiceNumber = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
-        $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
+        $invoice = DB::transaction(function () use ($service, $prefix, $price, $tax, $total, $dueDate) {
+            $year     = now()->format('Y');
+            $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
+            $number   = $prefix . '-' . $year . '-' . str_pad($sequence, 5, '0', STR_PAD_LEFT);
 
-        DB::transaction(function () use ($service, $invoiceNumber, $price, $tax, $total, $dueDate) {
             $invoice = Invoice::create([
-                'user_id' => $service->user_id,
-                'invoice_number' => $invoiceNumber,
-                'status' => 'unpaid',
-                'due_date' => $dueDate,
-                'subtotal' => $price,
-                'tax' => $tax,
-                'total' => $total,
-                'notes' => 'Service renewal invoice for ' . $service->name,
+                'user_id'        => $service->user_id,
+                'invoice_number' => $number,
+                'status'         => 'unpaid',
+                'due_date'       => $dueDate,
+                'subtotal'       => $price,
+                'tax'            => $tax,
+                'total'          => $total,
+                'notes'          => 'Manual renewal — ' . $service->product->name . ' (' . ucfirst($service->billing_cycle) . ')',
             ]);
 
             InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'service_id' => $service->id,
-                'product_id' => $service->product_id,
+                'invoice_id'  => $invoice->id,
+                'service_id'  => $service->id,
+                'product_id'  => $service->product_id,
                 'description' => $service->product->name . ' — ' . ucfirst($service->billing_cycle) . ' renewal',
-                'quantity' => 1,
-                'unit_price' => $price,
-                'amount' => $price,
+                'quantity'    => 1,
+                'unit_price'  => $price,
+                'amount'      => $price,
             ]);
 
+            // Link the new invoice to the service so payment completion can resolve it.
             $service->update(['invoice_id' => $invoice->id]);
+
+            return $invoice;
         });
 
-        return redirect()->route('customer.invoices.show', ['invoice' => $service->fresh()->invoice_id])
-            ->with('success', 'Renewal invoice created. Please pay to extend your service.');
+        return redirect()->route('customer.payment.select-method', $invoice)
+            ->with('success', 'Renewal invoice created. Choose a payment method below to extend your service.');
     }
 
     private function getPriceForCycle(Service $service): float

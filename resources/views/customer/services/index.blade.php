@@ -22,62 +22,88 @@
     @if ($services->count() > 0)
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             @foreach ($services as $service)
-                <a href="{{ route('customer.services.show', $service) }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
-                    <!-- Header -->
-                    <div class="mb-4">
-                        <div class="flex items-start justify-between mb-2">
-                            <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ $service->product->name }}</h3>
+                @php $canRenew = in_array($service->status->value, ['active', 'suspended']); @endphp
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 transition-colors flex flex-col">
+                    <!-- Clickable card body -->
+                    <a href="{{ route('customer.services.show', $service) }}" class="block p-6 flex-1">
+                        <!-- Header -->
+                        <div class="mb-4">
+                            <div class="flex items-start justify-between mb-2">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ $service->product->name }}</h3>
+                            </div>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
                         </div>
-                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
-                    </div>
 
-                    <!-- Status Badge -->
-                    <div class="mb-4">
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                            @if($service->status->value === 'active')
-                                bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                            @elseif($service->status->value === 'pending')
-                                bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                            @elseif($service->status->value === 'provisioning')
-                                bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                            @elseif($service->status->value === 'suspended')
-                                bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                            @elseif($service->status->value === 'terminated')
-                                bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                            @elseif($service->status->value === 'failed')
-                                bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                            @endif
-                        ">
-                            {{ ucfirst($service->status->value) }}
-                        </span>
-                    </div>
+                        <!-- Status Badge -->
+                        <div class="mb-4">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                @if($service->status->value === 'active')
+                                    bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                                @elseif($service->status->value === 'pending')
+                                    bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
+                                @elseif($service->status->value === 'provisioning')
+                                    bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                                @elseif($service->status->value === 'suspended')
+                                    bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
+                                @elseif($service->status->value === 'terminated')
+                                    bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                @elseif($service->status->value === 'failed')
+                                    bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                @endif
+                            ">
+                                {{ ucfirst($service->status->value) }}
+                            </span>
+                        </div>
 
-                    <!-- Service Details -->
-                    <div class="space-y-3 mb-6 pb-6 border-b border-slate-200 dark:border-slate-800">
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-slate-600 dark:text-slate-400">Service ID</span>
-                            <span class="text-sm font-medium text-slate-900 dark:text-white">#{{ $service->id }}</span>
+                        <!-- Service Details -->
+                        <div class="space-y-3 pb-4 border-b border-slate-200 dark:border-slate-800">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-slate-600 dark:text-slate-400">Service ID</span>
+                                <span class="text-sm font-medium text-slate-900 dark:text-white">#{{ $service->id }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-slate-600 dark:text-slate-400">Billing Cycle</span>
+                                <span class="text-sm font-medium text-slate-900 dark:text-white">{{ ucfirst($service->billing_cycle) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-slate-600 dark:text-slate-400">Next Due</span>
+                                <span class="text-sm font-medium
+                                    @if($service->next_due_date && $service->next_due_date->isPast()) text-red-600 dark:text-red-400
+                                    @elseif($service->next_due_date && $service->next_due_date->diffInDays(now()) <= 7) text-amber-600 dark:text-amber-400
+                                    @else text-slate-900 dark:text-white @endif">
+                                    {{ $service->next_due_date?->format('M d, Y') ?? '—' }}
+                                </span>
+                            </div>
                         </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-slate-600 dark:text-slate-400">Billing Cycle</span>
-                            <span class="text-sm font-medium text-slate-900 dark:text-white">{{ ucfirst($service->billing_cycle) }}</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-slate-600 dark:text-slate-400">Next Due</span>
-                            <span class="text-sm font-medium text-slate-900 dark:text-white">{{ $service->next_due_date?->format('M d, Y') ?? '-' }}</span>
-                        </div>
-                    </div>
+                    </a>
 
-                    <!-- Action Buttons -->
-                    <div class="flex gap-2">
-                        <button class="flex-1 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-lg transition">
-                            Restart
-                        </button>
-                        <button class="flex-1 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-lg transition">
-                            Renew
-                        </button>
+                    <!-- Action Buttons — outside the link so clicks don't navigate -->
+                    <div class="px-6 py-4 flex gap-2">
+                        <a href="{{ route('customer.services.show', $service) }}"
+                           class="flex-1 px-3 py-2 text-xs font-medium text-center text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition">
+                            Manage
+                        </a>
+
+                        @if($canRenew)
+                            <form method="POST"
+                                  action="{{ route('customer.services.renew', $service) }}"
+                                  class="flex-1"
+                                  onsubmit="return confirm('Generate a renewal invoice for {{ addslashes($service->product->name) }}?\n\nYou will be taken to the payment page.')">
+                                @csrf
+                                <button type="submit"
+                                        class="w-full px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
+                                    Renew
+                                </button>
+                            </form>
+                        @else
+                            <button disabled
+                                    title="Renewal not available for {{ $service->status->value }} services"
+                                    class="flex-1 px-3 py-2 text-xs font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-not-allowed">
+                                Renew
+                            </button>
+                        @endif
                     </div>
-                </a>
+                </div>
             @endforeach
         </div>
     @else
