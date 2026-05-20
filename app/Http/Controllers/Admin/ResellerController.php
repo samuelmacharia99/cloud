@@ -6,8 +6,12 @@ use App\Models\User;
 use App\Models\Service;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\InvoiceItem;
+use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\Invoice;
+use App\Models\Setting;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -77,7 +81,13 @@ class ResellerController extends Controller
             ->latest()
             ->get();
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions', 'resellerInvoices'));
+        $serverProducts = Product::whereIn('type', ['vps', 'dedicated_server'])
+            ->where('is_active', true)
+            ->orderBy('type')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions', 'resellerInvoices', 'serverProducts'));
     }
 
     public function promote(User $user)
@@ -319,5 +329,134 @@ class ResellerController extends Controller
 
             return back()->with('error', 'Failed to add domain. Please try again.')->withInput();
         }
+    }
+
+    public function addService(Request $request, User $user)
+    {
+        abort_if(!$user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'owner_id'         => 'required|exists:users,id',
+            'product_id'       => 'required|exists:products,id',
+            'name'             => 'required|string|max:255',
+            'billing_cycle'    => 'required|in:monthly,quarterly,semi-annual,annual',
+            'status'           => 'required|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
+            'commenced_at'     => 'nullable|date|before_or_equal:next_due_date',
+            'next_due_date'    => 'required|date',
+            'username'         => 'nullable|string|max:255',
+            'password'         => 'nullable|string|max:255',
+            'ip_address'       => 'nullable|string|max:45',
+            'notes'            => 'nullable|string|max:1000',
+            'generate_invoice' => 'boolean',
+        ]);
+
+        // Owner must be the reseller themselves or one of their managed customers
+        $allowedIds = Service::where('reseller_id', $user->id)
+            ->distinct()->pluck('user_id')
+            ->push($user->id)->unique();
+
+        abort_if(!$allowedIds->contains((int) $validated['owner_id']), 403, 'This owner is not managed by this reseller.');
+
+        $product = Product::findOrFail($validated['product_id']);
+        abort_if(!in_array($product->type, ['vps', 'dedicated_server']), 422, 'Only VPS and Dedicated Server products can be added to resellers.');
+        abort_if(!$product->is_active, 422, 'Product is not available.');
+
+        try {
+            $createdService = DB::transaction(function () use ($validated, $user, $product) {
+                $serviceMeta = [];
+                if (!empty($validated['username'])) {
+                    $serviceMeta['username'] = $validated['username'];
+                }
+                if (!empty($validated['password'])) {
+                    $serviceMeta['password'] = $validated['password'];
+                }
+                if (!empty($validated['ip_address'])) {
+                    $serviceMeta['ip_address'] = $validated['ip_address'];
+                }
+
+                $service = Service::create([
+                    'user_id'                 => $validated['owner_id'],
+                    'reseller_id'             => $user->id,
+                    'product_id'              => $validated['product_id'],
+                    'name'                    => $validated['name'],
+                    'status'                  => $validated['status'],
+                    'billing_cycle'           => $validated['billing_cycle'],
+                    'commenced_at'            => $validated['commenced_at'] ?? null,
+                    'next_due_date'           => $validated['next_due_date'],
+                    'provisioning_driver_key' => $product->provisioning_driver_key,
+                    'service_meta'            => !empty($serviceMeta) ? $serviceMeta : null,
+                    'notes'                   => $validated['notes'] ?? null,
+                ]);
+
+                if (!empty($validated['generate_invoice'])) {
+                    $invoice = $this->createResellerServiceInvoice($user, $product, $service, $validated);
+                    $service->update(['invoice_id' => $invoice->id]);
+                }
+
+                return $service;
+            });
+
+            Log::info('Admin added service to reseller', [
+                'reseller_id' => $user->id,
+                'service_id'  => $createdService->id,
+                'product_id'  => $product->id,
+            ]);
+
+            return back()->with('success', "Service '{$validated['name']}' added to {$user->name} successfully.");
+        } catch (\Exception $e) {
+            Log::error('Admin addService to reseller failed', [
+                'reseller_id' => $user->id,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to add service: ' . $e->getMessage())->withInput();
+        }
+    }
+
+    private function createResellerServiceInvoice(User $reseller, Product $product, Service $service, array $validated): Invoice
+    {
+        $monthlyBase = (float) ($product->wholesale_monthly_price ?? $product->monthly_price ?? 0);
+        $price = match ($validated['billing_cycle']) {
+            'monthly'     => $monthlyBase,
+            'quarterly'   => $monthlyBase * 3,
+            'semi-annual' => $monthlyBase * 6,
+            'annual'      => (float) ($product->wholesale_yearly_price ?? ($monthlyBase * 12)),
+            default       => 0,
+        };
+
+        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+        $taxRate    = (float) Setting::getValue('tax_rate', 0);
+        $tax        = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
+        $total      = $price + $tax;
+
+        $prefix  = Setting::getValue('invoice_prefix', 'INV');
+        $date    = now()->format('Ymd');
+        $count   = Invoice::whereDate('created_at', now())->count() + 1;
+        $number  = $prefix . '-' . $date . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+
+        $dueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
+
+        $invoice = Invoice::create([
+            'user_id'        => $reseller->id,
+            'invoice_number' => $number,
+            'status'         => 'unpaid',
+            'due_date'       => $dueDate,
+            'subtotal'       => $price,
+            'tax'            => $tax,
+            'total'          => $total,
+            'notes'          => 'Reseller Service: ' . $service->name,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id'  => $invoice->id,
+            'service_id'  => $service->id,
+            'product_id'  => $product->id,
+            'description' => $service->name,
+            'quantity'    => 1,
+            'unit_price'  => $price,
+            'amount'      => $price,
+        ]);
+
+        return $invoice;
     }
 }

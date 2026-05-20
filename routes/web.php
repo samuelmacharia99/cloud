@@ -105,6 +105,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/update-billing', [\App\Http\Controllers\Admin\ResellerController::class, 'updateBilling'])->name('admin.resellers.update-billing');
         Route::post('admin/resellers/{user}/impersonate', [\App\Http\Controllers\Admin\ResellerController::class, 'impersonate'])->name('admin.resellers.impersonate');
         Route::post('admin/resellers/{user}/add-domain', [\App\Http\Controllers\Admin\ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
+        Route::post('admin/resellers/{user}/add-service', [\App\Http\Controllers\Admin\ResellerController::class, 'addService'])->name('admin.resellers.add-service');
         Route::get('admin/settings', [\App\Http\Controllers\Admin\SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [\App\Http\Controllers\Admin\SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/upload-file', [\App\Http\Controllers\Admin\SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');

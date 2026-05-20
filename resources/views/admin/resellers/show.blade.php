@@ -77,8 +77,8 @@
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: 'overview', addDomainModal: false, upgradeModal: false, editBillingModal: false }"
-         x-init="@if($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
+    <div x-data="{ activeTab: 'overview', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
+         x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
         <div class="border-b border-slate-200 dark:border-slate-800">
@@ -250,14 +250,21 @@
             </div>
 
             <!-- Services Tab -->
-            <div x-show="activeTab === 'services'">
+            <div x-show="activeTab === 'services'" class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">Services ({{ $services->count() }})</h3>
+                    <button @click="addServiceModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+                        + Add Service
+                    </button>
+                </div>
+
                 @if ($services->count() > 0)
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="border-b border-slate-200 dark:border-slate-800">
                                     <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Service</th>
-                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Customer</th>
+                                    <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Owner</th>
                                     <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Product</th>
                                     <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Status</th>
                                     <th class="text-left py-3 px-4 font-semibold text-slate-900 dark:text-white">Next Renewal</th>
@@ -273,6 +280,9 @@
                                         </td>
                                         <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
                                             {{ $service->user->name }}
+                                            @if ($service->user_id === $user->id)
+                                                <span class="ml-1 text-xs text-purple-600 dark:text-purple-400">(reseller)</span>
+                                            @endif
                                         </td>
                                         <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
                                             {{ $service->product->name }}
@@ -474,6 +484,185 @@
                         <p class="text-slate-600 dark:text-slate-400">No subscription invoices yet</p>
                     </div>
                 @endif
+            </div>
+        </div>
+
+        <!-- Add Service Modal -->
+        <div x-show="addServiceModal" x-transition fixed inset-0 bg-black/50 z-50 flex items-end @click.self="addServiceModal = false">
+            <div class="bg-white dark:bg-slate-900 w-full max-w-2xl mx-auto rounded-t-2xl shadow-2xl overflow-y-auto max-h-[90vh] flex flex-col">
+                <!-- Sticky Header -->
+                <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Add Server Service</h2>
+                    <button @click="addServiceModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Form Content -->
+                <form id="add-service-form" action="{{ route('admin.resellers.add-service', $user) }}" method="POST" class="flex-1 overflow-y-auto p-6">
+                    @csrf
+                    <input type="hidden" name="_form" value="add_service">
+                    <div class="space-y-6">
+
+                        <!-- Owner Selection -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Service Owner <span class="text-red-500">*</span></label>
+                            <select name="owner_id" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('owner_id') border-red-500 @enderror">
+                                <option value="">Select owner (reseller or customer)</option>
+                                @foreach ($ownerOptions as $option)
+                                    <option value="{{ $option['id'] }}" {{ old('owner_id') == $option['id'] ? 'selected' : '' }}>
+                                        {{ $option['label'] }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('owner_id')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Product -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Product <span class="text-red-500">*</span></label>
+                            <select name="product_id" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('product_id') border-red-500 @enderror">
+                                <option value="">Select product</option>
+                                @foreach ($serverProducts->groupBy('type') as $type => $products)
+                                    <optgroup label="{{ $type === 'vps' ? 'VPS' : 'Dedicated Server' }}">
+                                        @foreach ($products as $product)
+                                            <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
+                                                {{ $product->name }}
+                                                @if ($product->wholesale_monthly_price)
+                                                    — KES {{ number_format($product->wholesale_monthly_price, 2) }}/mo (wholesale)
+                                                @endif
+                                            </option>
+                                        @endforeach
+                                    </optgroup>
+                                @endforeach
+                            </select>
+                            @error('product_id')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Service Name -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Service Name <span class="text-red-500">*</span></label>
+                            <input type="text" name="name" placeholder="e.g., Production VPS #1" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('name') border-red-500 @enderror" value="{{ old('name') }}">
+                            @error('name')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Billing Cycle + Status -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Billing Cycle <span class="text-red-500">*</span></label>
+                                <select name="billing_cycle" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('billing_cycle') border-red-500 @enderror">
+                                    <option value="monthly"     {{ old('billing_cycle', 'monthly') === 'monthly'     ? 'selected' : '' }}>Monthly</option>
+                                    <option value="quarterly"   {{ old('billing_cycle') === 'quarterly'   ? 'selected' : '' }}>Quarterly</option>
+                                    <option value="semi-annual" {{ old('billing_cycle') === 'semi-annual' ? 'selected' : '' }}>Semi-Annual</option>
+                                    <option value="annual"      {{ old('billing_cycle') === 'annual'      ? 'selected' : '' }}>Annual</option>
+                                </select>
+                                @error('billing_cycle')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status <span class="text-red-500">*</span></label>
+                                <select name="status" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('status') border-red-500 @enderror">
+                                    <option value="active"       {{ old('status', 'active') === 'active'       ? 'selected' : '' }}>Active</option>
+                                    <option value="pending"      {{ old('status') === 'pending'      ? 'selected' : '' }}>Pending</option>
+                                    <option value="provisioning" {{ old('status') === 'provisioning' ? 'selected' : '' }}>Provisioning</option>
+                                    <option value="suspended"    {{ old('status') === 'suspended'    ? 'selected' : '' }}>Suspended</option>
+                                    <option value="terminated"   {{ old('status') === 'terminated'   ? 'selected' : '' }}>Terminated</option>
+                                    <option value="failed"       {{ old('status') === 'failed'       ? 'selected' : '' }}>Failed</option>
+                                    <option value="cancelled"    {{ old('status') === 'cancelled'    ? 'selected' : '' }}>Cancelled</option>
+                                </select>
+                                @error('status')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <!-- Dates -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Commenced Date</label>
+                                <input type="date" name="commenced_at" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('commenced_at') border-red-500 @enderror" value="{{ old('commenced_at') }}">
+                                @error('commenced_at')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Next Due Date <span class="text-red-500">*</span></label>
+                                <input type="date" name="next_due_date" required class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('next_due_date') border-red-500 @enderror" value="{{ old('next_due_date') }}">
+                                @error('next_due_date')
+                                    <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                        </div>
+
+                        <!-- Server Credentials -->
+                        <div>
+                            <h4 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Server Credentials <span class="text-slate-400 font-normal">(optional)</span></h4>
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Username / Login</label>
+                                        <input type="text" name="username" autocomplete="off" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('username') border-red-500 @enderror" value="{{ old('username') }}">
+                                        @error('username')
+                                            <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
+                                        <input type="text" name="password" autocomplete="new-password" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('password') border-red-500 @enderror" value="{{ old('password') }}">
+                                        @error('password')
+                                            <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">IP Address</label>
+                                    <input type="text" name="ip_address" placeholder="e.g., 192.168.1.1" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('ip_address') border-red-500 @enderror" value="{{ old('ip_address') }}">
+                                    @error('ip_address')
+                                        <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                                    @enderror
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Notes</label>
+                            <textarea name="notes" rows="3" placeholder="Internal notes about this service..." class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 @error('notes') border-red-500 @enderror">{{ old('notes') }}</textarea>
+                            @error('notes')
+                                <p class="text-red-500 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Generate Invoice -->
+                        <div class="flex items-start gap-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                            <input type="hidden" name="generate_invoice" value="0">
+                            <input type="checkbox" name="generate_invoice" value="1" id="svc_generate_invoice" {{ old('generate_invoice') ? 'checked' : '' }} class="mt-0.5 w-4 h-4 border border-slate-300 rounded bg-white dark:bg-slate-800 focus:ring-2 focus:ring-blue-500 accent-blue-600 cursor-pointer">
+                            <div>
+                                <label for="svc_generate_invoice" class="text-sm font-medium text-slate-900 dark:text-white cursor-pointer">Generate invoice</label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Creates an unpaid invoice at wholesale price and links it to this service.</p>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Sticky Footer -->
+                <div class="sticky bottom-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-end gap-3">
+                    <button @click="addServiceModal = false" class="px-4 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition font-medium">
+                        Cancel
+                    </button>
+                    <button form="add-service-form" type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                        Add Service
+                    </button>
+                </div>
             </div>
         </div>
 
