@@ -207,6 +207,10 @@ class GenerateInvoicesByDateCommand extends Command
 
     private function getPriceForCycle(Service $service): float
     {
+        if ($service->custom_price !== null) {
+            return (float) $service->custom_price;
+        }
+
         return match($service->billing_cycle) {
             'monthly' => (float) $service->product->monthly_price,
             'quarterly' => (float) ($service->product->monthly_price * 3),

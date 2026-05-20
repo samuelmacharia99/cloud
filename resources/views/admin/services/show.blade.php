@@ -491,6 +491,26 @@
                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Only packages of the same type ({{ ucfirst(str_replace('_', ' ', $service->product->type)) }}) are shown.</p>
                 </div>
 
+                <!-- Custom Price -->
+                <div>
+                    <label for="custom_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Custom Price</label>
+                    <div class="relative">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">{{ $currencyCode }}</span>
+                        <input type="number" id="custom_price" name="custom_price" step="0.01" min="0"
+                               value="{{ old('custom_price', $service->custom_price) }}"
+                               class="w-full pl-14 pr-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Leave empty to use product price">
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        If set, overrides the product price for all renewal invoices.
+                        @if($service->custom_price)
+                            Current custom price: <strong>{{ $currencyCode }} {{ number_format($service->custom_price, 2) }}</strong>
+                        @else
+                            Currently using product price.
+                        @endif
+                    </p>
+                </div>
+
                 <!-- Next Due Date -->
                 <div>
                     <label for="next_due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Due Date</label>

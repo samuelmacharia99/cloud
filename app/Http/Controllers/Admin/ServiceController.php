@@ -176,7 +176,9 @@ class ServiceController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'monthly_price', 'yearly_price', 'provisioning_driver_key']);
 
-        return view('admin.services.show', compact('service', 'sameTypeProducts'));
+        $currencyCode = Setting::getValue('currency', 'KES');
+
+        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode'));
     }
 
     public function provision(Service $service)
@@ -290,6 +292,7 @@ class ServiceController extends Controller
         $validated = $request->validate([
             'status'         => 'nullable|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
             'billing_cycle'  => 'required|in:monthly,quarterly,semi-annual,annual',
+            'custom_price'   => 'nullable|numeric|min:0',
             'next_due_date'  => 'required|date',
             'commenced_at'   => 'nullable|date',
             'suspend_date'   => 'nullable|date',

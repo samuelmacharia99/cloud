@@ -20,6 +20,7 @@ class Service extends Model
         'provisioning_driver_key',
         'status',
         'billing_cycle',
+        'custom_price',
         'next_due_date',
         'commenced_at',
         'suspend_date',
@@ -36,6 +37,7 @@ class Service extends Model
         'commenced_at' => 'datetime',
         'suspend_date' => 'datetime',
         'terminate_date' => 'datetime',
+        'custom_price' => 'decimal:2',
         'status' => \App\Enums\ServiceStatus::class,
     ];
 
