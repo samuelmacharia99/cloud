@@ -261,6 +261,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/domain-orders/{order}/push', [\App\Http\Controllers\Reseller\DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
         Route::post('reseller/domain-orders/{order}/retry', [\App\Http\Controllers\Reseller\DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
 
+        // Reseller Servers
+        Route::get('reseller/servers', [\App\Http\Controllers\Reseller\ServerController::class, 'index'])->name('reseller.servers.index');
+        Route::post('reseller/servers/order', [\App\Http\Controllers\Reseller\ServerController::class, 'order'])->name('reseller.servers.order');
+
         // Reseller Cart
         Route::get('reseller/cart', [\App\Http\Controllers\Reseller\CartController::class, 'index'])->name('reseller.cart.index');
         Route::post('reseller/cart/add', [\App\Http\Controllers\Reseller\CartController::class, 'add'])->name('reseller.cart.add');
@@ -279,6 +283,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/invoices/{invoice}/payment/success', [\App\Http\Controllers\Reseller\PaymentController::class, 'success'])->name('reseller.payment.success');
         Route::get('reseller/invoices/{invoice}/payment/stripe/success', [\App\Http\Controllers\Reseller\PaymentController::class, 'stripeSuccess'])->name('reseller.payment.stripe.success');
         Route::get('reseller/invoices/{invoice}/payment/stripe/cancel', [\App\Http\Controllers\Reseller\PaymentController::class, 'stripeCancel'])->name('reseller.payment.stripe.cancel');
+        Route::get('reseller/invoices/{invoice}/payment/paypal/success', [\App\Http\Controllers\Reseller\PaymentController::class, 'paypalSuccess'])->name('reseller.payment.paypal.success');
+        Route::get('reseller/invoices/{invoice}/payment/paypal/cancel', [\App\Http\Controllers\Reseller\PaymentController::class, 'paypalCancel'])->name('reseller.payment.paypal.cancel');
         Route::get('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualForm'])->name('reseller.payment.manual-form');
         Route::post('reseller/invoices/{invoice}/payment/manual', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualSubmit'])->name('reseller.payment.manual-submit');
         Route::get('reseller/payments/{payment}/submitted', [\App\Http\Controllers\Reseller\PaymentController::class, 'manualSubmitted'])->name('reseller.payment.manual-submitted');

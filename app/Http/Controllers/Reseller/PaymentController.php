@@ -3,12 +3,16 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Enums\PaymentStatus;
+use App\Enums\ServiceStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
+use App\Models\Service;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
@@ -191,6 +195,42 @@ class PaymentController extends Controller
             ->with('warning', 'Payment was cancelled');
     }
 
+    public function paypalSuccess(Invoice $invoice)
+    {
+        abort_if($invoice->user_id !== auth()->id(), 403);
+
+        try {
+            $payment = Payment::where('invoice_id', $invoice->id)
+                ->where('payment_method', 'paypal')
+                ->where('status', '!=', PaymentStatus::Completed)
+                ->latest()
+                ->first();
+
+            if ($payment) {
+                $gateway = $this->gatewayFactory->make('paypal');
+                $result = $gateway->verify($payment->transaction_reference);
+
+                if ($result['status'] === 'completed') {
+                    $this->processPaymentCompletion($payment, $invoice);
+                }
+            }
+
+            return redirect()->route('reseller.invoices.show', $invoice)
+                ->with('success', 'Payment received successfully!');
+        } catch (\Exception $e) {
+            return redirect()->route('reseller.invoices.show', $invoice)
+                ->with('error', 'Payment verification failed: ' . $e->getMessage());
+        }
+    }
+
+    public function paypalCancel(Invoice $invoice)
+    {
+        abort_if($invoice->user_id !== auth()->id(), 403);
+
+        return redirect()->route('reseller.payment.select-method', $invoice)
+            ->with('warning', 'PayPal payment was cancelled.');
+    }
+
     public function manualForm(Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
@@ -250,6 +290,24 @@ class PaymentController extends Controller
                     if ($order && $order->status === 'queued') {
                         $domainPushService = app(\App\Services\DomainPushService::class);
                         $domainPushService->pushOrderWithDirectPayment($order);
+                    }
+                }
+            }
+
+            // Provision pending services linked to this invoice
+            foreach ($invoice->items as $item) {
+                if ($item->service_id) {
+                    $service = Service::find($item->service_id);
+                    if ($service && $service->status->value === 'pending') {
+                        $service->update(['status' => ServiceStatus::Provisioning]);
+                        try {
+                            Artisan::call('service:provision', ['service_id' => $service->id]);
+                        } catch (\Exception $e) {
+                            Log::error('Reseller service provisioning failed after payment', [
+                                'service_id' => $service->id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
                     }
                 }
             }
