@@ -20,7 +20,7 @@ class SecurityHeaders
         // Apply CSP in both development and production
         // Allow external resources: fonts.bunny.net, Google reCAPTCHA, CDN
         $csp = "default-src 'self'; " .
-               "style-src 'self' 'unsafe-inline' https://fonts.bunny.net; " .
+               "style-src 'self' 'unsafe-inline' https://fonts.bunny.net https://cdn.jsdelivr.net; " .
                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; " .
                "font-src 'self' https://fonts.bunny.net https://fonts.gstatic.com data:; " .
                "frame-src https://www.google.com; " .
