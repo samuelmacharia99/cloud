@@ -69,7 +69,9 @@ class Service extends Model
 
     public function containerDeployment()
     {
-        return $this->hasOne(ContainerDeployment::class);
+        // A service can accumulate multiple deployment rows across redeploys;
+        // the current one is always the most recent.
+        return $this->hasOne(ContainerDeployment::class)->latestOfMany();
     }
 
     public function containerBackups()
