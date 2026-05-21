@@ -118,6 +118,13 @@ function containerTerminal() {
                 this.terminal.write('✓ ' + data.welcome_message + '\r\n');
                 this.writePrompt();
 
+                // Re-fit terminal to ensure proper dimensions after becoming visible
+                try {
+                    this.fitAddon.fit();
+                } catch (e) {
+                    console.error('Failed to fit terminal after session creation:', e);
+                }
+
                 if (data.expires_at) {
                     this.updateExpiryDisplay(data.expires_at);
                     this.expiryUpdateInterval = setInterval(() => {
