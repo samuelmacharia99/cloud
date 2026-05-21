@@ -70,7 +70,7 @@ class ContainerBackupService
                 $size = (int) trim($sizeOutput);
 
                 // Restart container
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --no-recreate", 60);
 
                 // Update backup record
                 $backup->update([
@@ -88,7 +88,7 @@ class ContainerBackupService
                 ]);
             } catch (Exception $e) {
                 // Make sure container is restarted even on backup failure
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --no-recreate", 60);
                 throw $e;
             } finally {
                 $ssh->disconnect();
