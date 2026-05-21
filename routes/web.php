@@ -382,6 +382,11 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('my/services/{service}/container/files/mkdir', [\App\Http\Controllers\Customer\ContainerFileController::class, 'mkdir'])->name('customer.services.container.files.mkdir');
         });
 
+        // Container terminal (throttled separately)
+        Route::post('my/services/{service}/terminal', [\App\Http\Controllers\Customer\ContainerTerminalController::class, 'create'])->middleware('throttle:5,1')->name('customer.services.container.terminal.create');
+        Route::post('my/services/{service}/terminal/execute', [\App\Http\Controllers\Customer\ContainerTerminalController::class, 'execute'])->middleware('throttle:60,1')->name('customer.services.container.terminal.execute');
+        Route::delete('my/services/{service}/terminal', [\App\Http\Controllers\Customer\ContainerTerminalController::class, 'close'])->name('customer.services.container.terminal.close');
+
         Route::post('my/services/{service}/container/domains', [\App\Http\Controllers\Customer\ContainerController::class, 'bindDomain'])->name('customer.services.container.domains.bind');
         Route::delete('my/services/{service}/container/domains/{domain}', [\App\Http\Controllers\Customer\ContainerController::class, 'unbindDomain'])->name('customer.services.container.domains.unbind');
         Route::post('my/services/{service}/container/domains/{domain}/ssl', [\App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');

@@ -115,4 +115,14 @@ class ServicePolicy
             ? Response::allow()
             : Response::deny('You can only manage files for your own services.');
     }
+
+    /**
+     * Customer can access terminal for their own container services. Admin can access any.
+     */
+    public function accessTerminal(User $user, Service $service): Response
+    {
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only access terminal for your own services.');
+    }
 }
