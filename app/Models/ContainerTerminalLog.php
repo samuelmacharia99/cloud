@@ -23,6 +23,15 @@ class ContainerTerminalLog extends Model
     const CREATED_AT = 'created_at';
     const UPDATED_AT = null;
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $log) {
+            if (empty($log->created_at)) {
+                $log->created_at = now();
+            }
+        });
+    }
+
     public function session(): BelongsTo
     {
         return $this->belongsTo(ContainerTerminalSession::class, 'session_id');
