@@ -134,7 +134,7 @@ class ContainerTerminalService
                 foreach ($lines as $line) {
                     if (preg_match('/^__EXIT:(\d+)$/', $line, $matches)) {
                         $exitCode = (int)$matches[1];
-                    } elseif (!empty($line) && !preg_match('/^__EXIT:', $line)) {
+                    } elseif (!empty($line) && !preg_match('/^__EXIT:/', $line)) {
                         $outputLines[] = $line;
                     }
                 }
