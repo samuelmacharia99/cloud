@@ -50,10 +50,9 @@
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
 
-<!-- Inline xterm.css to bypass CSP -->
-<style>
-@import url('https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css');
-</style>
+<!-- xterm.css from local server (allowed by CSP 'self') -->
+<link rel="stylesheet" href="{{ asset('css/xterm.min.css') }}">
+<link rel="stylesheet" href="{{ asset('css/xterm-addon-fit.min.css') }}">
 
 @push('scripts')
 <script>
