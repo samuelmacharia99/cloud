@@ -158,7 +158,9 @@ function containerTerminal() {
                 rows: 24,
             });
 
-            this.fitAddon = new FitAddon();
+            // xterm-addon-fit UMD build exposes the class as FitAddon.FitAddon
+            const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) ? window.FitAddon.FitAddon : window.FitAddon;
+            this.fitAddon = new FitAddonClass();
             this.terminal.loadAddon(this.fitAddon);
             this.terminal.open(document.getElementById('terminal'));
 
