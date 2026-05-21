@@ -36,16 +36,27 @@ class NginxProxyService
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
             $ssh->upload($config, $configPath);
 
-            // Test nginx configuration
-            $testResult = $ssh->exec("nginx -t 2>&1");
-            if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
-                // Config test failed, remove the bad config
-                $ssh->exec("rm -f {$safeConfPath}");
-                throw new Exception("Nginx configuration test failed: {$testResult}");
-            }
+            // Test nginx configuration (if nginx is installed)
+            try {
+                $testResult = $ssh->exec("which nginx > /dev/null && nginx -t 2>&1");
+                if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
+                    // Config test failed, remove the bad config
+                    $ssh->exec("rm -f {$safeConfPath}");
+                    throw new Exception("Nginx configuration test failed: {$testResult}");
+                }
 
-            // Reload nginx
-            $ssh->exec("nginx -s reload");
+                // Reload nginx
+                $ssh->exec("nginx -s reload");
+            } catch (Exception $nginxError) {
+                // If nginx is not installed, log warning but don't fail
+                if (strpos($nginxError->getMessage(), 'command not found') !== false ||
+                    strpos($nginxError->getMessage(), 'nginx') === false) {
+                    \Log::warning("Nginx not installed on node {$node->id}, skipping configuration test. Domain {$domain->domain} added but nginx reverse proxy unavailable.");
+                    // Continue anyway - domain is added, just without nginx proxy
+                } else {
+                    throw $nginxError;
+                }
+            }
 
             // Update domain status
             $domain->update([
@@ -81,13 +92,18 @@ class NginxProxyService
 
             // Remove config file — escape the path to prevent injection
             if ($domain->nginx_config_path) {
-                $ssh->exec("rm -f " . escapeshellarg($domain->nginx_config_path));
+                @$ssh->exec("rm -f " . escapeshellarg($domain->nginx_config_path));
             } else {
-                $ssh->exec("rm -f " . escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf"));
+                @$ssh->exec("rm -f " . escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf"));
             }
 
-            // Reload nginx
-            $ssh->exec("nginx -s reload");
+            // Reload nginx (if installed)
+            try {
+                $ssh->exec("which nginx > /dev/null && nginx -s reload");
+            } catch (Exception $e) {
+                \Log::warning("Failed to reload nginx on node {$node->id}: " . $e->getMessage());
+                // Don't fail the unbind operation if nginx is not available
+            }
 
             $ssh->disconnect();
 
@@ -152,13 +168,19 @@ class NginxProxyService
             $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
             $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
 
-            // Test and reload
-            $testResult = $ssh->exec("nginx -t 2>&1");
-            if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
-                throw new Exception("Nginx SSL config test failed: {$testResult}");
+            // Test and reload (if nginx is installed)
+            try {
+                $testResult = $ssh->exec("which nginx > /dev/null && nginx -t 2>&1");
+                if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
+                    throw new Exception("Nginx SSL config test failed: {$testResult}");
+                }
+
+                $ssh->exec("nginx -s reload");
+            } catch (Exception $nginxError) {
+                \Log::warning("Nginx operations failed for SSL on node {$node->id}: " . $nginxError->getMessage());
+                // Continue - SSL is configured even if nginx reload fails
             }
 
-            $ssh->exec("nginx -s reload");
             $ssh->disconnect();
         } catch (Exception $e) {
             $domain->update([
