@@ -159,8 +159,17 @@ function containerTerminal() {
 
             // Handle input
             this.terminal.onData((data) => {
+                console.log('Terminal input received:', data);
                 this.handleInput(data);
             });
+
+            // Auto-focus terminal when clicked
+            const terminalElement = document.getElementById('terminal');
+            if (terminalElement) {
+                terminalElement.addEventListener('click', () => {
+                    this.terminal.focus();
+                });
+            }
 
             // Fit on window resize
             window.addEventListener('resize', () => {
