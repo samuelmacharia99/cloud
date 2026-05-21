@@ -239,15 +239,18 @@ class ContainerTerminalService
         // Prefer the live deployment container name over the session's denormalized
         // copy, which can drift if the container was renamed/redeployed.
         $containerName = $session->deployment?->container_name ?: $session->container_name;
-        $container = escapeshellarg($containerName);
-        $cwd = escapeshellarg($session->cwd);
-        $cmd = escapeshellarg($command);
 
-        // Build command that:
-        // 1. Changes to the session's CWD
-        // 2. Runs the user's command
-        // 3. Outputs exit code with __EXIT:N marker
-        // 4. Outputs current directory (pwd) as last line for CWD tracking
-        return "docker exec -u www-data {$container} sh -c \"cd {$cwd} && {$cmd}; printf '\\n__EXIT:%d\\n' \\\$?; pwd\"";
+        // The user's command is a full shell line (with args, pipes, etc.), so it
+        // must NOT be quoted as a single token. Base64-encode it to embed safely,
+        // then eval it inside the container so builtins like `cd` affect the same
+        // shell whose pwd we capture afterwards for CWD tracking.
+        $encodedCmd = base64_encode($command);
+
+        $script = 'cd ' . escapeshellarg($session->cwd) . ' 2>/dev/null; '
+            . 'eval "$(printf %s ' . escapeshellarg($encodedCmd) . ' | base64 -d)"; '
+            . 'printf "\n__EXIT:%d\n" "$?"; pwd';
+
+        return 'docker exec -u www-data ' . escapeshellarg($containerName)
+            . ' sh -c ' . escapeshellarg($script);
     }
 }

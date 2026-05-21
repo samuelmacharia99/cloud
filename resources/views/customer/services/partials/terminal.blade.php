@@ -309,11 +309,14 @@ function containerTerminal() {
                 } else {
                     const data = await response.json();
 
+                    // xterm needs CRLF; normalize bare LF so output doesn't staircase
+                    const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
+
                     if (data.blocked) {
-                        this.terminal.write('\x1b[31m' + data.output + '\x1b[0m\r\n');
+                        this.terminal.write('\x1b[31m' + formatOutput(data.output) + '\x1b[0m\r\n');
                     } else {
                         if (data.output) {
-                            this.terminal.write(data.output + '\r\n');
+                            this.terminal.write(formatOutput(data.output) + '\r\n');
                         }
                     }
 
