@@ -273,8 +273,24 @@ class ContainerDeploymentService
 
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
 
+                // Parse docker-compose.yml to extract service names and container names
+                $composeFile = $containerPath . '/docker-compose.yml';
+                $composeContent = $ssh->exec("cat {$composeFile}");
+                $composeData = Yaml::parse($composeContent);
+
+                // Force remove any conflicting containers with explicit container_name
+                if (isset($composeData['services'])) {
+                    foreach ($composeData['services'] as $serviceName => $serviceConfig) {
+                        if (isset($serviceConfig['container_name'])) {
+                            $containerName = $serviceConfig['container_name'];
+                            // Force remove the container if it exists
+                            @$ssh->exec("docker rm -f {$containerName}", 10);
+                            \Log::debug("Force removed container: {$containerName}");
+                        }
+                    }
+                }
+
                 // Stop and remove all containers/networks, then start fresh
-                // This handles conflicts from previous deployments
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
 
                 // Now start the containers
