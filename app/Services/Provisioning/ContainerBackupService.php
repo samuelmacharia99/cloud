@@ -52,7 +52,7 @@ class ContainerBackupService
             $backup->update(['status' => 'running']);
 
             // Stop container briefly during backup
-            @$ssh->exec("cd {$containerPath} && docker compose stop", 60);
+            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", 60);
 
             try {
                 // Create tarball of container directory
@@ -66,7 +66,7 @@ class ContainerBackupService
                 $size = (int) trim($sizeOutput);
 
                 // Restart container
-                @$ssh->exec("cd {$containerPath} && docker compose start", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml start", 60);
 
                 // Update backup record
                 $backup->update([
@@ -84,7 +84,7 @@ class ContainerBackupService
                 ]);
             } catch (Exception $e) {
                 // Make sure container is restarted even on backup failure
-                @$ssh->exec("cd {$containerPath} && docker compose start", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml start", 60);
                 throw $e;
             } finally {
                 $ssh->disconnect();
@@ -127,7 +127,7 @@ class ContainerBackupService
             $backup->update(['status' => 'restoring']);
 
             // Stop and remove current container
-            @$ssh->exec("cd {$containerPath} && docker compose down", 120);
+            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down", 120);
 
             // Remove current directory
             @$ssh->deleteDir($containerPath);
@@ -142,7 +142,7 @@ class ContainerBackupService
             );
 
             // Restart container
-            $ssh->exec("cd {$containerPath} && docker compose up -d", 120);
+            $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 120);
 
             // Wait a bit for health check
             sleep(5);

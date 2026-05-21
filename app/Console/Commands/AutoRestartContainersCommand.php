@@ -45,14 +45,14 @@ class AutoRestartContainersCommand extends Command
                 try {
                     // Check container status via docker compose ps
                     $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                    $statusCmd = "cd {$containerPath} && docker compose ps --format json 2>/dev/null | jq -r '.[0].State // \"error\"'";
+                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r '.[0].State // \"error\"'";
                     $status = trim($ssh->exec($statusCmd));
 
                     // If container is not running, restart it
                     if ($status !== 'running') {
                         $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id}...");
 
-                        $ssh->exec("cd {$containerPath} && docker compose restart", self::RESTART_TIMEOUT);
+                        $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::RESTART_TIMEOUT);
 
                         // Wait a moment for restart
                         sleep(2);

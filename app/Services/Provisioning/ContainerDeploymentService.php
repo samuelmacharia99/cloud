@@ -224,7 +224,7 @@ class ContainerDeploymentService
 
             try {
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                $ssh->exec("cd {$containerPath} && docker compose stop", self::DEPLOY_TIMEOUT);
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'status' => 'stopped',
@@ -266,7 +266,7 @@ class ContainerDeploymentService
 
             try {
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                $ssh->exec("cd {$containerPath} && docker compose start", self::DEPLOY_TIMEOUT);
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml start", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'status' => 'running',
@@ -306,7 +306,7 @@ class ContainerDeploymentService
                     $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
 
                     // Stop and remove containers
-                    @$ssh->exec("cd {$containerPath} && docker compose down -v", self::DEPLOY_TIMEOUT);
+                    @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", self::DEPLOY_TIMEOUT);
 
                     // Remove directory
                     @$ssh->deleteDir($containerPath);
@@ -358,7 +358,7 @@ class ContainerDeploymentService
 
             try {
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                $ssh->exec("cd {$containerPath} && docker compose restart", self::DEPLOY_TIMEOUT);
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'last_status_check_at' => now(),
@@ -394,7 +394,7 @@ class ContainerDeploymentService
             try {
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                 $output = $ssh->exec(
-                    "cd {$containerPath} && docker compose logs --no-color --tail={$lines}",
+                    "cd {$containerPath} && docker compose -f docker-compose.yml logs --no-color --tail={$lines}",
                     30
                 );
 
