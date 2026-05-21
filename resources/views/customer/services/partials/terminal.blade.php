@@ -29,7 +29,7 @@
 
     <!-- Info messages -->
     <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <p class="text-sm text-blue-800 dark:text-blue-300">
+        <p class="text-sm text-blue-800 dark:text-blue-200">
             Click "Open Terminal" to start an interactive terminal session inside your container. You can run commands, navigate directories, and manage your application.
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400 mt-2">
@@ -46,9 +46,14 @@
     </div>
 </div>
 
+<!-- xterm.js scripts from CDN -->
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+<!-- Inline xterm.css to bypass CSP -->
+<style>
+@import url('https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css');
+</style>
 
 @push('scripts')
 <script>
