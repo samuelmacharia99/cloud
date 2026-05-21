@@ -63,14 +63,14 @@
             <div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">CPU Avg</p>
                 <p class="text-2xl font-bold text-blue-500 dark:text-blue-300 mt-1" x-text="`${summary?.cpu_avg || 0}%`"></p>
-                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Last {{ timeRange }}h</p>
+                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1" x-text="`Last ${timeRange}h`"></p>
             </div>
 
             <!-- RAM Avg -->
             <div class="bg-white dark:bg-slate-800 rounded-lg p-4 border border-slate-200 dark:border-slate-700">
                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide">RAM Avg</p>
                 <p class="text-2xl font-bold text-green-500 dark:text-green-300 mt-1" x-text="`${summary?.memory_avg || 0} MB`"></p>
-                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">Last {{ timeRange }}h</p>
+                <p class="text-xs text-slate-500 dark:text-slate-500 mt-1" x-text="`Last ${timeRange}h`"></p>
             </div>
 
             <!-- Net RX -->
