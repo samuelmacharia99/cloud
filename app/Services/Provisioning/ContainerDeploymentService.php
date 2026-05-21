@@ -347,7 +347,11 @@ class ContainerDeploymentService
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose restart", self::DEPLOY_TIMEOUT);
 
-                $deployment->update(['last_status_check_at' => now()]);
+                $deployment->update([
+                    'last_status_check_at' => now(),
+                    'last_restart_at'      => now(),
+                ]);
+                $deployment->increment('restart_attempts');
 
                 \Log::info("Container restarted for service {$service->id}");
             } finally {

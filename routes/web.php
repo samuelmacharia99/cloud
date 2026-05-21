@@ -370,6 +370,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
         Route::get('my/services/{service}/container/metrics', [\App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
+        Route::get('my/services/{service}/container/health', [\App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('customer.services.container.health');
         Route::get('my/services/{service}/container/storage-stats', [\App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('customer.services.container.storage-stats');
 
         // Container file manager (throttled)
