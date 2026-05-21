@@ -51,6 +51,10 @@ class ContainerBackupService
             // Update backup status to running
             $backup->update(['status' => 'running']);
 
+            // Ensure docker-compose.yml exists before using it
+            $deploymentService = new ContainerDeploymentService();
+            $deploymentService->ensureComposeFileExists($ssh, $deployment);
+
             // Stop container briefly during backup
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", 60);
 
@@ -125,6 +129,10 @@ class ContainerBackupService
 
             // Update backup status
             $backup->update(['status' => 'restoring']);
+
+            // Ensure docker-compose.yml exists before using it
+            $deploymentService = new ContainerDeploymentService();
+            $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
             // Stop and remove current container
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down", 120);

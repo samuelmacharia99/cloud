@@ -223,6 +223,9 @@ class ContainerDeploymentService
             $ssh = SSHService::forNode($deployment->node);
 
             try {
+                // Ensure docker-compose.yml exists
+                $this->ensureComposeFileExists($ssh, $deployment);
+
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", self::DEPLOY_TIMEOUT);
 
@@ -265,6 +268,9 @@ class ContainerDeploymentService
             $ssh = SSHService::forNode($deployment->node);
 
             try {
+                // Ensure docker-compose.yml exists
+                $this->ensureComposeFileExists($ssh, $deployment);
+
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml start", self::DEPLOY_TIMEOUT);
 
@@ -357,6 +363,9 @@ class ContainerDeploymentService
             $ssh = SSHService::forNode($deployment->node);
 
             try {
+                // Ensure docker-compose.yml exists
+                $this->ensureComposeFileExists($ssh, $deployment);
+
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::DEPLOY_TIMEOUT);
 
@@ -779,5 +788,33 @@ class ContainerDeploymentService
                 "An administrator needs to configure SSH credentials for this node."
             );
         }
+    }
+
+    /**
+     * Ensure docker-compose.yml file exists, re-uploading if necessary
+     */
+    public function ensureComposeFileExists(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+        $composeFile = $containerPath . '/docker-compose.yml';
+
+        // Check if file exists
+        try {
+            $ssh->exec("test -f {$composeFile}");
+            return; // File exists
+        } catch (\Exception $e) {
+            // File doesn't exist, re-upload it
+        }
+
+        // Re-upload docker-compose.yml from stored content
+        if (!$deployment->docker_compose_content) {
+            throw new \RuntimeException(
+                "docker-compose.yml file missing and no backup content stored. " .
+                "Container deployment is corrupted. Please contact support."
+            );
+        }
+
+        \Log::warning("Re-uploading docker-compose.yml for deployment {$deployment->id}");
+        $ssh->upload($deployment->docker_compose_content, $composeFile);
     }
 }

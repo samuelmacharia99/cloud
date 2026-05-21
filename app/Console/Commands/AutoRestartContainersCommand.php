@@ -43,6 +43,10 @@ class AutoRestartContainersCommand extends Command
                 $ssh = SSHService::forNode($deployment->node);
 
                 try {
+                    // Ensure docker-compose.yml exists before using it
+                    $deploymentService = new \App\Services\Provisioning\ContainerDeploymentService();
+                    $deploymentService->ensureComposeFileExists($ssh, $deployment);
+
                     // Check container status via docker compose ps
                     $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
                     $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r '.[0].State // \"error\"'";
