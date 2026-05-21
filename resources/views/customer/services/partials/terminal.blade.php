@@ -82,12 +82,15 @@ function containerTerminal() {
         },
 
         async openTerminal() {
+            this.terminalVisible = true;
+            this.sessionStarting = true;
+
+            // Wait for DOM to update before initializing terminal
+            await this.$nextTick();
+
             if (!this.terminal) {
                 this.initializeTerminal();
             }
-
-            this.terminalVisible = true;
-            this.sessionStarting = true;
 
             try {
                 const response = await fetch(`/my/services/{{ $service->id }}/terminal`, {
