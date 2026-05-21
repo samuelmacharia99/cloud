@@ -236,7 +236,10 @@ class ContainerTerminalService
 
     private function buildDockerExecCommand(ContainerTerminalSession $session, string $command): string
     {
-        $container = escapeshellarg($session->container_name);
+        // Prefer the live deployment container name over the session's denormalized
+        // copy, which can drift if the container was renamed/redeployed.
+        $containerName = $session->deployment?->container_name ?: $session->container_name;
+        $container = escapeshellarg($containerName);
         $cwd = escapeshellarg($session->cwd);
         $cmd = escapeshellarg($command);
 
