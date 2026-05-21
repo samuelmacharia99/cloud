@@ -114,6 +114,7 @@
                     <nav class="flex" role="tablist">
                         <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📊 Overview</button>
                         <button @click="activeTab = 'files'" :class="activeTab === 'files' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📁 Files</button>
+                        <button @click="activeTab = 'terminal'" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
                         <button @click="activeTab = 'backups'" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
                         <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
                         <button @click="activeTab = 'logs'" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
@@ -161,6 +162,11 @@
                     <!-- Files Tab -->
                     <div x-show="activeTab === 'files'">
                         @include('customer.services.partials.file-manager')
+                    </div>
+
+                    <!-- Terminal Tab -->
+                    <div x-show="activeTab === 'terminal'">
+                        @include('customer.services.partials.terminal')
                     </div>
 
                     <!-- Backups Tab -->

@@ -35,6 +35,13 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping(5)
             ->name('Cron Health Check');
 
+        // Clean up expired terminal sessions every 5 minutes
+        $schedule->command('terminal:cleanup')
+            ->everyFiveMinutes()
+            ->onOneServer()
+            ->withoutOverlapping(5)
+            ->name('Terminal Session Cleanup');
+
         // Timezone is set by application
         $schedule->timezone(\App\Models\Setting::getValue('cron_timezone', 'UTC'));
     }
