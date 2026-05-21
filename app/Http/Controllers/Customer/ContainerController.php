@@ -57,13 +57,23 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Invalid service type']);
             }
 
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            // Pre-flight check: validate node has SSH credentials
+            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+                return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
+            }
+
             $containerService = new ContainerDeploymentService();
             $containerService->restart($service);
 
             return back()->with('success', 'Container restarted successfully');
         } catch (\Exception $e) {
             \Log::error("Failed to restart container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to restart container']);
+            return back()->withErrors(['error' => 'Failed to restart container: ' . $e->getMessage()]);
         }
     }
 
@@ -79,13 +89,23 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Invalid service type']);
             }
 
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            // Pre-flight check: validate node has SSH credentials
+            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+                return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
+            }
+
             $containerService = new ContainerDeploymentService();
             $containerService->suspend($service);
 
             return back()->with('success', 'Container stopped successfully');
         } catch (\Exception $e) {
             \Log::error("Failed to stop container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to stop container']);
+            return back()->withErrors(['error' => 'Failed to stop container: ' . $e->getMessage()]);
         }
     }
 
@@ -101,13 +121,23 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Invalid service type']);
             }
 
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            // Pre-flight check: validate node has SSH credentials
+            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+                return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
+            }
+
             $containerService = new ContainerDeploymentService();
             $containerService->unsuspend($service);
 
             return back()->with('success', 'Container started successfully');
         } catch (\Exception $e) {
             \Log::error("Failed to start container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to start container']);
+            return back()->withErrors(['error' => 'Failed to start container: ' . $e->getMessage()]);
         }
     }
 

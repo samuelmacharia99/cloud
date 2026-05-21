@@ -217,6 +217,9 @@ class ContainerDeploymentService
                 throw new \DomainException('Container deployment not found');
             }
 
+            // Validate node has SSH credentials before attempting operation
+            $this->validateNodeSSHCredentials($deployment->node);
+
             $ssh = SSHService::forNode($deployment->node);
 
             try {
@@ -256,6 +259,9 @@ class ContainerDeploymentService
                 throw new \DomainException('Container deployment not found');
             }
 
+            // Validate node has SSH credentials before attempting operation
+            $this->validateNodeSSHCredentials($deployment->node);
+
             $ssh = SSHService::forNode($deployment->node);
 
             try {
@@ -290,6 +296,10 @@ class ContainerDeploymentService
 
             if ($deployment && $deployment->node) {
                 $node = $deployment->node;
+
+                // Validate node has SSH credentials before attempting operation
+                $this->validateNodeSSHCredentials($node);
+
                 $ssh = SSHService::forNode($node);
 
                 try {
@@ -340,6 +350,9 @@ class ContainerDeploymentService
             if (! $deployment || ! $deployment->node) {
                 throw new \DomainException('Container deployment not found');
             }
+
+            // Validate node has SSH credentials before attempting operation
+            $this->validateNodeSSHCredentials($deployment->node);
 
             $ssh = SSHService::forNode($deployment->node);
 
@@ -746,5 +759,25 @@ class ContainerDeploymentService
             'admin_username' => $envVars['WORDPRESS_ADMIN_USER'] ?? $envVars['ADMIN_USER'] ?? 'admin',
             'admin_email' => $envVars['WORDPRESS_ADMIN_EMAIL'] ?? $service->user->email,
         ];
+    }
+
+    /**
+     * Validate node has required SSH credentials for container operations
+     */
+    public function validateNodeSSHCredentials(Node $node): void
+    {
+        if (!$node->ssh_username) {
+            throw new \DomainException(
+                "Container host '{$node->hostname}' is not configured: missing SSH username. " .
+                "An administrator needs to configure SSH credentials for this node."
+            );
+        }
+
+        if (!$node->ssh_password && !$node->da_login_key) {
+            throw new \DomainException(
+                "Container host '{$node->hostname}' is not configured: missing SSH authentication (no password or key). " .
+                "An administrator needs to configure SSH credentials for this node."
+            );
+        }
     }
 }
