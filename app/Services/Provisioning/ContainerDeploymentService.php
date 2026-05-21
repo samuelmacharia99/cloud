@@ -82,6 +82,7 @@ class ContainerDeploymentService
                 $deployment = $existingDeployment;
                 $deployment->update([
                     'node_id' => $node->id,
+                    'container_name' => $containerName,
                     'status' => 'deploying',
                     'docker_compose_content' => '',
                     'assigned_port' => $port,
