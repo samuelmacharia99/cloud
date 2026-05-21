@@ -272,8 +272,9 @@ class ContainerDeploymentService
                 $this->ensureComposeFileExists($ssh, $deployment);
 
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                // Use 'up -d --no-recreate' to handle both stopped and non-existent containers without recreating existing ones
-                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --no-recreate", self::DEPLOY_TIMEOUT);
+
+                // Use up -d to start containers, removing orphaned containers that conflict
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --remove-orphans", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'status' => 'running',
