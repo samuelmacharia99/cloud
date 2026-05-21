@@ -272,7 +272,8 @@ class ContainerDeploymentService
                 $this->ensureComposeFileExists($ssh, $deployment);
 
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml start", self::DEPLOY_TIMEOUT);
+                // Use 'up -d' instead of 'start' to handle both stopped and non-existent containers
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'status' => 'running',
