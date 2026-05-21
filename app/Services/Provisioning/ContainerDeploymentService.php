@@ -273,8 +273,12 @@ class ContainerDeploymentService
 
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
 
-                // Use up -d to start containers, removing orphaned containers that conflict
-                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --remove-orphans", self::DEPLOY_TIMEOUT);
+                // Stop and remove all containers/networks, then start fresh
+                // This handles conflicts from previous deployments
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
+
+                // Now start the containers
+                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'status' => 'running',

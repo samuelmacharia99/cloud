@@ -69,8 +69,9 @@ class ContainerBackupService
                 $sizeOutput = $ssh->exec("du -b {$backupPath} | cut -f1");
                 $size = (int) trim($sizeOutput);
 
-                // Restart container
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --remove-orphans", 60);
+                // Restart container - stop and remove first to handle conflicts
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
 
                 // Update backup record
                 $backup->update([
@@ -88,7 +89,8 @@ class ContainerBackupService
                 ]);
             } catch (Exception $e) {
                 // Make sure container is restarted even on backup failure
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d --remove-orphans", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
                 throw $e;
             } finally {
                 $ssh->disconnect();
