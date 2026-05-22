@@ -112,8 +112,8 @@
                 <button @click="loadMetrics(168)" :class="timeRange === 168 ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 border-slate-300 dark:border-slate-700'" class="px-4 py-2 border-b-2 font-medium transition text-sm">7d</button>
             </div>
 
-            <!-- Charts loading -->
-            <template x-if="loading">
+            <!-- Charts loading (initial load only; refreshes keep showing prior charts) -->
+            <template x-if="loading && labels.length === 0">
                 <div class="text-center py-12">
                     <div class="inline-flex items-center gap-2">
                         <div class="w-4 h-4 bg-blue-500 rounded-full animate-bounce"></div>
@@ -122,34 +122,37 @@
                 </div>
             </template>
 
-            <!-- Charts grid -->
-            <template x-if="!loading && labels.length > 0">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <!-- CPU Chart -->
-                    <div>
-                        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">CPU Usage (%)</h3>
-                        <canvas id="cpuChart" class="max-h-64"></canvas>
-                    </div>
+            <!-- No data state -->
+            <div x-show="!loading && labels.length === 0" class="text-center py-12">
+                <span class="text-slate-600 dark:text-slate-400">No metrics available yet.</span>
+            </div>
 
-                    <!-- Memory Chart -->
-                    <div>
-                        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Memory Usage (MB)</h3>
-                        <canvas id="memoryChart" class="max-h-64"></canvas>
-                    </div>
-
-                    <!-- Network I/O Chart -->
-                    <div>
-                        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Network I/O (Bytes)</h3>
-                        <canvas id="networkChart" class="max-h-64"></canvas>
-                    </div>
-
-                    <!-- Disk I/O Chart -->
-                    <div>
-                        <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Disk I/O (Bytes)</h3>
-                        <canvas id="diskChart" class="max-h-64"></canvas>
-                    </div>
+            <!-- Charts grid (kept in DOM via x-show so Chart.js canvases are never torn out) -->
+            <div x-show="labels.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- CPU Chart -->
+                <div>
+                    <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">CPU Usage (%)</h3>
+                    <canvas id="cpuChart" class="max-h-64"></canvas>
                 </div>
-            </template>
+
+                <!-- Memory Chart -->
+                <div>
+                    <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Memory Usage (MB)</h3>
+                    <canvas id="memoryChart" class="max-h-64"></canvas>
+                </div>
+
+                <!-- Network I/O Chart -->
+                <div>
+                    <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Network I/O (Bytes)</h3>
+                    <canvas id="networkChart" class="max-h-64"></canvas>
+                </div>
+
+                <!-- Disk I/O Chart -->
+                <div>
+                    <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">Disk I/O (Bytes)</h3>
+                    <canvas id="diskChart" class="max-h-64"></canvas>
+                </div>
+            </div>
 
             <!-- Storage Usage -->
             <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
@@ -460,6 +463,14 @@ function containerDashboard() {
         },
 
         initCharts() {
+            const cpuEl = document.getElementById('cpuChart');
+            const memoryEl = document.getElementById('memoryChart');
+            const networkEl = document.getElementById('networkChart');
+            const diskEl = document.getElementById('diskChart');
+
+            // Canvases live behind x-show; bail if they aren't rendered yet
+            if (!cpuEl || !memoryEl || !networkEl || !diskEl) return;
+
             Object.values(this.charts).forEach(chart => {
                 if (chart instanceof Chart) chart.destroy();
             });
@@ -483,7 +494,7 @@ function containerDashboard() {
             };
 
             // CPU Chart
-            this.charts.cpu = new Chart(document.getElementById('cpuChart'), {
+            this.charts.cpu = new Chart(cpuEl, {
                 type: 'line',
                 data: {
                     labels: this.labels,
@@ -500,7 +511,7 @@ function containerDashboard() {
             });
 
             // Memory Chart
-            this.charts.memory = new Chart(document.getElementById('memoryChart'), {
+            this.charts.memory = new Chart(memoryEl, {
                 type: 'line',
                 data: {
                     labels: this.labels,
@@ -527,7 +538,7 @@ function containerDashboard() {
             });
 
             // Network Chart
-            this.charts.network = new Chart(document.getElementById('networkChart'), {
+            this.charts.network = new Chart(networkEl, {
                 type: 'line',
                 data: {
                     labels: this.labels,
@@ -554,7 +565,7 @@ function containerDashboard() {
             });
 
             // Disk Chart
-            this.charts.disk = new Chart(document.getElementById('diskChart'), {
+            this.charts.disk = new Chart(diskEl, {
                 type: 'line',
                 data: {
                     labels: this.labels,
