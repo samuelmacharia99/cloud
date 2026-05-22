@@ -483,6 +483,9 @@ function containerDashboard() {
             const chartOptions = {
                 responsive: true,
                 maintainAspectRatio: true,
+                // Disable animation: its requestAnimationFrame loop keeps drawing
+                // after tab switches hide the canvas, crashing on a null context
+                animation: false,
                 plugins: {
                     legend: { display: false },
                     filler: { propagate: true }
