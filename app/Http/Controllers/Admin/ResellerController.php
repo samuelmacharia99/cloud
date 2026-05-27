@@ -94,7 +94,9 @@ class ResellerController extends Controller
     {
         $this->authorize('promote', $user);
 
-        $user->update(['is_reseller' => true]);
+        // is_reseller is intentionally not mass-assignable on User; set explicitly.
+        $user->is_reseller = true;
+        $user->save();
         return back()->with('success', 'User promoted to reseller.');
     }
 
@@ -102,7 +104,9 @@ class ResellerController extends Controller
     {
         $this->authorize('demote', $user);
 
-        $user->update(['is_reseller' => false]);
+        // is_reseller is intentionally not mass-assignable on User; set explicitly.
+        $user->is_reseller = false;
+        $user->save();
         return back()->with('success', 'Reseller status removed.');
     }
 
@@ -126,10 +130,13 @@ class ResellerController extends Controller
         ]);
 
         $user = User::create(array_merge($validated, [
-            'is_reseller'           => true,
             'status'                => 'active',
             'package_subscribed_at' => $validated['reseller_package_id'] ? now() : null,
         ]));
+
+        // is_reseller is intentionally not mass-assignable on User; set explicitly.
+        $user->is_reseller = true;
+        $user->save();
 
         return redirect()->route('admin.resellers.show', $user)
             ->with('success', "Reseller '{$user->name}' created successfully.");

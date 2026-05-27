@@ -118,12 +118,14 @@
                                         </button>
                                     </form>
 
-                                    <!-- Convert to Reseller Button -->
-                                    <button @click="convertModal_{{ $customer->id }} = true" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition" title="Convert to reseller">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
-                                        </svg>
-                                    </button>
+                                    @if(!$customer->is_reseller)
+                                        <!-- Convert to Reseller Button -->
+                                        <button @click="convertModal_{{ $customer->id }} = true" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition" title="Convert to reseller">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                                            </svg>
+                                        </button>
+                                    @endif
 
                                     <!-- Transfer to Reseller Button -->
                                     <button @click="transferModal_{{ $customer->id }} = true" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition" title="Transfer to reseller">
@@ -142,24 +144,26 @@
                                         </button>
                                     </form>
 
-                                    <!-- Convert to Reseller Modal -->
-                                    <div x-show="convertModal_{{ $customer->id }}" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="convertModal_{{ $customer->id }} = false">
-                                        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm mx-4">
-                                            <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Convert to Reseller?</h3>
-                                            <p class="text-slate-600 dark:text-slate-400 mb-6 text-sm">Convert <strong>{{ $customer->name }}</strong> to a reseller account? They will be able to manage their own customers and packages.</p>
-                                            <div class="flex gap-3 justify-end">
-                                                <button @click="convertModal_{{ $customer->id }} = false" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">
-                                                    Cancel
-                                                </button>
-                                                <form method="POST" action="{{ route('admin.customers.convert-to-reseller', $customer) }}" class="inline">
-                                                    @csrf
-                                                    <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
-                                                        Convert to Reseller
+                                    @if(!$customer->is_reseller)
+                                        <!-- Convert to Reseller Modal -->
+                                        <div x-show="convertModal_{{ $customer->id }}" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="convertModal_{{ $customer->id }} = false">
+                                            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm mx-4">
+                                                <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Convert to Reseller?</h3>
+                                                <p class="text-slate-600 dark:text-slate-400 mb-6 text-sm">Convert <strong>{{ $customer->name }}</strong> to a reseller account? They will be able to manage their own customers and packages.</p>
+                                                <div class="flex gap-3 justify-end">
+                                                    <button @click="convertModal_{{ $customer->id }} = false" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">
+                                                        Cancel
                                                     </button>
-                                                </form>
+                                                    <form method="POST" action="{{ route('admin.customers.convert-to-reseller', $customer) }}" class="inline">
+                                                        @csrf
+                                                        <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
+                                                            Convert to Reseller
+                                                        </button>
+                                                    </form>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    @endif
 
                                     <!-- Transfer to Reseller Modal -->
                                     <div x-show="transferModal_{{ $customer->id }}" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="transferModal_{{ $customer->id }} = false">

@@ -763,15 +763,20 @@ class CustomerController extends Controller
             abort(404);
         }
 
+        if ($customer->is_reseller) {
+            return redirect()->route('admin.customers.index')
+                ->with('info', "Customer '{$customer->name}' is already a reseller.");
+        }
+
         $validated = $request->validate([
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
         ]);
 
-        $customer->update([
-            'is_reseller' => true,
-            'reseller_package_id' => $validated['reseller_package_id'] ?? null,
-            'package_subscribed_at' => now(),
-        ]);
+        // is_reseller is intentionally not mass-assignable on User; set explicitly.
+        $customer->is_reseller = true;
+        $customer->reseller_package_id = $validated['reseller_package_id'] ?? null;
+        $customer->package_subscribed_at = now();
+        $customer->save();
 
         return redirect()->route('admin.customers.index')
             ->with('success', "Customer '{$customer->name}' has been converted to a reseller successfully.");
