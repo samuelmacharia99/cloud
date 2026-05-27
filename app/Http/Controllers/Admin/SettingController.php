@@ -19,6 +19,8 @@ class SettingController extends Controller
         'billing' => [
             'billing_company', 'billing_address', 'billing_city', 'billing_country',
             'billing_vat_number', 'invoice_prefix', 'invoice_due_days', 'grace_period_days',
+            'service_monthly_invoice_advance_days', 'service_renewal_invoice_advance_days',
+            'domain_renewal_advance_days', 'domain_renewal_payment_days', 'domain_renewal_years',
         ],
         'tax' => [
             'tax_enabled', 'tax_rate', 'tax_name', 'tax_inclusive', 'tax_number',

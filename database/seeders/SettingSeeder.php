@@ -29,6 +29,11 @@ class SettingSeeder extends Seeder
             ['key' => 'invoice_prefix', 'value' => 'INV', 'description' => 'Invoice number prefix'],
             ['key' => 'invoice_due_days', 'value' => '30', 'description' => 'Days until invoice is due'],
             ['key' => 'grace_period_days', 'value' => '5', 'description' => 'Grace period after due date'],
+            ['key' => 'service_monthly_invoice_advance_days', 'value' => '10', 'description' => 'Generate monthly service renewal invoices this many days before next due date'],
+            ['key' => 'service_renewal_invoice_advance_days', 'value' => '30', 'description' => 'Generate quarterly/semi-annual/annual service renewal invoices this many days before next due date'],
+            ['key' => 'domain_renewal_advance_days', 'value' => '30', 'description' => 'Generate domain renewal invoices this many days before expiry'],
+            ['key' => 'domain_renewal_payment_days', 'value' => '10', 'description' => 'Days customer has to pay a domain renewal invoice'],
+            ['key' => 'domain_renewal_years', 'value' => '1', 'description' => 'Default years for automated domain renewal invoices'],
 
             // Tax settings
             ['key' => 'tax_enabled', 'value' => 'true', 'description' => 'Enable tax calculations'],

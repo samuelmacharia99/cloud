@@ -142,6 +142,34 @@
                         </div>
                     </fieldset>
 
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Renewal Invoice Timing</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Controls when automated renewal invoices are created by the daily cron jobs.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Monthly services — days before due date</label>
+                                <input type="number" min="1" name="settings[service_monthly_invoice_advance_days]" value="{{ $settings['service_monthly_invoice_advance_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Other billing cycles — days before due date</label>
+                                <input type="number" min="1" name="settings[service_renewal_invoice_advance_days]" value="{{ $settings['service_renewal_invoice_advance_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Applies to quarterly, semi-annual, and annual services.</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domains — days before expiry</label>
+                                <input type="number" min="1" name="settings[domain_renewal_advance_days]" value="{{ $settings['domain_renewal_advance_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain renewal — payment window (days)</label>
+                                <input type="number" min="1" name="settings[domain_renewal_payment_days]" value="{{ $settings['domain_renewal_payment_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain renewal — default years</label>
+                                <input type="number" min="1" max="10" name="settings[domain_renewal_years]" value="{{ $settings['domain_renewal_years'] ?? '1' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                         <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                         <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">

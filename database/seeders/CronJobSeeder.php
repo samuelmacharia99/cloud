@@ -12,14 +12,14 @@ class CronJobSeeder extends Seeder
         $jobs = [
             [
                 'name' => 'Generate Service Invoices',
-                'description' => 'Creates renewal invoices for services expiring in 30 days.',
+                'description' => 'Creates renewal invoices for services (monthly: 10 days prior, other cycles: 30 days prior).',
                 'command' => 'cron:generate-invoices',
                 'schedule' => '0 2 * * *',
                 'enabled' => true,
             ],
             [
                 'name' => 'Generate Domain Invoices',
-                'description' => 'Creates renewal invoices for domains expiring in 30 days.',
+                'description' => 'Creates renewal invoices for domains before expiry (default: 30 days prior).',
                 'command' => 'cron:generate-domain-invoices',
                 'schedule' => '0 2 * * *',
                 'enabled' => true,
