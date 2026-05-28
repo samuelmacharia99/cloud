@@ -168,7 +168,8 @@ class ContainerDeploymentService
             ]);
 
             // Render docker-compose.yml with deployment
-            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion);
+            $hostAppPath = $this->resolveHostAppPath($template, $containerName);
+            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion, $hostAppPath);
             $deployment->update(['docker_compose_content' => $composeYaml]);
 
             // Update service status
@@ -181,6 +182,11 @@ class ContainerDeploymentService
                 // Create container directory
                 $containerPath = self::CONTAINER_BASE_PATH . '/' . $containerName;
                 $ssh->mkdirp($containerPath);
+
+                // Prepare application source on host path (git clone/pull) before starting compose.
+                if ($hostAppPath) {
+                    $this->syncApplicationSource($ssh, $service, $template, $hostAppPath);
+                }
 
                 // Upload docker-compose.yml
                 $ssh->upload($composeYaml, $containerPath . '/docker-compose.yml');
@@ -773,7 +779,7 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null): string
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null): string
     {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -842,8 +848,17 @@ class ContainerDeploymentService
             $compose['volumes'] = [];
 
             foreach ($template->volume_paths as $volumeName => $mountPath) {
+                if ($volumeName === 'app_data' && $hostAppPath) {
+                    $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:{$mountPath}";
+                    continue;
+                }
+
                 $compose['services'][$containerName]['volumes'][] = "{$volumeName}:{$mountPath}";
                 $compose['volumes'][$volumeName] = null;
+            }
+
+            if (empty($compose['volumes'])) {
+                unset($compose['volumes']);
             }
         }
 
@@ -917,6 +932,64 @@ class ContainerDeploymentService
         $timeout = (int) $raw;
 
         return max(30, min(900, $timeout));
+    }
+
+    private function resolveHostAppPath($template, string $containerName): ?string
+    {
+        if (!isset($template->volume_paths) || !is_array($template->volume_paths)) {
+            return null;
+        }
+
+        if (!array_key_exists('app_data', $template->volume_paths)) {
+            return null;
+        }
+
+        return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+    }
+
+    private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void
+    {
+        $ssh->mkdirp($hostAppPath);
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $repoUrl = trim((string) ($meta['source_repo_url'] ?? ''));
+        $branch = trim((string) ($meta['source_repo_branch'] ?? 'main'));
+        if ($branch === '') {
+            $branch = 'main';
+        }
+
+        // If no source configured, keep folder available for uploads/file manager usage.
+        if ($repoUrl === '') {
+            $ssh->exec("sh -lc " . escapeshellarg("mkdir -p " . escapeshellarg($hostAppPath) . " && touch " . escapeshellarg($hostAppPath . '/.keep')), 20);
+            return;
+        }
+
+        // Best-effort clone/pull workflow.
+        // Uses host git so application files persist and can be mounted to container path.
+        $pathArg = escapeshellarg($hostAppPath);
+        $repoArg = escapeshellarg($repoUrl);
+        $branchArg = escapeshellarg($branch);
+        $script = "set -e; "
+            . "if [ -d {$pathArg}/.git ]; then "
+            . "cd {$pathArg}; "
+            . "git fetch --depth=1 origin {$branchArg}; "
+            . "git checkout -f {$branchArg}; "
+            . "git reset --hard FETCH_HEAD; "
+            . "else "
+            . "rm -rf {$pathArg}; "
+            . "git clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}; "
+            . "fi";
+
+        try {
+            $ssh->exec("sh -lc " . escapeshellarg($script), 120);
+        } catch (\Exception $e) {
+            \Log::warning("Failed to sync application source for service {$service->id}", [
+                'service_id' => $service->id,
+                'branch' => $branch,
+                'error' => $e->getMessage(),
+            ]);
+            // Continue deployment; user can still upload files manually.
+        }
     }
 
     /**

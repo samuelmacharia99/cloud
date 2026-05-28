@@ -48,6 +48,39 @@
                                     <h3 class="font-semibold text-slate-900 dark:text-white mb-4">{{ $product['name'] }}</h3>
 
                                     <div class="space-y-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Source Repository URL
+                                            </label>
+                                            <input
+                                                type="url"
+                                                name="source_repo_url[{{ $product['key'] }}]"
+                                                value="{{ old("source_repo_url.{$product['key']}") }}"
+                                                placeholder="https://github.com/your-org/your-app.git"
+                                                class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition"
+                                            />
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional: if set, code is cloned/pulled during deploy and redeploy.</p>
+                                            @error("source_repo_url.{$product['key']}")
+                                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                                Source Branch
+                                            </label>
+                                            <input
+                                                type="text"
+                                                name="source_repo_branch[{{ $product['key'] }}]"
+                                                value="{{ old("source_repo_branch.{$product['key']}", 'main') }}"
+                                                placeholder="main"
+                                                class="w-full px-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:ring-blue-500 focus:border-blue-500 transition"
+                                            />
+                                            @error("source_repo_branch.{$product['key']}")
+                                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                                            @enderror
+                                        </div>
+
                                         @if ($template->versions && count($template->versions) > 0)
                                             <div>
                                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">

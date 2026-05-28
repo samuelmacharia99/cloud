@@ -126,6 +126,8 @@ class CheckoutController extends Controller
     {
         $request->validate([
             'agree_terms' => 'required|accepted',
+            'source_repo_url.*' => 'nullable|url|max:500',
+            'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
         ]);
 
         $cart = session(self::CART_SESSION_KEY, []);
@@ -238,6 +240,13 @@ class CheckoutController extends Controller
                             $techstack = session('selected_techstack', []);
                             if (!empty($techstack['database_id'])) {
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
+                            }
+
+                            // Optional app source to deploy into container filesystem.
+                            $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
+                            if (!empty($sourceRepoUrl)) {
+                                $serviceMeta['source_repo_url'] = $sourceRepoUrl;
+                                $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }
                         }
 
@@ -715,6 +724,13 @@ class CheckoutController extends Controller
     private function processCheckout(User $user, array $cart, Request $request = null)
     {
         try {
+            if ($request) {
+                $request->validate([
+                    'source_repo_url.*' => 'nullable|url|max:500',
+                    'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
+                ]);
+            }
+
             $order = \DB::transaction(function () use ($cart, $user, $request) {
                 // Get cart items with details
                 $cartItems = [];
@@ -816,6 +832,12 @@ class CheckoutController extends Controller
                             $techstack = session('selected_techstack', []);
                             if (!empty($techstack['database_id'])) {
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
+                            }
+
+                            $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
+                            if (!empty($sourceRepoUrl)) {
+                                $serviceMeta['source_repo_url'] = $sourceRepoUrl;
+                                $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }
                         }
 
