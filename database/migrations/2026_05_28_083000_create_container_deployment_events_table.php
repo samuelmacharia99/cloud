@@ -16,9 +16,9 @@ return new class extends Migration
             $table->json('payload')->nullable();
             $table->timestamp('recorded_at')->useCurrent();
 
-            $table->index(['service_id', 'recorded_at']);
-            $table->index(['container_deployment_id', 'recorded_at']);
-            $table->index('event');
+            $table->index(['service_id', 'recorded_at'], 'cde_service_recorded_idx');
+            $table->index(['container_deployment_id', 'recorded_at'], 'cde_deploy_recorded_idx');
+            $table->index('event', 'cde_event_idx');
         });
     }
 
