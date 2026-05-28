@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
+use App\Models\ContainerDomain;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerDeploymentEvent;
 use App\Models\DatabaseTemplate;
@@ -273,6 +274,10 @@ class ContainerDeploymentService
                     'status' => 'active',
                     'credentials' => json_encode($credentials),
                 ]);
+
+                // Ensure existing bound domains always follow the latest deployment
+                // row/port after redeploys, otherwise nginx may point to stale ports.
+                $this->reattachAndRebindDomains($service, $deployment);
 
                 // Increment container count on node
                 $node->increment('container_count');
@@ -1269,6 +1274,45 @@ HTML;
             \Log::warning("Failed to record container deployment event '{$event}'", [
                 'service_id' => $service->id,
                 'deployment_id' => $deployment?->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function reattachAndRebindDomains(Service $service, ContainerDeployment $latestDeployment): void
+    {
+        try {
+            $domains = ContainerDomain::whereHas('deployment', function ($query) use ($service) {
+                $query->where('service_id', $service->id);
+            })->get();
+
+            if ($domains->isEmpty()) {
+                return;
+            }
+
+            $nginxService = new NginxProxyService();
+            foreach ($domains as $domain) {
+                if ($domain->container_deployment_id !== $latestDeployment->id) {
+                    $domain->update(['container_deployment_id' => $latestDeployment->id]);
+                }
+
+                // Keep active/pending domains pointed to current assigned port.
+                if (in_array($domain->status, ['active', 'pending'], true)) {
+                    try {
+                        $nginxService->bind($domain->fresh());
+                    } catch (\Throwable $domainError) {
+                        \Log::warning('Failed to rebind container domain after redeploy', [
+                            'service_id' => $service->id,
+                            'domain' => $domain->domain,
+                            'error' => $domainError->getMessage(),
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to reattach domains to latest deployment', [
+                'service_id' => $service->id,
+                'deployment_id' => $latestDeployment->id,
                 'error' => $e->getMessage(),
             ]);
         }

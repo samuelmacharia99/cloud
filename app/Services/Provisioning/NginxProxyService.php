@@ -22,8 +22,10 @@ class NginxProxyService
         }
 
         try {
-            // Generate nginx config
-            $config = $this->generateConfig($domain, false);
+            // Generate nginx config. Preserve SSL server block when the domain
+            // already has certificate paths configured.
+            $withSsl = (bool) ($domain->ssl_enabled && $domain->ssl_certificate_path && $domain->ssl_key_path);
+            $config = $this->generateConfig($domain, $withSsl);
 
             // Connect to node via SSH
             $ssh = SSHService::forNode($node);
