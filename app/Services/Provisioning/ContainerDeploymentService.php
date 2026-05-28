@@ -783,6 +783,13 @@ class ContainerDeploymentService
             ],
         ];
 
+        // Ensure Laravel templates have a long-running web process when using php:*cli images.
+        // Without this, the container exits immediately and health checks fail on redeploy.
+        if (($template->slug ?? null) === 'laravel' && str_contains($dockerImage, 'php:') && str_contains($dockerImage, 'cli')) {
+            $compose['services'][$containerName]['working_dir'] = '/app';
+            $compose['services'][$containerName]['command'] = 'sh -lc "php -S 0.0.0.0:${APP_PORT:-8000} -t public || php -S 0.0.0.0:${APP_PORT:-8000}"';
+        }
+
         // Add volumes
         if ($template->volume_paths) {
             $compose['services'][$containerName]['volumes'] = [];

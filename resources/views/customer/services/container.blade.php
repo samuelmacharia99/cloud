@@ -142,7 +142,7 @@
                                         🔄 Restart
                                     </button>
                                 </form>
-                            @elseif ($deployment->status === 'stopped')
+                            @elseif (in_array($deployment->status, ['stopped', 'failed']))
                                 <form method="POST" action="{{ route('customer.services.container.start', $service) }}" style="display:inline;">
                                     @csrf
                                     <button type="submit" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
