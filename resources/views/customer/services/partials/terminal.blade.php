@@ -102,17 +102,22 @@ function containerTerminal() {
                     headers: {
                         'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                     },
                 });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    this.terminal.write('\r\n❌ ' + (error.error || 'Failed to create terminal session') + '\r\n');
+                const { data, parseError } = await this.safeJsonResponse(response);
+                if (parseError) {
+                    this.terminal.write('\r\n❌ Terminal API returned invalid response. Please refresh and try again.\r\n');
                     this.sessionStarting = false;
                     return;
                 }
 
-                const data = await response.json();
+                if (!response.ok) {
+                    this.terminal.write('\r\n❌ ' + ((data && data.error) || `Failed to create terminal session (HTTP ${response.status})`) + '\r\n');
+                    this.sessionStarting = false;
+                    return;
+                }
+
                 this.sessionToken = data.session_token;
                 this.cwd = data.cwd;
                 this.connected = true;
@@ -293,22 +298,23 @@ function containerTerminal() {
                     headers: {
                         'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                     },
                     body: JSON.stringify({
                         session_token: this.sessionToken,
                         command: command,
                     }),
                 });
-
-                if (!response.ok) {
-                    const error = await response.json();
-                    this.terminal.write('❌ ' + (error.error || 'Command failed') + '\r\n');
+                const { data, parseError } = await this.safeJsonResponse(response);
+                if (parseError) {
+                    this.terminal.write('❌ Terminal API returned invalid response. Please reopen terminal.\r\n');
+                    this.connected = false;
+                } else if (!response.ok) {
+                    this.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
                     if (response.status === 404) {
                         this.connected = false;
                     }
                 } else {
-                    const data = await response.json();
-
                     // xterm needs CRLF; normalize bare LF so output doesn't staircase
                     const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
 
@@ -387,6 +393,24 @@ function containerTerminal() {
                 const hours = Math.floor(diffMins / 60);
                 const mins = diffMins % 60;
                 this.sessionExpires = `Expires in ${hours}h ${mins}m`;
+            }
+        },
+
+        async safeJsonResponse(response) {
+            const text = await response.text();
+            if (!text) {
+                return { data: null, parseError: null };
+            }
+
+            try {
+                return { data: JSON.parse(text), parseError: null };
+            } catch (error) {
+                console.error('Failed to parse terminal API JSON response', {
+                    status: response.status,
+                    preview: text.slice(0, 160),
+                    error: error.message,
+                });
+                return { data: null, parseError: error };
             }
         },
     };
