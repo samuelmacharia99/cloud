@@ -845,8 +845,9 @@ class ContainerDeploymentService
         // Ensure Laravel templates always have a long-running web process.
         // This also covers legacy php:*fpm images from earlier seeded templates.
         if (($template->slug ?? null) === 'laravel' && str_starts_with($dockerImage, 'php:')) {
+            $internalPort = (int) ($template->default_port ?: 8000);
             $compose['services'][$containerName]['working_dir'] = '/app';
-            $compose['services'][$containerName]['command'] = 'sh -lc "php -S 0.0.0.0:${APP_PORT:-8000} -t public || php -S 0.0.0.0:${APP_PORT:-8000}"';
+            $compose['services'][$containerName]['command'] = "sh -lc \"php -S 0.0.0.0:{$internalPort} -t public || php -S 0.0.0.0:{$internalPort}\"";
         }
 
         // Add volumes
