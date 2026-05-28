@@ -134,6 +134,20 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-2 gap-6 mb-8">
+            <div>
+                <label class="block text-sm font-semibold mb-2">Health Check Timeout (seconds) *</label>
+                <input type="number" name="health_check_timeout_seconds" value="{{ old('health_check_timeout_seconds', 120) }}" min="30" max="900" class="w-full px-3 py-2 border rounded-lg @error('health_check_timeout_seconds') border-red-500 @enderror" required>
+                @error('health_check_timeout_seconds')<p class="text-red-600 text-sm mt-1">{{ $message }}</p>@enderror
+            </div>
+            <div class="flex items-end">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" name="strict_health_check" value="1" {{ old('strict_health_check', true) ? 'checked' : '' }} class="mr-2">
+                    <span class="text-sm font-semibold">Strict health check</span>
+                </label>
+            </div>
+        </div>
+
         <div class="flex gap-3">
             <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 Create Template

@@ -22,6 +22,8 @@ class ContainerTemplate extends Model
         'compose_services',
         'setup_commands',
         'versions',
+        'strict_health_check',
+        'health_check_timeout_seconds',
         'is_active',
         'order',
     ];
@@ -32,6 +34,8 @@ class ContainerTemplate extends Model
         'compose_services' => 'array',
         'setup_commands' => 'array',
         'versions' => 'array',
+        'strict_health_check' => 'boolean',
+        'health_check_timeout_seconds' => 'integer',
         'is_active' => 'boolean',
         'required_ram_mb' => 'integer',
         'required_cpu_cores' => 'decimal:1',

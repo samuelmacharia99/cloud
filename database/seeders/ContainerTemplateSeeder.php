@@ -105,6 +105,8 @@ class ContainerTemplateSeeder extends Seeder
                     ],
                 ],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 120,
                 'is_active' => true,
                 'order' => 1,
             ]
@@ -157,6 +159,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 120,
                 'is_active' => true,
                 'order' => 2,
             ]
@@ -209,6 +213,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 120,
                 'is_active' => true,
                 'order' => 3,
             ]
@@ -268,6 +274,8 @@ class ContainerTemplateSeeder extends Seeder
                     'npm install',
                     'npm start',
                 ],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 180,
                 'is_active' => true,
                 'order' => 4,
             ]
@@ -305,6 +313,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 180,
                 'is_active' => true,
                 'order' => 5,
             ]
@@ -349,6 +359,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 120,
                 'is_active' => true,
                 'order' => 6,
             ]
@@ -400,6 +412,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => false,
+                'health_check_timeout_seconds' => 240,
                 'is_active' => true,
                 'order' => 7,
             ]
@@ -444,6 +458,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 180,
                 'is_active' => true,
                 'order' => 8,
             ]
@@ -467,6 +483,8 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [],
+                'strict_health_check' => true,
+                'health_check_timeout_seconds' => 90,
                 'is_active' => true,
                 'order' => 9,
             ]

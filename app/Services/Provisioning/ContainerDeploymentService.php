@@ -191,11 +191,34 @@ class ContainerDeploymentService
                     self::DEPLOY_TIMEOUT
                 );
 
-                // Require a healthy running state before marking service active.
-                $this->waitForContainerHealth($ssh, $containerName);
-                $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
-                    'container_name' => $containerName,
-                ]);
+                // Health behavior is template-configurable: strict templates fail on timeout,
+                // relaxed templates continue for smoother redeploys while still logging warnings.
+                $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
+                $healthTimeoutSeconds = $this->healthCheckTimeoutSeconds($template);
+                try {
+                    $this->waitForContainerHealth($ssh, $containerName, $healthTimeoutSeconds);
+                    $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
+                        'container_name' => $containerName,
+                        'strict' => $strictHealthCheck,
+                        'timeout_seconds' => $healthTimeoutSeconds,
+                    ]);
+                } catch (\Exception $healthException) {
+                    if ($strictHealthCheck) {
+                        throw $healthException;
+                    }
+
+                    \Log::warning("Container health check timed out but continuing (relaxed mode) for service {$service->id}", [
+                        'container_name' => $containerName,
+                        'timeout_seconds' => $healthTimeoutSeconds,
+                        'error' => $healthException->getMessage(),
+                    ]);
+                    $this->recordDeploymentEvent($service, $deployment, 'health_check_timed_out_relaxed', [
+                        'container_name' => $containerName,
+                        'strict' => false,
+                        'timeout_seconds' => $healthTimeoutSeconds,
+                        'error' => $healthException->getMessage(),
+                    ]);
+                }
 
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
@@ -842,15 +865,16 @@ class ContainerDeploymentService
     /**
      * Wait for container to be healthy
      */
-    private function waitForContainerHealth(SSHService $ssh, string $containerName): void
+    private function waitForContainerHealth(SSHService $ssh, string $containerName, int $timeoutSeconds): void
     {
-        for ($attempt = 0; $attempt < self::HEALTH_CHECK_RETRIES; $attempt++) {
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / self::HEALTH_CHECK_DELAY));
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
                 $status = $this->getContainerStatus($ssh, $containerName);
 
                 \Log::info("Health check attempt", [
                     'attempt' => $attempt + 1,
-                    'max_attempts' => self::HEALTH_CHECK_RETRIES,
+                    'max_attempts' => $maxAttempts,
                     'container_name' => $containerName,
                     'running' => $status['running'] ?? false,
                     'state' => $status['state'] ?? 'unknown',
@@ -863,17 +887,36 @@ class ContainerDeploymentService
             } catch (\Exception $e) {
                 \Log::warning("Health check exception", [
                     'attempt' => $attempt + 1,
+                    'max_attempts' => $maxAttempts,
                     'container_name' => $containerName,
                     'error' => $e->getMessage(),
                 ]);
             }
 
-            if ($attempt < self::HEALTH_CHECK_RETRIES - 1) {
+            if ($attempt < $maxAttempts - 1) {
                 sleep(self::HEALTH_CHECK_DELAY);
             }
         }
 
-        throw new \RuntimeException("Container failed to reach healthy state after " . (self::HEALTH_CHECK_RETRIES * self::HEALTH_CHECK_DELAY) . " seconds");
+        throw new \RuntimeException("Container failed to reach healthy state after {$timeoutSeconds} seconds");
+    }
+
+    private function isStrictHealthCheckEnabled($template): bool
+    {
+        if (isset($template->strict_health_check)) {
+            return (bool) $template->strict_health_check;
+        }
+
+        return true;
+    }
+
+    private function healthCheckTimeoutSeconds($template): int
+    {
+        $defaultTimeout = self::HEALTH_CHECK_RETRIES * self::HEALTH_CHECK_DELAY;
+        $raw = $template->health_check_timeout_seconds ?? $defaultTimeout;
+        $timeout = (int) $raw;
+
+        return max(30, min(900, $timeout));
     }
 
     /**

@@ -48,6 +48,8 @@ class ContainerTemplateController
             'volume_paths' => 'nullable|string',
             'compose_services' => 'nullable|string',
             'setup_commands' => 'nullable|string',
+            'strict_health_check' => 'nullable|boolean',
+            'health_check_timeout_seconds' => 'required|integer|min:30|max:900',
             'is_active' => 'boolean',
             'order' => 'required|integer|min:0',
         ]);
@@ -103,6 +105,8 @@ class ContainerTemplateController
             'volume_paths' => $volumePaths ?: null,
             'compose_services' => $composeServices ?: null,
             'setup_commands' => $setupCommands ?: null,
+            'strict_health_check' => $request->boolean('strict_health_check', true),
+            'health_check_timeout_seconds' => $validated['health_check_timeout_seconds'],
             'is_active' => $request->boolean('is_active'),
             'order' => $validated['order'],
         ]);
@@ -138,6 +142,8 @@ class ContainerTemplateController
             'volume_paths' => 'nullable|string',
             'compose_services' => 'nullable|string',
             'setup_commands' => 'nullable|string',
+            'strict_health_check' => 'nullable|boolean',
+            'health_check_timeout_seconds' => 'required|integer|min:30|max:900',
             'is_active' => 'boolean',
             'order' => 'required|integer|min:0',
         ]);
@@ -193,6 +199,8 @@ class ContainerTemplateController
             'volume_paths' => $volumePaths ?: null,
             'compose_services' => $composeServices ?: null,
             'setup_commands' => $setupCommands ?: null,
+            'strict_health_check' => $request->boolean('strict_health_check', true),
+            'health_check_timeout_seconds' => $validated['health_check_timeout_seconds'],
             'is_active' => $request->boolean('is_active'),
             'order' => $validated['order'],
         ]);
