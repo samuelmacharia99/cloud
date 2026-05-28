@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Cache;
 class ContainerFileService
 {
     private const BASE = '/opt/talksasa/containers/';
+    private const APP_SUBDIR = '/app';
 
     public function __construct(private \App\Services\SSH\SSHService $ssh)
     {
@@ -35,7 +36,7 @@ class ContainerFileService
         }
 
         // Build the final absolute path
-        $basePath = self::BASE . $deployment->container_name;
+        $basePath = $this->resolveBasePath($deployment);
         $absPath = $basePath . (count($resolved) > 0 ? '/' . implode('/', $resolved) : '');
 
         // Verify the path stays within the container directory.
@@ -147,7 +148,7 @@ class ContainerFileService
     public function getStorageUsage(ContainerDeployment $deployment): array
     {
         return Cache::remember("storage_stats_{$deployment->id}", 300, function () use ($deployment) {
-            $basePath = self::BASE . $deployment->container_name;
+            $basePath = $this->resolveBasePath($deployment);
 
             try {
                 $output = $this->ssh->exec("du -sb " . escapeshellarg($basePath));
@@ -165,6 +166,19 @@ class ContainerFileService
                 ];
             }
         });
+    }
+
+    private function resolveBasePath(ContainerDeployment $deployment): string
+    {
+        $basePath = self::BASE . $deployment->container_name;
+
+        $template = $deployment->service?->product?->containerTemplate;
+        $volumePaths = $template?->volume_paths;
+        if (is_array($volumePaths) && array_key_exists('app_data', $volumePaths)) {
+            return $basePath . self::APP_SUBDIR;
+        }
+
+        return $basePath;
     }
 
     /**

@@ -150,6 +150,8 @@ class ContainerTerminalService
                     }
                 }
 
+                $newCwd = $this->constrainCwdToAppRoot($newCwd);
+
                 $cleanOutput = implode("\n", $outputLines);
 
                 // Update session
@@ -258,6 +260,20 @@ class ContainerTerminalService
 
         return 'docker exec -u www-data ' . escapeshellarg($containerName)
             . ' sh -c ' . escapeshellarg($script);
+    }
+
+    private function constrainCwdToAppRoot(string $cwd): string
+    {
+        $normalized = trim($cwd);
+        if ($normalized === '') {
+            return '/app';
+        }
+
+        if ($normalized === '/app' || str_starts_with($normalized, '/app/')) {
+            return $normalized;
+        }
+
+        return '/app';
     }
 
 }
