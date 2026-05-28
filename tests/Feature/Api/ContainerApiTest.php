@@ -4,6 +4,7 @@ namespace Tests\Feature\Api;
 
 use App\Models\ContainerTemplate;
 use App\Models\ContainerDeployment;
+use App\Models\ContainerMetric;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
@@ -101,14 +102,32 @@ class ContainerApiTest extends TestCase
 
     public function test_container_metrics_endpoint(): void
     {
-        ContainerDeployment::factory()->create(['service_id' => $this->service->id]);
+        $deployment = ContainerDeployment::factory()->create(['service_id' => $this->service->id]);
+        $recordedAt = now()->subMinute();
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'cpu_percentage' => 42.25,
+            'memory_used_mb' => 256,
+            'memory_limit_mb' => 1024,
+            'memory_percentage' => 25.00,
+            'net_io_rx_bytes' => 1200,
+            'net_io_tx_bytes' => 3400,
+            'block_io_read_bytes' => 0,
+            'block_io_write_bytes' => 0,
+            'recorded_at' => $recordedAt,
+        ]);
 
         $this->actingAs($this->user, 'sanctum');
 
         $response = $this->getJson("/api/v1/services/{$this->service->id}/container/metrics");
 
         $response->assertStatus(200)
-            ->assertJsonStructure(['cpu_percent', 'memory_percent', 'memory_mb', 'network_in_bytes', 'network_out_bytes']);
+            ->assertJsonPath('cpu_percent', 42.25)
+            ->assertJsonPath('memory_percent', 25.0)
+            ->assertJsonPath('memory_mb', 256)
+            ->assertJsonPath('network_in_bytes', 1200)
+            ->assertJsonPath('network_out_bytes', 3400)
+            ->assertJsonPath('sampled_at', $recordedAt->toIso8601String());
     }
 
     public function test_container_templates_endpoint(): void
@@ -214,5 +233,22 @@ class ContainerApiTest extends TestCase
         $response = $this->deleteJson("/api/v1/services/{$this->service->id}/container/backups/{$backup->id}");
 
         $response->assertStatus(403);
+    }
+
+    public function test_backup_restore_rejects_mismatched_service_backup(): void
+    {
+        $otherService = Service::factory()->create(['user_id' => $this->user->id]);
+        $otherDeployment = ContainerDeployment::factory()->create(['service_id' => $otherService->id]);
+        $backup = \App\Models\ContainerBackup::factory()->create([
+            'container_deployment_id' => $otherDeployment->id,
+            'service_id' => $otherService->id,
+        ]);
+
+        $this->actingAs($this->user, 'sanctum');
+
+        $response = $this->postJson("/api/v1/services/{$this->service->id}/container/backups/{$backup->id}/restore");
+
+        $response->assertStatus(403)
+            ->assertJsonPath('error', 'Backup does not belong to this service');
     }
 }
