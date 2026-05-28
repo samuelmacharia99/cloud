@@ -28,10 +28,10 @@
                 <button @click="newFolder()" class="px-3 py-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 text-sm font-medium">
                     ➕ New Folder
                 </button>
-                <button @click="$el.nextElementSibling.click()" class="px-3 py-2 bg-green-50 text-green-600 rounded hover:bg-green-100 text-sm font-medium">
+                <button @click="$refs.fileInput.click()" class="px-3 py-2 bg-green-50 text-green-600 rounded hover:bg-green-100 text-sm font-medium">
                     ⬆️ Upload
                 </button>
-                <input type="file" @change="handleFileSelect" class="hidden" multiple>
+                <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" multiple>
                 <button @click="deleteSelected()" x-show="selected.size > 0" class="px-3 py-2 bg-red-50 text-red-600 rounded hover:bg-red-100 text-sm font-medium">
                     🗑️ Delete (<span x-text="selected.size"></span>)
                 </button>
@@ -75,7 +75,7 @@
                                         <span x-text="entry.type === 'dir' ? '📁' : '📄'"></span>
                                     </td>
                                     <td class="px-4 py-3">
-                                        <button @click="entry.type === 'dir' ? navigate(currentPath + '/' + entry.name) : downloadFile(entry.name)"
+                                        <button @click="entry.type === 'dir' ? navigate(joinPath(currentPath, entry.name)) : downloadFile(entry.name)"
                                             :class="entry.type === 'dir' ? 'text-blue-600 hover:text-blue-800 cursor-pointer' : 'text-gray-700'"
                                             class="break-all text-left">
                                             <span x-text="entry.name"></span>
@@ -172,6 +172,11 @@ function fileManager() {
             this.loadDirectory();
         },
 
+        joinPath(base, name) {
+            if (!base || base === '/') return `/${name}`;
+            return `${base.replace(/\/+$/, '')}/${name}`;
+        },
+
         toggleSelect(name) {
             if (this.selected.has(name)) {
                 this.selected.delete(name);
@@ -184,7 +189,7 @@ function fileManager() {
             const name = prompt('Folder name:');
             if (!name) return;
 
-            const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
+            const path = this.joinPath(this.currentPath, name);
 
             try {
                 const response = await fetch(`{{ route('customer.services.container.files.mkdir', $service->id) }}`, {
@@ -219,7 +224,7 @@ function fileManager() {
         },
 
         async uploadFile(file) {
-            const path = this.currentPath === '/' ? `/${file.name}` : `${this.currentPath}/${file.name}`;
+            const path = this.joinPath(this.currentPath, file.name);
             const formData = new FormData();
             formData.append('path', path);
             formData.append('file', file);
@@ -242,8 +247,12 @@ function fileManager() {
                         if (xhr.status >= 200 && xhr.status < 300) {
                             resolve();
                         } else {
-                            const data = JSON.parse(xhr.responseText);
-                            reject(new Error(data.error || 'Upload failed'));
+                            let message = 'Upload failed';
+                            try {
+                                const data = JSON.parse(xhr.responseText);
+                                message = data.error || message;
+                            } catch (_) {}
+                            reject(new Error(message));
                         }
                     });
 
@@ -275,7 +284,7 @@ function fileManager() {
         },
 
         async downloadFile(name) {
-            const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
+            const path = this.joinPath(this.currentPath, name);
             const url = new URL(`{{ route('customer.services.container.files.download', $service->id) }}`, window.location);
             url.searchParams.append('path', path);
 
@@ -288,7 +297,7 @@ function fileManager() {
         async deleteFile(name) {
             if (!confirm(`Delete "${name}"?`)) return;
 
-            const path = this.currentPath === '/' ? `/${name}` : `${this.currentPath}/${name}`;
+            const path = this.joinPath(this.currentPath, name);
 
             try {
                 const response = await fetch(`{{ route('customer.services.container.files.delete', $service->id) }}`, {

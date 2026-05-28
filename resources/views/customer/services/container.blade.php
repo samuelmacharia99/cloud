@@ -117,6 +117,7 @@
                         <button @click="activeTab = 'terminal'" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
                         <button @click="activeTab = 'backups'" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
                         <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
+                        <button @click="activeTab = 'database'" :class="activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🗄️ Database</button>
                         <button @click="activeTab = 'logs'" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
                     </nav>
                 </div>
@@ -153,6 +154,17 @@
                             <a href="{{ $deployment->getAccessUrl() }}" target="_blank" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition">
                                 🔗 Visit Service
                             </a>
+
+                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" style="display:inline;">
+                                @csrf
+                                <button
+                                    type="submit"
+                                    class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
+                                    onclick="return confirm('Redeploy stack now? This can briefly interrupt service while containers are recreated.')"
+                                >
+                                    ♻️ Redeploy Stack
+                                </button>
+                            </form>
                         </div>
 
                         <!-- Stats Dashboard -->
@@ -294,6 +306,75 @@
                         </div>
                     </div>
 
+                    <!-- Database Tab -->
+                    <div x-show="activeTab === 'database'">
+                        <div class="space-y-6">
+                            @if(empty($databaseConsoleEnabled))
+                                <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600">
+                                    <p class="text-slate-600 dark:text-slate-400">Database console is disabled by administrator.</p>
+                                </div>
+                            @elseif(!empty($databaseContext['available']))
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
+                                        <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Type</p>
+                                        <p class="font-semibold text-slate-900 dark:text-white">{{ strtoupper($databaseContext['type']) }}</p>
+                                    </div>
+                                    <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
+                                        <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Host</p>
+                                        <p class="font-mono text-slate-900 dark:text-white">{{ $databaseContext['host'] }}:{{ $databaseContext['port'] }}</p>
+                                    </div>
+                                    <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
+                                        <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Database</p>
+                                        <p class="font-mono text-slate-900 dark:text-white">{{ $databaseContext['database'] }}</p>
+                                    </div>
+                                    <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
+                                        <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Username</p>
+                                        <p class="font-mono text-slate-900 dark:text-white">{{ $databaseContext['username'] }}</p>
+                                    </div>
+                                </div>
+
+                                <div class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
+                                    <p class="text-sm text-amber-900 dark:text-amber-200">
+                                        Read-only SQL console: only <code>SELECT</code>, <code>SHOW</code>, <code>DESCRIBE</code>, and <code>EXPLAIN</code> are allowed.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label for="db-query" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SQL Query</label>
+                                    <textarea id="db-query" rows="5" class="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white p-3 font-mono text-sm" placeholder="SELECT * FROM table_name LIMIT 20"></textarea>
+                                    <div class="mt-3 flex items-center gap-3">
+                                        <button type="button" onclick="runDatabaseQuery('text')" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                                            Run Read-Only Query
+                                        </button>
+                                        <button type="button" onclick="runDatabaseQuery('csv')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
+                                            Export CSV
+                                        </button>
+                                        <button type="button" onclick="loadDatabaseHistory()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-medium transition">
+                                            Refresh History
+                                        </button>
+                                        <span id="db-query-status" class="text-sm text-slate-500 dark:text-slate-400"></span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Result</label>
+                                    <pre id="db-query-output" class="bg-slate-900 text-slate-200 p-4 rounded-lg overflow-auto max-h-96 text-xs">No query executed yet.</pre>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Query History (Recent)</label>
+                                    <div id="db-query-history" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 divide-y divide-slate-200 dark:divide-slate-700">
+                                        <div class="p-3 text-sm text-slate-500 dark:text-slate-400">No history loaded yet.</div>
+                                    </div>
+                                </div>
+                            @else
+                                <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600">
+                                    <p class="text-slate-600 dark:text-slate-400">No database sidecar is configured for this service.</p>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+
                     <!-- Logs Tab -->
                     <div x-show="activeTab === 'logs'">
                         <div class="space-y-4">
@@ -333,6 +414,97 @@ function fetchLogs() {
             logsContent.innerHTML = '<p class="text-red-400">Failed to fetch logs</p>';
             console.error('Error:', error);
         });
+}
+
+async function runDatabaseQuery(format = 'text') {
+    const queryEl = document.getElementById('db-query');
+    const outEl = document.getElementById('db-query-output');
+    const statusEl = document.getElementById('db-query-status');
+    if (!queryEl || !outEl || !statusEl) return;
+
+    const query = queryEl.value.trim();
+    if (!query) {
+        statusEl.textContent = 'Enter a query first.';
+        return;
+    }
+
+    statusEl.textContent = 'Running...';
+    outEl.textContent = 'Executing query...';
+
+    try {
+        const response = await fetch('{{ route("customer.services.container.database.query", $service) }}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ query, format })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            statusEl.textContent = 'Failed';
+            outEl.textContent = data.error || 'Query failed';
+            return;
+        }
+
+        statusEl.textContent = 'Done';
+        outEl.textContent = data.output || '(empty result)';
+        if (format === 'csv' && data.csv) {
+            const blob = new Blob([data.csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'query-result.csv';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        }
+        loadDatabaseHistory();
+    } catch (error) {
+        statusEl.textContent = 'Failed';
+        outEl.textContent = 'Request failed';
+    }
+}
+
+async function loadDatabaseHistory() {
+    const historyEl = document.getElementById('db-query-history');
+    if (!historyEl) return;
+
+    historyEl.innerHTML = '<div class="p-3 text-sm text-slate-500 dark:text-slate-400">Loading history...</div>';
+    try {
+        const response = await fetch('{{ route("customer.services.container.database.history", $service) }}', {
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+            historyEl.innerHTML = `<div class="p-3 text-sm text-red-600">${data.error || 'Failed to load history'}</div>`;
+            return;
+        }
+
+        const rows = data.history || [];
+        if (!rows.length) {
+            historyEl.innerHTML = '<div class="p-3 text-sm text-slate-500 dark:text-slate-400">No query history yet.</div>';
+            return;
+        }
+
+        historyEl.innerHTML = rows.map((row) => {
+            const stateClass = row.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+            const stateText = row.success ? 'OK' : 'Failed';
+            return `<div class="p-3 text-xs">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-slate-500 dark:text-slate-400">${row.at || ''}</span>
+                    <span class="${stateClass} font-semibold">${stateText}</span>
+                </div>
+                <div class="text-slate-700 dark:text-slate-300 font-mono break-all">${row.query || ''}</div>
+            </div>`;
+        }).join('');
+    } catch (error) {
+        historyEl.innerHTML = '<div class="p-3 text-sm text-red-600">Failed to load history</div>';
+    }
 }
 </script>
 @endsection

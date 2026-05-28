@@ -24,7 +24,14 @@ class UploadContainerFileRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'path' => 'required|string|max:500',
+            'path' => [
+                'required',
+                'string',
+                'max:500',
+                'regex:/^\//',
+                'not_regex:/\.\./',
+                'not_regex:/[\x00-\x1F\x7F]/',
+            ],
             'file' => [
                 'required',
                 'file',
@@ -48,9 +55,23 @@ class UploadContainerFileRequest extends FormRequest
         return [
             'path.required' => 'Upload path is required',
             'path.max' => 'Path cannot exceed 500 characters',
+            'path.regex' => 'Path must start with "/"',
+            'path.not_regex' => 'Path contains invalid characters or traversal segments',
             'file.required' => 'File is required',
             'file.max' => 'File cannot exceed 50 MB',
             'file.mimes' => 'File type is not allowed. Please upload a permitted file type.',
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $path = $this->input('path');
+        if (!is_string($path) || $path === '') {
+            return;
+        }
+
+        $normalized = '/' . ltrim($path, '/');
+        $normalized = preg_replace('#/+#', '/', $normalized) ?? $normalized;
+        $this->merge(['path' => $normalized]);
     }
 }

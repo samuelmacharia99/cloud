@@ -167,6 +167,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Container management
         Route::resource('admin/container-templates', \App\Http\Controllers\Admin\ContainerTemplateController::class)->names('admin.container-templates');
+        Route::resource('admin/database-templates', \App\Http\Controllers\Admin\DatabaseTemplateController::class)->except(['show'])->names('admin.database-templates');
         Route::post('admin/services/{service}/container/restart', [\App\Http\Controllers\Admin\ContainerController::class, 'restart'])->name('admin.services.container.restart');
         Route::post('admin/services/{service}/container/suspend', [\App\Http\Controllers\Admin\ContainerController::class, 'suspend'])->name('admin.services.container.suspend');
         Route::post('admin/services/{service}/container/stop', [\App\Http\Controllers\Admin\ContainerController::class, 'stop'])->name('admin.services.container.stop');
@@ -366,12 +367,15 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Container management
         Route::get('my/services/{service}/container', [\App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
         Route::post('my/services/{service}/container/restart', [\App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
+        Route::post('my/services/{service}/container/redeploy', [\App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->middleware('throttle:3,10')->name('customer.services.container.redeploy');
         Route::post('my/services/{service}/container/stop', [\App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [\App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [\App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');
         Route::get('my/services/{service}/container/metrics', [\App\Http\Controllers\Customer\ContainerController::class, 'metrics'])->name('customer.services.container.metrics');
         Route::get('my/services/{service}/container/health', [\App\Http\Controllers\Customer\ContainerController::class, 'health'])->name('customer.services.container.health');
         Route::get('my/services/{service}/container/storage-stats', [\App\Http\Controllers\Customer\ContainerController::class, 'storageStats'])->name('customer.services.container.storage-stats');
+        Route::post('my/services/{service}/container/database/query', [\App\Http\Controllers\Customer\ContainerController::class, 'databaseQuery'])->middleware('throttle:10,1')->name('customer.services.container.database.query');
+        Route::get('my/services/{service}/container/database/history', [\App\Http\Controllers\Customer\ContainerController::class, 'databaseHistory'])->middleware('throttle:20,1')->name('customer.services.container.database.history');
 
         // Container file manager (throttled)
         Route::middleware(['throttle:60,1'])->group(function () {

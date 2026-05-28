@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Customer;
 use App\Models\Service;
 use App\Models\ContainerMetric;
 use App\Models\ContainerDomain;
+use App\Models\ContainerFileAuditLog;
+use App\Models\DatabaseTemplate;
+use App\Models\Setting;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\NginxProxyService;
@@ -42,7 +45,10 @@ class ContainerController extends Controller
             }
         }
 
-        return view('customer.services.container', compact('service', 'deployment', 'status'));
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
+
+        return view('customer.services.container', compact('service', 'deployment', 'status', 'databaseContext', 'databaseConsoleEnabled'));
     }
 
     /**
@@ -139,6 +145,136 @@ class ContainerController extends Controller
             \Log::error("Failed to start container for service {$service->id}: " . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to start container: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Redeploy container stack
+     */
+    public function redeploy(Service $service): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if ($service->product?->type !== 'container_hosting') {
+                return back()->withErrors(['error' => 'Invalid service type']);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (!$deployment) {
+                return back()->withErrors(['error' => 'Container not deployed yet']);
+            }
+
+            if ($deployment->status === 'deploying' || $service->status === 'provisioning') {
+                return back()->withErrors(['error' => 'Deployment already in progress. Please wait and try again.']);
+            }
+
+            if (!$deployment->node || !$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+                return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
+            }
+
+            $containerService = new ContainerDeploymentService();
+            $containerService->deploy($service);
+
+            return back()->with('success', 'Container stack redeployed successfully');
+        } catch (\Exception $e) {
+            \Log::error("Failed to redeploy container for service {$service->id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to redeploy container: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Execute a read-only database query against sidecar DB.
+     */
+    public function databaseQuery(Service $service, Request $request): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        $validated = $request->validate([
+            'query' => 'required|string|max:2000',
+            'format' => 'nullable|in:text,csv',
+        ]);
+
+        if (! $this->isDatabaseConsoleEnabled()) {
+            return response()->json(['error' => 'Database console is disabled by administrator'], 403);
+        }
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (!$deployment || !$deployment->isRunning()) {
+            return response()->json(['error' => 'Container must be running to query database'], 400);
+        }
+
+        if (!$deployment->node || !$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+            return response()->json(['error' => 'Container host is not properly configured'], 400);
+        }
+
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        if (!$databaseContext['available']) {
+            return response()->json(['error' => 'No database sidecar configured for this service'], 400);
+        }
+
+        $query = trim($validated['query']);
+        $format = $validated['format'] ?? 'text';
+
+        // Tight security: read-only statements only.
+        if (!preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN)\b/i', $query)) {
+            return response()->json(['error' => 'Only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN)'], 422);
+        }
+        if (preg_match('/\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE|GRANT|REVOKE)\b/i', $query)) {
+            return response()->json(['error' => 'Write/DDL statements are not permitted'], 422);
+        }
+        if (str_contains($query, ';')) {
+            return response()->json(['error' => 'Multiple statements are not allowed'], 422);
+        }
+        if (preg_match('/^SELECT\b/i', $query) && !preg_match('/\bLIMIT\s+\d+\b/i', $query)) {
+            $query .= ' LIMIT 200';
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $result = $this->runReadOnlyDatabaseQuery($ssh, $deployment, $databaseContext, $query, $format);
+            $this->logDatabaseQuery($service, $query, $format, true);
+
+            return response()->json([
+                'success' => true,
+                'format' => $format,
+                'output' => $result['output'],
+                'csv' => $result['csv'] ?? null,
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning("Database query failed for service {$service->id}: " . $e->getMessage());
+            $this->logDatabaseQuery($service, $query, $format, false);
+            return response()->json(['error' => 'Query failed: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function databaseHistory(Service $service): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $this->isDatabaseConsoleEnabled()) {
+            return response()->json(['error' => 'Database console is disabled by administrator'], 403);
+        }
+
+        $history = ContainerFileAuditLog::query()
+            ->where('service_id', $service->id)
+            ->where('user_id', auth()->id())
+            ->where('action', 'db_query')
+            ->latest('created_at')
+            ->limit(20)
+            ->get()
+            ->map(fn (ContainerFileAuditLog $row) => [
+                'at' => $row->created_at?->toDateTimeString(),
+                'query' => $row->metadata['query_preview'] ?? '',
+                'format' => $row->metadata['format'] ?? 'text',
+                'success' => (bool) ($row->metadata['success'] ?? false),
+            ])
+            ->values();
+
+        return response()->json(['history' => $history]);
     }
 
     /**
@@ -291,6 +427,160 @@ class ContainerController extends Controller
         } else {
             return "{$minutes}m";
         }
+    }
+
+    private function buildDatabaseContext(Service $service, $deployment): array
+    {
+        $fallback = [
+            'available' => false,
+            'type' => null,
+            'host' => 'db',
+            'port' => null,
+            'database' => null,
+            'username' => null,
+            'password_masked' => null,
+        ];
+
+        if (!$deployment || !$deployment->env_values || !is_array($deployment->env_values)) {
+            return $fallback;
+        }
+
+        $databaseId = $service->service_meta['database_id'] ?? null;
+        if (!$databaseId) {
+            return $fallback;
+        }
+
+        $template = DatabaseTemplate::find($databaseId);
+        if (!$template) {
+            return $fallback;
+        }
+
+        $env = $deployment->env_values;
+        $type = $template->type;
+
+        return match ($type) {
+            'mysql', 'mariadb' => [
+                'available' => true,
+                'type' => $type,
+                'host' => $env['DB_HOST'] ?? 'db',
+                'port' => $env['DB_PORT'] ?? '3306',
+                'database' => $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb'),
+                'username' => $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
+                'password_masked' => $this->maskSecret($env['DB_PASSWORD'] ?? ($env['MYSQL_PASSWORD'] ?? null)),
+            ],
+            'postgresql' => [
+                'available' => true,
+                'type' => $type,
+                'host' => 'db',
+                'port' => '5432',
+                'database' => $env['POSTGRES_DB'] ?? 'appdb',
+                'username' => $env['POSTGRES_USER'] ?? 'appuser',
+                'password_masked' => $this->maskSecret($env['POSTGRES_PASSWORD'] ?? $env['DB_PASSWORD'] ?? null),
+            ],
+            default => $fallback,
+        };
+    }
+
+    private function maskSecret(?string $value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+
+        $length = strlen($value);
+        if ($length <= 4) {
+            return str_repeat('*', $length);
+        }
+
+        return substr($value, 0, 2) . str_repeat('*', max(0, $length - 4)) . substr($value, -2);
+    }
+
+    private function runReadOnlyDatabaseQuery(SSHService $ssh, $deployment, array $databaseContext, string $query, string $format = 'text'): array
+    {
+        $containerPath = '/opt/talksasa/containers/' . $deployment->container_name;
+        $dbType = $databaseContext['type'];
+        $queryArg = escapeshellarg($query);
+
+        if (in_array($dbType, ['mysql', 'mariadb'], true)) {
+            $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
+            $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
+            $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['MYSQL_PASSWORD'] ?? ''));
+
+            $command = "cd {$containerPath} && docker compose exec -T db sh -lc " .
+                escapeshellarg("MYSQL_PWD={$password} mysql --batch --raw -u {$user} {$db} -e {$queryArg}");
+
+            $output = $ssh->exec($command, 20);
+            if ($format === 'csv') {
+                return [
+                    'output' => $output,
+                    'csv' => $this->tabSeparatedToCsv($output),
+                ];
+            }
+
+            return ['output' => $output];
+        }
+
+        if ($dbType === 'postgresql') {
+            $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
+            $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
+
+            $csvMode = $format === 'csv' ? '--csv ' : '';
+            $command = "cd {$containerPath} && docker compose exec -T db psql {$csvMode}-U {$user} -d {$db} -c {$queryArg}";
+
+            $output = $ssh->exec($command, 20);
+            return [
+                'output' => $output,
+                'csv' => $format === 'csv' ? $output : null,
+            ];
+        }
+
+        throw new \RuntimeException('Interactive query is not supported for this database type yet');
+    }
+
+    private function tabSeparatedToCsv(string $input): string
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $input)), fn ($line) => $line !== ''));
+        if (empty($lines)) {
+            return '';
+        }
+
+        $stream = fopen('php://temp', 'r+');
+        foreach ($lines as $line) {
+            fputcsv($stream, explode("\t", $line));
+        }
+        rewind($stream);
+        $csv = stream_get_contents($stream) ?: '';
+        fclose($stream);
+
+        return $csv;
+    }
+
+    private function logDatabaseQuery(Service $service, string $query, string $format, bool $success): void
+    {
+        try {
+            ContainerFileAuditLog::create([
+                'service_id' => $service->id,
+                'user_id' => auth()->id(),
+                'deployment_id' => $service->containerDeployment?->id,
+                'action' => 'db_query',
+                'path' => '/db',
+                'metadata' => [
+                    'query_preview' => mb_substr(preg_replace('/\s+/', ' ', trim($query)) ?? '', 0, 200),
+                    'format' => $format,
+                    'success' => $success,
+                ],
+                'ip_address' => request()->ip(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to write db_query audit log', ['service_id' => $service->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function isDatabaseConsoleEnabled(): bool
+    {
+        $value = strtolower((string) Setting::getValue('container_db_console_enabled', '1'));
+        return in_array($value, ['1', 'true', 'yes', 'on'], true);
     }
 
     /**

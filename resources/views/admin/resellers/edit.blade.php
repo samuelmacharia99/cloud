@@ -90,10 +90,23 @@
                     <!-- Password -->
                     <div>
                         <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(leave blank to keep current)</span></label>
-                        <input type="password" id="password" name="password" placeholder="Leave blank to keep current password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror">
+                        <div class="relative">
+                            <input type="password" id="password" name="password" placeholder="Leave blank to keep current password" class="w-full px-4 py-2 pr-12 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror">
+                            <button
+                                type="button"
+                                id="generate-reseller-password"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
+                                title="Generate password"
+                                aria-label="Generate password">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                            </button>
+                        </div>
                         @error('password')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
+                        <p id="generated-password-hint" class="mt-1 text-xs text-emerald-600 dark:text-emerald-400 hidden">Password generated and applied.</p>
                     </div>
 
                     <!-- Confirm Password -->
@@ -143,3 +156,51 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const passwordInput = document.getElementById('password');
+    const confirmInput = document.getElementById('password_confirmation');
+    const generateBtn = document.getElementById('generate-reseller-password');
+    const hint = document.getElementById('generated-password-hint');
+
+    if (!passwordInput || !confirmInput || !generateBtn) {
+        return;
+    }
+
+    generateBtn.addEventListener('click', async () => {
+        try {
+            generateBtn.disabled = true;
+            const res = await fetch("{{ route('admin.customers.generate-password') }}?length=16", {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+
+            if (!res.ok) {
+                throw new Error('Failed to generate password');
+            }
+
+            const data = await res.json();
+            const generated = data.password || '';
+            if (!generated) {
+                throw new Error('No password returned');
+            }
+
+            passwordInput.value = generated;
+            confirmInput.value = generated;
+            passwordInput.type = 'text';
+            confirmInput.type = 'text';
+
+            if (hint) {
+                hint.classList.remove('hidden');
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Failed to generate password. Please try again.');
+        } finally {
+            generateBtn.disabled = false;
+        }
+    });
+});
+</script>
+@endpush

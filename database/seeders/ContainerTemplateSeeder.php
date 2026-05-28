@@ -21,6 +21,12 @@ class ContainerTemplateSeeder extends Seeder
                 'required_ram_mb' => 512,
                 'required_cpu_cores' => 1.0,
                 'required_storage_gb' => 5,
+                'versions' => [
+                    'latest',
+                    '6.6-php8.3-apache',
+                    '6.5-php8.2-apache',
+                    '6.4-php8.1-apache',
+                ],
                 'environment_variables' => [
                     [
                         'key' => 'WORDPRESS_DB_HOST',
@@ -279,6 +285,12 @@ class ContainerTemplateSeeder extends Seeder
                 'required_ram_mb' => 256,
                 'required_cpu_cores' => 0.5,
                 'required_storage_gb' => 2,
+                'versions' => [
+                    '3.10-slim',
+                    '3.11-slim',
+                    '3.12-slim',
+                    '3.13-slim',
+                ],
                 'environment_variables' => [
                     [
                         'key' => 'PYTHONUNBUFFERED',
@@ -298,7 +310,146 @@ class ContainerTemplateSeeder extends Seeder
             ]
         );
 
-        // 7. Static Website
+        // 6. PHP Application
+        ContainerTemplate::firstOrCreate(
+            ['slug' => 'php'],
+            [
+                'name' => 'PHP Application',
+                'description' => 'Generic PHP runtime for modern apps and APIs.',
+                'category' => 'web',
+                'docker_image' => 'php:8.3-cli',
+                'default_port' => 8080,
+                'required_ram_mb' => 256,
+                'required_cpu_cores' => 0.5,
+                'required_storage_gb' => 2,
+                'versions' => [
+                    '8.1-cli',
+                    '8.2-cli',
+                    '8.3-cli',
+                    '8.4-cli',
+                ],
+                'environment_variables' => [
+                    [
+                        'key' => 'APP_ENV',
+                        'label' => 'Application Environment',
+                        'default' => 'production',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                    [
+                        'key' => 'APP_PORT',
+                        'label' => 'Application Port',
+                        'default' => '8080',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                ],
+                'volume_paths' => [
+                    'app_data' => '/app',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'is_active' => true,
+                'order' => 6,
+            ]
+        );
+
+        // 7. Laravel Application
+        ContainerTemplate::firstOrCreate(
+            ['slug' => 'laravel'],
+            [
+                'name' => 'Laravel Application',
+                'description' => 'Laravel-ready runtime with flexible PHP version selection.',
+                'category' => 'web',
+                'docker_image' => 'php:8.3-cli',
+                'default_port' => 8000,
+                'required_ram_mb' => 512,
+                'required_cpu_cores' => 1.0,
+                'required_storage_gb' => 3,
+                'versions' => [
+                    '8.1-cli',
+                    '8.2-cli',
+                    '8.3-cli',
+                    '8.4-cli',
+                ],
+                'environment_variables' => [
+                    [
+                        'key' => 'APP_ENV',
+                        'label' => 'Laravel Environment',
+                        'default' => 'production',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                    [
+                        'key' => 'APP_DEBUG',
+                        'label' => 'Debug Mode',
+                        'default' => 'false',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                    [
+                        'key' => 'APP_KEY',
+                        'label' => 'Laravel APP_KEY',
+                        'default' => '',
+                        'required' => false,
+                        'secret' => true,
+                    ],
+                ],
+                'volume_paths' => [
+                    'app_data' => '/app',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'is_active' => true,
+                'order' => 7,
+            ]
+        );
+
+        // 8. Ruby Application
+        ContainerTemplate::firstOrCreate(
+            ['slug' => 'ruby'],
+            [
+                'name' => 'Ruby Application',
+                'description' => 'Ruby runtime for Rails, Sinatra, and Rack applications.',
+                'category' => 'web',
+                'docker_image' => 'ruby:3.3-slim',
+                'default_port' => 3000,
+                'required_ram_mb' => 384,
+                'required_cpu_cores' => 0.5,
+                'required_storage_gb' => 2,
+                'versions' => [
+                    '3.1-slim',
+                    '3.2-slim',
+                    '3.3-slim',
+                    '3.4-slim',
+                ],
+                'environment_variables' => [
+                    [
+                        'key' => 'RACK_ENV',
+                        'label' => 'Rack Environment',
+                        'default' => 'production',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                    [
+                        'key' => 'RAILS_ENV',
+                        'label' => 'Rails Environment',
+                        'default' => 'production',
+                        'required' => false,
+                        'secret' => false,
+                    ],
+                ],
+                'volume_paths' => [
+                    'app_data' => '/app',
+                ],
+                'compose_services' => [],
+                'setup_commands' => [],
+                'is_active' => true,
+                'order' => 8,
+            ]
+        );
+
+        // 9. Static Website
         ContainerTemplate::firstOrCreate(
             ['slug' => 'static-site'],
             [
@@ -317,7 +468,7 @@ class ContainerTemplateSeeder extends Seeder
                 'compose_services' => [],
                 'setup_commands' => [],
                 'is_active' => true,
-                'order' => 6,
+                'order' => 9,
             ]
         );
     }

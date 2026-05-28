@@ -106,5 +106,21 @@ class DatabaseTemplateSeeder extends Seeder
                 'order' => 6,
             ]
         );
+
+        DatabaseTemplate::firstOrCreate(
+            ['slug' => 'mariadb-container'],
+            [
+                'name' => 'MariaDB',
+                'type' => 'mariadb',
+                'description' => 'MariaDB container for app workloads that need MySQL compatibility',
+                'versions' => json_encode(['11.4', '11.3', '10.11']),
+                'docker_image' => 'mariadb:11.4',
+                'default_port' => 3306,
+                'required_ram_mb' => 384,
+                'hosting_type' => 'container',
+                'is_active' => true,
+                'order' => 7,
+            ]
+        );
     }
 }
