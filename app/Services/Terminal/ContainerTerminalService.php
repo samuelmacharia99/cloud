@@ -2,6 +2,7 @@
 
 namespace App\Services\Terminal;
 
+use App\Models\ContainerTemplate;
 use App\Models\ContainerTerminalLog;
 use App\Models\ContainerTerminalSession;
 use App\Models\Service;
@@ -46,13 +47,14 @@ class ContainerTerminalService
         // Create new session
         $token = bin2hex(random_bytes(32));
         $now = now();
+        $initialCwd = $this->resolveInitialCwd($service);
         $session = ContainerTerminalSession::create([
             'token' => $token,
             'service_id' => $service->id,
             'user_id' => $user->id,
             'deployment_id' => $deployment->id,
             'container_name' => $deployment->container_name,
-            'cwd' => '/',
+            'cwd' => $initialCwd,
             'status' => 'active',
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
@@ -252,5 +254,35 @@ class ContainerTerminalService
 
         return 'docker exec -u www-data ' . escapeshellarg($containerName)
             . ' sh -c ' . escapeshellarg($script);
+    }
+
+    private function resolveInitialCwd(Service $service): string
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $templateId = isset($meta['tech_stack_id']) ? (int) $meta['tech_stack_id'] : null;
+        if (!$templateId) {
+            return '/app';
+        }
+
+        $template = ContainerTemplate::find($templateId);
+        if (!$template) {
+            return '/app';
+        }
+
+        $volumePaths = $template->volume_paths;
+        if (!is_array($volumePaths) || empty($volumePaths)) {
+            return '/app';
+        }
+
+        if (!empty($volumePaths['app_data']) && is_string($volumePaths['app_data'])) {
+            return $volumePaths['app_data'];
+        }
+
+        $firstPath = reset($volumePaths);
+        if (is_string($firstPath) && str_starts_with($firstPath, '/')) {
+            return $firstPath;
+        }
+
+        return '/app';
     }
 }
