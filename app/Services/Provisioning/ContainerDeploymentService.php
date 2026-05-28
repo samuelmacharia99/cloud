@@ -32,6 +32,8 @@ class ContainerDeploymentService
      */
     public function deploy(Service $service): void
     {
+        $deployStartedAt = microtime(true);
+
         try {
             // Load relationships
             $service->load('product.containerTemplate', 'user', 'node');
@@ -42,6 +44,12 @@ class ContainerDeploymentService
             }
 
             $template = $service->product->containerTemplate;
+            \Log::info('Container deploy started', [
+                'service_id' => $service->id,
+                'user_id' => $service->user_id,
+                'template_id' => $template->id,
+                'template_slug' => $template->slug,
+            ]);
 
             // Select node if not already set
             if (! $service->node_id) {
@@ -54,6 +62,12 @@ class ContainerDeploymentService
             if (! $node || $node->type !== 'container_host' || ! $node->is_active) {
                 throw new \DomainException('No active container host node available');
             }
+
+            \Log::info('Container deploy node selected', [
+                'service_id' => $service->id,
+                'node_id' => $node->id,
+                'node_hostname' => $node->hostname,
+            ]);
 
             // Generate container name: user-{user_id}-service-{service_id}-{template_type}
             $templateSlug = strtolower(str_replace(' ', '-', $template->slug));
@@ -199,6 +213,7 @@ class ContainerDeploymentService
                     'container' => $containerName,
                     'node' => $node->id,
                     'port' => $port,
+                    'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
                 ]);
             } catch (SSHCommandException | SSHConnectionException $e) {
                 $deployment->update([
@@ -220,6 +235,7 @@ class ContainerDeploymentService
         } catch (\Exception $e) {
             \Log::error("Container provisioning error for service {$service->id}: " . $e->getMessage(), [
                 'exception' => $e,
+                'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
             ]);
 
             throw $e;

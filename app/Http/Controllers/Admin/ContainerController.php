@@ -14,11 +14,18 @@ use Illuminate\Http\Request;
 
 class ContainerController extends Controller
 {
+    private function authorizeServiceAccess(Service $service): void
+    {
+        $this->authorize('view', $service);
+    }
+
     /**
      * Restart a running container
      */
     public function restart(Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -39,6 +46,8 @@ class ContainerController extends Controller
      */
     public function suspend(Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -67,6 +76,8 @@ class ContainerController extends Controller
      */
     public function start(Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -87,6 +98,8 @@ class ContainerController extends Controller
      */
     public function logs(Service $service): JsonResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return response()->json(['error' => 'Service is not a container hosting service'], 400);
@@ -107,6 +120,8 @@ class ContainerController extends Controller
      */
     public function redeploy(Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -135,6 +150,8 @@ class ContainerController extends Controller
      */
     public function metrics(Service $service): JsonResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return response()->json(['error' => 'Service is not a container hosting service'], 400);
@@ -171,6 +188,8 @@ class ContainerController extends Controller
      */
     public function bindDomain(Service $service, Request $request): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -208,6 +227,8 @@ class ContainerController extends Controller
      */
     public function unbindDomain(Service $service, ContainerDomain $domain): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -234,6 +255,8 @@ class ContainerController extends Controller
      */
     public function enableSsl(Service $service, ContainerDomain $domain): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -259,6 +282,8 @@ class ContainerController extends Controller
 
     public function createBackup(Service $service)
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             $backupService = new \App\Services\Provisioning\ContainerBackupService();
             $backup = $backupService->createBackup($service, 'manual');
@@ -272,6 +297,12 @@ class ContainerController extends Controller
 
     public function restoreBackup(Service $service, \App\Models\ContainerBackup $backup)
     {
+        $this->authorizeServiceAccess($service);
+
+        if ($backup->service_id !== $service->id) {
+            return back()->withErrors(['error' => 'Backup does not belong to this service']);
+        }
+
         try {
             $backupService = new \App\Services\Provisioning\ContainerBackupService();
             $backupService->restoreBackup($backup);
@@ -285,6 +316,12 @@ class ContainerController extends Controller
 
     public function deleteBackup(Service $service, \App\Models\ContainerBackup $backup)
     {
+        $this->authorizeServiceAccess($service);
+
+        if ($backup->service_id !== $service->id) {
+            return back()->withErrors(['error' => 'Backup does not belong to this service']);
+        }
+
         try {
             $backupService = new \App\Services\Provisioning\ContainerBackupService();
             $backupService->deleteBackup($backup);
@@ -301,6 +338,8 @@ class ContainerController extends Controller
      */
     public function edit(Service $service)
     {
+        $this->authorizeServiceAccess($service);
+
         if ($service->product?->type !== 'container_hosting') {
             return back()->withErrors(['error' => 'Service is not a container hosting service']);
         }
@@ -322,6 +361,8 @@ class ContainerController extends Controller
      */
     public function update(Service $service, Request $request): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
@@ -359,6 +400,8 @@ class ContainerController extends Controller
      */
     public function provision(Service $service): RedirectResponse
     {
+        $this->authorizeServiceAccess($service);
+
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
