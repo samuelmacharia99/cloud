@@ -117,7 +117,12 @@ class ContainerDeploymentService
                         $port = $this->assignPort($node);
                         $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
-                        $existingDeployment = ContainerDeployment::where('service_id', $service->id)->lockForUpdate()->first();
+                        // Always reuse the most recent deployment row for this service.
+                        // Using an older row can violate unique(container_name) during redeploy.
+                        $existingDeployment = ContainerDeployment::where('service_id', $service->id)
+                            ->orderByDesc('id')
+                            ->lockForUpdate()
+                            ->first();
                         if ($existingDeployment) {
                             $existingDeployment->update([
                                 'node_id' => $node->id,
