@@ -40,6 +40,9 @@ class ContainerController extends Controller
             $containerService = new ContainerDeploymentService();
             try {
                 $status = $containerService->getStatus($service);
+                $this->reconcileStuckProvisioningState($service, $deployment, $status);
+                $service->refresh();
+                $deployment = $service->containerDeployment;
             } catch (\Exception $e) {
                 \Log::warning("Failed to fetch status for service {$service->id}");
             }
@@ -165,7 +168,21 @@ class ContainerController extends Controller
             }
 
             if ($deployment->status === 'deploying' || $service->status === 'provisioning') {
-                return back()->withErrors(['error' => 'Deployment already in progress. Please wait and try again.']);
+                $isStale = $deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(5));
+                if ($isStale) {
+                    $deployment->update([
+                        'status' => 'failed',
+                        'last_status_check_at' => now(),
+                        'last_status_check_output' => 'Provisioning marked failed automatically after stale timeout.',
+                    ]);
+                    if ($service->status === 'provisioning') {
+                        $service->update(['status' => 'failed']);
+                    }
+                    $service->refresh();
+                    $deployment = $service->containerDeployment;
+                } else {
+                    return back()->withErrors(['error' => 'Deployment already in progress. Please wait and try again.']);
+                }
             }
 
             if (!$deployment->node || !$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
@@ -179,6 +196,37 @@ class ContainerController extends Controller
         } catch (\Exception $e) {
             \Log::error("Failed to redeploy container for service {$service->id}: " . $e->getMessage());
             return back()->withErrors(['error' => 'Failed to redeploy container: ' . $e->getMessage()]);
+        }
+    }
+
+    private function reconcileStuckProvisioningState(Service $service, $deployment, ?array $status): void
+    {
+        if (!$deployment || $deployment->status !== 'deploying') {
+            return;
+        }
+
+        // If container is actually running, heal stale DB status.
+        if (($status['running'] ?? false) === true) {
+            $deployment->update([
+                'status' => 'running',
+                'last_status_check_at' => now(),
+            ]);
+            if ($service->status === 'provisioning' || $service->status === 'failed') {
+                $service->update(['status' => 'active']);
+            }
+            return;
+        }
+
+        // If provisioning has been stuck for too long, fail it so user can recover.
+        if ($deployment->updated_at && $deployment->updated_at->lt(now()->subMinutes(5))) {
+            $deployment->update([
+                'status' => 'failed',
+                'last_status_check_at' => now(),
+                'last_status_check_output' => 'Provisioning timed out and was marked failed.',
+            ]);
+            if ($service->status === 'provisioning') {
+                $service->update(['status' => 'failed']);
+            }
         }
     }
 
