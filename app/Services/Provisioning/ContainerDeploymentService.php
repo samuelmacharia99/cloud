@@ -26,7 +26,7 @@ class ContainerDeploymentService
     private const PORT_RANGE_START = 30000;
     private const PORT_RANGE_END = 40000;
     private const DEPLOY_TIMEOUT = 120;
-    private const HEALTH_CHECK_RETRIES = 9;
+    private const HEALTH_CHECK_RETRIES = 24;
     private const HEALTH_CHECK_DELAY = 5;
 
     /**
@@ -276,6 +276,29 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
+            // Ensure state is consistent even for non-SSH failures (e.g. health-check timeout).
+            try {
+                $latestDeployment = ContainerDeployment::where('service_id', $service->id)
+                    ->orderByDesc('id')
+                    ->first();
+
+                if ($latestDeployment && $latestDeployment->status !== 'failed') {
+                    $latestDeployment->update([
+                        'status' => 'failed',
+                        'last_status_check_at' => now(),
+                        'last_status_check_output' => $e->getMessage(),
+                    ]);
+                }
+
+                if ($service->status !== 'failed') {
+                    $service->update(['status' => 'failed']);
+                }
+            } catch (\Throwable $stateError) {
+                \Log::warning("Failed to set deployment failure state for service {$service->id}", [
+                    'error' => $stateError->getMessage(),
+                ]);
+            }
+
             \Log::error("Container provisioning error for service {$service->id}: " . $e->getMessage(), [
                 'exception' => $e,
                 'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
