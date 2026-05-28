@@ -924,22 +924,16 @@ class ContainerDeploymentService
      */
     private function getContainerStatus(SSHService $ssh, string $containerName): array
     {
-        // Use docker ps to check container status (more reliable than docker compose ps)
-        $output = $ssh->exec("docker ps -a --filter 'name={$containerName}' --format json 2>/dev/null || echo ''", 10);
+        // Use docker inspect for compatibility across Docker versions.
+        // docker ps --format json is not universally supported and can cause false negatives.
+        $safeName = escapeshellarg($containerName);
+        $statusOutput = trim($ssh->exec(
+            "docker inspect --type container --format '{{.State.Status}}|{{.State.Running}}' {$safeName} 2>/dev/null || echo ''",
+            10
+        ));
 
-        // Parse newline-delimited JSON (docker ps --format json returns NDJSON)
-        $containers = [];
-        if (!empty($output)) {
-            foreach (array_filter(explode("\n", trim($output))) as $line) {
-                $parsed = json_decode($line, true);
-                if (is_array($parsed)) {
-                    $containers[] = $parsed;
-                }
-            }
-        }
-
-        if (empty($containers)) {
-            \Log::debug("Container not found in docker ps", ['container_name' => $containerName]);
+        if ($statusOutput === '') {
+            \Log::debug("Container not found in docker inspect", ['container_name' => $containerName]);
             return [
                 'state' => 'unknown',
                 'running' => false,
@@ -947,31 +941,32 @@ class ContainerDeploymentService
             ];
         }
 
-        $mainContainer = $containers[0] ?? null;
-        if (!$mainContainer) {
-            \Log::debug("Container not found in docker ps", ['container_name' => $containerName]);
-            return [
-                'state' => 'unknown',
-                'running' => false,
-                'internal_ip' => null,
-            ];
-        }
+        [$state, $runningRaw] = array_pad(explode('|', $statusOutput, 2), 2, '');
+        $state = trim($state) !== '' ? trim($state) : 'unknown';
+        $isRunning = strtolower(trim($runningRaw)) === 'true';
 
-        $state = $mainContainer['State'] ?? 'unknown';
-        $isRunning = stripos($state, 'up') !== false;
+        // Best-effort port info for diagnostics/UI (can be empty for internal-only services).
+        $ports = trim($ssh->exec(
+            "docker inspect --type container --format '{{json .NetworkSettings.Ports}}' {$safeName} 2>/dev/null || echo ''",
+            10
+        ));
 
         \Log::debug("Container status check", [
             'container_name' => $containerName,
             'state' => $state,
             'running' => $isRunning,
-            'full_data' => $mainContainer,
+            'ports' => $ports,
         ]);
 
         return [
             'state' => $state,
             'running' => $isRunning,
-            'internal_ip' => $mainContainer['Ports'] ?? null,
-            'full_data' => $mainContainer,
+            'internal_ip' => $ports !== '' ? $ports : null,
+            'full_data' => [
+                'state' => $state,
+                'running' => $isRunning,
+                'ports' => $ports,
+            ],
         ];
     }
 
