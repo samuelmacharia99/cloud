@@ -83,6 +83,10 @@ class ContainerTemplateController
             if (json_last_error() !== JSON_ERROR_NONE) {
                 return back()->withInput()->withErrors(['setup_commands' => 'Invalid JSON format']);
             }
+            $setupCommandErrors = $this->validateSetupCommands($setupCommands);
+            if (!empty($setupCommandErrors)) {
+                return back()->withInput()->withErrors(['setup_commands' => implode(' ', $setupCommandErrors)]);
+            }
         }
 
         ContainerTemplate::create([
@@ -169,6 +173,10 @@ class ContainerTemplateController
             if (json_last_error() !== JSON_ERROR_NONE) {
                 return back()->withInput()->withErrors(['setup_commands' => 'Invalid JSON format']);
             }
+            $setupCommandErrors = $this->validateSetupCommands($setupCommands);
+            if (!empty($setupCommandErrors)) {
+                return back()->withInput()->withErrors(['setup_commands' => implode(' ', $setupCommandErrors)]);
+            }
         }
 
         $containerTemplate->update([
@@ -191,6 +199,35 @@ class ContainerTemplateController
 
         return redirect()->route('admin.container-templates.index')
             ->with('success', 'Container template updated successfully');
+    }
+
+    /**
+     * Validate template setup commands to reduce command-injection risk.
+     */
+    private function validateSetupCommands(array $setupCommands): array
+    {
+        $errors = [];
+
+        foreach ($setupCommands as $index => $command) {
+            if (!is_string($command) || trim($command) === '') {
+                $errors[] = "Setup command #".($index + 1)." must be a non-empty string.";
+                continue;
+            }
+
+            $cmd = trim($command);
+
+            if (strlen($cmd) > 500) {
+                $errors[] = "Setup command #".($index + 1)." is too long.";
+                continue;
+            }
+
+            if (preg_match('/[;&|`$<>\\\\]/', $cmd)) {
+                $errors[] = "Setup command #".($index + 1)." contains disallowed shell control characters.";
+                continue;
+            }
+        }
+
+        return $errors;
     }
 
     /**

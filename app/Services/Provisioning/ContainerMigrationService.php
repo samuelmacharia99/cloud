@@ -4,11 +4,13 @@ namespace App\Services\Provisioning;
 
 use App\Models\Service;
 use App\Models\Node;
+use App\Services\SSH\SSHService;
 use Illuminate\Database\Eloquent\Collection;
 use Exception;
 
 class ContainerMigrationService
 {
+    private const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
     protected ContainerDeploymentService $deploymentService;
 
     public function __construct()
@@ -41,24 +43,16 @@ class ContainerMigrationService
             throw new Exception('Container is already on the target node');
         }
 
+        $oldServiceStatus = $service->status;
+        $oldNodeId = $oldDeployment->node_id;
+        $oldContainerName = $oldDeployment->container_name;
+        $oldDeploymentStatus = $oldDeployment->status;
+
         try {
-            // Mark service and deployment as in-progress
-            $service->update(['status' => 'provisioning']);
-            $oldDeployment->update(['status' => 'terminating']);
+            // Phase 1: Deploy on target first (no destructive action on source yet).
+            $service->update(['status' => 'provisioning', 'node_id' => $targetNode->id]);
+            $oldDeployment->update(['status' => 'deploying']);
 
-            // Terminate on source node
-            $this->deploymentService->terminate($service);
-
-            // Mark old deployment as terminated
-            $oldDeployment->update([
-                'status' => 'terminated',
-                'terminated_at' => now(),
-            ]);
-
-            // Update service to point to target node
-            $service->update(['node_id' => $targetNode->id]);
-
-            // Deploy on target node
             $this->deploymentService->deploy($service);
 
             // Get new deployment and add migration metadata
@@ -71,9 +65,23 @@ class ContainerMigrationService
                 ]);
             }
 
+            // Phase 2: Best-effort cleanup on old node after successful target deployment.
+            $this->cleanupOldDeployment($oldContainerName, $oldDeployment->node);
+
             \Log::info("Container migrated for service {$service->id} from node {$oldDeployment->node_id} to {$targetNode->id}");
         } catch (Exception $e) {
-            $service->update(['status' => 'failed']);
+            // Roll back service reference to old node.
+            $service->update([
+                'node_id' => $oldNodeId,
+                'status' => $oldServiceStatus,
+            ]);
+
+            // Restore deployment metadata best-effort.
+            $oldDeployment->update([
+                'node_id' => $oldNodeId,
+                'status' => $oldDeploymentStatus,
+            ]);
+
             \Log::error("Container migration failed for service {$service->id}: " . $e->getMessage());
             throw $e;
         }
@@ -124,5 +132,33 @@ class ContainerMigrationService
             ->orderBy('status', 'asc')
             ->orderByRaw('(SELECT COUNT(*) FROM container_deployments WHERE node_id = nodes.id AND status IN ("running", "stopped")) ASC')
             ->get();
+    }
+
+    /**
+     * Clean up old deployment artifacts on source node after successful migration.
+     */
+    private function cleanupOldDeployment(string $containerName, ?Node $sourceNode): void
+    {
+        if (!$sourceNode) {
+            return;
+        }
+
+        try {
+            $ssh = SSHService::forNode($sourceNode);
+            $containerPath = self::CONTAINER_BASE_PATH . '/' . $containerName;
+
+            try {
+                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", 120);
+                @$ssh->deleteDir($containerPath);
+            } finally {
+                $ssh->disconnect();
+            }
+        } catch (Exception $e) {
+            // Cleanup failures should not fail the migration after successful cutover.
+            \Log::warning("Post-migration cleanup failed for {$containerName}", [
+                'node_id' => $sourceNode->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

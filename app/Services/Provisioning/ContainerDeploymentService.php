@@ -153,6 +153,12 @@ class ContainerDeploymentService
                     foreach ($template->setup_commands as $command) {
                         if (!empty($command)) {
                             try {
+                                if (! $this->isSafeSetupCommand((string) $command)) {
+                                    \Log::warning("Skipped unsafe setup command for service {$service->id}", [
+                                        'command' => $command,
+                                    ]);
+                                    continue;
+                                }
                                 $ssh->exec("cd {$containerPath} && {$command}", self::DEPLOY_TIMEOUT);
                             } catch (\Exception $e) {
                                 \Log::warning("Setup command failed for service {$service->id}: {$command}", [
@@ -893,5 +899,23 @@ class ContainerDeploymentService
 
         \Log::warning("Re-uploading docker-compose.yml for deployment {$deployment->id}");
         $ssh->upload($deployment->docker_compose_content, $composeFile);
+    }
+
+    /**
+     * Basic safety validation for template setup commands.
+     */
+    private function isSafeSetupCommand(string $command): bool
+    {
+        $cmd = trim($command);
+        if ($cmd === '' || strlen($cmd) > 500) {
+            return false;
+        }
+
+        // Block common shell control/injection characters.
+        if (preg_match('/[;&|`$<>\\\\]/', $cmd)) {
+            return false;
+        }
+
+        return true;
     }
 }
