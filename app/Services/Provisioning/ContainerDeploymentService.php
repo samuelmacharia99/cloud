@@ -717,7 +717,7 @@ class ContainerDeploymentService
 
         // Add database connection env vars if database is selected
         if ($databaseTemplate) {
-            $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env));
+            $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env, $service));
         }
 
         return $env;
@@ -735,19 +735,19 @@ class ContainerDeploymentService
         $dbEnv = match ($db->type) {
             'mysql', 'mariadb' => [
                 'MYSQL_ROOT_PASSWORD' => $envVars['MYSQL_ROOT_PASSWORD'] ?? Str::random(32),
-                'MYSQL_DATABASE' => $envVars['MYSQL_DATABASE'] ?? 'appdb',
-                'MYSQL_USER' => $envVars['MYSQL_USER'] ?? 'appuser',
-                'MYSQL_PASSWORD' => $envVars['MYSQL_PASSWORD'] ?? Str::random(32),
+                'MYSQL_DATABASE' => $envVars['MYSQL_DATABASE'] ?? $envVars['DB_DATABASE'] ?? 'appdb',
+                'MYSQL_USER' => $envVars['MYSQL_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser',
+                'MYSQL_PASSWORD' => $envVars['MYSQL_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? Str::random(32),
             ],
             'postgresql' => [
-                'POSTGRES_PASSWORD' => $envVars['POSTGRES_PASSWORD'] ?? Str::random(32),
-                'POSTGRES_DB' => $envVars['POSTGRES_DB'] ?? 'appdb',
-                'POSTGRES_USER' => $envVars['POSTGRES_USER'] ?? 'appuser',
+                'POSTGRES_PASSWORD' => $envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? Str::random(32),
+                'POSTGRES_DB' => $envVars['POSTGRES_DB'] ?? $envVars['DB_DATABASE'] ?? 'appdb',
+                'POSTGRES_USER' => $envVars['POSTGRES_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser',
             ],
             'mongodb' => [
-                'MONGO_INITDB_ROOT_USERNAME' => $envVars['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser',
-                'MONGO_INITDB_ROOT_PASSWORD' => $envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? Str::random(32),
-                'MONGO_INITDB_DATABASE' => $envVars['MONGO_INITDB_DATABASE'] ?? 'appdb',
+                'MONGO_INITDB_ROOT_USERNAME' => $envVars['MONGO_INITDB_ROOT_USERNAME'] ?? $envVars['DB_USERNAME'] ?? 'appuser',
+                'MONGO_INITDB_ROOT_PASSWORD' => $envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? Str::random(32),
+                'MONGO_INITDB_DATABASE' => $envVars['MONGO_INITDB_DATABASE'] ?? $envVars['DB_DATABASE'] ?? 'appdb',
             ],
             'redis' => [],
             default => [],
@@ -1216,14 +1216,66 @@ HTML;
     }
 
     /**
+     * @return array{database: string, username: string}
+     */
+    private function defaultDatabaseIdentifiers(Service $service): array
+    {
+        $serviceId = max(1, (int) $service->id);
+        $userId = max(1, (int) $service->user_id);
+
+        return [
+            'database' => $this->sanitizeDatabaseIdentifier("s{$serviceId}_db", 64),
+            'username' => $this->sanitizeDatabaseIdentifier("u{$userId}_s{$serviceId}", 32),
+        ];
+    }
+
+    private function sanitizeDatabaseIdentifier(string $value, int $maxLength): string
+    {
+        $value = strtolower(preg_replace('/[^a-z0-9_]/', '', $value) ?? '');
+        if ($value === '' || ! preg_match('/^[a-z]/', $value)) {
+            $value = 't'.$value;
+        }
+
+        return substr($value, 0, $maxLength);
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private function resolveDatabaseName(array $env, Service $service, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (! empty($env[$key])) {
+                return $this->sanitizeDatabaseIdentifier((string) $env[$key], 64);
+            }
+        }
+
+        return $this->defaultDatabaseIdentifiers($service)['database'];
+    }
+
+    /**
+     * @param  list<string>  $keys
+     */
+    private function resolveDatabaseUsername(array $env, Service $service, array $keys): string
+    {
+        foreach ($keys as $key) {
+            if (! empty($env[$key])) {
+                return $this->sanitizeDatabaseIdentifier((string) $env[$key], 32);
+            }
+        }
+
+        return $this->defaultDatabaseIdentifiers($service)['username'];
+    }
+
+    /**
      * @return array<string, string>
      */
-    private function databaseEnvironmentVariables(DatabaseTemplate $databaseTemplate, array $env): array
+    private function databaseEnvironmentVariables(DatabaseTemplate $databaseTemplate, array $env, Service $service): array
     {
         return match ($databaseTemplate->type) {
-            'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env),
-            'postgresql' => $this->postgresqlEnvironmentVariables($env),
-            'mongodb' => $this->mongodbEnvironmentVariables($env),
+            'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env, $service),
+            'postgresql' => $this->postgresqlEnvironmentVariables($env, $service),
+            'mongodb' => $this->mongodbEnvironmentVariables($env, $service),
             'redis' => [
                 'REDIS_HOST' => 'db',
                 'REDIS_PORT' => '6379',
@@ -1236,10 +1288,10 @@ HTML;
     /**
      * @return array<string, string>
      */
-    private function mysqlEnvironmentVariables(array $env): array
+    private function mysqlEnvironmentVariables(array $env, Service $service): array
     {
-        $dbName = (string) ($env['MYSQL_DATABASE'] ?? $env['DB_DATABASE'] ?? 'appdb');
-        $dbUser = (string) ($env['MYSQL_USER'] ?? $env['DB_USERNAME'] ?? 'appuser');
+        $dbName = $this->resolveDatabaseName($env, $service, ['MYSQL_DATABASE', 'DB_DATABASE']);
+        $dbUser = $this->resolveDatabaseUsername($env, $service, ['MYSQL_USER', 'DB_USERNAME']);
         $dbPassword = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? Str::random(32));
         $rootPassword = (string) ($env['MYSQL_ROOT_PASSWORD'] ?? $dbPassword);
 
@@ -1260,10 +1312,10 @@ HTML;
     /**
      * @return array<string, string>
      */
-    private function postgresqlEnvironmentVariables(array $env): array
+    private function postgresqlEnvironmentVariables(array $env, Service $service): array
     {
-        $dbName = (string) ($env['POSTGRES_DB'] ?? $env['DB_DATABASE'] ?? 'appdb');
-        $dbUser = (string) ($env['POSTGRES_USER'] ?? $env['DB_USERNAME'] ?? 'appuser');
+        $dbName = $this->resolveDatabaseName($env, $service, ['POSTGRES_DB', 'DB_DATABASE']);
+        $dbUser = $this->resolveDatabaseUsername($env, $service, ['POSTGRES_USER', 'DB_USERNAME']);
         $dbPassword = (string) ($env['POSTGRES_PASSWORD'] ?? $env['DB_PASSWORD'] ?? Str::random(32));
 
         return [
@@ -1288,11 +1340,11 @@ HTML;
     /**
      * @return array<string, string>
      */
-    private function mongodbEnvironmentVariables(array $env): array
+    private function mongodbEnvironmentVariables(array $env, Service $service): array
     {
-        $dbUser = (string) ($env['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser');
+        $dbUser = $this->resolveDatabaseUsername($env, $service, ['MONGO_INITDB_ROOT_USERNAME', 'DB_USERNAME']);
         $dbPassword = (string) ($env['MONGO_INITDB_ROOT_PASSWORD'] ?? $env['DB_PASSWORD'] ?? Str::random(32));
-        $dbName = (string) ($env['MONGO_INITDB_DATABASE'] ?? 'appdb');
+        $dbName = $this->resolveDatabaseName($env, $service, ['MONGO_INITDB_DATABASE', 'DB_DATABASE']);
 
         return [
             'MONGO_INITDB_ROOT_USERNAME' => $dbUser,
