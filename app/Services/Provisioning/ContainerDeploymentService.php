@@ -5,11 +5,13 @@ namespace App\Services\Provisioning;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\ContainerDeployment;
+use App\Models\ContainerDeploymentEvent;
 use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
@@ -50,6 +52,10 @@ class ContainerDeploymentService
                 'template_id' => $template->id,
                 'template_slug' => $template->slug,
             ]);
+            $this->recordDeploymentEvent($service, null, 'deploy_started', [
+                'template_id' => $template->id,
+                'template_slug' => $template->slug,
+            ]);
 
             // Select node if not already set
             if (! $service->node_id) {
@@ -65,6 +71,10 @@ class ContainerDeploymentService
 
             \Log::info('Container deploy node selected', [
                 'service_id' => $service->id,
+                'node_id' => $node->id,
+                'node_hostname' => $node->hostname,
+            ]);
+            $this->recordDeploymentEvent($service, null, 'node_selected', [
                 'node_id' => $node->id,
                 'node_hostname' => $node->hostname,
             ]);
@@ -84,7 +94,7 @@ class ContainerDeploymentService
 
             // Collect environment variables
             $envValues = $service->service_meta['env_values'] ?? [];
-            $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
+            $envVars = [];
 
             // Reserve port and persist deployment with retry in case of concurrent allocation collisions.
             $deployment = null;
@@ -92,25 +102,36 @@ class ContainerDeploymentService
             $maxAttempts = 5;
             for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
                 try {
-                    $port = $this->assignPort($node);
+                    [$deployment, $port, $envVars] = DB::transaction(function () use (
+                        $service,
+                        $node,
+                        $containerName,
+                        $template,
+                        $envValues,
+                        $databaseTemplate,
+                        $selectedVersion
+                    ) {
+                        // Serialize reservation/allocation by locking node row.
+                        Node::whereKey($node->id)->lockForUpdate()->first();
 
-                    // Rebuild env vars with chosen port for every retry
-                    $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
+                        $port = $this->assignPort($node);
+                        $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
-                    $existingDeployment = ContainerDeployment::where('service_id', $service->id)->first();
-                    if ($existingDeployment) {
-                        $deployment = $existingDeployment;
-                        $deployment->update([
-                            'node_id' => $node->id,
-                            'container_name' => $containerName,
-                            'status' => 'deploying',
-                            'docker_compose_content' => '',
-                            'assigned_port' => $port,
-                            'env_values' => $envVars,
-                            'selected_version' => $selectedVersion,
-                        ]);
-                    } else {
-                        $deployment = ContainerDeployment::create([
+                        $existingDeployment = ContainerDeployment::where('service_id', $service->id)->lockForUpdate()->first();
+                        if ($existingDeployment) {
+                            $existingDeployment->update([
+                                'node_id' => $node->id,
+                                'container_name' => $containerName,
+                                'status' => 'deploying',
+                                'docker_compose_content' => '',
+                                'assigned_port' => $port,
+                                'env_values' => $envVars,
+                                'selected_version' => $selectedVersion,
+                            ]);
+                            return [$existingDeployment, $port, $envVars];
+                        }
+
+                        $newDeployment = ContainerDeployment::create([
                             'service_id' => $service->id,
                             'node_id' => $node->id,
                             'container_name' => $containerName,
@@ -120,7 +141,9 @@ class ContainerDeploymentService
                             'env_values' => $envVars,
                             'selected_version' => $selectedVersion,
                         ]);
-                    }
+
+                        return [$newDeployment, $port, $envVars];
+                    });
 
                     break;
                 } catch (QueryException $e) {
@@ -134,6 +157,10 @@ class ContainerDeploymentService
             if (! $deployment || ! $port) {
                 throw new \RuntimeException('Failed to reserve a unique deployment port after retries');
             }
+            $this->recordDeploymentEvent($service, $deployment, 'port_reserved', [
+                'node_id' => $node->id,
+                'assigned_port' => $port,
+            ]);
 
             // Render docker-compose.yml with deployment
             $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion);
@@ -161,6 +188,9 @@ class ContainerDeploymentService
 
                 // Require a healthy running state before marking service active.
                 $this->waitForContainerHealth($ssh, $containerName);
+                $this->recordDeploymentEvent($service, $deployment, 'health_check_passed', [
+                    'container_name' => $containerName,
+                ]);
 
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
@@ -215,6 +245,11 @@ class ContainerDeploymentService
                     'port' => $port,
                     'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
                 ]);
+                $this->recordDeploymentEvent($service, $deployment, 'deploy_succeeded', [
+                    'node_id' => $node->id,
+                    'assigned_port' => $port,
+                    'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
+                ]);
             } catch (SSHCommandException | SSHConnectionException $e) {
                 $deployment->update([
                     'status' => 'failed',
@@ -227,6 +262,9 @@ class ContainerDeploymentService
                     'container' => $containerName,
                     'exception' => $e,
                 ]);
+                $this->recordDeploymentEvent($service, $deployment, 'deploy_failed', [
+                    'error' => $e->getMessage(),
+                ]);
 
                 throw new \RuntimeException("Container deployment failed: " . $e->getMessage(), 0, $e);
             } finally {
@@ -236,6 +274,9 @@ class ContainerDeploymentService
             \Log::error("Container provisioning error for service {$service->id}: " . $e->getMessage(), [
                 'exception' => $e,
                 'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
+            ]);
+            $this->recordDeploymentEvent($service, null, 'deploy_failed', [
+                'error' => $e->getMessage(),
             ]);
 
             throw $e;
@@ -549,6 +590,7 @@ class ContainerDeploymentService
     {
         $usedPorts = ContainerDeployment::where('node_id', $node->id)
             ->whereNotNull('assigned_port')
+            ->lockForUpdate()
             ->pluck('assigned_port')
             ->toArray();
 
@@ -933,5 +975,27 @@ class ContainerDeploymentService
         }
 
         return true;
+    }
+
+    /**
+     * Persist deployment lifecycle events for audit/incident timelines.
+     */
+    private function recordDeploymentEvent(Service $service, ?ContainerDeployment $deployment, string $event, array $payload = []): void
+    {
+        try {
+            ContainerDeploymentEvent::create([
+                'service_id' => $service->id,
+                'container_deployment_id' => $deployment?->id,
+                'event' => $event,
+                'payload' => $payload ?: null,
+                'recorded_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning("Failed to record container deployment event '{$event}'", [
+                'service_id' => $service->id,
+                'deployment_id' => $deployment?->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

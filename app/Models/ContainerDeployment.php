@@ -75,6 +75,12 @@ class ContainerDeployment extends Model
         return $this->hasMany(ContainerBackup::class);
     }
 
+    public function events()
+    {
+        return $this->hasMany(ContainerDeploymentEvent::class, 'container_deployment_id')
+            ->orderByDesc('recorded_at');
+    }
+
     // Status Helpers
     public function isRunning(): bool
     {
