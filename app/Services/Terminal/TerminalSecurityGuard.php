@@ -26,6 +26,34 @@ class TerminalSecurityGuard
         '/\bdd\b.*of=\/dev/i',
         '/\bpython.*-c.*import\s+os/i',
         '/\bperl.*-e.*exec/i',
+        '/\bmount\b/i',
+        '/\bumount\b/i',
+        '/\bkill(all)?\b/i',
+        '/\bpkill\b/i',
+        '/\bshutdown\b/i',
+        '/\breboot\b/i',
+        '/\binit\s+[0-6]\b/i',
+        '/\bsystemctl\b/i',
+        '/\bservice\b/i',
+        '/\bcrontab\b/i',
+        '/\bat\s+\d/i',
+        '/\bnohup\b/i',
+        '/\bdisown\b/i',
+        '/\bsetsid\b/i',
+        '/\/var\/run\/docker\.sock/i',
+        '/\biptables\b/i',
+        '/\bufw\b/i',
+        '/\bnft\b/i',
+        '/\bnc\b/i',
+        '/\bncat\b/i',
+        '/\bnetcat\b/i',
+        '/\bnmap\b/i',
+        '/\bsocat\b/i',
+        '/\bscp\b/i',
+        '/\bsftp\b/i',
+        '/\bssh\b/i',
+        '/\btelnet\b/i',
+        '/\bftp\b/i',
     ];
 
     private const MAX_COMMAND_LENGTH = 1024;
@@ -33,9 +61,24 @@ class TerminalSecurityGuard
     public function validate(string $command): array
     {
         $sanitized = $this->sanitize($command);
+        if ($sanitized === '') {
+            return [
+                'allowed' => false,
+                'reason' => 'Empty commands are not allowed',
+                'sanitized' => $sanitized,
+            ];
+        }
+
+        if ($this->containsBackgroundExecution($sanitized)) {
+            return [
+                'allowed' => false,
+                'reason' => 'Background execution is not allowed',
+                'sanitized' => $sanitized,
+            ];
+        }
 
         foreach (self::BLOCKED_PATTERNS as $pattern) {
-            if (preg_match($pattern, $command)) {
+            if (preg_match($pattern, $sanitized)) {
                 return [
                     'allowed' => false,
                     'reason' => 'Command contains blocked pattern',
@@ -65,5 +108,11 @@ class TerminalSecurityGuard
         }
 
         return $command;
+    }
+
+    private function containsBackgroundExecution(string $command): bool
+    {
+        // Disallow common background operators to avoid persistent or runaway jobs.
+        return preg_match('/(^|[^&])&($|[^&])/', $command) === 1;
     }
 }
