@@ -200,7 +200,7 @@ class ContainerDeploymentService
                 // Ensure runtime placeholder files also exist inside the live container.
                 // This covers cases where host/template metadata drift prevents host-side
                 // file sync from surfacing in the mounted app path.
-                if ($hostAppPath) {
+                if ($hostAppPath || (($template->slug ?? null) === 'laravel')) {
                     $this->ensureDefaultLandingPageInContainer($ssh, $containerName);
                 }
 
@@ -869,6 +869,12 @@ class ContainerDeploymentService
             }
         }
 
+        // Legacy fallback: ensure runtime templates still mount host app path
+        // even when template volume metadata is missing.
+        if ($hostAppPath && empty($compose['services'][$containerName]['volumes'])) {
+            $compose['services'][$containerName]['volumes'] = ["{$hostAppPath}:/app"];
+        }
+
         // Add sidecar services from template
         if ($template->compose_services) {
             foreach ($template->compose_services as $serviceName => $serviceConfig) {
@@ -944,10 +950,18 @@ class ContainerDeploymentService
     private function resolveHostAppPath($template, string $containerName): ?string
     {
         if (!isset($template->volume_paths) || !is_array($template->volume_paths)) {
+            // Legacy template rows may miss volume_paths; still keep app path
+            // for runtime templates that expect /app content.
+            if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
+                return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+            }
             return null;
         }
 
         if (!array_key_exists('app_data', $template->volume_paths)) {
+            if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
+                return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+            }
             return null;
         }
 
