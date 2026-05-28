@@ -5,13 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Models\Service;
 use App\Models\ContainerMetric;
 use App\Models\ContainerDomain;
+use App\Http\Controllers\Controller;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\NginxProxyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class ContainerController
+class ContainerController extends Controller
 {
     /**
      * Restart a running container
@@ -212,7 +213,7 @@ class ContainerController
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 
@@ -238,7 +239,7 @@ class ContainerController
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 

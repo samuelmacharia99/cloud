@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Service;
 use App\Models\ContainerBackup;
+use App\Http\Controllers\Controller;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerBackupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
-class ContainerApiController
+class ContainerApiController extends Controller
 {
     /**
      * Get container deployment details
@@ -47,7 +48,7 @@ class ContainerApiController
 
         try {
             $deploymentService = new ContainerDeploymentService();
-            $deploymentService->resume($service);
+            $deploymentService->unsuspend($service);
 
             return response()->json(['message' => 'Container started']);
         } catch (\Exception $e) {
@@ -123,12 +124,12 @@ class ContainerApiController
             $metrics = $deployment->metrics()->latest()->first();
 
             return response()->json([
-                'cpu_percent' => $metrics?->cpu_percent ?? 0,
-                'memory_percent' => $metrics?->memory_percent ?? 0,
-                'memory_mb' => $metrics?->memory_mb ?? 0,
-                'network_in_bytes' => $metrics?->network_in_bytes ?? 0,
-                'network_out_bytes' => $metrics?->network_out_bytes ?? 0,
-                'sampled_at' => $metrics?->created_at?->toIso8601String(),
+                'cpu_percent' => $metrics?->cpu_percentage ?? 0,
+                'memory_percent' => $metrics?->memory_percentage ?? 0,
+                'memory_mb' => $metrics?->memory_used_mb ?? 0,
+                'network_in_bytes' => $metrics?->net_io_rx_bytes ?? 0,
+                'network_out_bytes' => $metrics?->net_io_tx_bytes ?? 0,
+                'sampled_at' => $metrics?->recorded_at?->toIso8601String(),
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);

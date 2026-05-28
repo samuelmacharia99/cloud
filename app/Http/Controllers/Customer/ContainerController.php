@@ -492,7 +492,7 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 
@@ -520,7 +520,7 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            if ($domain->deployment_id !== $service->containerDeployment?->id) {
+            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
                 return back()->withErrors(['error' => 'Domain does not belong to this service']);
             }
 

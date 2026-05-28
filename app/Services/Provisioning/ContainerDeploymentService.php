@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
 
@@ -44,7 +45,7 @@ class ContainerDeploymentService
 
             // Select node if not already set
             if (! $service->node_id) {
-                $node = $this->selectNode();
+                $node = $this->selectNode($template);
                 $service->update(['node_id' => $node->id]);
             } else {
                 $node = $service->node;
@@ -57,9 +58,6 @@ class ContainerDeploymentService
             // Generate container name: user-{user_id}-service-{service_id}-{template_type}
             $templateSlug = strtolower(str_replace(' ', '-', $template->slug));
             $containerName = "user-{$service->user_id}-service-{$service->id}-{$templateSlug}";
-
-            // Assign port
-            $port = $this->assignPort($node);
 
             // Load selected database if any
             $databaseTemplate = null;
@@ -74,33 +72,53 @@ class ContainerDeploymentService
             $envValues = $service->service_meta['env_values'] ?? [];
             $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
 
-            // Check if deployment already exists for this service and reuse it
-            $existingDeployment = ContainerDeployment::where('service_id', $service->id)->first();
+            // Reserve port and persist deployment with retry in case of concurrent allocation collisions.
+            $deployment = null;
+            $port = null;
+            $maxAttempts = 5;
+            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+                try {
+                    $port = $this->assignPort($node);
 
-            if ($existingDeployment) {
-                // Update existing deployment (in case of retry after failure)
-                $deployment = $existingDeployment;
-                $deployment->update([
-                    'node_id' => $node->id,
-                    'container_name' => $containerName,
-                    'status' => 'deploying',
-                    'docker_compose_content' => '',
-                    'assigned_port' => $port,
-                    'env_values' => $envVars,
-                    'selected_version' => $selectedVersion,
-                ]);
-            } else {
-                // Create new deployment record
-                $deployment = ContainerDeployment::create([
-                    'service_id' => $service->id,
-                    'node_id' => $node->id,
-                    'container_name' => $containerName,
-                    'status' => 'deploying',
-                    'docker_compose_content' => '', // Will be set after rendering
-                    'assigned_port' => $port,
-                    'env_values' => $envVars,
-                    'selected_version' => $selectedVersion,
-                ]);
+                    // Rebuild env vars with chosen port for every retry
+                    $envVars = $this->buildEnvironmentVariables($template, $envValues, $service, $databaseTemplate, $port);
+
+                    $existingDeployment = ContainerDeployment::where('service_id', $service->id)->first();
+                    if ($existingDeployment) {
+                        $deployment = $existingDeployment;
+                        $deployment->update([
+                            'node_id' => $node->id,
+                            'container_name' => $containerName,
+                            'status' => 'deploying',
+                            'docker_compose_content' => '',
+                            'assigned_port' => $port,
+                            'env_values' => $envVars,
+                            'selected_version' => $selectedVersion,
+                        ]);
+                    } else {
+                        $deployment = ContainerDeployment::create([
+                            'service_id' => $service->id,
+                            'node_id' => $node->id,
+                            'container_name' => $containerName,
+                            'status' => 'deploying',
+                            'docker_compose_content' => '',
+                            'assigned_port' => $port,
+                            'env_values' => $envVars,
+                            'selected_version' => $selectedVersion,
+                        ]);
+                    }
+
+                    break;
+                } catch (QueryException $e) {
+                    // Retry only duplicate-key collisions (e.g., assigned_port uniqueness).
+                    if (($e->getCode() !== '23000' && $e->getCode() !== '23505') || $attempt === $maxAttempts) {
+                        throw $e;
+                    }
+                }
+            }
+
+            if (! $deployment || ! $port) {
+                throw new \RuntimeException('Failed to reserve a unique deployment port after retries');
             }
 
             // Render docker-compose.yml with deployment
@@ -127,12 +145,8 @@ class ContainerDeploymentService
                     self::DEPLOY_TIMEOUT
                 );
 
-                // Note: Skip blocking health check. Containers may take 10-30+ seconds to fully start.
-                // Background cron job (cron:check-container-health) will verify health periodically.
-                \Log::info("Container deployed successfully, health verification via background job", [
-                    'service_id' => $service->id,
-                    'container_name' => $containerName,
-                ]);
+                // Require a healthy running state before marking service active.
+                $this->waitForContainerHealth($ssh, $containerName);
 
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
@@ -470,15 +484,37 @@ class ContainerDeploymentService
     /**
      * Select the least-loaded container host node
      */
-    private function selectNode(): Node
+    private function selectNode($template = null): Node
     {
-        $node = Node::where('type', 'container_host')
+        $nodes = Node::where('type', 'container_host')
             ->where('is_active', true)
             ->orderBy('container_count')
-            ->first();
+            ->get();
+
+        if ($nodes->isEmpty()) {
+            throw new \DomainException('No available container host nodes');
+        }
+
+        if (! $template) {
+            return $nodes->first();
+        }
+
+        $requiredCpuCores = (float) ($template->required_cpu_cores ?? 0);
+        $requiredRamGb = (float) (($template->required_ram_mb ?? 0) / 1024);
+        $requiredStorageGb = (float) ($template->required_storage_gb ?? 0);
+
+        $node = $nodes->first(function (Node $node) use ($requiredCpuCores, $requiredRamGb, $requiredStorageGb) {
+            $availableCpu = (float) $node->getAvailableCpuCores();
+            $availableRam = (float) $node->getAvailableRamGb();
+            $availableStorage = (float) $node->getAvailableStorageGb();
+
+            return $availableCpu >= $requiredCpuCores
+                && $availableRam >= $requiredRamGb
+                && $availableStorage >= $requiredStorageGb;
+        });
 
         if (! $node) {
-            throw new \DomainException('No available container host nodes');
+            throw new \DomainException('No container host has enough available resources for this template');
         }
 
         return $node;

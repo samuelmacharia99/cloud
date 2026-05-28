@@ -28,11 +28,15 @@ class ContainerBackupService
         }
 
         $node = $deployment->node;
+        $backupName = 'backup-' . $service->id . '-' . now()->format('YmdHis');
+        $backupPath = self::BACKUP_BASE_PATH . '/' . $backupName . '.tar.gz';
+
         $backup = ContainerBackup::create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $service->id,
             'node_id' => $node->id,
-            'backup_name' => 'backup-' . $service->id . '-' . now()->format('YmdHis'),
+            'backup_name' => $backupName,
+            'backup_path' => $backupPath,
             'status' => 'pending',
             'type' => $type,
             'started_at' => now(),
@@ -44,8 +48,6 @@ class ContainerBackupService
             // Create backup directory if needed
             $ssh->exec("mkdir -p " . self::BACKUP_BASE_PATH);
 
-            // Build backup path
-            $backupPath = self::BACKUP_BASE_PATH . '/' . $backup->backup_name . '.tar.gz';
             $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
 
             // Update backup status to running
