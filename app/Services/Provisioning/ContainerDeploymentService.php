@@ -197,6 +197,13 @@ class ContainerDeploymentService
                     self::DEPLOY_TIMEOUT
                 );
 
+                // Ensure runtime placeholder files also exist inside the live container.
+                // This covers cases where host/template metadata drift prevents host-side
+                // file sync from surfacing in the mounted app path.
+                if ($hostAppPath) {
+                    $this->ensureDefaultLandingPageInContainer($ssh, $containerName);
+                }
+
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
                 $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
@@ -1057,6 +1064,43 @@ HTML;
         } catch (\Exception $e) {
             \Log::warning('Failed to write default placeholder page', [
                 'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function ensureDefaultLandingPageInContainer(SSHService $ssh, string $containerName): void
+    {
+        $placeholderHtml = <<<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Talksasa Cloud</title>
+</head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#0f172a;color:#e2e8f0;text-align:center;padding:24px;">
+  <main style="max-width:680px;padding:32px;border-radius:16px;background:rgba(15,23,42,0.85);border:1px solid rgba(148,163,184,0.35);">
+    <h1 style="margin:0 0 10px;font-size:2rem;">Welcome to Talksasa Cloud</h1>
+    <p style="margin:0;color:#cbd5e1;font-size:1.05rem;">Your digital infrastructure partner.</p>
+  </main>
+</body>
+</html>
+HTML;
+
+        $encodedHtml = base64_encode($placeholderHtml);
+        $containerArg = escapeshellarg($containerName);
+        $encodedArg = escapeshellarg($encodedHtml);
+        $script = "set -e; "
+            . "mkdir -p /app /app/public; "
+            . "if [ ! -f /app/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/index.html; fi; "
+            . "if [ ! -f /app/public/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/public/index.html; fi";
+
+        try {
+            $ssh->exec("docker exec -u 0 {$containerArg} sh -lc " . escapeshellarg($script), 20);
+        } catch (\Exception $e) {
+            \Log::warning('Failed to write default placeholder page inside container', [
+                'container_name' => $containerName,
                 'error' => $e->getMessage(),
             ]);
         }

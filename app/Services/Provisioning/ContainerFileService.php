@@ -172,6 +172,18 @@ class ContainerFileService
     {
         $basePath = self::BASE . $deployment->container_name;
 
+        // Prefer app mount directory if it exists on disk, even for legacy rows
+        // where template linkage may be missing/inconsistent.
+        $appPath = $basePath . self::APP_SUBDIR;
+        try {
+            $exists = trim($this->ssh->exec("[ -d " . escapeshellarg($appPath) . " ] && echo yes || echo no"));
+            if ($exists === 'yes') {
+                return $appPath;
+            }
+        } catch (\Throwable $e) {
+            // Ignore probe failures and fall back to template-based resolution.
+        }
+
         $template = $deployment->service?->product?->containerTemplate;
         $volumePaths = $template?->volume_paths;
         if (is_array($volumePaths) && array_key_exists('app_data', $volumePaths)) {
