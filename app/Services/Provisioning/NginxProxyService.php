@@ -28,34 +28,36 @@ class NginxProxyService
             // Connect to node via SSH
             $ssh = SSHService::forNode($node);
 
-            // Create sites-enabled directory if needed
-            $ssh->exec("mkdir -p /etc/nginx/sites-enabled");
+            if (! $this->isNginxInstalled($ssh)) {
+                throw new Exception(
+                    "Nginx is not installed on node {$node->hostname} ({$node->ip_address}). " .
+                    "Install nginx (and optionally grant sudo for nginx commands) before binding domains."
+                );
+            }
+
+            $configDir = $this->resolveNginxConfigDir($ssh);
+            $ssh->exec("mkdir -p " . escapeshellarg($configDir));
 
             // Upload config — path is built from domain name, must be escaped
-            $safeConfPath = escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf");
-            $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
+            $safeConfPath = escapeshellarg("{$configDir}/{$domain->domain}.conf");
+            $configPath = "{$configDir}/{$domain->domain}.conf";
             $ssh->upload($config, $configPath);
 
-            // Test nginx configuration (if nginx is installed)
             try {
-                $testResult = $ssh->exec("which nginx > /dev/null && nginx -t 2>&1");
-                if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
-                    // Config test failed, remove the bad config
-                    $ssh->exec("rm -f {$safeConfPath}");
-                    throw new Exception("Nginx configuration test failed: {$testResult}");
-                }
-
-                // Reload nginx
-                $ssh->exec("nginx -s reload");
+                $this->testAndReloadNginx($ssh, $node);
             } catch (Exception $nginxError) {
-                // If nginx is not installed, log warning but don't fail
-                if (strpos($nginxError->getMessage(), 'command not found') !== false ||
-                    strpos($nginxError->getMessage(), 'nginx') === false) {
-                    \Log::warning("Nginx not installed on node {$node->id}, skipping configuration test. Domain {$domain->domain} added but nginx reverse proxy unavailable.");
-                    // Continue anyway - domain is added, just without nginx proxy
-                } else {
-                    throw $nginxError;
+                // Config/test/reload failed; remove the config we just wrote.
+                try {
+                    $ssh->exec("rm -f {$safeConfPath}");
+                } catch (Exception $cleanupError) {
+                    \Log::warning("Failed to cleanup nginx config after bind failure", [
+                        'node_id' => $node->id,
+                        'domain' => $domain->domain,
+                        'config_path' => $configPath,
+                        'error' => $cleanupError->getMessage(),
+                    ]);
                 }
+                throw new Exception("Failed to validate/reload nginx configuration: {$nginxError->getMessage()}");
             }
 
             // Update domain status
@@ -94,15 +96,18 @@ class NginxProxyService
             if ($domain->nginx_config_path) {
                 @$ssh->exec("rm -f " . escapeshellarg($domain->nginx_config_path));
             } else {
-                @$ssh->exec("rm -f " . escapeshellarg("/etc/nginx/sites-enabled/{$domain->domain}.conf"));
+                $fallbackDir = $this->resolveNginxConfigDir($ssh);
+                @$ssh->exec("rm -f " . escapeshellarg("{$fallbackDir}/{$domain->domain}.conf"));
             }
 
-            // Reload nginx (if installed)
-            try {
-                $ssh->exec("which nginx > /dev/null && nginx -s reload");
-            } catch (Exception $e) {
-                \Log::warning("Failed to reload nginx on node {$node->id}: " . $e->getMessage());
-                // Don't fail the unbind operation if nginx is not available
+            // Reload nginx if available; unbind should still succeed on missing nginx.
+            if ($this->isNginxInstalled($ssh)) {
+                try {
+                    $this->reloadNginx($ssh, $node);
+                } catch (Exception $e) {
+                    \Log::warning("Failed to reload nginx on node {$node->id}: " . $e->getMessage());
+                    // Don't fail the unbind operation if reload fails
+                }
             }
 
             $ssh->disconnect();
@@ -165,21 +170,14 @@ class NginxProxyService
 
             // Regenerate config with SSL blocks
             $config = $this->generateConfig($domain, true);
-            $configPath = "/etc/nginx/sites-enabled/{$domain->domain}.conf";
+            $configPath = $this->resolveNginxConfigDir($ssh) . "/{$domain->domain}.conf";
             $ssh->upload($config, $configPath); // configPath is used as upload destination (not in exec)
 
-            // Test and reload (if nginx is installed)
-            try {
-                $testResult = $ssh->exec("which nginx > /dev/null && nginx -t 2>&1");
-                if (strpos($testResult, 'successful') === false && strpos($testResult, 'ok') === false) {
-                    throw new Exception("Nginx SSL config test failed: {$testResult}");
-                }
-
-                $ssh->exec("nginx -s reload");
-            } catch (Exception $nginxError) {
-                \Log::warning("Nginx operations failed for SSL on node {$node->id}: " . $nginxError->getMessage());
-                // Continue - SSL is configured even if nginx reload fails
+            if (! $this->isNginxInstalled($ssh)) {
+                throw new Exception('Nginx is required to enable SSL via nginx reverse proxy, but it is not installed.');
             }
+
+            $this->testAndReloadNginx($ssh, $node);
 
             $ssh->disconnect();
         } catch (Exception $e) {
@@ -303,6 +301,66 @@ EOL;
         } catch (Exception $e) {
             \Log::warning("Failed to check DNS for {$domain}: " . $e->getMessage());
             return false;
+        }
+    }
+
+    private function isNginxInstalled(SSHService $ssh): bool
+    {
+        $result = trim($ssh->exec("if command -v nginx >/dev/null 2>&1; then echo yes; else echo no; fi"));
+        return $result === 'yes';
+    }
+
+    private function resolveNginxConfigDir(SSHService $ssh): string
+    {
+        $result = trim($ssh->exec(
+            "if [ -d /etc/nginx/sites-enabled ]; then echo /etc/nginx/sites-enabled; " .
+            "elif [ -d /etc/nginx/conf.d ]; then echo /etc/nginx/conf.d; " .
+            "else echo /etc/nginx/sites-enabled; fi"
+        ));
+
+        return $result !== '' ? $result : '/etc/nginx/sites-enabled';
+    }
+
+    private function testAndReloadNginx(SSHService $ssh, Node $node): void
+    {
+        $this->testNginxConfig($ssh, $node);
+        $this->reloadNginx($ssh, $node);
+    }
+
+    private function testNginxConfig(SSHService $ssh, Node $node): void
+    {
+        try {
+            $ssh->exec("nginx -t 2>&1");
+            return;
+        } catch (Exception $directError) {
+            // Fall back to sudo if direct command is not permitted.
+            try {
+                $ssh->exec("sudo -n nginx -t 2>&1");
+                return;
+            } catch (Exception $sudoError) {
+                throw new Exception(
+                    "nginx -t failed on node {$node->id}. " .
+                    "Direct error: {$directError->getMessage()} | Sudo error: {$sudoError->getMessage()}"
+                );
+            }
+        }
+    }
+
+    private function reloadNginx(SSHService $ssh, Node $node): void
+    {
+        try {
+            $ssh->exec("nginx -s reload");
+            return;
+        } catch (Exception $directError) {
+            try {
+                $ssh->exec("sudo -n nginx -s reload");
+                return;
+            } catch (Exception $sudoError) {
+                throw new Exception(
+                    "nginx reload failed on node {$node->id}. " .
+                    "Direct error: {$directError->getMessage()} | Sudo error: {$sudoError->getMessage()}"
+                );
+            }
         }
     }
 }
