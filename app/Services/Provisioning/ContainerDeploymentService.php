@@ -961,6 +961,7 @@ class ContainerDeploymentService
         // If no source configured, keep folder available for uploads/file manager usage.
         if ($repoUrl === '') {
             $ssh->exec("sh -lc " . escapeshellarg("mkdir -p " . escapeshellarg($hostAppPath) . " && touch " . escapeshellarg($hostAppPath . '/.keep')), 20);
+            $this->ensureDefaultLandingPage($ssh, $hostAppPath);
             return;
         }
 
@@ -988,7 +989,76 @@ class ContainerDeploymentService
                 'branch' => $branch,
                 'error' => $e->getMessage(),
             ]);
+            $this->ensureDefaultLandingPage($ssh, $hostAppPath);
             // Continue deployment; user can still upload files manually.
+        }
+    }
+
+    private function ensureDefaultLandingPage(SSHService $ssh, string $hostAppPath): void
+    {
+        $placeholderHtml = <<<'HTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Talksasa Cloud</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      text-align: center;
+      padding: 24px;
+    }
+    .card {
+      max-width: 680px;
+      padding: 32px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+    }
+    h1 { margin: 0 0 10px; font-size: 2rem; }
+    p { margin: 0; color: #cbd5e1; font-size: 1.05rem; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Welcome to Talksasa Cloud</h1>
+    <p>Your digital infrastructure partner.</p>
+  </main>
+</body>
+</html>
+HTML;
+
+        $encodedHtml = base64_encode($placeholderHtml);
+        $pathArg = escapeshellarg($hostAppPath);
+        $indexArg = escapeshellarg($hostAppPath . '/index.html');
+        $publicDirArg = escapeshellarg($hostAppPath . '/public');
+        $publicIndexArg = escapeshellarg($hostAppPath . '/public/index.html');
+
+        $script = "set -e; "
+            . "mkdir -p {$pathArg}; "
+            . "if [ ! -f {$indexArg} ]; then "
+            . "printf %s " . escapeshellarg($encodedHtml) . " | base64 -d > {$indexArg}; "
+            . "fi; "
+            . "mkdir -p {$publicDirArg}; "
+            . "if [ ! -f {$publicIndexArg} ]; then "
+            . "printf %s " . escapeshellarg($encodedHtml) . " | base64 -d > {$publicIndexArg}; "
+            . "fi";
+
+        try {
+            $ssh->exec("sh -lc " . escapeshellarg($script), 20);
+        } catch (\Exception $e) {
+            \Log::warning('Failed to write default placeholder page', [
+                'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
