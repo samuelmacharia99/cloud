@@ -14,6 +14,14 @@
     <form method="POST" action="{{ route('register') }}" class="space-y-5">
         @csrf
 
+        <input type="hidden" name="registration_token" value="{{ $registrationToken ?? '' }}">
+
+        {{-- Honeypot: leave empty; bots often fill hidden fields --}}
+        <div class="absolute opacity-0 pointer-events-none h-0 overflow-hidden" aria-hidden="true" tabindex="-1">
+            <label for="contact_website">Website</label>
+            <input type="text" id="contact_website" name="{{ config('registration.honeypot_field', 'contact_website') }}" value="" autocomplete="off" tabindex="-1">
+        </div>
+
         <!-- Full Name -->
         <div class="space-y-2.5">
             <label for="name" class="block text-sm font-semibold text-slate-900 dark:text-white">

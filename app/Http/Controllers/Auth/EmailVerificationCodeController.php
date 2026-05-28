@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Mail\VerificationCodeMail;
-use App\Models\User;
 use App\Models\EmailVerificationCode;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
@@ -19,6 +19,7 @@ class EmailVerificationCodeController extends Controller
     public function show(Request $request): View
     {
         $email = $request->query('email') ?? session('email');
+
         return view('auth.verify-code', ['email' => $email]);
     }
 
@@ -35,7 +36,7 @@ class EmailVerificationCodeController extends Controller
         // Find user by email
         $user = User::where('email', $validated['email'])->first();
 
-        if (!$user) {
+        if (! $user) {
             return back()->withErrors(['email' => 'User not found.']);
         }
 
@@ -44,23 +45,26 @@ class EmailVerificationCodeController extends Controller
             ->where('code', $validated['code'])
             ->first();
 
-        if (!$verificationCode) {
+        if (! $verificationCode) {
             return back()->withErrors(['code' => 'Invalid verification code.']);
         }
 
         if ($verificationCode->isExpired()) {
             $verificationCode->delete();
+
             return back()->withErrors(['code' => 'Verification code has expired. Please request a new one.']);
         }
 
-        // Mark email as verified and activate account
-        $user->update(['email_verified_at' => now()]);
+        $user->update([
+            'email_verified_at' => now(),
+            'status' => 'active',
+        ]);
         $verificationCode->delete();
 
         // Log the user in
         Auth::login($user);
 
-        return redirect()->route('dashboard')->with('success', 'Email verified! Welcome to ' . config('app.name'));
+        return redirect()->route('dashboard')->with('success', 'Email verified! Welcome to '.config('app.name'));
     }
 
     /**
@@ -74,7 +78,7 @@ class EmailVerificationCodeController extends Controller
 
         $user = User::where('email', $validated['email'])->first();
 
-        if (!$user) {
+        if (! $user) {
             return back()->withErrors(['email' => 'User not found.']);
         }
 

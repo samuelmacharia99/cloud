@@ -2,11 +2,24 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
+use App\Models\DirectAdminPackage;
+use App\Models\Domain;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Node;
+use App\Models\Payment;
+use App\Models\Product;
+use App\Models\Service;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\Provisioning\DirectAdminService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\Controller;
+use Illuminate\Support\FacadesDB;
+use Illuminate\Support\Str;
 
 class CustomerController extends Controller
 {
@@ -25,7 +38,11 @@ class CustomerController extends Controller
 
         // Status filter
         if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
+            if ($request->status === 'unverified') {
+                $query->whereNull('email_verified_at');
+            } else {
+                $query->where('status', $request->status);
+            }
         }
 
         // Account type filter
@@ -91,7 +108,7 @@ class CustomerController extends Controller
             'domains'
         );
 
-        $products = \App\Models\Product::with('directAdminPackage.node')
+        $products = Product::with('directAdminPackage.node')
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
@@ -124,7 +141,7 @@ class CustomerController extends Controller
         })->values()->toArray();
 
         // Get active DirectAdmin nodes for server selection in Add Service modal
-        $daNodes = \App\Models\Node::where('type', 'directadmin')
+        $daNodes = Node::where('type', 'directadmin')
             ->where('is_active', true)
             ->where('status', 'online')
             ->orderBy('name')
@@ -150,7 +167,7 @@ class CustomerController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $customer->id,
+            'email' => 'required|email|unique:users,email,'.$customer->id,
             'password' => 'nullable|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
@@ -206,7 +223,7 @@ class CustomerController extends Controller
 
     public function exitImpersonation()
     {
-        if (!session('impersonating')) {
+        if (! session('impersonating')) {
             return redirect()->route('admin.customers.index');
         }
 
@@ -214,7 +231,7 @@ class CustomerController extends Controller
 
         // Verify that the stored ID belongs to an actual admin before restoring
         $admin = User::find($adminId);
-        if (!$admin || !$admin->is_admin) {
+        if (! $admin || ! $admin->is_admin) {
             // Potentially tampered session — clear everything and log out safely
             session()->forget(['impersonating', 'impersonating_user_id']);
             auth()->logout();
@@ -272,7 +289,7 @@ class CustomerController extends Controller
                 if (strpos($domainName, '.') !== false) {
                     $parts = explode('.', $domainName, 2);
                     $name = $parts[0];
-                    $extension = '.' . $parts[1];
+                    $extension = '.'.$parts[1];
                 } else {
                     $name = $domainName;
                     $extension = '.com';
@@ -293,7 +310,7 @@ class CustomerController extends Controller
                     'expires_at' => $validated['expires_at'],
                 ]);
 
-                $domain = \App\Models\Domain::create([
+                $domain = Domain::create([
                     'user_id' => $customer->id,
                     'name' => $name,
                     'extension' => $extension,
@@ -313,16 +330,16 @@ class CustomerController extends Controller
                 ]);
 
                 // Create invoice if next_due_date is provided (10 days prior)
-                if (!empty($validated['next_due_date'])) {
+                if (! empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
-                    $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
-                    $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
+                    $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+                    $taxRate = (float) Setting::getValue('tax_rate', 0);
 
                     $subtotal = $price;
                     $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                     $total = $subtotal + $tax;
 
-                    $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
+                    $invoiceDueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
 
                     Log::info('addDomain() creating invoice', [
                         'customer_id' => $customer->id,
@@ -334,7 +351,7 @@ class CustomerController extends Controller
                         'total' => $total,
                     ]);
 
-                    $invoice = \App\Models\Invoice::create([
+                    $invoice = Invoice::create([
                         'user_id' => $customer->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
@@ -349,7 +366,7 @@ class CustomerController extends Controller
                         'invoice_number' => $invoice->invoice_number,
                     ]);
 
-                    \App\Models\InvoiceItem::create([
+                    InvoiceItem::create([
                         'invoice_id' => $invoice->id,
                         'description' => "Domain renewal: {$domainName}",
                         'quantity' => 1,
@@ -386,7 +403,7 @@ class CustomerController extends Controller
                 'error_trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->with('error', 'Failed to add domain: ' . $e->getMessage());
+            return back()->with('error', 'Failed to add domain: '.$e->getMessage());
         }
     }
 
@@ -413,7 +430,7 @@ class CustomerController extends Controller
             abort(404);
         }
 
-        $product = \App\Models\Product::findOrFail($request->input('product_id'));
+        $product = Product::findOrFail($request->input('product_id'));
         $isSharedHosting = $product->type === 'shared_hosting';
 
         $rules = [
@@ -468,7 +485,7 @@ class CustomerController extends Controller
             // Pre-load package for shared hosting to avoid N+1 in transaction
             $selectedPackage = null;
             if ($isSharedHosting) {
-                $selectedPackage = \App\Models\DirectAdminPackage::where('node_id', $validated['node_id'])
+                $selectedPackage = DirectAdminPackage::where('node_id', $validated['node_id'])
                     ->where('package_key', $validated['da_package_key'])
                     ->with('node')
                     ->firstOrFail();
@@ -492,13 +509,13 @@ class CustomerController extends Controller
                         'node_name' => $package->node->name,
                     ];
                 } else {
-                    if (!empty($validated['username'])) {
+                    if (! empty($validated['username'])) {
                         $serviceMeta['username'] = $validated['username'];
                     }
-                    if (!empty($validated['password'])) {
+                    if (! empty($validated['password'])) {
                         $serviceMeta['password'] = $validated['password'];
                     }
-                    if (!empty($validated['ip_address'])) {
+                    if (! empty($validated['ip_address'])) {
                         $serviceMeta['ip_address'] = $validated['ip_address'];
                     }
                 }
@@ -514,7 +531,7 @@ class CustomerController extends Controller
                     'meta_keys' => array_keys($serviceMeta),
                 ]);
 
-                $service = \App\Models\Service::create([
+                $service = Service::create([
                     'user_id' => $customer->id,
                     'product_id' => $validated['product_id'],
                     'node_id' => $nodeId,
@@ -528,7 +545,7 @@ class CustomerController extends Controller
                         ? 'directadmin'
                         : $product->provisioning_driver_key,
                     'external_reference' => $isSharedHosting ? $validated['direct_admin_username'] : null,
-                    'service_meta' => !empty($serviceMeta) ? $serviceMeta : null,
+                    'service_meta' => ! empty($serviceMeta) ? $serviceMeta : null,
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
@@ -539,7 +556,7 @@ class CustomerController extends Controller
                     'product_name' => $product->name,
                 ]);
 
-                if (!empty($validated['generate_invoice'])) {
+                if (! empty($validated['generate_invoice'])) {
                     $invoice = $this->createServiceInvoice($customer, $product, $service, $validated);
                     $service->update(['invoice_id' => $invoice->id]);
 
@@ -561,9 +578,9 @@ class CustomerController extends Controller
                 $provisionResult = $this->provisionDirectAdminAccount($createdService, $validated);
 
                 if ($provisionResult['success']) {
-                    $message .= ' DirectAdmin account provisioned on ' . $selectedPackage->node->name . '.';
+                    $message .= ' DirectAdmin account provisioned on '.$selectedPackage->node->name.'.';
                 } else {
-                    $message .= ' DirectAdmin provisioning skipped: ' . $provisionResult['message'];
+                    $message .= ' DirectAdmin provisioning skipped: '.$provisionResult['message'];
                 }
             }
 
@@ -584,7 +601,7 @@ class CustomerController extends Controller
             ]);
 
             return back()
-                ->with('error', 'Failed to add service: ' . $e->getMessage())
+                ->with('error', 'Failed to add service: '.$e->getMessage())
                 ->withInput();
         }
     }
@@ -592,19 +609,19 @@ class CustomerController extends Controller
     /**
      * Build the invoice + line item for a manually-added service.
      */
-    private function createServiceInvoice(User $customer, \App\Models\Product $product, \App\Models\Service $service, array $validated): \App\Models\Invoice
+    private function createServiceInvoice(User $customer, Product $product, Service $service, array $validated): Invoice
     {
         $price = $this->getServicePrice($product, $validated['billing_cycle']);
-        $taxEnabled = \App\Models\Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
+        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
 
         $subtotal = $price;
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
-        $invoiceDueDate = \Carbon\Carbon::parse($validated['next_due_date'])->subDays(10);
+        $invoiceDueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
 
-        $invoice = \App\Models\Invoice::create([
+        $invoice = Invoice::create([
             'user_id' => $customer->id,
             'invoice_number' => $this->generateInvoiceNumber(),
             'status' => 'unpaid',
@@ -614,7 +631,7 @@ class CustomerController extends Controller
             'total' => $total,
         ]);
 
-        \App\Models\InvoiceItem::create([
+        InvoiceItem::create([
             'invoice_id' => $invoice->id,
             'service_id' => $service->id,
             'product_id' => $product->id,
@@ -631,19 +648,19 @@ class CustomerController extends Controller
      * Best-effort provisioning of a DirectAdmin account for a manually added
      * shared-hosting service. Returns a result array; never throws.
      */
-    private function provisionDirectAdminAccount(\App\Models\Service $service, array $validated): array
+    private function provisionDirectAdminAccount(Service $service, array $validated): array
     {
         try {
             $package = $service->product->directAdminPackage;
             $node = $package?->node;
 
-            if (!$node) {
+            if (! $node) {
                 return ['success' => false, 'message' => 'no DirectAdmin node attached to package'];
             }
 
-            $da = new \App\Services\Provisioning\DirectAdminService($node);
+            $da = new DirectAdminService($node);
 
-            if (!$da->isConfigured()) {
+            if (! $da->isConfigured()) {
                 return ['success' => false, 'message' => 'DirectAdmin node is not configured (missing API URL or password)'];
             }
 
@@ -714,13 +731,13 @@ class CustomerController extends Controller
      */
     public function generateUsername(Request $request, User $customer)
     {
-        $base = \Illuminate\Support\Str::of($customer->name ?: $customer->email)
+        $base = Str::of($customer->name ?: $customer->email)
             ->lower()
             ->replaceMatches('/[^a-z0-9]+/', '')
             ->__toString();
 
-        if ($base === '' || !ctype_alpha($base[0])) {
-            $base = 'u' . $base;
+        if ($base === '' || ! ctype_alpha($base[0])) {
+            $base = 'u'.$base;
         }
 
         // DA allows up to 16 chars; reserve 3 for a uniqueness suffix.
@@ -729,11 +746,11 @@ class CustomerController extends Controller
         // Find a non-colliding username.
         $candidate = $base;
         $suffix = 0;
-        while (\App\Models\Service::where('external_reference', $candidate)->exists()) {
+        while (Service::where('external_reference', $candidate)->exists()) {
             $suffix++;
-            $candidate = $base . $suffix;
+            $candidate = $base.$suffix;
             if (strlen($candidate) > 16) {
-                $candidate = substr($base, 0, 16 - strlen((string) $suffix)) . $suffix;
+                $candidate = substr($base, 0, 16 - strlen((string) $suffix)).$suffix;
             }
         }
 
@@ -743,7 +760,7 @@ class CustomerController extends Controller
     /**
      * Get product price based on billing cycle
      */
-    private function getServicePrice(\App\Models\Product $product, string $billingCycle): float
+    private function getServicePrice(Product $product, string $billingCycle): float
     {
         return match ($billingCycle) {
             'monthly' => (float) $product->monthly_price,
@@ -798,7 +815,7 @@ class CustomerController extends Controller
         $targetReseller = User::findOrFail($validated['target_reseller_id']);
 
         // Ensure target is a reseller
-        if (!$targetReseller->is_reseller) {
+        if (! $targetReseller->is_reseller) {
             return back()->with('error', 'Target user is not a reseller.');
         }
 
@@ -810,26 +827,26 @@ class CustomerController extends Controller
         try {
             DB::transaction(function () use ($customer, $targetReseller) {
                 // Transfer all services
-                \App\Models\Service::where('user_id', $customer->id)
+                Service::where('user_id', $customer->id)
                     ->update(['user_id' => $targetReseller->id]);
 
                 // Transfer all domains
-                \App\Models\Domain::where('user_id', $customer->id)
+                Domain::where('user_id', $customer->id)
                     ->update(['user_id' => $targetReseller->id]);
 
                 // Transfer all invoices
-                \App\Models\Invoice::where('user_id', $customer->id)
+                Invoice::where('user_id', $customer->id)
                     ->update(['user_id' => $targetReseller->id]);
 
                 // Transfer all payments
-                \App\Models\Payment::where('user_id', $customer->id)
+                Payment::where('user_id', $customer->id)
                     ->update(['user_id' => $targetReseller->id]);
             });
 
             return redirect()->route('admin.customers.index')
                 ->with('success', "All services, domains, and invoices for '{$customer->name}' have been transferred to '{$targetReseller->name}' successfully.");
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to transfer customer: ' . $e->getMessage());
+            return back()->with('error', 'Failed to transfer customer: '.$e->getMessage());
         }
     }
 
@@ -851,7 +868,7 @@ class CustomerController extends Controller
         ]);
 
         try {
-            $invoice = \Illuminate\Support\FacadesDB::transaction(function () use ($validated, $customer) {
+            $invoice = FacadesDB::transaction(function () use ($validated, $customer) {
                 // Calculate totals
                 $subtotal = 0;
                 foreach ($validated['items'] as $item) {
@@ -863,13 +880,13 @@ class CustomerController extends Controller
                 $total = $subtotal + $taxAmount;
 
                 // Generate invoice number
-                $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+                $prefix = Setting::getValue('invoice_prefix', 'INV');
                 $year = now()->format('Y');
-                $count = \App\Models\Invoice::whereYear('created_at', $year)->count() + 1;
-                $invoiceNumber = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+                $count = Invoice::whereYear('created_at', $year)->count() + 1;
+                $invoiceNumber = "{$prefix}-{$year}-".str_pad($count, 5, '0', STR_PAD_LEFT);
 
                 // Create invoice
-                $invoice = \App\Models\Invoice::create([
+                $invoice = Invoice::create([
                     'user_id' => $customer->id,
                     'invoice_number' => $invoiceNumber,
                     'status' => $validated['status'],
@@ -883,7 +900,7 @@ class CustomerController extends Controller
                 // Create line items (custom items with no product_id or service_id)
                 foreach ($validated['items'] as $item) {
                     $itemAmount = floatval($item['quantity']) * floatval($item['unit_price']);
-                    \App\Models\InvoiceItem::create([
+                    InvoiceItem::create([
                         'invoice_id' => $invoice->id,
                         'description' => $item['description'],
                         'quantity' => $item['quantity'],
@@ -899,7 +916,7 @@ class CustomerController extends Controller
                 ->with('success', 'Custom invoice created successfully.');
         } catch (\Exception $e) {
             return back()
-                ->with('error', 'Failed to create invoice: ' . $e->getMessage())
+                ->with('error', 'Failed to create invoice: '.$e->getMessage())
                 ->withInput();
         }
     }
@@ -909,10 +926,10 @@ class CustomerController extends Controller
      */
     private function generateInvoiceNumber(): string
     {
-        $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+        $prefix = Setting::getValue('invoice_prefix', 'INV');
         $date = now()->format('Ymd');
-        $count = \App\Models\Invoice::whereDate('created_at', now())->count() + 1;
+        $count = Invoice::whereDate('created_at', now())->count() + 1;
 
-        return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
     }
 }

@@ -2,7 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
-use App\Services\SecurityService;
+use App\Models\User;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -51,6 +51,32 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        $user = Auth::user();
+
+        if (! $user->hasVerifiedEmail()) {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'Please verify your email before signing in. Check your inbox for the verification code, or register again if you did not receive one.',
+            ]);
+        }
+
+        if ($user->status === 'suspended') {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'Your account has been suspended. Please contact support.',
+            ]);
+        }
+
+        if ($user->status !== 'active') {
+            Auth::logout();
+
+            throw ValidationException::withMessages([
+                'email' => 'Your account is not active. Please contact support.',
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 
@@ -59,7 +85,8 @@ class LoginRequest extends FormRequest
      */
     public function userHasTwoFactor(): bool
     {
-        $user = \App\Models\User::where('email', $this->email)->first();
+        $user = User::where('email', $this->email)->first();
+
         return $user && $user->two_factor_enabled && $user->phone;
     }
 

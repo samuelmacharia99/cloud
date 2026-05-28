@@ -36,6 +36,7 @@
                     <option value="active" @selected(request('status') === 'active')>Active</option>
                     <option value="suspended" @selected(request('status') === 'suspended')>Suspended</option>
                     <option value="inactive" @selected(request('status') === 'inactive')>Inactive</option>
+                    <option value="unverified" @selected(request('status') === 'unverified')>Unverified email</option>
                 </select>
             </div>
             <div>
@@ -86,9 +87,16 @@
                                 {{ $customer->country ?: '-' }}
                             </td>
                             <td class="px-6 py-4">
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $customer->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($customer->status === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
-                                    {{ ucfirst($customer->status) }}
-                                </span>
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ $customer->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($customer->status === 'suspended' ? 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400') }}">
+                                        {{ ucfirst($customer->status) }}
+                                    </span>
+                                    @if (!$customer->email_verified_at)
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300">
+                                            Unverified
+                                        </span>
+                                    @endif
+                                </div>
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">
                                 {{ $customer->services_count }}

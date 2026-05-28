@@ -1,8 +1,22 @@
 <?php
 
+use App\Http\Middleware\CheckAdminRole;
+use App\Http\Middleware\CheckCustomerRole;
+use App\Http\Middleware\CheckResellerRole;
+use App\Http\Middleware\EnforceResellerLimits;
+use App\Http\Middleware\LogActivity;
+use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\SkipVerificationIfImpersonating;
+use App\Http\Middleware\ThrottleRegistration;
+use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Routing\Middleware\ThrottleRequests;
+use Illuminate\Session\Middleware\AuthenticateSession;
+use Illuminate\Session\Middleware\StartSession;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
+use Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,27 +27,28 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
-            \Illuminate\Session\Middleware\StartSession::class,
-            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
-            \App\Http\Middleware\VerifyCsrfToken::class,
-            \Illuminate\Session\Middleware\AuthenticateSession::class,
-            \App\Http\Middleware\SecurityHeaders::class,
-            \App\Http\Middleware\LogActivity::class,
+            StartSession::class,
+            ShareErrorsFromSession::class,
+            VerifyCsrfToken::class,
+            AuthenticateSession::class,
+            SecurityHeaders::class,
+            LogActivity::class,
         ]);
 
         $middleware->api(prepend: [
-            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            EnsureFrontendRequestsAreStateful::class,
         ], append: [
-            \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
+            ThrottleRequests::class.':api',
         ]);
 
         // Register custom route middleware
         $middleware->alias([
-            'admin' => \App\Http\Middleware\CheckAdminRole::class,
-            'customer' => \App\Http\Middleware\CheckCustomerRole::class,
-            'reseller' => \App\Http\Middleware\CheckResellerRole::class,
-            'reseller.limits' => \App\Http\Middleware\EnforceResellerLimits::class,
-            'skip.verification.if.impersonating' => \App\Http\Middleware\SkipVerificationIfImpersonating::class,
+            'admin' => CheckAdminRole::class,
+            'customer' => CheckCustomerRole::class,
+            'reseller' => CheckResellerRole::class,
+            'reseller.limits' => EnforceResellerLimits::class,
+            'skip.verification.if.impersonating' => SkipVerificationIfImpersonating::class,
+            'registration.throttle' => ThrottleRegistration::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
