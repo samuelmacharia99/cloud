@@ -275,7 +275,7 @@
                                                     <form method="POST" action="{{ route('customer.services.container.domains.ssl', [$service, $domain]) }}" style="display:inline;">
                                                         @csrf
                                                         <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                                            Enable SSL
+                                                            Get SSL
                                                         </button>
                                                     </form>
                                                 @endif
@@ -314,7 +314,7 @@
                                     <p class="text-slate-600 dark:text-slate-400">Database console is disabled by administrator.</p>
                                 </div>
                             @elseif(!empty($databaseContext['available']))
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4" x-data="{ showDbPassword: false }">
                                     <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
                                         <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Type</p>
                                         <p class="font-semibold text-slate-900 dark:text-white">{{ strtoupper($databaseContext['type']) }}</p>
@@ -331,7 +331,40 @@
                                         <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Username</p>
                                         <p class="font-mono text-slate-900 dark:text-white">{{ $databaseContext['username'] }}</p>
                                     </div>
+                                    <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600 md:col-span-2">
+                                        <div class="flex items-center justify-between gap-2 mb-1">
+                                            <p class="text-xs uppercase text-slate-500 dark:text-slate-400">Password</p>
+                                            @if(!empty($databaseContext['password']))
+                                                <div class="flex items-center gap-2">
+                                                    <button type="button" @click="showDbPassword = !showDbPassword" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                                                        <span x-text="showDbPassword ? 'Hide' : 'Show'"></span>
+                                                    </button>
+                                                    <button type="button" onclick="navigator.clipboard.writeText(@js($databaseContext['password']))" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                                                        Copy
+                                                    </button>
+                                                </div>
+                                            @endif
+                                        </div>
+                                        <p class="font-mono text-slate-900 dark:text-white break-all">
+                                            @if(!empty($databaseContext['password']))
+                                                <span x-show="showDbPassword">{{ $databaseContext['password'] }}</span>
+                                                <span x-show="!showDbPassword">{{ $databaseContext['password_masked'] }}</span>
+                                            @else
+                                                <span class="text-slate-500">Not available — redeploy to regenerate credentials.</span>
+                                            @endif
+                                        </p>
+                                    </div>
+                                    @if(!empty($databaseContext['connection']))
+                                        <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600 md:col-span-2">
+                                            <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Connection (in container network)</p>
+                                            <p class="font-mono text-sm text-slate-900 dark:text-white break-all">{{ $databaseContext['connection'] }}</p>
+                                        </div>
+                                    @endif
                                 </div>
+
+                                <p class="text-sm text-slate-600 dark:text-slate-400">
+                                    Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application container.
+                                </p>
 
                                 <div class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
                                     <p class="text-sm text-amber-900 dark:text-amber-200">
@@ -368,8 +401,11 @@
                                     </div>
                                 </div>
                             @else
-                                <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600">
+                                <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 space-y-3">
                                     <p class="text-slate-600 dark:text-slate-400">No database sidecar is configured for this service.</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
+                                        Redeploy to auto-provision MySQL for Laravel/PHP apps, or order a new container with a database selected during tech stack setup.
+                                    </p>
                                 </div>
                             @endif
                         </div>

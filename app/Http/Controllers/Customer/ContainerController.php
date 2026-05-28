@@ -2,19 +2,21 @@
 
 namespace App\Http\Controllers\Customer;
 
-use App\Models\Service;
-use App\Models\ContainerMetric;
+use App\Http\Controllers\Controller;
+use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
+use App\Models\ContainerMetric;
 use App\Models\DatabaseTemplate;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
-use App\Http\Controllers\Controller;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -37,7 +39,7 @@ class ContainerController extends Controller
         $status = null;
 
         if ($deployment) {
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             try {
                 $status = $containerService->getStatus($service);
                 $this->reconcileStuckProvisioningState($service, $deployment, $status);
@@ -67,22 +69,23 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->restart($service);
 
             return back()->with('success', 'Container restarted successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to restart container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to restart container: ' . $e->getMessage()]);
+            \Log::error("Failed to restart container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to restart container: '.$e->getMessage()]);
         }
     }
 
@@ -99,22 +102,23 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->suspend($service);
 
             return back()->with('success', 'Container stopped successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to stop container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to stop container: ' . $e->getMessage()]);
+            \Log::error("Failed to stop container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to stop container: '.$e->getMessage()]);
         }
     }
 
@@ -131,22 +135,23 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
-            if (!$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+            if (! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->unsuspend($service);
 
             return back()->with('success', 'Container started successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to start container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to start container: ' . $e->getMessage()]);
+            \Log::error("Failed to start container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to start container: '.$e->getMessage()]);
         }
     }
 
@@ -163,7 +168,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
@@ -185,23 +190,24 @@ class ContainerController extends Controller
                 }
             }
 
-            if (!$deployment->node || !$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+            if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->deploy($service);
 
             return back()->with('success', 'Container stack redeployed successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to redeploy container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to redeploy container: ' . $e->getMessage()]);
+            \Log::error("Failed to redeploy container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to redeploy container: '.$e->getMessage()]);
         }
     }
 
     private function reconcileStuckProvisioningState(Service $service, $deployment, ?array $status): void
     {
-        if (!$deployment || $deployment->status !== 'deploying') {
+        if (! $deployment || $deployment->status !== 'deploying') {
             return;
         }
 
@@ -214,6 +220,7 @@ class ContainerController extends Controller
             if ($service->status === 'provisioning' || $service->status === 'failed') {
                 $service->update(['status' => 'active']);
             }
+
             return;
         }
 
@@ -251,16 +258,16 @@ class ContainerController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment || !$deployment->isRunning()) {
+        if (! $deployment || ! $deployment->isRunning()) {
             return response()->json(['error' => 'Container must be running to query database'], 400);
         }
 
-        if (!$deployment->node || !$deployment->node->ssh_username || (!$deployment->node->ssh_password && !$deployment->node->da_login_key)) {
+        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
             return response()->json(['error' => 'Container host is not properly configured'], 400);
         }
 
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
-        if (!$databaseContext['available']) {
+        if (! $databaseContext['available']) {
             return response()->json(['error' => 'No database sidecar configured for this service'], 400);
         }
 
@@ -268,7 +275,7 @@ class ContainerController extends Controller
         $format = $validated['format'] ?? 'text';
 
         // Tight security: read-only statements only.
-        if (!preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN)\b/i', $query)) {
+        if (! preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN)\b/i', $query)) {
             return response()->json(['error' => 'Only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN)'], 422);
         }
         if (preg_match('/\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE|GRANT|REVOKE)\b/i', $query)) {
@@ -277,7 +284,7 @@ class ContainerController extends Controller
         if (str_contains($query, ';')) {
             return response()->json(['error' => 'Multiple statements are not allowed'], 422);
         }
-        if (preg_match('/^SELECT\b/i', $query) && !preg_match('/\bLIMIT\s+\d+\b/i', $query)) {
+        if (preg_match('/^SELECT\b/i', $query) && ! preg_match('/\bLIMIT\s+\d+\b/i', $query)) {
             $query .= ' LIMIT 200';
         }
 
@@ -293,9 +300,10 @@ class ContainerController extends Controller
                 'csv' => $result['csv'] ?? null,
             ]);
         } catch (\Exception $e) {
-            \Log::warning("Database query failed for service {$service->id}: " . $e->getMessage());
+            \Log::warning("Database query failed for service {$service->id}: ".$e->getMessage());
             $this->logDatabaseQuery($service, $query, $format, false);
-            return response()->json(['error' => 'Query failed: ' . $e->getMessage()], 500);
+
+            return response()->json(['error' => 'Query failed: '.$e->getMessage()], 500);
         }
     }
 
@@ -337,12 +345,13 @@ class ContainerController extends Controller
                 return response()->json(['error' => 'Invalid service type'], 400);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $logs = $containerService->getLogs($service, 100);
 
             return response()->json(['logs' => $logs]);
         } catch (\Exception $e) {
-            \Log::error("Failed to fetch logs for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to fetch logs for service {$service->id}: ".$e->getMessage());
+
             return response()->json(['error' => 'Failed to fetch logs'], 500);
         }
     }
@@ -360,7 +369,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return response()->json([
                     'labels' => [],
                     'cpu' => [],
@@ -376,7 +385,7 @@ class ContainerController extends Controller
             // Parse hours parameter (1, 6, 24, 168 for 7 days)
             $hours = (int) $request->query('hours', 24);
             $validHours = [1, 6, 24, 168];
-            if (!in_array($hours, $validHours)) {
+            if (! in_array($hours, $validHours)) {
                 $hours = 24;
             }
 
@@ -386,13 +395,13 @@ class ContainerController extends Controller
                 ->orderBy('recorded_at')
                 ->get();
 
-            $labels = $metrics->map(fn($m) => $m->recorded_at->format('H:i'))->toArray();
-            $cpuData = $metrics->map(fn($m) => round($m->cpu_percentage, 2))->toArray();
-            $memoryData = $metrics->map(fn($m) => $m->memory_used_mb)->toArray();
-            $netRxData = $metrics->map(fn($m) => $m->net_io_rx_bytes ?? 0)->toArray();
-            $netTxData = $metrics->map(fn($m) => $m->net_io_tx_bytes ?? 0)->toArray();
-            $diskReadData = $metrics->map(fn($m) => $m->block_io_read_bytes ?? 0)->toArray();
-            $diskWriteData = $metrics->map(fn($m) => $m->block_io_write_bytes ?? 0)->toArray();
+            $labels = $metrics->map(fn ($m) => $m->recorded_at->format('H:i'))->toArray();
+            $cpuData = $metrics->map(fn ($m) => round($m->cpu_percentage, 2))->toArray();
+            $memoryData = $metrics->map(fn ($m) => $m->memory_used_mb)->toArray();
+            $netRxData = $metrics->map(fn ($m) => $m->net_io_rx_bytes ?? 0)->toArray();
+            $netTxData = $metrics->map(fn ($m) => $m->net_io_tx_bytes ?? 0)->toArray();
+            $diskReadData = $metrics->map(fn ($m) => $m->block_io_read_bytes ?? 0)->toArray();
+            $diskWriteData = $metrics->map(fn ($m) => $m->block_io_write_bytes ?? 0)->toArray();
 
             // Calculate summary stats
             $summary = null;
@@ -421,7 +430,8 @@ class ContainerController extends Controller
                 'summary' => $summary,
             ]);
         } catch (\Exception $e) {
-            \Log::error("Failed to fetch metrics for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to fetch metrics for service {$service->id}: ".$e->getMessage());
+
             return response()->json(['error' => 'Failed to fetch metrics'], 500);
         }
     }
@@ -439,7 +449,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return response()->json(['error' => 'Container not deployed yet'], 400);
             }
 
@@ -454,7 +464,8 @@ class ContainerController extends Controller
                 'container_name' => $deployment->container_name,
             ]);
         } catch (\Exception $e) {
-            \Log::error("Failed to fetch storage stats for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to fetch storage stats for service {$service->id}: ".$e->getMessage());
+
             return response()->json(['error' => 'Failed to fetch storage stats'], 500);
         }
     }
@@ -489,22 +500,28 @@ class ContainerController extends Controller
             'password_masked' => null,
         ];
 
-        if (!$deployment || !$deployment->env_values || !is_array($deployment->env_values)) {
+        if (! $deployment || ! $deployment->env_values || ! is_array($deployment->env_values)) {
             return $fallback;
         }
 
         $databaseId = $service->service_meta['database_id'] ?? null;
-        if (!$databaseId) {
+        if (! $databaseId) {
             return $fallback;
         }
 
         $template = DatabaseTemplate::find($databaseId);
-        if (!$template) {
+        if (! $template) {
             return $fallback;
         }
 
         $env = $deployment->env_values;
         $type = $template->type;
+
+        $password = match ($type) {
+            'mysql', 'mariadb' => $env['DB_PASSWORD'] ?? ($env['MYSQL_PASSWORD'] ?? null),
+            'postgresql' => $env['DB_PASSWORD'] ?? ($env['POSTGRES_PASSWORD'] ?? null),
+            default => null,
+        };
 
         return match ($type) {
             'mysql', 'mariadb' => [
@@ -514,16 +531,32 @@ class ContainerController extends Controller
                 'port' => $env['DB_PORT'] ?? '3306',
                 'database' => $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb'),
                 'username' => $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
-                'password_masked' => $this->maskSecret($env['DB_PASSWORD'] ?? ($env['MYSQL_PASSWORD'] ?? null)),
+                'password' => $password,
+                'password_masked' => $this->maskSecret($password),
+                'root_password_masked' => $this->maskSecret($env['MYSQL_ROOT_PASSWORD'] ?? null),
+                'connection' => sprintf(
+                    'mysql://%s:%s@%s:%s/%s',
+                    $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
+                    '********',
+                    $env['DB_HOST'] ?? 'db',
+                    $env['DB_PORT'] ?? '3306',
+                    $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb')
+                ),
             ],
             'postgresql' => [
                 'available' => true,
                 'type' => $type,
-                'host' => 'db',
-                'port' => '5432',
-                'database' => $env['POSTGRES_DB'] ?? 'appdb',
-                'username' => $env['POSTGRES_USER'] ?? 'appuser',
-                'password_masked' => $this->maskSecret($env['POSTGRES_PASSWORD'] ?? $env['DB_PASSWORD'] ?? null),
+                'host' => $env['DB_HOST'] ?? 'db',
+                'port' => $env['DB_PORT'] ?? '5432',
+                'database' => $env['DB_DATABASE'] ?? ($env['POSTGRES_DB'] ?? 'appdb'),
+                'username' => $env['DB_USERNAME'] ?? ($env['POSTGRES_USER'] ?? 'appuser'),
+                'password' => $password,
+                'password_masked' => $this->maskSecret($password),
+                'connection' => $env['DATABASE_URL'] ?? sprintf(
+                    'postgresql://%s@db:5432/%s',
+                    $env['DB_USERNAME'] ?? ($env['POSTGRES_USER'] ?? 'appuser'),
+                    $env['DB_DATABASE'] ?? ($env['POSTGRES_DB'] ?? 'appdb')
+                ),
             ],
             default => $fallback,
         };
@@ -531,7 +564,7 @@ class ContainerController extends Controller
 
     private function maskSecret(?string $value): ?string
     {
-        if (!$value) {
+        if (! $value) {
             return null;
         }
 
@@ -540,12 +573,12 @@ class ContainerController extends Controller
             return str_repeat('*', $length);
         }
 
-        return substr($value, 0, 2) . str_repeat('*', max(0, $length - 4)) . substr($value, -2);
+        return substr($value, 0, 2).str_repeat('*', max(0, $length - 4)).substr($value, -2);
     }
 
     private function runReadOnlyDatabaseQuery(SSHService $ssh, $deployment, array $databaseContext, string $query, string $format = 'text'): array
     {
-        $containerPath = '/opt/talksasa/containers/' . $deployment->container_name;
+        $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
         $dbType = $databaseContext['type'];
         $queryArg = escapeshellarg($query);
 
@@ -554,8 +587,8 @@ class ContainerController extends Controller
             $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
             $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['MYSQL_PASSWORD'] ?? ''));
 
-            $command = "cd {$containerPath} && docker compose exec -T db sh -lc " .
-                escapeshellarg("MYSQL_PWD={$password} mysql --batch --raw -u {$user} {$db} -e {$queryArg}");
+            $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} db ".
+                "mysql --batch --raw -u {$user} {$db} -e {$queryArg}";
 
             $output = $ssh->exec($command, 20);
             if ($format === 'csv') {
@@ -571,11 +604,14 @@ class ContainerController extends Controller
         if ($dbType === 'postgresql') {
             $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
             $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
+            $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['POSTGRES_PASSWORD'] ?? ''));
 
             $csvMode = $format === 'csv' ? '--csv ' : '';
-            $command = "cd {$containerPath} && docker compose exec -T db psql {$csvMode}-U {$user} -d {$db} -c {$queryArg}";
+            $command = "cd {$containerPath} && docker compose exec -T -e PGPASSWORD={$password} db ".
+                "psql {$csvMode}-U {$user} -d {$db} -c {$queryArg}";
 
             $output = $ssh->exec($command, 20);
+
             return [
                 'output' => $output,
                 'csv' => $format === 'csv' ? $output : null,
@@ -628,6 +664,7 @@ class ContainerController extends Controller
     private function isDatabaseConsoleEnabled(): bool
     {
         $value = strtolower((string) Setting::getValue('container_db_console_enabled', '1'));
+
         return in_array($value, ['1', 'true', 'yes', 'on'], true);
     }
 
@@ -643,7 +680,7 @@ class ContainerController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'Not deployed'], 400);
         }
 
@@ -651,10 +688,16 @@ class ContainerController extends Controller
 
         // Calculate health score
         $score = 100;
-        if ($deployment->status !== 'running') $score -= 50;
+        if ($deployment->status !== 'running') {
+            $score -= 50;
+        }
         $score -= min(30, $deployment->restart_attempts * 5);
-        if (!$deployment->last_status_check_at || $deployment->last_status_check_at->lt(now()->subHour())) $score -= 5;
-        if ($deployment->last_restart_at && $deployment->last_restart_at->gt(now()->subHour())) $score -= 5;
+        if (! $deployment->last_status_check_at || $deployment->last_status_check_at->lt(now()->subHour())) {
+            $score -= 5;
+        }
+        if ($deployment->last_restart_at && $deployment->last_restart_at->gt(now()->subHour())) {
+            $score -= 5;
+        }
         $score = max(0, $score);
 
         // Determine incident level
@@ -672,14 +715,14 @@ class ContainerController extends Controller
         }
 
         // Calculate bandwidth analytics
-        $bwQuery = fn(int $hours) => ContainerMetric::where('container_deployment_id', $deployment->id)
+        $bwQuery = fn (int $hours) => ContainerMetric::where('container_deployment_id', $deployment->id)
             ->where('recorded_at', '>=', now()->subHours($hours))
             ->selectRaw('SUM(net_io_rx_bytes) as rx, SUM(net_io_tx_bytes) as tx, MAX(net_io_rx_bytes + net_io_tx_bytes) as peak')
             ->first();
 
-        $bw1h  = $bwQuery(1);
+        $bw1h = $bwQuery(1);
         $bw24h = $bwQuery(24);
-        $bw7d  = $bwQuery(168);
+        $bw7d = $bwQuery(168);
 
         // Calculate network activity rate (bytes/min from last 5 metrics)
         $recentMetrics = ContainerMetric::where('container_deployment_id', $deployment->id)
@@ -721,53 +764,53 @@ class ContainerController extends Controller
                 'human' => $deployment->last_restart_at->diffForHumans(),
             ];
         }
-        usort($timeline, fn($a, $b) => $b['at'] <=> $a['at']);
+        usort($timeline, fn ($a, $b) => $b['at'] <=> $a['at']);
 
         // Template allocation
         $template = $service->product->containerTemplate;
 
         return response()->json([
-            'status'              => $deployment->status,
-            'health_score'        => $score,
-            'incident_level'      => $incidentLevel,
-            'incident_message'    => $incidentMessage,
-            'restart_attempts'    => $deployment->restart_attempts,
-            'last_restart_at'     => $deployment->last_restart_at?->toIso8601String(),
-            'last_restart_human'  => $deployment->last_restart_at?->diffForHumans(),
-            'uptime_seconds'      => $deployment->getUptimeSeconds(),
-            'uptime_human'        => $this->formatUptime($deployment->getUptimeSeconds()),
-            'deployed_at_ts'      => $deployment->deployed_at?->timestamp,
-            'last_check_human'    => $deployment->last_status_check_at?->diffForHumans() ?? 'Never',
+            'status' => $deployment->status,
+            'health_score' => $score,
+            'incident_level' => $incidentLevel,
+            'incident_message' => $incidentMessage,
+            'restart_attempts' => $deployment->restart_attempts,
+            'last_restart_at' => $deployment->last_restart_at?->toIso8601String(),
+            'last_restart_human' => $deployment->last_restart_at?->diffForHumans(),
+            'uptime_seconds' => $deployment->getUptimeSeconds(),
+            'uptime_human' => $this->formatUptime($deployment->getUptimeSeconds()),
+            'deployed_at_ts' => $deployment->deployed_at?->timestamp,
+            'last_check_human' => $deployment->last_status_check_at?->diffForHumans() ?? 'Never',
             'node' => $deployment->node ? [
-                'hostname'   => $deployment->node->hostname,
-                'region'     => $deployment->node->region ?? 'N/A',
+                'hostname' => $deployment->node->hostname,
+                'region' => $deployment->node->region ?? 'N/A',
                 'datacenter' => $deployment->node->datacenter ?? 'N/A',
-                'ip'         => $deployment->node->ip_address,
-                'status'     => $deployment->node->status,
+                'ip' => $deployment->node->ip_address,
+                'status' => $deployment->node->status,
             ] : null,
-            'ssl_domains' => $deployment->domains->map(fn($d) => [
-                'domain'      => $d->domain,
+            'ssl_domains' => $deployment->domains->map(fn ($d) => [
+                'domain' => $d->domain,
                 'ssl_enabled' => $d->ssl_enabled,
-                'status'      => $d->status,
+                'status' => $d->status,
                 'verified_at' => $d->verified_at?->format('Y-m-d'),
             ])->values(),
             'bandwidth' => [
-                '1h'  => ['rx' => (int)($bw1h->rx ?? 0),  'tx' => (int)($bw1h->tx ?? 0),  'peak' => (int)($bw1h->peak ?? 0)],
-                '24h' => ['rx' => (int)($bw24h->rx ?? 0), 'tx' => (int)($bw24h->tx ?? 0), 'peak' => (int)($bw24h->peak ?? 0)],
-                '7d'  => ['rx' => (int)($bw7d->rx ?? 0),  'tx' => (int)($bw7d->tx ?? 0),  'peak' => (int)($bw7d->peak ?? 0)],
+                '1h' => ['rx' => (int) ($bw1h->rx ?? 0),  'tx' => (int) ($bw1h->tx ?? 0),  'peak' => (int) ($bw1h->peak ?? 0)],
+                '24h' => ['rx' => (int) ($bw24h->rx ?? 0), 'tx' => (int) ($bw24h->tx ?? 0), 'peak' => (int) ($bw24h->peak ?? 0)],
+                '7d' => ['rx' => (int) ($bw7d->rx ?? 0),  'tx' => (int) ($bw7d->tx ?? 0),  'peak' => (int) ($bw7d->peak ?? 0)],
             ],
-            'activity_rate_bytes_per_min' => (int)$activityRate,
+            'activity_rate_bytes_per_min' => (int) $activityRate,
             'allocation' => [
-                'cpu_cores'  => $deployment->cpu_limit  ?? $template?->required_cpu_cores,
-                'memory_mb'  => $deployment->memory_limit_mb ?? $template?->required_ram_mb,
+                'cpu_cores' => $deployment->cpu_limit ?? $template?->required_cpu_cores,
+                'memory_mb' => $deployment->memory_limit_mb ?? $template?->required_ram_mb,
                 'storage_gb' => $template?->required_storage_gb,
             ],
-            'timeline'       => $timeline,
+            'timeline' => $timeline,
             'restart_policy' => $deployment->restart_policy,
-            'auto_restart'   => $deployment->auto_restart,
+            'auto_restart' => $deployment->auto_restart,
             'selected_version' => $deployment->selected_version,
             'container_name' => $deployment->container_name,
-            'assigned_port'  => $deployment->assigned_port,
+            'assigned_port' => $deployment->assigned_port,
         ]);
     }
 
@@ -788,12 +831,12 @@ class ContainerController extends Controller
             ]);
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
             // Check DNS configuration
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $dnsCorrect = $nginxService->checkDns($request->domain, $deployment->node->ip_address);
 
             // Create domain record
@@ -807,14 +850,30 @@ class ContainerController extends Controller
             $nginxService->bind($domain);
 
             $message = "Domain {$domain->domain} bound successfully";
-            if (!$dnsCorrect) {
+            if (! $dnsCorrect) {
                 $message .= " (Note: DNS is not yet pointing to {$deployment->node->ip_address})";
+            } else {
+                // Auto-attempt SSL issuance once domain is bound and DNS resolves.
+                // Keep binding successful even if certificate issuance fails so the
+                // user can retry manually from the Domains tab.
+                try {
+                    $nginxService->enableSsl($domain);
+                    $message .= ' SSL certificate issued successfully.';
+                } catch (\Throwable $sslError) {
+                    \Log::warning("Auto SSL issuance failed for domain {$domain->domain}", [
+                        'service_id' => $service->id,
+                        'domain' => $domain->domain,
+                        'error' => $sslError->getMessage(),
+                    ]);
+                    $message .= " Domain is active without SSL. Use 'Get SSL' to retry once DNS/propagation is ready.";
+                }
             }
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
-            \Log::error("Failed to bind domain for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to bind domain: ' . $e->getMessage()]);
+            \Log::error("Failed to bind domain for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to bind domain: '.$e->getMessage()]);
         }
     }
 
@@ -836,13 +895,14 @@ class ContainerController extends Controller
 
             $domainName = $domain->domain;
 
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $nginxService->unbind($domain);
 
             return back()->with('success', "Domain {$domainName} unbind successfully");
         } catch (\Exception $e) {
-            \Log::error("Failed to unbind domain for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to unbind domain: ' . $e->getMessage()]);
+            \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to unbind domain: '.$e->getMessage()]);
         }
     }
 
@@ -866,13 +926,14 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Domain must be active to enable SSL']);
             }
 
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $nginxService->enableSsl($domain);
 
             return back()->with('success', "SSL enabled for {$domain->domain}");
         } catch (\Exception $e) {
-            \Log::error("Failed to enable SSL for domain {$domain->domain}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to enable SSL: ' . $e->getMessage()]);
+            \Log::error("Failed to enable SSL for domain {$domain->domain}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
         }
     }
 
@@ -881,43 +942,46 @@ class ContainerController extends Controller
         $this->authorize('view', $service);
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backup = $backupService->createBackup($service, 'manual');
 
             return back()->with('success', "Backup '{$backup->backup_name}' created successfully.");
         } catch (\Exception $e) {
-            \Log::error("Failed to create backup for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Backup failed: ' . $e->getMessage()]);
+            \Log::error("Failed to create backup for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
         }
     }
 
-    public function restoreBackup(Service $service, \App\Models\ContainerBackup $backup)
+    public function restoreBackup(Service $service, ContainerBackup $backup)
     {
         $this->authorize('view', $service);
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->restoreBackup($backup);
 
             return back()->with('success', "Container restored from backup '{$backup->backup_name}'.");
         } catch (\Exception $e) {
-            \Log::error("Failed to restore backup {$backup->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Restore failed: ' . $e->getMessage()]);
+            \Log::error("Failed to restore backup {$backup->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Restore failed: '.$e->getMessage()]);
         }
     }
 
-    public function deleteBackup(Service $service, \App\Models\ContainerBackup $backup)
+    public function deleteBackup(Service $service, ContainerBackup $backup)
     {
         $this->authorize('view', $service);
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->deleteBackup($backup);
 
             return back()->with('success', "Backup '{$backup->backup_name}' deleted.");
         } catch (\Exception $e) {
-            \Log::error("Failed to delete backup {$backup->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Delete failed: ' . $e->getMessage()]);
+            \Log::error("Failed to delete backup {$backup->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Delete failed: '.$e->getMessage()]);
         }
     }
 }

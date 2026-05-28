@@ -4,16 +4,16 @@ namespace App\Services\Provisioning;
 
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
-use App\Models\ContainerDomain;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerDeploymentEvent;
+use App\Models\ContainerDomain;
 use App\Models\DatabaseTemplate;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\NotificationService;
 use App\Services\SSH\SSHService;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Yaml\Yaml;
 
@@ -24,10 +24,15 @@ use Symfony\Component\Yaml\Yaml;
 class ContainerDeploymentService
 {
     private const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
+
     private const PORT_RANGE_START = 30000;
+
     private const PORT_RANGE_END = 40000;
+
     private const DEPLOY_TIMEOUT = 120;
+
     private const HEALTH_CHECK_RETRIES = 24;
+
     private const HEALTH_CHECK_DELAY = 5;
 
     /**
@@ -84,17 +89,19 @@ class ContainerDeploymentService
             $templateSlug = strtolower(str_replace(' ', '-', $template->slug));
             $containerName = "user-{$service->user_id}-service-{$service->id}-{$templateSlug}";
 
-            // Load selected database if any
-            $databaseTemplate = null;
-            if (!empty($service->service_meta['database_id'])) {
-                $databaseTemplate = DatabaseTemplate::find($service->service_meta['database_id']);
-            }
+            $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
 
             // Get selected version for templated containers
             $selectedVersion = $service->service_meta['selected_version'] ?? null;
 
-            // Collect environment variables
+            // Collect environment variables (preserve deployment secrets across redeploys).
+            $existingDeployment = ContainerDeployment::where('service_id', $service->id)
+                ->orderByDesc('id')
+                ->first();
             $envValues = $service->service_meta['env_values'] ?? [];
+            if ($existingDeployment && is_array($existingDeployment->env_values)) {
+                $envValues = array_merge($existingDeployment->env_values, $envValues);
+            }
             $envVars = [];
 
             // Reserve port and persist deployment with retry in case of concurrent allocation collisions.
@@ -134,6 +141,7 @@ class ContainerDeploymentService
                                 'env_values' => $envVars,
                                 'selected_version' => $selectedVersion,
                             ]);
+
                             return [$existingDeployment, $port, $envVars];
                         }
 
@@ -181,7 +189,7 @@ class ContainerDeploymentService
 
             try {
                 // Create container directory
-                $containerPath = self::CONTAINER_BASE_PATH . '/' . $containerName;
+                $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
                 $ssh->mkdirp($containerPath);
 
                 // Prepare application source on host path (git clone/pull) before starting compose.
@@ -190,7 +198,7 @@ class ContainerDeploymentService
                 }
 
                 // Upload docker-compose.yml
-                $ssh->upload($composeYaml, $containerPath . '/docker-compose.yml');
+                $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
                 // Deploy container
                 $ssh->exec(
@@ -237,12 +245,13 @@ class ContainerDeploymentService
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
                     foreach ($template->setup_commands as $command) {
-                        if (!empty($command)) {
+                        if (! empty($command)) {
                             try {
                                 if (! $this->isSafeSetupCommand((string) $command)) {
                                     \Log::warning("Skipped unsafe setup command for service {$service->id}", [
                                         'command' => $command,
                                     ]);
+
                                     continue;
                                 }
                                 $ssh->exec("cd {$containerPath} && {$command}", self::DEPLOY_TIMEOUT);
@@ -269,10 +278,16 @@ class ContainerDeploymentService
                 ]);
 
                 // Update service and store credentials
-                $credentials = $this->generateCredentials($service, $deployment, $envVars);
+                $credentials = $this->generateCredentials($service, $deployment, $envVars, $databaseTemplate);
+                $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
+                if ($databaseTemplate) {
+                    $serviceMeta['database_id'] = $databaseTemplate->id;
+                }
+                $serviceMeta['env_values'] = $envVars;
                 $service->update([
                     'status' => 'active',
                     'credentials' => json_encode($credentials),
+                    'service_meta' => $serviceMeta,
                 ]);
 
                 // Ensure existing bound domains always follow the latest deployment
@@ -296,7 +311,7 @@ class ContainerDeploymentService
                     'assigned_port' => $port,
                     'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
                 ]);
-            } catch (SSHCommandException | SSHConnectionException $e) {
+            } catch (SSHCommandException|SSHConnectionException $e) {
                 $deployment->update([
                     'status' => 'failed',
                     'last_status_check_output' => $e->getMessage(),
@@ -304,7 +319,7 @@ class ContainerDeploymentService
 
                 $service->update(['status' => 'failed']);
 
-                \Log::error("Container deployment failed for service {$service->id}: " . $e->getMessage(), [
+                \Log::error("Container deployment failed for service {$service->id}: ".$e->getMessage(), [
                     'container' => $containerName,
                     'exception' => $e,
                 ]);
@@ -312,7 +327,7 @@ class ContainerDeploymentService
                     'error' => $e->getMessage(),
                 ]);
 
-                throw new \RuntimeException("Container deployment failed: " . $e->getMessage(), 0, $e);
+                throw new \RuntimeException('Container deployment failed: '.$e->getMessage(), 0, $e);
             } finally {
                 $ssh->disconnect();
             }
@@ -340,7 +355,7 @@ class ContainerDeploymentService
                 ]);
             }
 
-            \Log::error("Container provisioning error for service {$service->id}: " . $e->getMessage(), [
+            \Log::error("Container provisioning error for service {$service->id}: ".$e->getMessage(), [
                 'exception' => $e,
                 'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
             ]);
@@ -373,7 +388,7 @@ class ContainerDeploymentService
                 // Ensure docker-compose.yml exists
                 $this->ensureComposeFileExists($ssh, $deployment);
 
-                $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+                $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
@@ -391,7 +406,7 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
-            \Log::error("Failed to suspend container for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to suspend container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
         }
@@ -418,10 +433,10 @@ class ContainerDeploymentService
                 // Ensure docker-compose.yml exists
                 $this->ensureComposeFileExists($ssh, $deployment);
 
-                $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+                $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
                 // Parse docker-compose.yml to extract service names and container names
-                $composeFile = $containerPath . '/docker-compose.yml';
+                $composeFile = $containerPath.'/docker-compose.yml';
                 $composeContent = $ssh->exec("cat {$composeFile}");
                 $composeData = Yaml::parse($composeContent);
 
@@ -455,7 +470,7 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
-            \Log::error("Failed to resume container for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to resume container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
         }
@@ -478,7 +493,7 @@ class ContainerDeploymentService
                 $ssh = SSHService::forNode($node);
 
                 try {
-                    $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+                    $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
                     // Stop and remove containers
                     @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down -v", self::DEPLOY_TIMEOUT);
@@ -508,7 +523,7 @@ class ContainerDeploymentService
             // Notify user of termination
             app(NotificationService::class)->notifyServiceTerminated($service->fresh());
         } catch (\Exception $e) {
-            \Log::error("Failed to terminate container for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to terminate container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
         }
@@ -535,12 +550,12 @@ class ContainerDeploymentService
                 // Ensure docker-compose.yml exists
                 $this->ensureComposeFileExists($ssh, $deployment);
 
-                $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+                $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::DEPLOY_TIMEOUT);
 
                 $deployment->update([
                     'last_status_check_at' => now(),
-                    'last_restart_at'      => now(),
+                    'last_restart_at' => now(),
                 ]);
                 $deployment->increment('restart_attempts');
 
@@ -549,7 +564,7 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
-            \Log::error("Failed to restart container for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to restart container for service {$service->id}: ".$e->getMessage());
 
             throw $e;
         }
@@ -570,7 +585,7 @@ class ContainerDeploymentService
             $ssh = SSHService::forNode($deployment->node);
 
             try {
-                $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+                $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
                 $output = $ssh->exec(
                     "cd {$containerPath} && docker compose -f docker-compose.yml logs --no-color --tail={$lines}",
                     30
@@ -581,9 +596,9 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
-            \Log::warning("Failed to fetch container logs for service {$service->id}: " . $e->getMessage());
+            \Log::warning("Failed to fetch container logs for service {$service->id}: ".$e->getMessage());
 
-            return "Error fetching logs: " . $e->getMessage();
+            return 'Error fetching logs: '.$e->getMessage();
         }
     }
 
@@ -607,7 +622,7 @@ class ContainerDeploymentService
                 $ssh->disconnect();
             }
         } catch (\Exception $e) {
-            \Log::warning("Failed to get container status for service {$service->id}: " . $e->getMessage());
+            \Log::warning("Failed to get container status for service {$service->id}: ".$e->getMessage());
 
             return null;
         }
@@ -669,7 +684,7 @@ class ContainerDeploymentService
             }
         }
 
-        throw new \DomainException('No available ports in range ' . self::PORT_RANGE_START . '-' . self::PORT_RANGE_END);
+        throw new \DomainException('No available ports in range '.self::PORT_RANGE_START.'-'.self::PORT_RANGE_END);
     }
 
     /**
@@ -690,7 +705,7 @@ class ContainerDeploymentService
         // Add system variables
         $env['APP_PORT'] = (string) ($port ?? $this->assignPort($service->node));
         $env['DATA_DIR'] = '/data';
-        $env['COMPOSE_PROJECT_NAME'] = 'talksasa-' . $service->id;
+        $env['COMPOSE_PROJECT_NAME'] = 'talksasa-'.$service->id;
 
         // Generate secrets if needed
         if (! isset($env['DB_PASSWORD']) || ! $env['DB_PASSWORD']) {
@@ -702,38 +717,7 @@ class ContainerDeploymentService
 
         // Add database connection env vars if database is selected
         if ($databaseTemplate) {
-            $dbVars = match($databaseTemplate->type) {
-                'mysql', 'mariadb' => [
-                    'MYSQL_ROOT_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
-                    'MYSQL_DATABASE' => $env['MYSQL_DATABASE'] ?? 'appdb',
-                    'MYSQL_USER' => $env['MYSQL_USER'] ?? 'appuser',
-                    'MYSQL_PASSWORD' => $env['MYSQL_PASSWORD'] ?? ($env['DB_PASSWORD'] ?? Str::random(32)),
-                    'DB_HOST' => 'db',
-                    'DB_PORT' => '3306',
-                    'DB_DATABASE' => $env['MYSQL_DATABASE'] ?? 'appdb',
-                    'DB_USERNAME' => $env['MYSQL_USER'] ?? 'appuser',
-                    'DB_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
-                ],
-                'postgresql' => [
-                    'POSTGRES_PASSWORD' => $env['DB_PASSWORD'] ?? Str::random(32),
-                    'POSTGRES_DB' => $env['POSTGRES_DB'] ?? 'appdb',
-                    'POSTGRES_USER' => $env['POSTGRES_USER'] ?? 'appuser',
-                    'DATABASE_URL' => 'postgresql://appuser:' . ($env['DB_PASSWORD'] ?? Str::random(32)) . '@db:5432/appdb',
-                ],
-                'mongodb' => [
-                    'MONGO_INITDB_ROOT_USERNAME' => $env['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser',
-                    'MONGO_INITDB_ROOT_PASSWORD' => $env['MONGO_INITDB_ROOT_PASSWORD'] ?? ($env['DB_PASSWORD'] ?? Str::random(32)),
-                    'MONGO_INITDB_DATABASE' => $env['MONGO_INITDB_DATABASE'] ?? 'appdb',
-                    'MONGODB_URI' => 'mongodb://appuser:' . ($env['DB_PASSWORD'] ?? Str::random(32)) . '@db:27017/appdb',
-                ],
-                'redis' => [
-                    'REDIS_HOST' => 'db',
-                    'REDIS_PORT' => '6379',
-                    'REDIS_URL' => 'redis://db:6379',
-                ],
-                default => [],
-            };
-            $env = array_merge($env, $dbVars);
+            $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env));
         }
 
         return $env;
@@ -748,7 +732,7 @@ class ContainerDeploymentService
         array $envVars,
         string $appServiceName
     ): void {
-        $dbEnv = match($db->type) {
+        $dbEnv = match ($db->type) {
             'mysql', 'mariadb' => [
                 'MYSQL_ROOT_PASSWORD' => $envVars['MYSQL_ROOT_PASSWORD'] ?? Str::random(32),
                 'MYSQL_DATABASE' => $envVars['MYSQL_DATABASE'] ?? 'appdb',
@@ -769,7 +753,7 @@ class ContainerDeploymentService
             default => [],
         };
 
-        $mountPath = match($db->type) {
+        $mountPath = match ($db->type) {
             'mysql', 'mariadb' => '/var/lib/mysql',
             'postgresql' => '/var/lib/postgresql/data',
             'mongodb' => '/data/db',
@@ -799,11 +783,11 @@ class ContainerDeploymentService
 
         // Convert to docker compose format
         $cpuLimitStr = (string) $cpuLimit;
-        $memoryLimitStr = $memoryLimit . 'M';
+        $memoryLimitStr = $memoryLimit.'M';
 
         // Reservations at 50% of limits
         $cpuReservation = (string) ($cpuLimit * 0.5);
-        $memoryReservation = (int) ($memoryLimit * 0.5) . 'M';
+        $memoryReservation = (int) ($memoryLimit * 0.5).'M';
 
         // Resolve docker image with selected version
         $dockerImage = $template->docker_image;
@@ -813,7 +797,7 @@ class ContainerDeploymentService
             if (in_array($selectedVersion, $versions)) {
                 // Extract image name from docker_image (e.g., "node" from "node:latest")
                 $imageName = explode(':', $dockerImage)[0];
-                $dockerImage = $imageName . ':' . $selectedVersion;
+                $dockerImage = $imageName.':'.$selectedVersion;
             }
         }
 
@@ -825,7 +809,7 @@ class ContainerDeploymentService
                     'container_name' => $containerName,
                     'restart' => $deployment?->restart_policy ?? 'unless-stopped',
                     'environment' => $envVars,
-                    'ports' => ["{$port}:" . $template->default_port],
+                    'ports' => ["{$port}:".$template->default_port],
                     'deploy' => [
                         'resources' => [
                             'limits' => [
@@ -863,6 +847,7 @@ class ContainerDeploymentService
             foreach ($template->volume_paths as $volumeName => $mountPath) {
                 if ($volumeName === 'app_data' && $hostAppPath) {
                     $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:{$mountPath}";
+
                     continue;
                 }
 
@@ -906,7 +891,7 @@ class ContainerDeploymentService
             try {
                 $status = $this->getContainerStatus($ssh, $containerName);
 
-                \Log::info("Health check attempt", [
+                \Log::info('Health check attempt', [
                     'attempt' => $attempt + 1,
                     'max_attempts' => $maxAttempts,
                     'container_name' => $containerName,
@@ -915,11 +900,12 @@ class ContainerDeploymentService
                 ]);
 
                 if (isset($status['running']) && $status['running']) {
-                    \Log::info("Container health check passed", ['container_name' => $containerName]);
+                    \Log::info('Container health check passed', ['container_name' => $containerName]);
+
                     return;
                 }
             } catch (\Exception $e) {
-                \Log::warning("Health check exception", [
+                \Log::warning('Health check exception', [
                     'attempt' => $attempt + 1,
                     'max_attempts' => $maxAttempts,
                     'container_name' => $containerName,
@@ -955,23 +941,25 @@ class ContainerDeploymentService
 
     private function resolveHostAppPath($template, string $containerName): ?string
     {
-        if (!isset($template->volume_paths) || !is_array($template->volume_paths)) {
+        if (! isset($template->volume_paths) || ! is_array($template->volume_paths)) {
             // Legacy template rows may miss volume_paths; still keep app path
             // for runtime templates that expect /app content.
             if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
-                return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+                return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
             }
+
             return null;
         }
 
-        if (!array_key_exists('app_data', $template->volume_paths)) {
+        if (! array_key_exists('app_data', $template->volume_paths)) {
             if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
-                return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+                return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
             }
+
             return null;
         }
 
-        return self::CONTAINER_BASE_PATH . '/' . $containerName . '/app';
+        return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
     }
 
     private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void
@@ -987,8 +975,9 @@ class ContainerDeploymentService
 
         // If no source configured, keep folder available for uploads/file manager usage.
         if ($repoUrl === '') {
-            $ssh->exec("sh -lc " . escapeshellarg("mkdir -p " . escapeshellarg($hostAppPath) . " && touch " . escapeshellarg($hostAppPath . '/.keep')), 20);
+            $ssh->exec('sh -lc '.escapeshellarg('mkdir -p '.escapeshellarg($hostAppPath).' && touch '.escapeshellarg($hostAppPath.'/.keep')), 20);
             $this->ensureDefaultLandingPage($ssh, $hostAppPath);
+
             return;
         }
 
@@ -997,19 +986,19 @@ class ContainerDeploymentService
         $pathArg = escapeshellarg($hostAppPath);
         $repoArg = escapeshellarg($repoUrl);
         $branchArg = escapeshellarg($branch);
-        $script = "set -e; "
-            . "if [ -d {$pathArg}/.git ]; then "
-            . "cd {$pathArg}; "
-            . "git fetch --depth=1 origin {$branchArg}; "
-            . "git checkout -f {$branchArg}; "
-            . "git reset --hard FETCH_HEAD; "
-            . "else "
-            . "rm -rf {$pathArg}; "
-            . "git clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}; "
-            . "fi";
+        $script = 'set -e; '
+            ."if [ -d {$pathArg}/.git ]; then "
+            ."cd {$pathArg}; "
+            ."git fetch --depth=1 origin {$branchArg}; "
+            ."git checkout -f {$branchArg}; "
+            .'git reset --hard FETCH_HEAD; '
+            .'else '
+            ."rm -rf {$pathArg}; "
+            ."git clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}; "
+            .'fi';
 
         try {
-            $ssh->exec("sh -lc " . escapeshellarg($script), 120);
+            $ssh->exec('sh -lc '.escapeshellarg($script), 120);
         } catch (\Exception $e) {
             \Log::warning("Failed to sync application source for service {$service->id}", [
                 'service_id' => $service->id,
@@ -1065,22 +1054,22 @@ HTML;
 
         $encodedHtml = base64_encode($placeholderHtml);
         $pathArg = escapeshellarg($hostAppPath);
-        $indexArg = escapeshellarg($hostAppPath . '/index.html');
-        $publicDirArg = escapeshellarg($hostAppPath . '/public');
-        $publicIndexArg = escapeshellarg($hostAppPath . '/public/index.html');
+        $indexArg = escapeshellarg($hostAppPath.'/index.html');
+        $publicDirArg = escapeshellarg($hostAppPath.'/public');
+        $publicIndexArg = escapeshellarg($hostAppPath.'/public/index.html');
 
-        $script = "set -e; "
-            . "mkdir -p {$pathArg}; "
-            . "if [ ! -f {$indexArg} ]; then "
-            . "printf %s " . escapeshellarg($encodedHtml) . " | base64 -d > {$indexArg}; "
-            . "fi; "
-            . "mkdir -p {$publicDirArg}; "
-            . "if [ ! -f {$publicIndexArg} ]; then "
-            . "printf %s " . escapeshellarg($encodedHtml) . " | base64 -d > {$publicIndexArg}; "
-            . "fi";
+        $script = 'set -e; '
+            ."mkdir -p {$pathArg}; "
+            ."if [ ! -f {$indexArg} ]; then "
+            .'printf %s '.escapeshellarg($encodedHtml)." | base64 -d > {$indexArg}; "
+            .'fi; '
+            ."mkdir -p {$publicDirArg}; "
+            ."if [ ! -f {$publicIndexArg} ]; then "
+            .'printf %s '.escapeshellarg($encodedHtml)." | base64 -d > {$publicIndexArg}; "
+            .'fi';
 
         try {
-            $ssh->exec("sh -lc " . escapeshellarg($script), 20);
+            $ssh->exec('sh -lc '.escapeshellarg($script), 20);
         } catch (\Exception $e) {
             \Log::warning('Failed to write default placeholder page', [
                 'host_app_path' => $hostAppPath,
@@ -1111,13 +1100,13 @@ HTML;
         $encodedHtml = base64_encode($placeholderHtml);
         $containerArg = escapeshellarg($containerName);
         $encodedArg = escapeshellarg($encodedHtml);
-        $script = "set -e; "
-            . "mkdir -p /app /app/public; "
-            . "if [ ! -f /app/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/index.html; fi; "
-            . "if [ ! -f /app/public/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/public/index.html; fi";
+        $script = 'set -e; '
+            .'mkdir -p /app /app/public; '
+            ."if [ ! -f /app/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/index.html; fi; "
+            ."if [ ! -f /app/public/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/public/index.html; fi";
 
         try {
-            $ssh->exec("docker exec -u 0 {$containerArg} sh -lc " . escapeshellarg($script), 20);
+            $ssh->exec("docker exec -u 0 {$containerArg} sh -lc ".escapeshellarg($script), 20);
         } catch (\Exception $e) {
             \Log::warning('Failed to write default placeholder page inside container', [
                 'container_name' => $containerName,
@@ -1140,7 +1129,8 @@ HTML;
         ));
 
         if ($statusOutput === '') {
-            \Log::debug("Container not found in docker inspect", ['container_name' => $containerName]);
+            \Log::debug('Container not found in docker inspect', ['container_name' => $containerName]);
+
             return [
                 'state' => 'unknown',
                 'running' => false,
@@ -1158,7 +1148,7 @@ HTML;
             10
         ));
 
-        \Log::debug("Container status check", [
+        \Log::debug('Container status check', [
             'container_name' => $containerName,
             'state' => $state,
             'running' => $isRunning,
@@ -1180,15 +1170,184 @@ HTML;
     /**
      * Generate credentials object for storage
      */
-    private function generateCredentials(Service $service, ContainerDeployment $deployment, array $envVars): array
-    {
-        return [
+    private function generateCredentials(
+        Service $service,
+        ContainerDeployment $deployment,
+        array $envVars,
+        ?DatabaseTemplate $databaseTemplate = null
+    ): array {
+        $credentials = [
             'access_url' => $deployment->getAccessUrl(),
             'port' => $deployment->assigned_port,
             'container_name' => $deployment->container_name,
             'admin_username' => $envVars['WORDPRESS_ADMIN_USER'] ?? $envVars['ADMIN_USER'] ?? 'admin',
             'admin_email' => $envVars['WORDPRESS_ADMIN_EMAIL'] ?? $service->user->email,
         ];
+
+        if ($databaseTemplate) {
+            $credentials['database'] = $this->extractDatabaseCredentials($databaseTemplate, $envVars);
+        }
+
+        return $credentials;
+    }
+
+    private function resolveDatabaseTemplate(Service $service, $template): ?DatabaseTemplate
+    {
+        $databaseId = $service->service_meta['database_id'] ?? null;
+        if ($databaseId) {
+            return DatabaseTemplate::find($databaseId);
+        }
+
+        if (($template->slug ?? '') === 'static-site') {
+            return null;
+        }
+
+        // Container PHP/Laravel apps expect a SQL sidecar when checkout metadata is missing.
+        if (in_array($template->slug ?? '', ['laravel', 'php', 'wordpress'], true)) {
+            return DatabaseTemplate::query()
+                ->where('is_active', true)
+                ->where('hosting_type', 'container')
+                ->where('type', 'mysql')
+                ->orderBy('order')
+                ->first();
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function databaseEnvironmentVariables(DatabaseTemplate $databaseTemplate, array $env): array
+    {
+        return match ($databaseTemplate->type) {
+            'mysql', 'mariadb' => $this->mysqlEnvironmentVariables($env),
+            'postgresql' => $this->postgresqlEnvironmentVariables($env),
+            'mongodb' => $this->mongodbEnvironmentVariables($env),
+            'redis' => [
+                'REDIS_HOST' => 'db',
+                'REDIS_PORT' => '6379',
+                'REDIS_URL' => 'redis://db:6379',
+            ],
+            default => [],
+        };
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function mysqlEnvironmentVariables(array $env): array
+    {
+        $dbName = (string) ($env['MYSQL_DATABASE'] ?? $env['DB_DATABASE'] ?? 'appdb');
+        $dbUser = (string) ($env['MYSQL_USER'] ?? $env['DB_USERNAME'] ?? 'appuser');
+        $dbPassword = (string) ($env['DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? Str::random(32));
+        $rootPassword = (string) ($env['MYSQL_ROOT_PASSWORD'] ?? $dbPassword);
+
+        return [
+            'MYSQL_ROOT_PASSWORD' => $rootPassword,
+            'MYSQL_DATABASE' => $dbName,
+            'MYSQL_USER' => $dbUser,
+            'MYSQL_PASSWORD' => $dbPassword,
+            'DB_HOST' => 'db',
+            'DB_PORT' => '3306',
+            'DB_DATABASE' => $dbName,
+            'DB_USERNAME' => $dbUser,
+            'DB_PASSWORD' => $dbPassword,
+            'DB_CONNECTION' => 'mysql',
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function postgresqlEnvironmentVariables(array $env): array
+    {
+        $dbName = (string) ($env['POSTGRES_DB'] ?? $env['DB_DATABASE'] ?? 'appdb');
+        $dbUser = (string) ($env['POSTGRES_USER'] ?? $env['DB_USERNAME'] ?? 'appuser');
+        $dbPassword = (string) ($env['POSTGRES_PASSWORD'] ?? $env['DB_PASSWORD'] ?? Str::random(32));
+
+        return [
+            'POSTGRES_PASSWORD' => $dbPassword,
+            'POSTGRES_DB' => $dbName,
+            'POSTGRES_USER' => $dbUser,
+            'DB_HOST' => 'db',
+            'DB_PORT' => '5432',
+            'DB_DATABASE' => $dbName,
+            'DB_USERNAME' => $dbUser,
+            'DB_PASSWORD' => $dbPassword,
+            'DB_CONNECTION' => 'pgsql',
+            'DATABASE_URL' => sprintf(
+                'postgresql://%s:%s@db:5432/%s',
+                rawurlencode($dbUser),
+                rawurlencode($dbPassword),
+                rawurlencode($dbName)
+            ),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function mongodbEnvironmentVariables(array $env): array
+    {
+        $dbUser = (string) ($env['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser');
+        $dbPassword = (string) ($env['MONGO_INITDB_ROOT_PASSWORD'] ?? $env['DB_PASSWORD'] ?? Str::random(32));
+        $dbName = (string) ($env['MONGO_INITDB_DATABASE'] ?? 'appdb');
+
+        return [
+            'MONGO_INITDB_ROOT_USERNAME' => $dbUser,
+            'MONGO_INITDB_ROOT_PASSWORD' => $dbPassword,
+            'MONGO_INITDB_DATABASE' => $dbName,
+            'MONGODB_URI' => sprintf(
+                'mongodb://%s:%s@db:27017/%s',
+                rawurlencode($dbUser),
+                rawurlencode($dbPassword),
+                rawurlencode($dbName)
+            ),
+        ];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function extractDatabaseCredentials(DatabaseTemplate $databaseTemplate, array $envVars): array
+    {
+        return match ($databaseTemplate->type) {
+            'mysql', 'mariadb' => [
+                'type' => $databaseTemplate->type,
+                'host' => $envVars['DB_HOST'] ?? 'db',
+                'port' => $envVars['DB_PORT'] ?? '3306',
+                'database' => $envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb',
+                'username' => $envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser',
+                'password' => $envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? null,
+                'root_password' => $envVars['MYSQL_ROOT_PASSWORD'] ?? null,
+            ],
+            'postgresql' => [
+                'type' => 'postgresql',
+                'host' => $envVars['DB_HOST'] ?? 'db',
+                'port' => $envVars['DB_PORT'] ?? '5432',
+                'database' => $envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb',
+                'username' => $envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser',
+                'password' => $envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? null,
+            ],
+            'mongodb' => [
+                'type' => 'mongodb',
+                'host' => 'db',
+                'port' => '27017',
+                'database' => $envVars['MONGO_INITDB_DATABASE'] ?? 'appdb',
+                'username' => $envVars['MONGO_INITDB_ROOT_USERNAME'] ?? 'appuser',
+                'password' => $envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? null,
+            ],
+            'redis' => [
+                'type' => 'redis',
+                'host' => $envVars['REDIS_HOST'] ?? 'db',
+                'port' => $envVars['REDIS_PORT'] ?? '6379',
+                'url' => $envVars['REDIS_URL'] ?? 'redis://db:6379',
+            ],
+            default => [
+                'type' => $databaseTemplate->type,
+            ],
+        };
     }
 
     /**
@@ -1196,17 +1355,17 @@ HTML;
      */
     public function validateNodeSSHCredentials(Node $node): void
     {
-        if (!$node->ssh_username) {
+        if (! $node->ssh_username) {
             throw new \DomainException(
-                "Container host '{$node->hostname}' is not configured: missing SSH username. " .
-                "An administrator needs to configure SSH credentials for this node."
+                "Container host '{$node->hostname}' is not configured: missing SSH username. ".
+                'An administrator needs to configure SSH credentials for this node.'
             );
         }
 
-        if (!$node->ssh_password && !$node->da_login_key) {
+        if (! $node->ssh_password && ! $node->da_login_key) {
             throw new \DomainException(
-                "Container host '{$node->hostname}' is not configured: missing SSH authentication (no password or key). " .
-                "An administrator needs to configure SSH credentials for this node."
+                "Container host '{$node->hostname}' is not configured: missing SSH authentication (no password or key). ".
+                'An administrator needs to configure SSH credentials for this node.'
             );
         }
     }
@@ -1216,22 +1375,23 @@ HTML;
      */
     public function ensureComposeFileExists(SSHService $ssh, ContainerDeployment $deployment): void
     {
-        $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
-        $composeFile = $containerPath . '/docker-compose.yml';
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $composeFile = $containerPath.'/docker-compose.yml';
 
         // Check if file exists
         try {
             $ssh->exec("test -f {$composeFile}");
+
             return; // File exists
         } catch (\Exception $e) {
             // File doesn't exist, re-upload it
         }
 
         // Re-upload docker-compose.yml from stored content
-        if (!$deployment->docker_compose_content) {
+        if (! $deployment->docker_compose_content) {
             throw new \RuntimeException(
-                "docker-compose.yml file missing and no backup content stored. " .
-                "Container deployment is corrupted. Please contact support."
+                'docker-compose.yml file missing and no backup content stored. '.
+                'Container deployment is corrupted. Please contact support.'
             );
         }
 
@@ -1290,7 +1450,7 @@ HTML;
                 return;
             }
 
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             foreach ($domains as $domain) {
                 if ($domain->container_deployment_id !== $latestDeployment->id) {
                     $domain->update(['container_deployment_id' => $latestDeployment->id]);
