@@ -105,6 +105,10 @@ return [
         'max_size_mb' => (int) env('CONTAINER_UPLOAD_MAX_MB', 100),
     ],
 
+    'container_db_import' => [
+        'max_size_mb' => (int) env('CONTAINER_DB_IMPORT_MAX_MB', 50),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | IP Whitelist/Blacklist

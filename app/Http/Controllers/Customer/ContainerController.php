@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
@@ -307,6 +308,66 @@ class ContainerController extends Controller
         }
     }
 
+    public function databaseImport(Service $service, ImportContainerDatabaseRequest $request): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $this->isDatabaseConsoleEnabled()) {
+            return response()->json(['error' => 'Database console is disabled by administrator'], 403);
+        }
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || ! $deployment->isRunning()) {
+            return response()->json(['error' => 'Container must be running to import a database'], 400);
+        }
+
+        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            return response()->json(['error' => 'Container host is not properly configured'], 400);
+        }
+
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        if (! $databaseContext['available']) {
+            return response()->json(['error' => 'No database sidecar configured for this service'], 400);
+        }
+
+        if (! in_array($databaseContext['type'], ['mysql', 'mariadb', 'postgresql'], true)) {
+            return response()->json(['error' => 'SQL import is only supported for MySQL, MariaDB, and PostgreSQL'], 400);
+        }
+
+        $file = $request->file('file');
+        $sql = file_get_contents($file->getRealPath());
+        if ($sql === false || trim($sql) === '') {
+            return response()->json(['error' => 'SQL file is empty or unreadable'], 422);
+        }
+
+        try {
+            $this->assertSafeSqlImport($sql);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $output = $this->importDatabaseSql($ssh, $deployment, $databaseContext, $sql);
+            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), true);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Database import completed successfully.',
+                'output' => $output !== '' ? $output : 'Import finished with no output.',
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning("Database import failed for service {$service->id}: ".$e->getMessage());
+            $this->logDatabaseImport($service, $file->getClientOriginalName(), (int) $file->getSize(), false);
+
+            return response()->json(['error' => 'Import failed: '.$e->getMessage()], 500);
+        }
+    }
+
     public function databaseHistory(Service $service): JsonResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
@@ -318,13 +379,14 @@ class ContainerController extends Controller
         $history = ContainerFileAuditLog::query()
             ->where('service_id', $service->id)
             ->where('user_id', auth()->id())
-            ->where('action', 'db_query')
+            ->whereIn('action', ['db_query', 'db_import'])
             ->latest('created_at')
             ->limit(20)
             ->get()
             ->map(fn (ContainerFileAuditLog $row) => [
                 'at' => $row->created_at?->toDateTimeString(),
-                'query' => $row->metadata['query_preview'] ?? '',
+                'action' => $row->action,
+                'query' => $row->metadata['query_preview'] ?? $row->metadata['filename'] ?? '',
                 'format' => $row->metadata['format'] ?? 'text',
                 'success' => (bool) ($row->metadata['success'] ?? false),
             ])
@@ -504,18 +566,14 @@ class ContainerController extends Controller
             return $fallback;
         }
 
-        $databaseId = $service->service_meta['database_id'] ?? null;
-        if (! $databaseId) {
-            return $fallback;
-        }
-
-        $template = DatabaseTemplate::find($databaseId);
-        if (! $template) {
-            return $fallback;
-        }
-
         $env = $deployment->env_values;
-        $type = $template->type;
+        $databaseId = $service->service_meta['database_id'] ?? null;
+        $template = $databaseId ? DatabaseTemplate::find($databaseId) : null;
+        $type = $template?->type ?? $this->inferDatabaseTypeFromEnv($env);
+
+        if (! $type || ! in_array($type, ['mysql', 'mariadb', 'postgresql'], true)) {
+            return $fallback;
+        }
 
         $password = match ($type) {
             'mysql', 'mariadb' => $env['DB_PASSWORD'] ?? ($env['MYSQL_PASSWORD'] ?? null),
@@ -560,6 +618,19 @@ class ContainerController extends Controller
             ],
             default => $fallback,
         };
+    }
+
+    private function inferDatabaseTypeFromEnv(array $env): ?string
+    {
+        if (! empty($env['POSTGRES_DB']) || ($env['DB_CONNECTION'] ?? '') === 'pgsql') {
+            return 'postgresql';
+        }
+
+        if (! empty($env['MYSQL_DATABASE']) || ! empty($env['DB_DATABASE'])) {
+            return 'mysql';
+        }
+
+        return null;
     }
 
     private function maskSecret(?string $value): ?string
@@ -621,6 +692,70 @@ class ContainerController extends Controller
         throw new \RuntimeException('Interactive query is not supported for this database type yet');
     }
 
+    private function importDatabaseSql(SSHService $ssh, $deployment, array $databaseContext, string $sql): string
+    {
+        $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
+        $importDir = $containerPath.'/.db-imports';
+        $ssh->mkdirp($importDir);
+
+        $remotePath = $importDir.'/import_'.time().'_'.bin2hex(random_bytes(4)).'.sql';
+        $ssh->upload($sql, $remotePath);
+
+        try {
+            $remoteArg = escapeshellarg($remotePath);
+            $dbType = $databaseContext['type'];
+
+            if (in_array($dbType, ['mysql', 'mariadb'], true)) {
+                $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
+                $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
+                $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['MYSQL_PASSWORD'] ?? ''));
+
+                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e MYSQL_PWD={$password} db "
+                    ."mysql --batch -u {$user} {$db}";
+
+                return $ssh->exec($command, 180);
+            }
+
+            if ($dbType === 'postgresql') {
+                $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
+                $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
+                $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['POSTGRES_PASSWORD'] ?? ''));
+
+                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e PGPASSWORD={$password} db "
+                    ."psql -v ON_ERROR_STOP=1 -U {$user} -d {$db}";
+
+                return $ssh->exec($command, 180);
+            }
+
+            throw new \RuntimeException('SQL import is not supported for this database type');
+        } finally {
+            try {
+                $ssh->exec('rm -f '.escapeshellarg($remotePath), 10);
+            } catch (\Throwable) {
+                // Best-effort cleanup of temporary import file on the node.
+            }
+        }
+    }
+
+    private function assertSafeSqlImport(string $sql): void
+    {
+        $blocked = [
+            '/\bDROP\s+DATABASE\b/i',
+            '/\bCREATE\s+DATABASE\b/i',
+            '/\bDROP\s+SCHEMA\b/i',
+            '/\bGRANT\s+/i',
+            '/\bREVOKE\s+/i',
+        ];
+
+        foreach ($blocked as $pattern) {
+            if (preg_match($pattern, $sql)) {
+                throw new \InvalidArgumentException(
+                    'SQL file contains disallowed statements (database-level privilege or schema drops). Remove them and try again.'
+                );
+            }
+        }
+    }
+
     private function tabSeparatedToCsv(string $input): string
     {
         $lines = array_values(array_filter(array_map('trim', explode("\n", $input)), fn ($line) => $line !== ''));
@@ -658,6 +793,28 @@ class ContainerController extends Controller
             ]);
         } catch (\Throwable $e) {
             \Log::warning('Failed to write db_query audit log', ['service_id' => $service->id, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function logDatabaseImport(Service $service, string $filename, int $bytes, bool $success): void
+    {
+        try {
+            ContainerFileAuditLog::create([
+                'service_id' => $service->id,
+                'user_id' => auth()->id(),
+                'deployment_id' => $service->containerDeployment?->id,
+                'action' => 'db_import',
+                'path' => '/db',
+                'metadata' => [
+                    'filename' => $filename,
+                    'bytes' => $bytes,
+                    'success' => $success,
+                ],
+                'ip_address' => request()->ip(),
+                'created_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to write db_import audit log', ['service_id' => $service->id, 'error' => $e->getMessage()]);
         }
     }
 

@@ -307,6 +307,7 @@
                     </div>
 
                     <!-- Database Tab -->
+                    @php($dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50))
                     <div x-show="activeTab === 'database'">
                         <div class="space-y-6">
                             @if(empty($databaseConsoleEnabled))
@@ -365,6 +366,21 @@
                                 <p class="text-sm text-slate-600 dark:text-slate-400">
                                     Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application container.
                                 </p>
+
+                                <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
+                                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Import SQL dump</h3>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                                        Upload a <code class="font-mono">.sql</code> file to load tables and data into this service database (max {{ $dbImportMaxMb }} MB). Existing tables with the same names may be overwritten depending on your dump.
+                                    </p>
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <input type="file" id="db-import-file" accept=".sql,text/plain" class="text-sm text-slate-700 dark:text-slate-300">
+                                        <button type="button" onclick="importDatabaseSql()" class="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium transition">
+                                            Import SQL
+                                        </button>
+                                        <span id="db-import-status" class="text-sm text-slate-500 dark:text-slate-400"></span>
+                                    </div>
+                                    <pre id="db-import-output" class="mt-3 hidden bg-slate-900 text-slate-200 p-3 rounded-lg overflow-auto max-h-48 text-xs"></pre>
+                                </div>
 
                                 <div class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
                                     <p class="text-sm text-amber-900 dark:text-amber-200">
@@ -505,6 +521,69 @@ async function runDatabaseQuery(format = 'text') {
     }
 }
 
+async function importDatabaseSql() {
+    const fileInput = document.getElementById('db-import-file');
+    const statusEl = document.getElementById('db-import-status');
+    const outEl = document.getElementById('db-import-output');
+    if (!fileInput || !statusEl) return;
+
+    const file = fileInput.files?.[0];
+    if (!file) {
+        statusEl.textContent = 'Choose a .sql file first.';
+        return;
+    }
+
+    const maxBytes = {{ $dbImportMaxMb }} * 1024 * 1024;
+    if (file.size > maxBytes) {
+        statusEl.textContent = `File exceeds {{ $dbImportMaxMb }} MB limit.`;
+        return;
+    }
+
+    if (!confirm('Import this SQL file into your service database? This may change or overwrite existing data.')) {
+        return;
+    }
+
+    statusEl.textContent = 'Importing...';
+    if (outEl) {
+        outEl.classList.add('hidden');
+        outEl.textContent = '';
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('{{ route("customer.services.container.database.import", $service) }}', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                'Accept': 'application/json',
+            },
+            body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+            statusEl.textContent = 'Import failed';
+            if (outEl) {
+                outEl.classList.remove('hidden');
+                outEl.textContent = data.error || 'Import failed';
+            }
+            return;
+        }
+
+        statusEl.textContent = 'Import complete';
+        if (outEl) {
+            outEl.classList.remove('hidden');
+            outEl.textContent = data.output || data.message || 'Done';
+        }
+        fileInput.value = '';
+        loadDatabaseHistory();
+    } catch (error) {
+        statusEl.textContent = 'Import failed';
+    }
+}
+
 async function loadDatabaseHistory() {
     const historyEl = document.getElementById('db-query-history');
     if (!historyEl) return;
@@ -530,9 +609,10 @@ async function loadDatabaseHistory() {
         historyEl.innerHTML = rows.map((row) => {
             const stateClass = row.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
             const stateText = row.success ? 'OK' : 'Failed';
+            const label = row.action === 'db_import' ? 'Import' : 'Query';
             return `<div class="p-3 text-xs">
                 <div class="flex items-center justify-between mb-1">
-                    <span class="text-slate-500 dark:text-slate-400">${row.at || ''}</span>
+                    <span class="text-slate-500 dark:text-slate-400">${row.at || ''} · ${label}</span>
                     <span class="${stateClass} font-semibold">${stateText}</span>
                 </div>
                 <div class="text-slate-700 dark:text-slate-300 font-mono break-all">${row.query || ''}</div>
