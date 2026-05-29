@@ -7,8 +7,8 @@ use App\Models\ContainerTerminalSession;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\SSH\SSHService;
-use Illuminate\Http\Request;
 use Exception;
+use Illuminate\Http\Request;
 
 class ContainerTerminalService
 {
@@ -16,7 +16,7 @@ class ContainerTerminalService
 
     public function __construct()
     {
-        $this->guard = new TerminalSecurityGuard();
+        $this->guard = new TerminalSecurityGuard;
     }
 
     public function createSession(Service $service, User $user, Request $request): ContainerTerminalSession
@@ -30,7 +30,7 @@ class ContainerTerminalService
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment || $deployment->status !== 'running') {
+        if (! $deployment || $deployment->status !== 'running') {
             throw new Exception('Container is not running');
         }
 
@@ -84,7 +84,7 @@ class ContainerTerminalService
         $validation = $this->guard->validate($rawCommand);
         $sanitized = $validation['sanitized'];
 
-        if (!$validation['allowed']) {
+        if (! $validation['allowed']) {
             // Log blocked command
             ContainerTerminalLog::create([
                 'session_id' => $session->id,
@@ -123,8 +123,9 @@ class ContainerTerminalService
 
             try {
                 $startTime = microtime(true);
-                $output = $ssh->exec($dockerCmd, 30);
-                $executionMs = (int)((microtime(true) - $startTime) * 1000);
+                $timeoutSeconds = $this->commandTimeoutSeconds($sanitized);
+                $output = $ssh->exec($dockerCmd, $timeoutSeconds);
+                $executionMs = (int) ((microtime(true) - $startTime) * 1000);
 
                 // Parse output: extract exit code and new cwd
                 $lines = explode("\n", trim($output));
@@ -134,8 +135,8 @@ class ContainerTerminalService
 
                 foreach ($lines as $line) {
                     if (preg_match('/^__EXIT:(\d+)$/', $line, $matches)) {
-                        $exitCode = (int)$matches[1];
-                    } elseif (!empty($line) && !preg_match('/^__EXIT:/', $line)) {
+                        $exitCode = (int) $matches[1];
+                    } elseif (! empty($line) && ! preg_match('/^__EXIT:/', $line)) {
                         $outputLines[] = $line;
                     }
                 }
@@ -189,7 +190,7 @@ class ContainerTerminalService
                 $ssh->disconnect();
             }
         } catch (Exception $e) {
-            \Log::error("Terminal command execution failed for session {$session->id}: " . $e->getMessage());
+            \Log::error("Terminal command execution failed for session {$session->id}: ".$e->getMessage());
 
             ContainerTerminalLog::create([
                 'session_id' => $session->id,
@@ -197,7 +198,7 @@ class ContainerTerminalService
                 'service_id' => $session->service_id,
                 'command' => $rawCommand,
                 'sanitized_command' => $sanitized,
-                'output' => "Error executing command: " . $e->getMessage(),
+                'output' => 'Error executing command: '.$e->getMessage(),
                 'exit_code' => 1,
                 'cwd' => $session->cwd,
                 'ip_address' => $ip,
@@ -208,7 +209,7 @@ class ContainerTerminalService
             $session->extendExpiry();
 
             return [
-                'output' => "❌ Error: " . $e->getMessage(),
+                'output' => '❌ Error: '.$e->getMessage(),
                 'exit_code' => 1,
                 'cwd' => $session->cwd,
                 'blocked' => false,
@@ -254,12 +255,12 @@ class ContainerTerminalService
             $targetCwd = '/app';
         }
 
-        $script = 'cd ' . escapeshellarg($targetCwd) . ' 2>/dev/null || cd /app 2>/dev/null; '
-            . 'eval "$(printf %s ' . escapeshellarg($encodedCmd) . ' | base64 -d)"; '
-            . 'printf "\n__EXIT:%d\n" "$?"; pwd';
+        $script = 'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
+            .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
+            .'printf "\n__EXIT:%d\n" "$?"; pwd';
 
-        return 'docker exec -u www-data ' . escapeshellarg($containerName)
-            . ' sh -c ' . escapeshellarg($script);
+        return 'docker exec -u www-data '.escapeshellarg($containerName)
+            .' sh -c '.escapeshellarg($script);
     }
 
     private function constrainCwdToAppRoot(string $cwd): string
@@ -276,4 +277,16 @@ class ContainerTerminalService
         return '/app';
     }
 
+    private function commandTimeoutSeconds(string $command): int
+    {
+        if (preg_match('/\b(composer|npm|yarn|pnpm|pecl|wp)\b/i', $command)) {
+            return 300;
+        }
+
+        if (preg_match('/\b(wget|curl|tar|unzip|git\s+clone)\b/i', $command)) {
+            return 120;
+        }
+
+        return 30;
+    }
 }

@@ -107,7 +107,11 @@ class TerminalSecurityGuard
             $command = substr($command, 0, self::MAX_COMMAND_LENGTH);
         }
 
-        return $command;
+        // Strip trailing line continuations and dangling operators (common when pasting).
+        $command = preg_replace('/\s*\\\s*$/', '', $command) ?? $command;
+        $command = preg_replace('/\s*(&&|\|\||;|\|)\s*$/', '', $command) ?? $command;
+
+        return trim($command);
     }
 
     private function containsBackgroundExecution(string $command): bool

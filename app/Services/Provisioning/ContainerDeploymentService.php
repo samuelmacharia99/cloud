@@ -213,6 +213,8 @@ class ContainerDeploymentService
                     $this->ensureDefaultLandingPageInContainer($ssh, $containerName);
                 }
 
+                $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
+
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
                 $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
@@ -1110,6 +1112,43 @@ HTML;
         } catch (\Exception $e) {
             \Log::warning('Failed to write default placeholder page inside container', [
                 'container_name' => $containerName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Ensure /app is writable by the application user (www-data) for terminal and runtime installs.
+     */
+    private function fixAppDirectoryPermissions(SSHService $ssh, string $containerName, ?string $hostAppPath): void
+    {
+        $containerArg = escapeshellarg($containerName);
+
+        try {
+            $ssh->exec(
+                "docker exec -u 0 {$containerArg} sh -lc 'chown -R www-data:www-data /app 2>/dev/null || chown -R 33:33 /app'",
+                30
+            );
+        } catch (\Exception $e) {
+            \Log::warning('Failed to chown /app inside container', [
+                'container_name' => $containerName,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if (! $hostAppPath) {
+            return;
+        }
+
+        try {
+            $pathArg = escapeshellarg($hostAppPath);
+            $ssh->exec(
+                "chown -R 33:33 {$pathArg} 2>/dev/null || chown -R www-data:www-data {$pathArg}",
+                30
+            );
+        } catch (\Exception $e) {
+            \Log::warning('Failed to chown host app mount path', [
+                'host_app_path' => $hostAppPath,
                 'error' => $e->getMessage(),
             ]);
         }

@@ -357,7 +357,22 @@ function containerTerminal() {
             this.inputBuffer = '';
         },
 
+        normalizeCommand(command) {
+            return String(command)
+                .trim()
+                .replace(/\s*\\\s*$/g, '')
+                .replace(/\s*(&&|\|\||;|\|)\s*$/g, '');
+        },
+
         async sendCommand(command) {
+            command = this.normalizeCommand(command);
+
+            if (!command) {
+                this.terminal.write('\r\n');
+                this.writePrompt();
+                return;
+            }
+
             this.terminal.write('\r\n');
 
             if (!this.sessionToken) {
