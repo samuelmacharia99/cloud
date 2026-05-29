@@ -1176,7 +1176,8 @@ HTML;
             .' elif id -u 82 >/dev/null 2>&1; then chown -R 82:82 /app;'
             .' else chown -R 33:33 /app; fi;'
             .'find /app -type d -exec chmod 775 {} + 2>/dev/null;'
-            .'find /app -type f -exec chmod 664 {} + 2>/dev/null';
+            .'find /app -type f ! -path "/app/.talksasa/bin/*" ! -path "/app/bin/*" -exec chmod 664 {} + 2>/dev/null;'
+            .'chmod 775 /app/.talksasa/bin/composer /app/bin/composer 2>/dev/null || true';
     }
 
     private function fixAppDirectoryPermissions(SSHService $ssh, string $containerName, ?string $hostAppPath): void

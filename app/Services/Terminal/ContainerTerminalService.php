@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 
 class ContainerTerminalService
 {
+    private const COMPOSER_BIN = '/app/.talksasa/bin/composer';
+
     private TerminalSecurityGuard $guard;
 
     public function __construct()
@@ -275,7 +277,7 @@ class ContainerTerminalService
         }
 
         if (preg_match('/^composer(\s|$)/', $trimmed) === 1) {
-            return preg_replace('/^composer\b/', '/app/.talksasa/bin/composer', $trimmed, 1);
+            return preg_replace('/^composer\b/', 'php '.self::COMPOSER_BIN, $trimmed, 1);
         }
 
         $firstToken = strtok($trimmed, " \t");
@@ -289,7 +291,7 @@ class ContainerTerminalService
         ];
 
         if (in_array($firstToken, $composerSubcommands, true)) {
-            return '/app/.talksasa/bin/composer '.$trimmed;
+            return 'php '.self::COMPOSER_BIN.' '.$trimmed;
         }
 
         return $command;
