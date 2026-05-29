@@ -265,12 +265,31 @@ class ContainerTerminalService
     }
 
     /**
-     * Map bare "composer" invocations to the persistent install path.
+     * Map composer CLI invocations to the persistent install path.
      */
     private function resolveComposerCommand(string $command): string
     {
-        if (preg_match('/^composer(\s|$)/', $command) === 1) {
-            return preg_replace('/^composer\b/', '/app/.talksasa/bin/composer', $command, 1);
+        $trimmed = trim($command);
+        if ($trimmed === '') {
+            return $command;
+        }
+
+        if (preg_match('/^composer(\s|$)/', $trimmed) === 1) {
+            return preg_replace('/^composer\b/', '/app/.talksasa/bin/composer', $trimmed, 1);
+        }
+
+        $firstToken = strtok($trimmed, " \t");
+        $composerSubcommands = [
+            'about', 'archive', 'audit', 'browse', 'bump', 'check-platform-reqs',
+            'clear-cache', 'clearcache', 'config', 'create-project', 'depends',
+            'diagnose', 'dump-autoload', 'dumpautoload', 'exec', 'fund', 'global',
+            'help', 'home', 'init', 'install', 'licenses', 'list', 'outdated',
+            'prohibits', 'reinstall', 'remove', 'require', 'run-script', 'search',
+            'self-update', 'show', 'status', 'suggests', 'update', 'validate',
+        ];
+
+        if (in_array($firstToken, $composerSubcommands, true)) {
+            return '/app/.talksasa/bin/composer '.$trimmed;
         }
 
         return $command;
