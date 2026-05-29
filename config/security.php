@@ -94,6 +94,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Container file manager uploads (customer container page)
+    |--------------------------------------------------------------------------
+    |
+    | Also requires matching nginx client_max_body_size and PHP post_max_size /
+    | upload_max_filesize on the app server (see deploy/nginx/upload-limits.conf).
+    |
+    */
+    'container_file_upload' => [
+        'max_size_mb' => (int) env('CONTAINER_UPLOAD_MAX_MB', 100),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | IP Whitelist/Blacklist
     |--------------------------------------------------------------------------
     |

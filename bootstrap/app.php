@@ -12,6 +12,8 @@ use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Session\Middleware\StartSession;
@@ -52,5 +54,16 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->render(function (PostTooLargeException $e, Request $request) {
+            if (! $request->is('my/services/*/container/files/upload')) {
+                return null;
+            }
+
+            $maxMb = (int) config('security.container_file_upload.max_size_mb', 100);
+
+            return response()->json([
+                'error' => "File exceeds the server upload limit ({$maxMb} MB). "
+                    .'Increase nginx client_max_body_size and PHP post_max_size — see deploy/nginx/upload-limits.conf.',
+            ], 413);
+        });
     })->create();

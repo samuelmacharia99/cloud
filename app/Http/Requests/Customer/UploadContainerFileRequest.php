@@ -23,6 +23,9 @@ class UploadContainerFileRequest extends FormRequest
 
     public function rules(): array
     {
+        $maxMb = (int) config('security.container_file_upload.max_size_mb', 100);
+        $maxKb = max(1, $maxMb) * 1024;
+
         return [
             'path' => [
                 'required',
@@ -35,10 +38,10 @@ class UploadContainerFileRequest extends FormRequest
             'file' => [
                 'required',
                 'file',
-                'max:51200',
+                'max:'.$maxKb,
                 'mimes:txt,log,json,yaml,yml,xml,html,htm,css,js,ts,php,py,rb,go,java,sh,bash,zsh,conf,cfg,ini,env,md,csv,sql,zip,tar,gz,png,jpg,jpeg,gif,svg,woff,woff2,ttf,eot',
                 function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (!($value instanceof UploadedFile)) {
+                    if (! ($value instanceof UploadedFile)) {
                         return;
                     }
                     $ext = strtolower($value->getClientOriginalExtension());
@@ -58,7 +61,7 @@ class UploadContainerFileRequest extends FormRequest
             'path.regex' => 'Path must start with "/"',
             'path.not_regex' => 'Path contains invalid characters or traversal segments',
             'file.required' => 'File is required',
-            'file.max' => 'File cannot exceed 50 MB',
+            'file.max' => 'File cannot exceed '.(int) config('security.container_file_upload.max_size_mb', 100).' MB',
             'file.mimes' => 'File type is not allowed. Please upload a permitted file type.',
         ];
     }
@@ -66,11 +69,11 @@ class UploadContainerFileRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         $path = $this->input('path');
-        if (!is_string($path) || $path === '') {
+        if (! is_string($path) || $path === '') {
             return;
         }
 
-        $normalized = '/' . ltrim($path, '/');
+        $normalized = '/'.ltrim($path, '/');
         $normalized = preg_replace('#/+#', '/', $normalized) ?? $normalized;
         $this->merge(['path' => $normalized]);
     }

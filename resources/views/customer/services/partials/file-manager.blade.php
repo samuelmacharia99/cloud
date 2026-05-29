@@ -1,3 +1,5 @@
+@php($containerUploadMaxMb = (int) config('security.container_file_upload.max_size_mb', 100))
+
 <div class="bg-white rounded-lg shadow mb-8">
     <div x-data="fileManager()" class="border border-gray-200 rounded-lg">
         <!-- Header -->
@@ -32,6 +34,7 @@
                     ⬆️ Upload
                 </button>
                 <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" multiple>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Max {{ $containerUploadMaxMb }} MB per file (zip supported)</span>
                 <button @click="deleteSelected()" x-show="selected.size > 0" class="px-3 py-2 bg-red-50 text-red-600 rounded hover:bg-red-100 text-sm font-medium">
                     🗑️ Delete (<span x-text="selected.size"></span>)
                 </button>
@@ -123,6 +126,8 @@
 <script>
 function fileManager() {
     return {
+        maxUploadBytes: {{ $containerUploadMaxMb }} * 1024 * 1024,
+        maxUploadMb: {{ $containerUploadMaxMb }},
         open: false,
         loading: false,
         uploading: false,
@@ -224,6 +229,11 @@ function fileManager() {
         },
 
         async uploadFile(file) {
+            if (file.size > this.maxUploadBytes) {
+                this.error = `“${file.name}” is too large. Maximum upload size is ${this.maxUploadMb} MB.`;
+                return;
+            }
+
             const path = this.joinPath(this.currentPath, file.name);
             const formData = new FormData();
             formData.append('path', path);
@@ -248,9 +258,13 @@ function fileManager() {
                             resolve();
                         } else {
                             let message = 'Upload failed';
+                            if (xhr.status === 413) {
+                                message = `Upload rejected: file too large for the web server (HTTP 413). `
+                                    + `Ask your host to set nginx client_max_body_size and PHP post_max_size to at least ${this.maxUploadMb}M.`;
+                            }
                             try {
                                 const data = JSON.parse(xhr.responseText);
-                                message = data.error || message;
+                                message = data.error || data.message || message;
                             } catch (_) {}
                             reject(new Error(message));
                         }
