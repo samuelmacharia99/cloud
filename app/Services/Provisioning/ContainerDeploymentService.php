@@ -215,10 +215,6 @@ class ContainerDeploymentService
 
                 $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
 
-                if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
-                    $this->ensurePhpRuntimeTools($ssh, $containerName, $service, $deployment);
-                }
-
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
                 $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
@@ -246,6 +242,11 @@ class ContainerDeploymentService
                         'timeout_seconds' => $healthTimeoutSeconds,
                         'error' => $healthException->getMessage(),
                     ]);
+                }
+
+                $dockerImage = $this->resolveDockerImage($template, $selectedVersion);
+                if ($this->templateUsesPhpCliImage($template, $dockerImage)) {
+                    $this->ensurePhpRuntimeTools($ssh, $containerName, $service, $deployment);
                 }
 
                 // Execute setup commands
@@ -795,17 +796,7 @@ class ContainerDeploymentService
         $cpuReservation = (string) ($cpuLimit * 0.5);
         $memoryReservation = (int) ($memoryLimit * 0.5).'M';
 
-        // Resolve docker image with selected version
-        $dockerImage = $template->docker_image;
-        if ($selectedVersion && $template->versions) {
-            // Handle versions as array or JSON string
-            $versions = is_array($template->versions) ? $template->versions : json_decode($template->versions, true) ?? [];
-            if (in_array($selectedVersion, $versions)) {
-                // Extract image name from docker_image (e.g., "node" from "node:latest")
-                $imageName = explode(':', $dockerImage)[0];
-                $dockerImage = $imageName.':'.$selectedVersion;
-            }
-        }
+        $dockerImage = $this->resolveDockerImage($template, $selectedVersion);
 
         $compose = [
             'version' => '3.9',
@@ -837,12 +828,23 @@ class ContainerDeploymentService
             ],
         ];
 
-        // Ensure Laravel templates always have a long-running web process.
-        // This also covers legacy php:*fpm images from earlier seeded templates.
-        if (($template->slug ?? null) === 'laravel' && str_starts_with($dockerImage, 'php:')) {
-            $internalPort = (int) ($template->default_port ?: 8000);
+        // PHP CLI images need a long-running process plus Composer on PATH.
+        if ($this->templateUsesPhpCliImage($template, $dockerImage)) {
+            $compose['services'][$containerName]['environment']['PATH'] =
+                '/app/.talksasa/bin:/app/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+
+            $pathExport = 'export PATH="/app/.talksasa/bin:/app/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"';
+            $bootstrap = $this->phpRuntimeBootstrapShell();
+            $internalPort = (int) ($template->default_port ?: 8080);
             $compose['services'][$containerName]['working_dir'] = '/app';
-            $compose['services'][$containerName]['command'] = "sh -lc \"php -S 0.0.0.0:{$internalPort} -t public || php -S 0.0.0.0:{$internalPort}\"";
+
+            if (($template->slug ?? null) === 'laravel') {
+                $serve = "php -S 0.0.0.0:{$internalPort} -t public 2>/dev/null || php -S 0.0.0.0:{$internalPort}";
+            } else {
+                $serve = "php -S 0.0.0.0:{$internalPort} -t /app";
+            }
+
+            $compose['services'][$containerName]['command'] = "sh -lc \"{$bootstrap}; {$pathExport}; {$serve}\"";
         }
 
         // Add volumes
@@ -943,6 +945,48 @@ class ContainerDeploymentService
         $timeout = (int) $raw;
 
         return max(30, min(900, $timeout));
+    }
+
+    private function resolveDockerImage($template, ?string $selectedVersion = null): string
+    {
+        $dockerImage = (string) ($template->docker_image ?? '');
+
+        if ($selectedVersion && $template->versions) {
+            $versions = is_array($template->versions)
+                ? $template->versions
+                : json_decode($template->versions, true) ?? [];
+
+            if (in_array($selectedVersion, $versions, true)) {
+                $imageName = explode(':', $dockerImage)[0];
+
+                return $imageName.':'.$selectedVersion;
+            }
+        }
+
+        return $dockerImage;
+    }
+
+    private function templateUsesPhpCliImage($template, string $dockerImage): bool
+    {
+        if (str_starts_with($dockerImage, 'php:')) {
+            return true;
+        }
+
+        return in_array($template->slug ?? '', ['laravel', 'php'], true);
+    }
+
+    private function phpRuntimeBootstrapShell(): string
+    {
+        return 'mkdir -p /app/.talksasa/bin /app/bin'
+            .' && if ! test -x /app/.talksasa/bin/composer; then'
+            .' if command -v apk >/dev/null 2>&1; then apk add --no-cache git unzip curl ca-certificates;'
+            .' elif command -v apt-get >/dev/null 2>&1; then export DEBIAN_FRONTEND=noninteractive'
+            .' && apt-get update -qq && apt-get install -y -qq --no-install-recommends git unzip curl ca-certificates;'
+            .' fi;'
+            .' curl -sS https://getcomposer.org/installer | php -- --install-dir=/app/.talksasa/bin --filename=composer'
+            .' && chmod +x /app/.talksasa/bin/composer;'
+            .' fi'
+            .' && ln -sf /app/.talksasa/bin/composer /app/bin/composer 2>/dev/null || true';
     }
 
     private function resolveHostAppPath($template, string $containerName): ?string
@@ -1168,35 +1212,41 @@ HTML;
         ?ContainerDeployment $deployment
     ): void {
         $containerArg = escapeshellarg($containerName);
-        $script = <<<'SH'
-set -e
-if command -v composer >/dev/null 2>&1; then
-  exit 0
-fi
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq --no-install-recommends git unzip curl ca-certificates >/dev/null
-curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
-php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
-rm -f /tmp/composer-setup.php
-chmod +x /usr/local/bin/composer
-composer --version >/dev/null
-SH;
+        $bootstrap = $this->phpRuntimeBootstrapShell();
+        $script = 'set -e; '.$bootstrap
+            .'; chown -R www-data:www-data /app/.talksasa /app/bin 2>/dev/null || chown -R 33:33 /app/.talksasa /app/bin'
+            .'; /app/.talksasa/bin/composer --version >/dev/null';
 
-        try {
-            $ssh->exec(
-                'docker exec -u 0 '.$containerArg.' sh -lc '.escapeshellarg($script),
-                180
-            );
-            $this->recordDeploymentEvent($service, $deployment, 'php_runtime_tools_ready', [
-                'container_name' => $containerName,
-            ]);
-        } catch (\Exception $e) {
-            \Log::warning('Failed to install PHP runtime tools (composer) in container', [
-                'container_name' => $containerName,
-                'error' => $e->getMessage(),
-            ]);
+        $lastError = null;
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            try {
+                $ssh->exec(
+                    'docker exec -u 0 '.$containerArg.' sh -lc '.escapeshellarg($script),
+                    300
+                );
+                $this->recordDeploymentEvent($service, $deployment, 'php_runtime_tools_ready', [
+                    'container_name' => $containerName,
+                    'attempt' => $attempt,
+                ]);
+
+                return;
+            } catch (\Exception $e) {
+                $lastError = $e->getMessage();
+                if ($attempt < 3) {
+                    sleep(3);
+                }
+            }
         }
+
+        \Log::error('Failed to install PHP runtime tools (composer) in container', [
+            'container_name' => $containerName,
+            'service_id' => $service->id,
+            'error' => $lastError,
+        ]);
+        $this->recordDeploymentEvent($service, $deployment, 'php_runtime_tools_failed', [
+            'container_name' => $containerName,
+            'error' => $lastError,
+        ]);
     }
 
     /**

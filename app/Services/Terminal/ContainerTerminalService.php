@@ -112,7 +112,7 @@ class ContainerTerminalService
         }
 
         // Build docker exec command
-        $dockerCmd = $this->buildDockerExecCommand($session, $sanitized);
+        $dockerCmd = $this->buildDockerExecCommand($session, $this->resolveComposerCommand($sanitized));
 
         try {
             // Execute via SSH
@@ -255,12 +255,25 @@ class ContainerTerminalService
             $targetCwd = '/app';
         }
 
-        $script = 'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
+        $script = 'export PATH="/app/.talksasa/bin:/app/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; '
+            .'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
             .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
             .'printf "\n__EXIT:%d\n" "$?"; pwd';
 
         return 'docker exec -u www-data '.escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
+    }
+
+    /**
+     * Map bare "composer" invocations to the persistent install path.
+     */
+    private function resolveComposerCommand(string $command): string
+    {
+        if (preg_match('/^composer(\s|$)/', $command) === 1) {
+            return preg_replace('/^composer\b/', '/app/.talksasa/bin/composer', $command, 1);
+        }
+
+        return $command;
     }
 
     private function constrainCwdToAppRoot(string $cwd): string
