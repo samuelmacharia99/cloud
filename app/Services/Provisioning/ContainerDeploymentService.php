@@ -247,6 +247,7 @@ class ContainerDeploymentService
                 $dockerImage = $this->resolveDockerImage($template, $selectedVersion);
                 if ($this->templateUsesPhpCliImage($template, $dockerImage)) {
                     $this->ensurePhpRuntimeTools($ssh, $containerName, $service, $deployment);
+                    $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
                 }
 
                 // Execute setup commands
@@ -844,7 +845,8 @@ class ContainerDeploymentService
                 $serve = "php -S 0.0.0.0:{$internalPort} -t /app";
             }
 
-            $compose['services'][$containerName]['command'] = "sh -lc \"{$bootstrap}; {$pathExport}; {$serve}\"";
+            $permissions = $this->appDirectoryOwnershipShell();
+            $compose['services'][$containerName]['command'] = "sh -lc \"{$bootstrap}; {$pathExport}; {$permissions}; {$serve}\"";
         }
 
         // Add volumes
@@ -1168,14 +1170,24 @@ HTML;
     /**
      * Ensure /app is writable by the application user (www-data) for terminal and runtime installs.
      */
+    private function appDirectoryOwnershipShell(): string
+    {
+        return 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data /app;'
+            .' elif id -u 82 >/dev/null 2>&1; then chown -R 82:82 /app;'
+            .' else chown -R 33:33 /app; fi;'
+            .'find /app -type d -exec chmod 775 {} + 2>/dev/null;'
+            .'find /app -type f -exec chmod 664 {} + 2>/dev/null';
+    }
+
     private function fixAppDirectoryPermissions(SSHService $ssh, string $containerName, ?string $hostAppPath): void
     {
         $containerArg = escapeshellarg($containerName);
+        $ownership = $this->appDirectoryOwnershipShell();
 
         try {
             $ssh->exec(
-                "docker exec -u 0 {$containerArg} sh -lc 'chown -R www-data:www-data /app 2>/dev/null || chown -R 33:33 /app'",
-                30
+                'docker exec -u 0 '.$containerArg.' sh -lc '.escapeshellarg($ownership),
+                60
             );
         } catch (\Exception $e) {
             \Log::warning('Failed to chown /app inside container', [
@@ -1190,9 +1202,11 @@ HTML;
 
         try {
             $pathArg = escapeshellarg($hostAppPath);
+            // Match container www-data uid (82 on Alpine, 33 on Debian).
             $ssh->exec(
-                "chown -R 33:33 {$pathArg} 2>/dev/null || chown -R www-data:www-data {$pathArg}",
-                30
+                'uid=$(docker exec -u 0 '.$containerArg.' sh -lc "id -u www-data 2>/dev/null || echo 33"); '
+                ."chown -R \"\${uid}:\${uid}\" {$pathArg}",
+                60
             );
         } catch (\Exception $e) {
             \Log::warning('Failed to chown host app mount path', [
@@ -1213,9 +1227,8 @@ HTML;
     ): void {
         $containerArg = escapeshellarg($containerName);
         $bootstrap = $this->phpRuntimeBootstrapShell();
-        $script = 'set -e; '.$bootstrap
-            .'; chown -R www-data:www-data /app/.talksasa /app/bin 2>/dev/null || chown -R 33:33 /app/.talksasa /app/bin'
-            .'; /app/.talksasa/bin/composer --version >/dev/null';
+        $ownership = $this->appDirectoryOwnershipShell();
+        $script = 'set -e; '.$bootstrap.'; '.$ownership.'; /app/.talksasa/bin/composer --version >/dev/null';
 
         $lastError = null;
         for ($attempt = 1; $attempt <= 3; $attempt++) {
