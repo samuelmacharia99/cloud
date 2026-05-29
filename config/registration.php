@@ -76,6 +76,4 @@ return [
     ],
 
     'check_mx_record' => false,
-
-    'purge_unverified_after_days' => 7,
 ];
