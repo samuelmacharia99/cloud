@@ -2,9 +2,14 @@
     <!-- Terminal header -->
     <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Terminal</h3>
-        <button @click="toggleTerminal()" :class="terminalVisible ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'" class="px-3 py-1.5 rounded text-sm font-medium transition">
-            <span x-text="terminalVisible ? 'Close Terminal' : 'Open Terminal'"></span>
-        </button>
+        <div class="flex items-center gap-2">
+            <button x-show="terminalVisible" @click="pasteFromClipboard()" type="button" class="px-3 py-1.5 rounded text-sm font-medium transition bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+                Paste
+            </button>
+            <button @click="toggleTerminal()" :class="terminalVisible ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300' : 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'" class="px-3 py-1.5 rounded text-sm font-medium transition">
+                <span x-text="terminalVisible ? 'Close Terminal' : 'Open Terminal'"></span>
+            </button>
+        </div>
     </div>
 
     <!-- Terminal container -->
@@ -34,6 +39,9 @@
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400 mt-2">
             <strong>Blocked commands:</strong> sudo, su, docker, chroot, and other privileged/escape commands are blocked for security.
+        </p>
+        <p class="text-xs text-blue-700 dark:text-blue-400 mt-1">
+            <strong>Tip:</strong> Click the terminal, then paste with <kbd class="px-1 rounded bg-blue-100 dark:bg-blue-800">Ctrl+Shift+V</kbd> or the Paste button.
         </p>
     </div>
 
@@ -161,6 +169,7 @@ function containerTerminal() {
                 cursorBlink: true,
                 cols: 120,
                 rows: 24,
+                rightClickSelectsWord: true,
             });
 
             // xterm-addon-fit UMD build exposes the class as FitAddon.FitAddon
@@ -175,19 +184,34 @@ function containerTerminal() {
                 console.error('Failed to fit terminal:', e);
             }
 
-            // Handle input
             this.terminal.onData((data) => {
-                console.log('Terminal input received:', data);
                 this.handleInput(data);
             });
 
-            // Auto-focus terminal when clicked
             const terminalElement = document.getElementById('terminal');
             if (terminalElement) {
                 terminalElement.addEventListener('click', () => {
                     this.terminal.focus();
                 });
+
+                terminalElement.addEventListener('paste', (event) => {
+                    event.preventDefault();
+                    const text = event.clipboardData?.getData('text') ?? '';
+                    if (text) {
+                        this.insertText(text);
+                    }
+                });
             }
+
+            this.terminal.attachCustomKeyEventHandler((event) => {
+                const key = event.key?.toLowerCase();
+                if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'v') {
+                    event.preventDefault();
+                    this.pasteFromClipboard();
+                    return false;
+                }
+                return true;
+            });
 
             // Fit on window resize
             window.addEventListener('resize', () => {
@@ -199,8 +223,38 @@ function containerTerminal() {
             });
         },
 
-        handleInput(key) {
+        async pasteFromClipboard() {
+            if (!this.connected || !this.terminal) {
+                return;
+            }
+
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text) {
+                    this.insertText(text);
+                    this.terminal.focus();
+                }
+            } catch (error) {
+                this.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V or right-click → Paste.\r\n');
+                this.writePrompt();
+            }
+        },
+
+        handleInput(data) {
             if (!this.connected) return;
+
+            if (data.startsWith('\x1b[200~')) {
+                const pasted = data.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, '');
+                this.insertText(pasted);
+                return;
+            }
+
+            if (data.length > 1) {
+                this.insertText(data);
+                return;
+            }
+
+            const key = data;
 
             // Ctrl+C - clear input buffer
             if (key === '\x03') {
@@ -265,6 +319,26 @@ function containerTerminal() {
             if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127) {
                 this.inputBuffer += key;
                 this.terminal.write(key);
+            }
+        },
+
+        insertText(text) {
+            if (!this.connected || !this.terminal) {
+                return;
+            }
+
+            const normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+            for (const char of normalized) {
+                if (char === '\n') {
+                    continue;
+                }
+
+                const code = char.charCodeAt(0);
+                if (code >= 32 && code < 127) {
+                    this.inputBuffer += char;
+                    this.terminal.write(char);
+                }
             }
         },
 
