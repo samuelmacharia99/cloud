@@ -215,6 +215,10 @@ class ContainerDeploymentService
 
                 $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
 
+                if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
+                    $this->ensurePhpRuntimeTools($ssh, $containerName, $service, $deployment);
+                }
+
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
                 $strictHealthCheck = $this->isStrictHealthCheckEnabled($template);
@@ -1149,6 +1153,47 @@ HTML;
         } catch (\Exception $e) {
             \Log::warning('Failed to chown host app mount path', [
                 'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Install Composer and common PHP build deps in bare php:*-cli runtime images.
+     */
+    private function ensurePhpRuntimeTools(
+        SSHService $ssh,
+        string $containerName,
+        Service $service,
+        ?ContainerDeployment $deployment
+    ): void {
+        $containerArg = escapeshellarg($containerName);
+        $script = <<<'SH'
+set -e
+if command -v composer >/dev/null 2>&1; then
+  exit 0
+fi
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends git unzip curl ca-certificates >/dev/null
+curl -sS https://getcomposer.org/installer -o /tmp/composer-setup.php
+php /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+rm -f /tmp/composer-setup.php
+chmod +x /usr/local/bin/composer
+composer --version >/dev/null
+SH;
+
+        try {
+            $ssh->exec(
+                'docker exec -u 0 '.$containerArg.' sh -lc '.escapeshellarg($script),
+                180
+            );
+            $this->recordDeploymentEvent($service, $deployment, 'php_runtime_tools_ready', [
+                'container_name' => $containerName,
+            ]);
+        } catch (\Exception $e) {
+            \Log::warning('Failed to install PHP runtime tools (composer) in container', [
+                'container_name' => $containerName,
                 'error' => $e->getMessage(),
             ]);
         }
