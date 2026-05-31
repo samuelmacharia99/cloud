@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\User;
+
 return [
     'defaults' => [
         'guard' => 'web',
@@ -11,12 +13,16 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'sanctum' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => App\Models\User::class,
+            'model' => User::class,
         ],
     ],
 

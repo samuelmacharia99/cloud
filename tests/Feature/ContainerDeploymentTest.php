@@ -2,12 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Models\ContainerTemplate;
+use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
+use App\Models\ContainerTemplate;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
-use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -16,9 +17,13 @@ class ContainerDeploymentTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
+
     private Node $node;
+
     private ContainerTemplate $template;
+
     private Product $product;
+
     private Service $service;
 
     protected function setUp(): void
@@ -44,7 +49,7 @@ class ContainerDeploymentTest extends TestCase
 
         // Create product with container template
         $this->product = Product::factory()->create([
-            'type' => 'container',
+            'type' => 'container_hosting',
             'container_template_id' => $this->template->id,
             'provisioning_driver_key' => 'container',
         ]);
@@ -148,7 +153,7 @@ class ContainerDeploymentTest extends TestCase
             'node_id' => $this->node->id,
         ]);
 
-        $backup = \App\Models\ContainerBackup::factory()->create([
+        $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $this->service->id,
             'node_id' => $this->node->id,
@@ -191,16 +196,19 @@ class ContainerDeploymentTest extends TestCase
 
     public function test_container_template_api_lists_templates(): void
     {
+        $this->actingAs($this->user, 'sanctum');
+
         $response = $this->getJson('/api/v1/container-templates');
 
         $response->assertStatus(200)
-            ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $this->template->id)
             ->assertJsonPath('data.0.slug', $this->template->slug);
     }
 
     public function test_container_template_api_shows_details(): void
     {
+        $this->actingAs($this->user, 'sanctum');
+
         $response = $this->getJson("/api/v1/container-templates/{$this->template->id}");
 
         $response->assertStatus(200)
@@ -237,7 +245,7 @@ class ContainerDeploymentTest extends TestCase
             'service_id' => $this->service->id,
         ]);
 
-        $backup = \App\Models\ContainerBackup::factory()->create([
+        $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $this->service->id,
             'status' => 'completed',

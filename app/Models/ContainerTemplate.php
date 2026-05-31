@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ContainerTemplate extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'slug',
         'name',
@@ -64,7 +67,7 @@ class ContainerTemplate extends Model
 
         return array_filter(
             $this->environment_variables,
-            fn($var) => $var['required'] ?? false
+            fn ($var) => $var['required'] ?? false
         );
     }
 
@@ -76,7 +79,7 @@ class ContainerTemplate extends Model
 
         return array_filter(
             $this->environment_variables,
-            fn($var) => $var['secret'] ?? false
+            fn ($var) => $var['secret'] ?? false
         );
     }
 
@@ -88,7 +91,7 @@ class ContainerTemplate extends Model
 
         return array_filter(
             $this->environment_variables,
-            fn($var) => ! ($var['required'] ?? false)
+            fn ($var) => ! ($var['required'] ?? false)
         );
     }
 }

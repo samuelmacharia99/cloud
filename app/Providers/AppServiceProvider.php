@@ -86,6 +86,10 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureRateLimiting(): void
     {
+        RateLimiter::for('api', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
         RateLimiter::for('laravel-container-actions', function (Request $request) {
             $service = $request->route('service');
             $serviceId = is_object($service) ? $service->id : $service;

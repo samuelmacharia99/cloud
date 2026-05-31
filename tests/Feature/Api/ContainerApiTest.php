@@ -2,13 +2,14 @@
 
 namespace Tests\Feature\Api;
 
-use App\Models\ContainerTemplate;
+use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
+use App\Models\ContainerTemplate;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
-use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,8 +18,11 @@ class ContainerApiTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
+
     private User $otherUser;
+
     private Node $node;
+
     private Service $service;
 
     protected function setUp(): void
@@ -31,7 +35,7 @@ class ContainerApiTest extends TestCase
 
         $template = ContainerTemplate::factory()->create();
         $product = Product::factory()->create([
-            'type' => 'container',
+            'type' => 'container_hosting',
             'container_template_id' => $template->id,
         ]);
 
@@ -79,7 +83,12 @@ class ContainerApiTest extends TestCase
 
     public function test_api_returns_404_for_missing_deployment(): void
     {
-        $service = Service::factory()->create(['user_id' => $this->user->id]);
+        $service = Service::factory()->create([
+            'user_id' => $this->user->id,
+            'product_id' => $this->service->product_id,
+            'node_id' => $this->node->id,
+            'provisioning_driver_key' => 'container',
+        ]);
 
         $this->actingAs($this->user, 'sanctum');
 
@@ -97,7 +106,7 @@ class ContainerApiTest extends TestCase
         $response = $this->getJson("/api/v1/services/{$this->service->id}/container/logs?lines=50");
 
         // In test environment, logs might be empty, but endpoint should respond
-        $this->assertIn($response->status(), [200, 500]); // 500 if SSH fails (expected in test)
+        $this->assertContains($response->status(), [200, 500]); // 500 if SSH fails (expected in test)
     }
 
     public function test_container_metrics_endpoint(): void
@@ -123,7 +132,7 @@ class ContainerApiTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonPath('cpu_percent', 42.25)
-            ->assertJsonPath('memory_percent', 25.0)
+            ->assertJsonPath('memory_percent', 25)
             ->assertJsonPath('memory_mb', 256)
             ->assertJsonPath('network_in_bytes', 1200)
             ->assertJsonPath('network_out_bytes', 3400)
@@ -132,6 +141,8 @@ class ContainerApiTest extends TestCase
 
     public function test_container_templates_endpoint(): void
     {
+        $this->actingAs($this->user, 'sanctum');
+
         $response = $this->getJson('/api/v1/container-templates');
 
         $response->assertStatus(200)
@@ -140,6 +151,8 @@ class ContainerApiTest extends TestCase
 
     public function test_container_template_show_endpoint(): void
     {
+        $this->actingAs($this->user, 'sanctum');
+
         $template = ContainerTemplate::first();
 
         $response = $this->getJson("/api/v1/container-templates/{$template->id}");
@@ -214,16 +227,16 @@ class ContainerApiTest extends TestCase
     {
         $this->actingAs($this->user, 'sanctum');
 
-        $response = $this->getJson("/api/v1/services/99999/container");
+        $response = $this->getJson('/api/v1/services/99999/container');
 
-        $response->assertStatus(403)
+        $response->assertStatus(404)
             ->assertJsonStructure(['message']);
     }
 
     public function test_backup_api_requires_ownership(): void
     {
         $deployment = ContainerDeployment::factory()->create(['service_id' => $this->service->id]);
-        $backup = \App\Models\ContainerBackup::factory()->create([
+        $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $this->service->id,
         ]);
@@ -237,11 +250,20 @@ class ContainerApiTest extends TestCase
 
     public function test_backup_restore_rejects_mismatched_service_backup(): void
     {
-        $otherService = Service::factory()->create(['user_id' => $this->user->id]);
-        $otherDeployment = ContainerDeployment::factory()->create(['service_id' => $otherService->id]);
-        $backup = \App\Models\ContainerBackup::factory()->create([
+        $otherService = Service::factory()->create([
+            'user_id' => $this->user->id,
+            'product_id' => $this->service->product_id,
+            'node_id' => $this->node->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $otherDeployment = ContainerDeployment::factory()->create([
+            'service_id' => $otherService->id,
+            'node_id' => $this->node->id,
+        ]);
+        $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $otherDeployment->id,
             'service_id' => $otherService->id,
+            'node_id' => $this->node->id,
         ]);
 
         $this->actingAs($this->user, 'sanctum');

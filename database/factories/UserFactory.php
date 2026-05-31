@@ -60,4 +60,12 @@ class UserFactory extends Factory
             'status' => 'suspended',
         ]);
     }
+
+    public function unverified(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'email_verified_at' => null,
+            'status' => 'inactive',
+        ]);
+    }
 }

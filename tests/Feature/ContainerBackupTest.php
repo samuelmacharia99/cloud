@@ -2,13 +2,13 @@
 
 namespace Tests\Feature;
 
-use App\Models\ContainerTemplate;
-use App\Models\ContainerDeployment;
 use App\Models\ContainerBackup;
+use App\Models\ContainerDeployment;
+use App\Models\ContainerTemplate;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
-use App\Models\Node;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,8 +17,11 @@ class ContainerBackupTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
+
     private Node $node;
+
     private Service $service;
+
     private ContainerDeployment $deployment;
 
     protected function setUp(): void
@@ -30,7 +33,7 @@ class ContainerBackupTest extends TestCase
 
         $template = ContainerTemplate::factory()->create();
         $product = Product::factory()->create([
-            'type' => 'container',
+            'type' => 'container_hosting',
             'container_template_id' => $template->id,
         ]);
 
@@ -158,7 +161,7 @@ class ContainerBackupTest extends TestCase
 
         // Note: In real scenario with mocked SSH, this would return 201
         // For now, just test the endpoint structure
-        $this->assertIn($response->status(), [201, 500]); // 500 if SSH fails (expected in test)
+        $this->assertContains($response->status(), [201, 500]); // 500 if SSH fails (expected in test)
     }
 
     public function test_api_lists_backups(): void
@@ -217,16 +220,18 @@ class ContainerBackupTest extends TestCase
 
     public function test_backup_timestamps_are_set(): void
     {
-        $now = now();
+        $startedAt = now();
+        $completedAt = $startedAt->copy()->addHour();
 
         $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $this->deployment->id,
             'service_id' => $this->service->id,
-            'started_at' => $now,
-            'completed_at' => $now->addHours(1),
+            'node_id' => $this->node->id,
+            'started_at' => $startedAt,
+            'completed_at' => $completedAt,
         ]);
 
-        $this->assertEquals($now->timestamp, $backup->started_at->timestamp);
+        $this->assertEquals($startedAt->timestamp, $backup->started_at->timestamp);
         $this->assertTrue($backup->completed_at->isAfter($backup->started_at));
     }
 

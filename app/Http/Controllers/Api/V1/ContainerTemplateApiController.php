@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Models\ContainerDeployment;
 use App\Models\ContainerTemplate;
 use Illuminate\Http\JsonResponse;
 
@@ -37,9 +38,9 @@ class ContainerTemplateApiController
      */
     public function show(ContainerTemplate $template): JsonResponse
     {
-        $template->load('products', 'versions');
+        $template->load('products');
 
-        $deploymentCount = \App\Models\ContainerDeployment::whereHas('service.product', function ($q) use ($template) {
+        $deploymentCount = ContainerDeployment::whereHas('service.product', function ($q) use ($template) {
             $q->where('container_template_id', $template->id);
         })->count();
 
