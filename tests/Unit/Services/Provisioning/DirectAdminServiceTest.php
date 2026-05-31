@@ -1,0 +1,118 @@
+<?php
+
+namespace Tests\Unit\Services\Provisioning;
+
+use App\Models\Node;
+use App\Models\Service;
+use App\Models\User;
+use App\Services\Provisioning\DirectAdminService;
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+class DirectAdminServiceTest extends TestCase
+{
+    private function createDirectAdminNode(): Node
+    {
+        $node = new Node([
+            'name' => 'DA Test Node',
+            'hostname' => 'da-test.example.com',
+            'ip_address' => '10.0.0.10',
+            'type' => 'directadmin',
+            'status' => 'online',
+            'api_url' => 'https://da.example.com:2222',
+            'da_admin_username' => 'admin',
+            'da_login_key' => 'secret',
+            'da_port' => '2222',
+            'verify_ssl' => false,
+            'is_active' => true,
+        ]);
+        $node->id = 1;
+
+        return $node;
+    }
+
+    private function createService(string $username = 'cust001'): Service
+    {
+        $user = User::make(['email' => 'customer@example.com']);
+        $service = Service::make([
+            'external_reference' => $username,
+            'service_meta' => [],
+        ]);
+        $service->id = 42;
+        $service->setRelation('user', $user);
+
+        return $service;
+    }
+
+    public function test_create_hosting_account_rejects_api_error_body(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=1&text=User+already+exists', 200),
+        ]);
+
+        $result = (new DirectAdminService($this->createDirectAdminNode()))->createHostingAccount(
+            $this->createService(),
+            'cust001',
+            'Str0ngPass!',
+            'example.com',
+            'Bronze'
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('already exists', strtolower($result['message']));
+    }
+
+    public function test_suspend_account_uses_shared_http_client_settings(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Suspended', 200),
+        ]);
+
+        $node = $this->createDirectAdminNode();
+        $service = $this->createService();
+
+        $this->assertTrue((new DirectAdminService($node))->suspendAccount($service));
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
+                && $request['suspend'] === 'Suspend'
+                && $request['select0'] === 'cust001';
+        });
+    }
+
+    public function test_terminate_account_calls_delete_endpoint(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Deleted', 200),
+        ]);
+
+        $node = $this->createDirectAdminNode();
+        $service = $this->createService();
+
+        $this->assertTrue((new DirectAdminService($node))->terminateAccount($service));
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+                && $request['action'] === 'delete'
+                && $request['user'] === 'cust001';
+        });
+    }
+
+    public function test_empty_api_body_is_treated_as_failure_for_create(): void
+    {
+        Http::fake([
+            '*' => Http::response('', 200),
+        ]);
+
+        $result = (new DirectAdminService($this->createDirectAdminNode()))->createHostingAccount(
+            $this->createService('cust002'),
+            'cust002',
+            'Str0ngPass!',
+            'example.com',
+            'Bronze'
+        );
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('empty response', strtolower($result['message']));
+    }
+}

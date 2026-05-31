@@ -330,6 +330,43 @@
                 </div>
             @endif
 
+            @php($hostingCredentials = $service->getHostingCredentials())
+            @if ($service->isSharedHosting() && $hostingCredentials)
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Credentials</h2>
+                        <form method="POST" action="{{ route('admin.services.resend-credentials', $service) }}" class="inline">
+                            @csrf
+                            <button type="submit" class="px-3 py-1 text-xs bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900 font-medium rounded transition">
+                                Resend Credentials
+                            </button>
+                        </form>
+                    </div>
+                    <div class="space-y-3">
+                        @if (!empty($hostingCredentials['domain']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Primary Domain</p>
+                                <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $hostingCredentials['domain'] }}</p>
+                            </div>
+                        @endif
+                        <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Username</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $hostingCredentials['username'] }}</p>
+                        </div>
+                        <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Password</p>
+                            <p class="text-sm text-slate-900 dark:text-white font-mono mt-1">{{ $hostingCredentials['password'] }}</p>
+                        </div>
+                        @if (!empty($hostingCredentials['panel_url']))
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Control Panel</p>
+                                <a href="{{ $hostingCredentials['panel_url'] }}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 dark:text-blue-400 hover:underline font-mono mt-1 inline-block">{{ $hostingCredentials['panel_url'] }}</a>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
             <!-- Container Panel (if applicable) -->
             @include('admin.services.partials.container-panel')
         </div>
@@ -605,7 +642,15 @@
                                    value="{{ $password }}"
                                    placeholder="DirectAdmin password"
                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Enter the exact password from your DirectAdmin server</p>
+                        </div>
+
+                        <!-- Primary Domain -->
+                        <div class="mb-4">
+                            <label for="primary_domain" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Primary Domain</label>
+                            <input type="text" id="primary_domain" name="primary_domain"
+                                   value="{{ $service->service_meta['domain'] ?? '' }}"
+                                   placeholder="example.com"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                         </div>
                     </div>
                 @endif

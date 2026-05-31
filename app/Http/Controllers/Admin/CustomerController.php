@@ -544,7 +544,7 @@ class CustomerController extends Controller
                     'provisioning_driver_key' => $isSharedHosting
                         ? 'directadmin'
                         : $product->provisioning_driver_key,
-                    'external_reference' => $isSharedHosting ? $validated['direct_admin_username'] : null,
+                    'external_reference' => null,
                     'service_meta' => ! empty($serviceMeta) ? $serviceMeta : null,
                     'notes' => $validated['notes'] ?? null,
                 ]);
@@ -651,11 +651,9 @@ class CustomerController extends Controller
     private function provisionDirectAdminAccount(Service $service, array $validated): array
     {
         try {
-            $package = $service->product->directAdminPackage;
-            $node = $package?->node;
-
+            $node = $service->node;
             if (! $node) {
-                return ['success' => false, 'message' => 'no DirectAdmin node attached to package'];
+                return ['success' => false, 'message' => 'no DirectAdmin node assigned to service'];
             }
 
             $da = new DirectAdminService($node);
@@ -664,17 +662,33 @@ class CustomerController extends Controller
                 return ['success' => false, 'message' => 'DirectAdmin node is not configured (missing API URL or password)'];
             }
 
+            $packageName = $service->service_meta['package_name']
+                ?? DirectAdminPackage::where('node_id', $node->id)
+                    ->where('package_key', $service->service_meta['package'] ?? '')
+                    ->value('name')
+                ?? $service->product?->directAdminPackage?->name;
+
+            if (! $packageName) {
+                return ['success' => false, 'message' => 'no DirectAdmin package resolved for this service'];
+            }
+
             $result = $da->createHostingAccount(
                 $service,
                 $validated['direct_admin_username'],
                 $validated['direct_admin_password'],
                 strtolower($validated['direct_admin_domain']),
-                $package->package_key
+                $packageName
             );
 
             if ($result['success']) {
                 $service->update([
+                    'status' => 'active',
+                    'external_reference' => $validated['direct_admin_username'],
                     'credentials' => json_encode($result['credentials']),
+                    'service_meta' => array_merge($service->service_meta ?? [], [
+                        'domain' => strtolower($validated['direct_admin_domain']),
+                        'provisioned_at' => now()->toIso8601String(),
+                    ]),
                 ]);
             }
 

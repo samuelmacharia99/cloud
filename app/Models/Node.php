@@ -116,6 +116,7 @@ class Node extends Model
         if ($this->cpu_cores === 0) {
             return 0;
         }
+
         return min(100, $this->cpu_used);
     }
 
@@ -124,6 +125,7 @@ class Node extends Model
         if ($this->ram_gb === 0) {
             return 0;
         }
+
         return (int) (($this->ram_used_gb / $this->ram_gb) * 100);
     }
 
@@ -132,6 +134,7 @@ class Node extends Model
         if ($this->storage_gb === 0) {
             return 0;
         }
+
         return (int) (($this->storage_used_gb / $this->storage_gb) * 100);
     }
 
@@ -156,6 +159,17 @@ class Node extends Model
             'directadmin' => 'DirectAdmin Server',
             default => 'Unknown',
         };
+    }
+
+    public function getDirectAdminPanelUrl(): ?string
+    {
+        if ($this->type !== 'directadmin' || empty($this->hostname)) {
+            return null;
+        }
+
+        $port = $this->da_port ?: '2222';
+
+        return 'https://'.$this->hostname.':'.$port;
     }
 
     public function updateUtilization(int $cpuUsed, int $ramUsedGb, int $storageUsedGb): void

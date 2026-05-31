@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Setting;
-use App\Models\Currency;
-use Illuminate\Http\Request;
+use App\Helpers\CronHelper;
 use App\Http\Controllers\Controller;
-use Illuminate\Support\Facades\Storage;
+use App\Models\Currency;
+use App\Models\Email;
+use App\Models\Setting;
+use App\Models\SmsTemplate;
+use App\Services\PaymentGateway\MpesaService;
+use App\Services\SmsService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
 class SettingController extends Controller
@@ -39,7 +43,7 @@ class SettingController extends Controller
             'bank_branch', 'bank_swift_code',
         ],
         'provisioning' => [
-            'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_days',
+            'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
@@ -71,6 +75,7 @@ class SettingController extends Controller
     {
         $this->middleware(function ($request, $next) {
             $this->authorize('viewAny', Setting::class);
+
             return $next($request);
         });
     }
@@ -88,14 +93,14 @@ class SettingController extends Controller
         $currencies = Currency::active()->get();
 
         // Load SMS templates for the notifications tab
-        $smsTemplates = \App\Models\SmsTemplate::all()->keyBy('event_key');
+        $smsTemplates = SmsTemplate::all()->keyBy('event_key');
 
         // Get cron helper data for the cron tab
         try {
             $cronCommand = getCronCommand();
             $cronCommandOptions = getCronCommandOptions();
-            $cronValidation = \App\Helpers\CronHelper::validateCronSetup();
-            $cronStats = \App\Helpers\CronHelper::getCronStats();
+            $cronValidation = CronHelper::validateCronSetup();
+            $cronStats = CronHelper::getCronStats();
         } catch (\Exception $e) {
             // Fallback if cron system has issues
             $cronCommand = getCronCommand();
@@ -106,9 +111,9 @@ class SettingController extends Controller
 
         // Gateway status for auto-expand in payment methods tab
         $gatewayStatus = [
-            'mpesa' => Setting::getValue('mpesa_enabled') == '1' && !empty(Setting::getValue('mpesa_consumer_key')),
-            'stripe' => Setting::getValue('stripe_enabled') == '1' && !empty(Setting::getValue('stripe_secret_key')),
-            'paypal' => Setting::getValue('paypal_enabled') == '1' && !empty(Setting::getValue('paypal_client_id')),
+            'mpesa' => Setting::getValue('mpesa_enabled') == '1' && ! empty(Setting::getValue('mpesa_consumer_key')),
+            'stripe' => Setting::getValue('stripe_enabled') == '1' && ! empty(Setting::getValue('stripe_secret_key')),
+            'paypal' => Setting::getValue('paypal_enabled') == '1' && ! empty(Setting::getValue('paypal_client_id')),
         ];
 
         return view('admin.settings.index', compact(
@@ -161,16 +166,17 @@ class SettingController extends Controller
                 }
             }
 
-            if (!$allowed) {
+            if (! $allowed) {
                 \Log::warning('SettingController: rejected unknown setting key', [
                     'key' => $key,
                     'user_id' => auth()->id(),
                     'ip' => request()->ip(),
                 ]);
+
                 continue;
             }
 
-            $trimmedValue = trim((string)$value);
+            $trimmedValue = trim((string) $value);
 
             // Skip empty sensitive fields
             if (in_array($key, $sensitiveFields) && empty($trimmedValue)) {
@@ -184,7 +190,7 @@ class SettingController extends Controller
         if ($request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
             return response()->json([
                 'success' => true,
-                'message' => 'Settings saved successfully.'
+                'message' => 'Settings saved successfully.',
             ]);
         }
 
@@ -214,7 +220,7 @@ class SettingController extends Controller
         return response()->json([
             'success' => true,
             'url' => $url,
-            'message' => ucfirst($type) . ' uploaded successfully.',
+            'message' => ucfirst($type).' uploaded successfully.',
         ]);
     }
 
@@ -236,17 +242,26 @@ class SettingController extends Controller
         $smtpUser = Setting::getValue('smtp_user');
         $smtpPassword = Setting::getValue('smtp_password');
 
-        if (!$smtpHost || !$smtpPort || !$smtpUser || !$smtpPassword) {
+        if (! $smtpHost || ! $smtpPort || ! $smtpUser || ! $smtpPassword) {
             $missing = [];
-            if (!$smtpHost) $missing[] = 'Host';
-            if (!$smtpPort) $missing[] = 'Port';
-            if (!$smtpUser) $missing[] = 'Username';
-            if (!$smtpPassword) $missing[] = 'Password';
+            if (! $smtpHost) {
+                $missing[] = 'Host';
+            }
+            if (! $smtpPort) {
+                $missing[] = 'Port';
+            }
+            if (! $smtpUser) {
+                $missing[] = 'Username';
+            }
+            if (! $smtpPassword) {
+                $missing[] = 'Password';
+            }
 
-            $message = 'SMTP configuration incomplete. Missing: ' . implode(', ', $missing);
+            $message = 'SMTP configuration incomplete. Missing: '.implode(', ', $missing);
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $message], 400);
             }
+
             return back()->with('error', $message);
         }
 
@@ -256,12 +271,12 @@ class SettingController extends Controller
 
             Mail::raw($body, function ($message) use ($toEmail, $fromName, $fromAddress, $subject) {
                 $message->to($toEmail)
-                        ->from($fromAddress, $fromName)
-                        ->subject($subject);
+                    ->from($fromAddress, $fromName)
+                    ->subject($subject);
             });
 
             // Log the email
-            \App\Models\Email::create([
+            Email::create([
                 'recipient' => $toEmail,
                 'subject' => $subject,
                 'body' => $body,
@@ -270,13 +285,14 @@ class SettingController extends Controller
                 'created_at' => now(),
             ]);
 
-            $message = 'Test email sent successfully to ' . $toEmail . '. Check your inbox!';
+            $message = 'Test email sent successfully to '.$toEmail.'. Check your inbox!';
             if ($request->wantsJson()) {
                 return response()->json(['success' => true, 'message' => $message]);
             }
+
             return back()->with('success', $message);
         } catch (\Swift_TransportException $e) {
-            $errorMsg = 'SMTP Connection Error: ' . $e->getMessage();
+            $errorMsg = 'SMTP Connection Error: '.$e->getMessage();
             \Log::error('SMTP Test Failed - Connection Error', [
                 'host' => $smtpHost,
                 'port' => $smtpPort,
@@ -284,7 +300,7 @@ class SettingController extends Controller
             ]);
 
             // Log the failed email
-            \App\Models\Email::create([
+            Email::create([
                 'recipient' => $toEmail,
                 'subject' => $subject,
                 'body' => $body,
@@ -297,16 +313,17 @@ class SettingController extends Controller
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $errorMsg], 400);
             }
+
             return back()->with('error', $errorMsg);
         } catch (\Exception $e) {
-            $errorMsg = 'Failed to send test email: ' . $e->getMessage();
+            $errorMsg = 'Failed to send test email: '.$e->getMessage();
             \Log::error('SMTP Test Failed', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
             ]);
 
             // Log the failed email
-            \App\Models\Email::create([
+            Email::create([
                 'recipient' => $toEmail,
                 'subject' => $subject,
                 'body' => $body,
@@ -319,6 +336,7 @@ class SettingController extends Controller
             if ($request->wantsJson()) {
                 return response()->json(['success' => false, 'message' => $errorMsg], 400);
             }
+
             return back()->with('error', $errorMsg);
         }
     }
@@ -332,7 +350,7 @@ class SettingController extends Controller
         ]);
 
         $senderId = Setting::getValue('sms_sender_id', 'TalksasaCloud');
-        $smsService = new \App\Services\SmsService();
+        $smsService = new SmsService;
         $result = $smsService->sendTest($request->input('phone'), $senderId);
 
         // Return JSON response
@@ -342,7 +360,7 @@ class SettingController extends Controller
     public function debugLog(Request $request)
     {
         // Only available in local/debug environments; return 404 in production
-        if (!app()->isLocal() && !config('app.debug')) {
+        if (! app()->isLocal() && ! config('app.debug')) {
             abort(404);
         }
 
@@ -370,12 +388,12 @@ class SettingController extends Controller
             // For now, just return success
             return response()->json([
                 'success' => true,
-                'message' => 'Exchange rates refreshed successfully.'
+                'message' => 'Exchange rates refreshed successfully.',
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to refresh exchange rates: ' . $e->getMessage()
+                'message' => 'Failed to refresh exchange rates: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -384,8 +402,9 @@ class SettingController extends Controller
     {
         $this->authorize('batchUpdate', Setting::class);
 
-        $mpesaService = new \App\Services\PaymentGateway\MpesaService();
+        $mpesaService = new MpesaService;
         $result = $mpesaService->testConnection();
+
         return response()->json($result);
     }
 
@@ -397,8 +416,9 @@ class SettingController extends Controller
             'response_type' => 'required|in:Completed,Cancelled',
         ]);
 
-        $mpesaService = new \App\Services\PaymentGateway\MpesaService();
+        $mpesaService = new MpesaService;
         $result = $mpesaService->registerCallbackUrls($request->input('response_type'));
+
         return response()->json($result);
     }
 
@@ -411,8 +431,9 @@ class SettingController extends Controller
             'amount' => 'required|numeric|min:1|max:999999',
         ]);
 
-        $mpesaService = new \App\Services\PaymentGateway\MpesaService();
+        $mpesaService = new MpesaService;
         $result = $mpesaService->simulatePayment($request->input('phone_number'), $request->input('amount'));
+
         return response()->json($result);
     }
 }

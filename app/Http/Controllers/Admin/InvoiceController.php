@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Invoice;
-use App\Models\User;
-use App\Models\Setting;
-use App\Models\Payment;
-use App\Models\Service;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
-use App\Services\Provisioning\ProvisioningService;
-use App\Services\NotificationService;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\Setting;
+use App\Models\User;
+use App\Services\InvoicePdfService;
+use App\Services\NotificationService;
+use App\Services\Provisioning\InvoiceProvisioningService;
+use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class InvoiceController extends Controller
@@ -50,6 +50,7 @@ class InvoiceController extends Controller
     public function create()
     {
         $customers = User::where('is_admin', false)->orderBy('name')->get();
+
         return view('admin.invoices.create', compact('customers'));
     }
 
@@ -69,7 +70,7 @@ class InvoiceController extends Controller
         $prefix = Setting::getValue('invoice_prefix', 'INV');
         $year = now()->format('Y');
         $count = Invoice::whereYear('created_at', $year)->count() + 1;
-        $validated['invoice_number'] = "{$prefix}-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+        $validated['invoice_number'] = "{$prefix}-{$year}-".str_pad($count, 5, '0', STR_PAD_LEFT);
         $validated['tax'] ??= 0;
 
         $invoice = Invoice::create($validated);
@@ -85,12 +86,14 @@ class InvoiceController extends Controller
     public function show(Invoice $invoice)
     {
         $invoice->load('user', 'items.product', 'payments');
+
         return view('admin.invoices.show', compact('invoice'));
     }
 
     public function edit(Invoice $invoice)
     {
         $customers = User::where('is_admin', false)->orderBy('name')->get();
+
         return view('admin.invoices.edit', compact('invoice', 'customers'));
     }
 
@@ -115,12 +118,12 @@ class InvoiceController extends Controller
 
     public function download(Invoice $invoice)
     {
-        return \App\Services\InvoicePdfService::download($invoice);
+        return InvoicePdfService::download($invoice);
     }
 
     public function preview(Invoice $invoice)
     {
-        return \App\Services\InvoicePdfService::stream($invoice);
+        return InvoicePdfService::stream($invoice);
     }
 
     /**
@@ -184,7 +187,7 @@ class InvoiceController extends Controller
             ]);
 
             return redirect()->back()
-                ->with('error', 'Failed to mark invoice as paid: ' . $e->getMessage());
+                ->with('error', 'Failed to mark invoice as paid: '.$e->getMessage());
         }
     }
 
@@ -194,11 +197,11 @@ class InvoiceController extends Controller
     public function addPayment(Request $request, Invoice $invoice)
     {
         $validated = $request->validate([
-            'amount'                => 'required|numeric|min:0.01',
-            'payment_method'        => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => ['required', Rule::in(array_column(PaymentMethod::cases(), 'value'))],
             'transaction_reference' => 'nullable|string|max:255',
-            'paid_at'               => 'nullable|date',
-            'notes'                 => 'nullable|string|max:1000',
+            'paid_at' => 'nullable|date',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         try {
@@ -214,15 +217,15 @@ class InvoiceController extends Controller
 
             // Create payment
             $payment = Payment::create([
-                'user_id'                => $invoice->user_id,
-                'invoice_id'             => $invoice->id,
-                'amount'                 => $validated['amount'],
-                'currency'               => 'KES',
-                'payment_method'         => $validated['payment_method'],
-                'transaction_reference'  => $validated['transaction_reference'],
-                'status'                 => PaymentStatus::Completed->value,
-                'paid_at'                => $validated['paid_at'] ?? now(),
-                'notes'                  => $validated['notes'],
+                'user_id' => $invoice->user_id,
+                'invoice_id' => $invoice->id,
+                'amount' => $validated['amount'],
+                'currency' => 'KES',
+                'payment_method' => $validated['payment_method'],
+                'transaction_reference' => $validated['transaction_reference'],
+                'status' => PaymentStatus::Completed->value,
+                'paid_at' => $validated['paid_at'] ?? now(),
+                'notes' => $validated['notes'],
             ]);
 
             \Log::info('Payment record created', [
@@ -275,7 +278,7 @@ class InvoiceController extends Controller
             ]);
 
             return redirect()->back()
-                ->with('error', 'Failed to record payment. ' . $e->getMessage());
+                ->with('error', 'Failed to record payment. '.$e->getMessage());
         }
     }
 
@@ -284,23 +287,6 @@ class InvoiceController extends Controller
      */
     private function provisionServices(Invoice $invoice): void
     {
-        $provisioningService = new ProvisioningService();
-
-        // Find all pending services for this invoice
-        $services = Service::where('invoice_id', $invoice->id)
-            ->where('status', 'pending')
-            ->get();
-
-        foreach ($services as $service) {
-            try {
-                $provisioningService->provision($service);
-                \Log::info("Service provisioned after invoice payment", [
-                    'service_id' => $service->id,
-                    'invoice_id' => $invoice->id,
-                ]);
-            } catch (\Exception $e) {
-                \Log::error("Auto-provisioning failed for service {$service->id}: {$e->getMessage()}");
-            }
-        }
+        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
     }
 }

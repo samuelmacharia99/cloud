@@ -63,7 +63,7 @@ class SettingSeeder extends Seeder
             ['key' => 'provisioning_mode', 'value' => 'automatic', 'description' => 'Provisioning mode (automatic/manual)'],
             ['key' => 'auto_provision', 'value' => 'true', 'description' => 'Auto-provision services'],
             ['key' => 'suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend services when overdue'],
-            ['key' => 'terminate_after_days', 'value' => '30', 'description' => 'Days before terminating suspended service'],
+            ['key' => 'terminate_after_unpaid_months', 'value' => '4', 'description' => 'Months an invoice can remain unpaid before service termination'],
 
             // Cron settings
             ['key' => 'cron_timezone', 'value' => 'Africa/Nairobi', 'description' => 'Timezone for cron job scheduling'],

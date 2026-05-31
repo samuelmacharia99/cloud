@@ -11,6 +11,9 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\ManualPaymentRejected;
+use App\Services\NotificationService;
+use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 
@@ -233,20 +236,7 @@ class PaymentController extends Controller
      */
     private function provisionServices(Invoice $invoice): void
     {
-        $provisioningService = new ProvisioningService();
-
-        // Find all pending services for this invoice
-        $services = Service::where('invoice_id', $invoice->id)
-            ->where('status', 'pending')
-            ->get();
-
-        foreach ($services as $service) {
-            try {
-                $provisioningService->provision($service);
-            } catch (\Exception $e) {
-                \Log::error("Auto-provisioning failed for service {$service->id}: {$e->getMessage()}");
-            }
-        }
+        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
     }
 
     /**
@@ -255,8 +245,8 @@ class PaymentController extends Controller
     private function unsuspendServices(Invoice $invoice): void
     {
         try {
-            $provisioningService = new \App\Services\Provisioning\ProvisioningService();
-            $notificationService = app(\App\Services\NotificationService::class);
+            $provisioningService = app(ProvisioningService::class);
+            $notificationService = app(NotificationService::class);
 
             // Find all suspended services for this invoice
             $services = Service::where('invoice_id', $invoice->id)
@@ -309,6 +299,7 @@ class PaymentController extends Controller
                 'admin_id' => auth()->id(),
                 'admin_name' => auth()->user()->name,
             ]);
+
             return back()->with('error', 'This payment cannot be approved.');
         }
 
@@ -332,7 +323,7 @@ class PaymentController extends Controller
 
             // Mark payment as completed
             $payment->update([
-                'status'  => 'completed',
+                'status' => 'completed',
                 'paid_at' => $paidAt,
             ]);
 
@@ -381,7 +372,7 @@ class PaymentController extends Controller
                 'error_trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->with('error', 'Failed to approve payment. ' . $e->getMessage());
+            return back()->with('error', 'Failed to approve payment. '.$e->getMessage());
         }
     }
 
@@ -400,6 +391,7 @@ class PaymentController extends Controller
                 'admin_id' => auth()->id(),
                 'admin_name' => auth()->user()->name,
             ]);
+
             return back()->with('error', 'This payment cannot be rejected.');
         }
 
@@ -435,7 +427,7 @@ class PaymentController extends Controller
             // Mark payment as failed
             $payment->update([
                 'status' => 'failed',
-                'notes'  => json_encode($notes),
+                'notes' => json_encode($notes),
             ]);
 
             \Log::info('Manual payment marked as failed', [
@@ -453,7 +445,7 @@ class PaymentController extends Controller
                 ]);
 
                 \Notification::route('mail', $payment->user->email)
-                    ->notify(new \App\Notifications\ManualPaymentRejected($payment));
+                    ->notify(new ManualPaymentRejected($payment));
 
                 \Log::info('Rejection notification sent to customer', [
                     'payment_id' => $payment->id,
@@ -493,7 +485,7 @@ class PaymentController extends Controller
                 'error_trace' => $e->getTraceAsString(),
             ]);
 
-            return back()->with('error', 'Failed to reject payment. ' . $e->getMessage());
+            return back()->with('error', 'Failed to reject payment. '.$e->getMessage());
         }
     }
 }

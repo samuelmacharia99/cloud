@@ -54,9 +54,16 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Terminate Services',
-                'description' => 'Terminates services that have been suspended past the terminate_after_days threshold.',
+                'description' => 'Terminates services whose invoice has remained unpaid for the configured number of months.',
                 'command' => 'cron:terminate-services',
                 'schedule' => '0 5 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Provision Pending DirectAdmin',
+                'description' => 'Retries provisioning for paid shared hosting services stuck in pending or failed status.',
+                'command' => 'directadmin:provision-pending',
+                'schedule' => '*/15 * * * *',
                 'enabled' => true,
             ],
             [

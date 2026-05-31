@@ -5,36 +5,44 @@ namespace App\Console\Commands;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Provisioning\ProvisioningService;
-use App\Services\NotificationService;
+use Illuminate\Support\Facades\Log;
 
 class TerminateServicesCommand extends BaseCronCommand
 {
     protected $signature = 'cron:terminate-services';
-    protected $description = 'Terminates services that have been suspended past the terminate_after_days threshold';
+
+    protected $description = 'Terminates services whose invoice has remained unpaid for the configured number of months';
 
     protected function handleCron(): string
     {
-        $terminateDays = (int) Setting::getValue('terminate_after_days', 30);
+        $unpaidMonths = (int) Setting::getValue('terminate_after_unpaid_months', 4);
 
-        $services = Service::where('status', 'suspended')
-            ->where('suspend_date', '<=', now()->subDays($terminateDays))
+        if ($unpaidMonths < 1) {
+            return 'Termination skipped: terminate_after_unpaid_months must be at least 1.';
+        }
+
+        $cutoffDate = now()->subMonths($unpaidMonths)->toDateString();
+
+        $services = Service::with('invoice')
+            ->whereIn('status', ['active', 'suspended'])
+            ->whereHas('invoice', function ($query) use ($cutoffDate) {
+                $query->whereIn('status', ['unpaid', 'overdue'])
+                    ->where('due_date', '<=', $cutoffDate);
+            })
             ->get();
 
         $count = 0;
         $provisioningService = app(ProvisioningService::class);
-        $notificationService = app(NotificationService::class);
 
         foreach ($services as $service) {
             try {
-                // Use provisioning service to terminate
                 $provisioningService->terminate($service);
-                $notificationService->notifyServiceTerminated($service->fresh());
                 $count++;
             } catch (\Exception $e) {
-                \Illuminate\Support\Facades\Log::error("Failed to terminate service {$service->id}: {$e->getMessage()}");
+                Log::error("Failed to terminate service {$service->id}: {$e->getMessage()}");
             }
         }
 
-        return "Terminated {$count} service(s) after {$terminateDays}-day suspension window.";
+        return "Terminated {$count} service(s) with invoices unpaid for {$unpaidMonths}+ month(s).";
     }
 }

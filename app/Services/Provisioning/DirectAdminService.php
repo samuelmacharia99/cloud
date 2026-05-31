@@ -2,9 +2,9 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\DirectAdminPackage;
 use App\Models\Node;
 use App\Models\Service;
-use App\Models\DirectAdminPackage;
 use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -13,8 +13,11 @@ use Illuminate\Support\Str;
 class DirectAdminService
 {
     protected string $apiUrl;
+
     protected string $username;
+
     protected string $password;
+
     protected ?Node $node;
 
     public function __construct(?Node $node = null)
@@ -34,7 +37,7 @@ class DirectAdminService
 
     public function isConfigured(): bool
     {
-        return !empty($this->apiUrl) && !empty($this->password);
+        return ! empty($this->apiUrl) && ! empty($this->password);
     }
 
     /**
@@ -42,13 +45,14 @@ class DirectAdminService
      */
     public function testConnection(): array
     {
-        if (!$this->isConfigured()) {
+        if (! $this->isConfigured()) {
             $message = 'DirectAdmin API not configured. Missing API URL or credentials.';
             Log::warning("DirectAdmin API test: {$message}", [
                 'api_url' => $this->apiUrl,
                 'username' => $this->username,
-                'has_password' => !empty($this->password),
+                'has_password' => ! empty($this->password),
             ]);
+
             return [
                 'success' => false,
                 'message' => $message,
@@ -60,21 +64,21 @@ class DirectAdminService
 
         $endpoint = "{$this->apiUrl}/CMD_API_PACKAGES_USER";
 
-        Log::info("DirectAdmin API test connection", [
+        Log::info('DirectAdmin API test connection', [
             'endpoint' => $endpoint,
             'username' => $this->username,
             'api_url' => $this->apiUrl,
         ]);
 
         try {
-            $response = Http::timeout(10)
-                ->withBasicAuth($this->username, $this->password)
+            $response = $this->httpClient()
+                ->timeout(10)
                 ->get($endpoint, [
                     'json' => 'yes',
                 ])
                 ->throw();
 
-            Log::info("DirectAdmin API test successful", [
+            Log::info('DirectAdmin API test successful', [
                 'endpoint' => $endpoint,
                 'username' => $this->username,
             ]);
@@ -93,7 +97,7 @@ class DirectAdminService
                 $statusCode = $matches[1] ?? null;
             }
 
-            Log::error("DirectAdmin API test failed", [
+            Log::error('DirectAdmin API test failed', [
                 'endpoint' => $endpoint,
                 'username' => $this->username,
                 'status_code' => $statusCode,
@@ -129,7 +133,7 @@ class DirectAdminService
             'configured' => $this->isConfigured(),
             'api_url' => $this->apiUrl,
             'username' => $this->username,
-            'has_password' => !empty($this->password),
+            'has_password' => ! empty($this->password),
             'node_id' => $this->node?->id,
             'node_name' => $this->node?->name,
         ];
@@ -138,30 +142,47 @@ class DirectAdminService
     /**
      * Create a hosting account on DirectAdmin
      *
-     * @param Service $service
-     * @param string $username DirectAdmin username
-     * @param string $password DirectAdmin password
-     * @param string $domain Primary domain for the account
-     * @param string $package DirectAdmin package name
-     *
+     * @param  string  $username  DirectAdmin username
+     * @param  string  $password  DirectAdmin password
+     * @param  string  $domain  Primary domain for the account
+     * @param  string  $package  DirectAdmin package name
      * @return array ['success' => bool, 'message' => string, 'credentials' => array]
      */
     public function createHostingAccount(Service $service, string $username, string $password, string $domain, string $package): array
     {
         try {
-            // Use correct DirectAdmin API endpoint for account creation
-            $response = Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
+            $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_ACCOUNT_USER';
+
+            $response = $this->httpClient()
+                ->asForm()
+                ->post($endpoint, [
                     'action' => 'create',
                     'username' => $username,
                     'email' => $service->user->email,
                     'passwd' => $password,
+                    'passwd2' => $password,
                     'domain' => $domain,
                     'package' => $package,
-                ])
-                ->throw();
+                ]);
 
-            \Log::info("DirectAdmin account created: {$username}", [
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            if (! $parsed['success']) {
+                Log::error('DirectAdmin account creation rejected', [
+                    'service_id' => $service->id,
+                    'username' => $username,
+                    'domain' => $domain,
+                    'package' => $package,
+                    'response' => $parsed['message'],
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => $parsed['message'],
+                ];
+            }
+
+            Log::info("DirectAdmin account created: {$username}", [
                 'service_id' => $service->id,
                 'domain' => $domain,
                 'package' => $package,
@@ -178,16 +199,115 @@ class DirectAdminService
                 ],
             ];
         } catch (\Exception $e) {
-            \Log::error("Failed to create DirectAdmin account: {$e->getMessage()}", [
+            Log::error("Failed to create DirectAdmin account: {$e->getMessage()}", [
                 'service_id' => $service->id,
                 'username' => $username,
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Failed to create hosting account: ' . $e->getMessage(),
+                'message' => 'Failed to create hosting account: '.$e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Check whether a DirectAdmin user already exists.
+     */
+    public function accountExists(string $username): bool
+    {
+        try {
+            $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_SHOW_USER_CONFIG';
+
+            $response = $this->httpClient()
+                ->get($endpoint, [
+                    'user' => $username,
+                ]);
+
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            return $parsed['success'];
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function parseApiResponse(string $body, int $statusCode): array
+    {
+        if ($statusCode >= 400) {
+            return [
+                'success' => false,
+                'message' => "DirectAdmin API HTTP {$statusCode}: ".trim($body),
+            ];
+        }
+
+        if (stripos($body, '<!DOCTYPE') !== false || stripos($body, '<html') !== false) {
+            return [
+                'success' => false,
+                'message' => 'DirectAdmin returned HTML instead of an API response. Check API credentials and permissions.',
+            ];
+        }
+
+        $trimmed = trim($body);
+
+        if ($trimmed === '') {
+            return [
+                'success' => false,
+                'message' => 'DirectAdmin API returned an empty response.',
+            ];
+        }
+
+        if (str_contains($trimmed, 'error=0') || str_contains($trimmed, '"error":"0"')) {
+            return ['success' => true, 'message' => 'OK'];
+        }
+
+        if (preg_match('/error=1(?:&|$)/', $trimmed) || str_contains($trimmed, '"error":"1"')) {
+            if (preg_match('/text=([^&\n]+)/', $trimmed, $matches)) {
+                return [
+                    'success' => false,
+                    'message' => urldecode($matches[1]),
+                ];
+            }
+
+            $json = json_decode($trimmed, true);
+            if (is_array($json) && ! empty($json['text'])) {
+                return [
+                    'success' => false,
+                    'message' => (string) $json['text'],
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => 'DirectAdmin rejected the request: '.$trimmed,
+            ];
+        }
+
+        $json = json_decode($trimmed, true);
+        if (is_array($json)) {
+            if (isset($json['error']) && (string) $json['error'] !== '0') {
+                return [
+                    'success' => false,
+                    'message' => (string) ($json['text'] ?? $json['result'] ?? $trimmed),
+                ];
+            }
+        }
+
+        return ['success' => true, 'message' => 'OK'];
+    }
+
+    private function httpClient()
+    {
+        $request = Http::timeout(30)->withBasicAuth($this->username, $this->password);
+
+        if ($this->node && ($this->node->verify_ssl ?? true) === false) {
+            $request = $request->withoutVerifying();
+        }
+
+        return $request;
     }
 
     /**
@@ -195,50 +315,7 @@ class DirectAdminService
      */
     public function suspendAccount(Service $service): bool
     {
-        $username = $service->external_reference ?? ($service->service_meta['username'] ?? null);
-
-        if (!$username) {
-            \Log::error("SUSPEND_FAILED: No username for service {$service->id}");
-            return false;
-        }
-
-        $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_SELECT_USERS';
-
-        \Log::info("SUSPEND_API_CALL", [
-            'service_id' => $service->id,
-            'username' => $username,
-            'endpoint' => $endpoint,
-        ]);
-
-        try {
-            $response = Http::withBasicAuth($this->username, $this->password)
-                ->withoutVerifying()
-                ->asForm()
-                ->post($endpoint, [
-                    'location' => 'CMD_SELECT_USERS',
-                    'suspend' => 'Suspend',
-                    'select0' => $username,
-                ]);
-
-            $body = $response->body();
-
-            \Log::info("SUSPEND_API_RESPONSE", [
-                'service_id' => $service->id,
-                'status' => $response->status(),
-                'body' => $body,
-            ]);
-
-            if (str_contains($body, 'error=0')) {
-                \Log::info("SUSPEND_SUCCESS", ['service_id' => $service->id, 'username' => $username]);
-                return true;
-            } else {
-                \Log::error("SUSPEND_API_ERROR", ['service_id' => $service->id, 'response' => $body]);
-                return false;
-            }
-        } catch (\Exception $e) {
-            \Log::error("SUSPEND_EXCEPTION", ['service_id' => $service->id, 'error' => $e->getMessage()]);
-            return false;
-        }
+        return $this->selectUserAction($service, 'Suspend', 'SUSPEND');
     }
 
     /**
@@ -246,78 +323,125 @@ class DirectAdminService
      */
     public function unsuspendAccount(Service $service): bool
     {
-        $username = $service->external_reference ?? ($service->service_meta['username'] ?? null);
+        return $this->selectUserAction($service, 'Unsuspend', 'UNSUSPEND');
+    }
 
-        if (!$username) {
-            \Log::error("UNSUSPEND_FAILED: No username for service {$service->id}");
+    /**
+     * Terminate a hosting account on DirectAdmin
+     */
+    public function terminateAccount(Service $service): bool
+    {
+        $username = $this->resolveDirectAdminUsername($service);
+
+        if (! $username) {
+            Log::error("TERMINATE_FAILED: No username for service {$service->id}");
+
             return false;
         }
 
-        $endpoint = rtrim($this->apiUrl, '/') . '/CMD_API_SELECT_USERS';
+        $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_ACCOUNT_USER';
 
-        \Log::info("UNSUSPEND_API_CALL", [
+        Log::info('TERMINATE_API_CALL', [
             'service_id' => $service->id,
             'username' => $username,
             'endpoint' => $endpoint,
         ]);
 
         try {
-            $response = Http::withBasicAuth($this->username, $this->password)
-                ->withoutVerifying()
+            $response = $this->httpClient()
                 ->asForm()
                 ->post($endpoint, [
-                    'location' => 'CMD_SELECT_USERS',
-                    'suspend' => 'Unsuspend',
-                    'select0' => $username,
+                    'action' => 'delete',
+                    'delete' => 'yes',
+                    'confirmed' => 'Confirm',
+                    'user' => $username,
                 ]);
 
-            $body = $response->body();
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
 
-            \Log::info("UNSUSPEND_API_RESPONSE", [
+            Log::info('TERMINATE_API_RESPONSE', [
                 'service_id' => $service->id,
                 'status' => $response->status(),
-                'body' => $body,
+                'success' => $parsed['success'],
+                'message' => $parsed['message'],
             ]);
 
-            if (str_contains($body, 'error=0')) {
-                \Log::info("UNSUSPEND_SUCCESS", ['service_id' => $service->id, 'username' => $username]);
-                return true;
-            } else {
-                \Log::error("UNSUSPEND_API_ERROR", ['service_id' => $service->id, 'response' => $body]);
-                return false;
+            if (! $parsed['success']) {
+                Log::error('TERMINATE_API_ERROR', [
+                    'service_id' => $service->id,
+                    'username' => $username,
+                    'message' => $parsed['message'],
+                ]);
             }
+
+            return $parsed['success'];
         } catch (\Exception $e) {
-            \Log::error("UNSUSPEND_EXCEPTION", ['service_id' => $service->id, 'error' => $e->getMessage()]);
+            Log::error('TERMINATE_EXCEPTION', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return false;
         }
     }
 
-    /**
-     * Terminate a hosting account
-     */
-    public function terminateAccount(Service $service): bool
+    private function selectUserAction(Service $service, string $action, string $logPrefix): bool
     {
-        try {
-            // STUBBED: Termination feature deferred to Phase 2
-            /*
-            $reference = $service->external_reference;
-            Http::withBasicAuth($this->username, $this->password)
-                ->post("{$this->apiUrl}/CMD_API_ACCOUNT_USER", [
-                    'action' => 'delete',
-                    'user' => $reference,
-                    'secure' => 'yes',
-                ])
-                ->throw();
-            */
+        $username = $this->resolveDirectAdminUsername($service);
 
-            return true;
-        } catch (\Exception $e) {
-            \Log::error("Failed to terminate DirectAdmin account: {$e->getMessage()}", [
+        if (! $username) {
+            Log::error("{$logPrefix}_FAILED: No username for service {$service->id}");
+
+            return false;
+        }
+
+        $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_SELECT_USERS';
+
+        Log::info("{$logPrefix}_API_CALL", [
+            'service_id' => $service->id,
+            'username' => $username,
+            'endpoint' => $endpoint,
+        ]);
+
+        try {
+            $response = $this->httpClient()
+                ->asForm()
+                ->post($endpoint, [
+                    'location' => 'CMD_SELECT_USERS',
+                    'suspend' => $action,
+                    'select0' => $username,
+                ]);
+
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            Log::info("{$logPrefix}_API_RESPONSE", [
                 'service_id' => $service->id,
+                'status' => $response->status(),
+                'success' => $parsed['success'],
+                'message' => $parsed['message'],
+            ]);
+
+            if (! $parsed['success']) {
+                Log::error("{$logPrefix}_API_ERROR", [
+                    'service_id' => $service->id,
+                    'message' => $parsed['message'],
+                ]);
+            }
+
+            return $parsed['success'];
+        } catch (\Exception $e) {
+            Log::error("{$logPrefix}_EXCEPTION", [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
             ]);
 
             return false;
         }
+    }
+
+    private function resolveDirectAdminUsername(Service $service): ?string
+    {
+        return $service->external_reference ?? ($service->service_meta['username'] ?? null);
     }
 
     /**
@@ -328,15 +452,15 @@ class DirectAdminService
      */
     public function getPackages(): array
     {
-        if (!$this->isConfigured()) {
+        if (! $this->isConfigured()) {
             Log::warning('DirectAdmin not configured', ['node_id' => $this->node?->id]);
+
             return [];
         }
 
         try {
-            $response = Http::timeout(30)
-                ->withBasicAuth($this->username, $this->password)
-                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_USER', [
                     'json' => 'yes',
                 ])
                 ->throw();
@@ -351,6 +475,7 @@ class DirectAdminService
                         'node_id' => $this->node?->id,
                         'status' => $response->status(),
                     ]);
+
                     return [];
                 }
 
@@ -362,25 +487,27 @@ class DirectAdminService
                         'body_preview' => substr($body, 0, 500),
                         'likely_issue' => 'Login key may lack CMD_API_PACKAGES_USER permission',
                     ]);
+
                     return [];
                 }
 
                 // Parse JSON response (can be direct array or object with list key)
                 $responseData = $response->json();
-                if (!$responseData) {
+                if (! $responseData) {
                     Log::warning('DirectAdmin API returned invalid JSON', [
                         'node_id' => $this->node?->id,
                         'body_preview' => substr($body, 0, 200),
                     ]);
+
                     return [];
                 }
 
                 // Handle both formats: direct array or object with list key
-                $packageNames = is_array($responseData) && isset($responseData[0]) && !isset($responseData['list'])
+                $packageNames = is_array($responseData) && isset($responseData[0]) && ! isset($responseData['list'])
                     ? $responseData  // Direct array format: ["Bronze", "Gold", ...]
                     : ($responseData['list'] ?? []);  // Object format: {"list": ["Bronze", ...]}
 
-                if (!is_array($packageNames)) {
+                if (! is_array($packageNames)) {
                     $packageNames = [$packageNames];
                 }
 
@@ -423,30 +550,31 @@ class DirectAdminService
     private function getPackageDetails(string $packageName): ?array
     {
         try {
-            $response = Http::timeout(30)
-                ->withBasicAuth($this->username, $this->password)
-                ->get("{$this->apiUrl}/CMD_API_PACKAGES_USER", [
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_USER', [
                     'package' => $packageName,
                     'json' => 'yes',
                 ])
                 ->throw();
 
-            if (!$response->ok()) {
+            if (! $response->ok()) {
                 Log::warning('Failed to fetch package details - API error', [
                     'node_id' => $this->node?->id,
                     'package_name' => $packageName,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
+
                 return null;
             }
 
             $packageData = $response->json();
-            if (!$packageData) {
+            if (! $packageData) {
                 Log::warning('Failed to parse package details JSON', [
                     'node_id' => $this->node?->id,
                     'package_name' => $packageName,
                 ]);
+
                 return null;
             }
 
@@ -473,10 +601,10 @@ class DirectAdminService
             'description' => $data['description'] ?? null,
             'disk_quota' => $this->convertToGb($data['disk'] ?? '0'),
             'bandwidth_quota' => $this->convertToGb($data['bandwidth'] ?? '0'),
-            'num_domains' => (int)($data['domainptr'] ?? 1),
-            'num_ftp' => (int)($data['ftp'] ?? 1),
-            'num_email_accounts' => (int)($data['email'] ?? 0),
-            'num_databases' => (int)($data['mysql'] ?? 0),
+            'num_domains' => (int) ($data['domainptr'] ?? 1),
+            'num_ftp' => (int) ($data['ftp'] ?? 1),
+            'num_email_accounts' => (int) ($data['email'] ?? 0),
+            'num_databases' => (int) ($data['mysql'] ?? 0),
             'num_subdomains' => $this->parseSubdomains($data['subdomains'] ?? '0'),
             'features' => $this->extractFeatures($data),
         ];
@@ -495,7 +623,7 @@ class DirectAdminService
 
         preg_match('/^(\d+(?:\.\d+)?)\s*([KMGT])?B?$/i', $value, $matches);
 
-        $number = (float)($matches[1] ?? 0);
+        $number = (float) ($matches[1] ?? 0);
         $unit = strtoupper($matches[2] ?? 'M');
 
         return match ($unit) {
@@ -516,7 +644,7 @@ class DirectAdminService
 
         return match ($value) {
             'unlimited', '-1' => -1,
-            default => (int)$value,
+            default => (int) $value,
         };
     }
 
@@ -554,6 +682,7 @@ class DirectAdminService
         if (empty($packages)) {
             $result['errors'][] = 'No packages retrieved from DirectAdmin server (no packages defined on server)';
             Log::warning('No packages synced from DirectAdmin', ['node_id' => $this->node?->id]);
+
             return $result;
         }
 

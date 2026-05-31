@@ -2,12 +2,17 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\Domain;
 use App\Models\Service;
+use App\Services\DomainTransferService;
 use App\Services\NotificationService;
-use Illuminate\Support\Str;
 
 class ProvisioningService
 {
+    public function __construct(
+        private DirectAdminSetupService $directAdminSetup,
+    ) {}
+
     /**
      * Provision a service (activate it)
      */
@@ -19,10 +24,10 @@ class ProvisioningService
             if ($driver === 'directadmin') {
                 $this->provisionDirectAdmin($service);
             } elseif ($driver === 'container') {
-                $containerService = new ContainerDeploymentService();
+                $containerService = new ContainerDeploymentService;
                 $containerService->deploy($service);
             } elseif ($driver === 'server') {
-                $serverService = new ServerProvisioningService();
+                $serverService = new ServerProvisioningService;
                 $serverService->provision($service);
             } else {
                 // Unknown driver - only allow for domain-type services (manual provisioning)
@@ -60,17 +65,17 @@ class ProvisioningService
             $suspended = false;
 
             if ($driver === 'directadmin' && $hasReference) {
-                if (!$service->node) {
+                if (! $service->node) {
                     throw new \Exception('Service has no DirectAdmin node assigned');
                 }
 
                 $daService = new DirectAdminService($service->node);
                 $suspended = $daService->suspendAccount($service);
-                if (!$suspended) {
+                if (! $suspended) {
                     throw new \Exception('DirectAdmin API failed to suspend account');
                 }
             } elseif ($driver === 'container') {
-                $containerService = new ContainerDeploymentService();
+                $containerService = new ContainerDeploymentService;
                 $containerService->suspend($service);
                 $suspended = true;
             } else {
@@ -80,7 +85,10 @@ class ProvisioningService
 
             // Only update status if suspension was successful
             if ($suspended && $service->status !== 'suspended') {
-                $service->update(['status' => 'suspended']);
+                $service->update([
+                    'status' => 'suspended',
+                    'suspend_date' => now(),
+                ]);
             }
 
             // Send service suspended notification
@@ -104,16 +112,26 @@ class ProvisioningService
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
 
             if ($driver === 'directadmin' && $hasReference) {
+                if (! $service->node) {
+                    throw new \Exception('Service has no DirectAdmin node assigned');
+                }
+
                 $daService = new DirectAdminService($service->node);
-                $daService->unsuspendAccount($service);
+                $unsuspended = $daService->unsuspendAccount($service);
+                if (! $unsuspended) {
+                    throw new \Exception('DirectAdmin API failed to unsuspend account');
+                }
             } elseif ($driver === 'container') {
-                $containerService = new ContainerDeploymentService();
+                $containerService = new ContainerDeploymentService;
                 $containerService->unsuspend($service);
             }
 
             // Update status if not already updated by driver
             if ($service->status !== 'active') {
-                $service->update(['status' => 'active']);
+                $service->update([
+                    'status' => 'active',
+                    'suspend_date' => null,
+                ]);
             }
         } catch (\Exception $e) {
             \Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
@@ -131,10 +149,17 @@ class ProvisioningService
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin' && $service->external_reference) {
+                if (! $service->node) {
+                    throw new \Exception('Service has no DirectAdmin node assigned');
+                }
+
                 $daService = new DirectAdminService($service->node);
-                $daService->terminateAccount($service);
+                $terminated = $daService->terminateAccount($service);
+                if (! $terminated) {
+                    throw new \Exception('DirectAdmin API failed to terminate account');
+                }
             } elseif ($driver === 'container') {
-                $containerService = new ContainerDeploymentService();
+                $containerService = new ContainerDeploymentService;
                 $containerService->terminate($service);
             }
 
@@ -164,7 +189,7 @@ class ProvisioningService
     private function provisionDirectAdmin(Service $service): void
     {
         $node = $service->node;
-        if (!$node) {
+        if (! $node) {
             throw new \Exception('Service is not assigned to a DirectAdmin node — cannot provision.');
         }
 
@@ -174,32 +199,32 @@ class ProvisioningService
 
         $daService = new DirectAdminService($node);
 
-        if (!$daService->isConfigured()) {
+        if (! $daService->isConfigured()) {
             throw new \Exception("DirectAdmin API is not configured for node {$node->name}.");
         }
 
-        // Resolve the package: prefer the product's bound DirectAdmin package,
-        // fall back to whatever was stamped into service_meta when the service
-        // was created, and only then to the legacy global setting.
-        $product = $service->product;
-        $package = $product?->directAdminPackage;
-
-        $packageKey = $package?->package_key
-            ?? ($service->service_meta['package'] ?? null)
-            ?? \App\Models\Setting::getValue('directadmin_default_package', 'default');
-
-        // Resolve credentials and primary domain from service_meta first.
+        $credentials = $this->directAdminSetup->resolveCredentials($service);
+        $username = $credentials['username'];
+        $password = $credentials['password'];
+        $domain = $credentials['domain'];
+        $packageName = $this->directAdminSetup->resolvePackageName($service);
         $meta = $service->service_meta ?? [];
-        $username = $meta['username'] ?? $this->generateDirectAdminUsername($service);
-        $password = $meta['password'] ?? Str::random(16);
-        $domain = $meta['domain'] ?? "{$username}.local";
 
-        $result = $daService->createHostingAccount($service, $username, $password, $domain, $packageKey);
+        if ($service->status === 'active' && ($service->external_reference || ($meta['provisioned_at'] ?? null))) {
+            \Log::info("DirectAdmin service {$service->id} already provisioned — skipping create", [
+                'username' => $service->external_reference ?? $username,
+            ]);
+
+            return;
+        }
+
+        if ($daService->accountExists($username)) {
+            throw new \Exception("DirectAdmin account \"{$username}\" already exists on {$node->name}.");
+        }
+
+        $result = $daService->createHostingAccount($service, $username, $password, $domain, $packageName);
 
         if ($result['success']) {
-            // Persist what we ended up using. Merge into service_meta so the
-            // admin sees the actual credentials in the customer detail view,
-            // and store the raw API response in `credentials` for audit.
             $service->update([
                 'status' => 'active',
                 'external_reference' => $username,
@@ -207,13 +232,21 @@ class ProvisioningService
                     'username' => $username,
                     'password' => $password,
                     'domain' => $domain,
-                    'package' => $packageKey,
-                    'package_name' => $package?->name,
+                    'package_name' => $packageName,
+                    'package' => $meta['package'] ?? null,
                     'node_id' => $node->id,
                     'node_name' => $node->name,
+                    'provisioned_at' => now()->toIso8601String(),
                 ]),
                 'credentials' => json_encode($result['credentials']),
             ]);
+
+            if (! empty($meta['domain_id']) && ! empty($meta['transfer_pending'])) {
+                $domainModel = Domain::find($meta['domain_id']);
+                if ($domainModel && $domainModel->isTransfer()) {
+                    DomainTransferService::initiateTransfer($domainModel);
+                }
+            }
 
             \Log::info("Service {$service->id} provisioned on DirectAdmin", [
                 'service_id' => $service->id,
@@ -221,7 +254,7 @@ class ProvisioningService
                 'node' => $node->name,
                 'username' => $username,
                 'domain' => $domain,
-                'package' => $packageKey,
+                'package' => $packageName,
             ]);
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
@@ -234,12 +267,12 @@ class ProvisioningService
     private function activateDomain(Service $service): void
     {
         $domainId = $service->service_meta['domain_id'] ?? null;
-        if (!$domainId) {
+        if (! $domainId) {
             return;
         }
 
-        $domain = \App\Models\Domain::find($domainId);
-        if (!$domain) {
+        $domain = Domain::find($domainId);
+        if (! $domain) {
             return;
         }
 
@@ -250,32 +283,11 @@ class ProvisioningService
             'expires_at' => now()->addYears($years),
         ]);
 
-        \Log::info("Domain activated after payment", [
+        \Log::info('Domain activated after payment', [
             'domain_id' => $domain->id,
             'domain_name' => $domain->name,
             'service_id' => $service->id,
             'expires_at' => $domain->expires_at,
         ]);
-    }
-
-    /**
-     * Build a DirectAdmin-safe username from a service when the admin/customer
-     * didn't supply one.
-     *
-     * DA accepts up to 16 chars, must start with a letter, lowercase + digits.
-     */
-    private function generateDirectAdminUsername(Service $service): string
-    {
-        $base = Str::of($service->name)->lower()->replaceMatches('/[^a-z0-9]+/', '')->__toString();
-
-        if ($base === '' || !ctype_alpha($base[0])) {
-            $base = 'u' . $base;
-        }
-
-        // Append the service id for uniqueness, but keep it under 16 chars.
-        $suffix = (string) $service->id;
-        $base = substr($base, 0, max(1, 16 - strlen($suffix)));
-
-        return substr($base . $suffix, 0, 16);
     }
 }

@@ -935,8 +935,9 @@
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Days Until Automatic Termination</label>
-                                <input type="number" name="settings[terminate_after_days]" value="{{ $settings['terminate_after_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Months Until Automatic Termination</label>
+                                <input type="number" name="settings[terminate_after_unpaid_months]" min="1" max="24" value="{{ $settings['terminate_after_unpaid_months'] ?? '4' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Services are terminated when their linked invoice stays unpaid or overdue for this many months after the due date.</p>
                             </div>
                         </div>
                     </fieldset>

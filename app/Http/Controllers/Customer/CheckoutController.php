@@ -8,7 +8,6 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\Node;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -16,11 +15,11 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Checkout\SharedHostingCheckoutService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 class CheckoutController extends Controller
 {
@@ -118,8 +117,23 @@ class CheckoutController extends Controller
         $currencyCode = Setting::getValue('currency', 'KES');
         $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
 
+        $sharedHostingItems = array_values(array_filter(
+            $cartItems,
+            fn ($item) => ($item['type'] ?? null) === 'shared_hosting'
+        ));
+
+        $domainExtensions = DomainExtension::where('enabled', true)->orderBy('extension')->get();
+
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
+            'sharedHostingItems' => $sharedHostingItems,
+            'domainExtensions' => $domainExtensions,
+            'defaultNameservers' => [
+                'ns1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
+                'ns2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
+                'ns3' => Setting::getValue('domain_ns3') ?: '',
+                'ns4' => Setting::getValue('domain_ns4') ?: '',
+            ],
             'subtotal' => $subtotal,
             'tax' => $tax,
             'taxEnabled' => $taxEnabled,
@@ -149,6 +163,8 @@ class CheckoutController extends Controller
         }
 
         $user = auth()->user();
+
+        app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
 
         try {
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -193,9 +209,12 @@ class CheckoutController extends Controller
                     throw new \Exception('No valid items in cart');
                 }
 
+                $domainAddonTotal = app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart);
+
                 // Calculate totals
                 $taxEnabled = Setting::getValue('tax_enabled') == 'true';
                 $taxRate = (float) Setting::getValue('tax_rate', 0);
+                $subtotal += $domainAddonTotal;
                 $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                 $total = $subtotal + $tax;
 
@@ -272,11 +291,23 @@ class CheckoutController extends Controller
                             }
                         }
 
-                        // For DirectAdmin shared hosting, prepare credentials and node assignment
+                        // For DirectAdmin shared hosting, collect domain + credentials from checkout form
                         if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
-                            $daSetup = $this->setupDirectAdminService($product, $user);
-                            $serviceMeta = array_merge($serviceMeta, $daSetup['meta']);
-                            $nodeId = $daSetup['node_id'];
+                            $hostingContext = app(SharedHostingCheckoutService::class)->buildSharedHostingContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $invoice,
+                                $order
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
+                            $nodeId = $hostingContext['node_id'];
+                            app(SharedHostingCheckoutService::class)->persistExtraInvoiceItems(
+                                $invoice,
+                                $order,
+                                $hostingContext['invoice_items']
+                            );
                         }
 
                         // For server types, capture OS and IP count from cart item
@@ -300,6 +331,7 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
+                            'invoice_id' => $invoice->id,
                             'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
                             'name' => $product->name,
                             'status' => 'pending',
@@ -374,6 +406,7 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $domainProduct->id,
                             'order_item_id' => $orderItem->id,
+                            'invoice_id' => $invoice->id,
                             'name' => "{$item['domain']}{$item['extension']}",
                             'status' => 'pending',
                             'billing_cycle' => 'annual',
@@ -490,93 +523,6 @@ class CheckoutController extends Controller
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
         return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
-    }
-
-    /**
-     * Setup DirectAdmin service with node assignment and credentials
-     */
-    private function setupDirectAdminService(Product $product, User $user): array
-    {
-        // Find an active DirectAdmin node (prefer one with fewer services)
-        $node = Node::where('type', 'directadmin')
-            ->where('is_active', true)
-            ->where('status', 'online')
-            ->withCount('services')
-            ->orderBy('services_count')
-            ->first();
-
-        if (! $node) {
-            throw new \Exception('No active DirectAdmin nodes available for provisioning.');
-        }
-
-        // Generate username from customer name/email
-        $baseUsername = $this->generateDirectAdminUsername($user);
-
-        // Generate password (16 chars, complex)
-        $password = $this->generateDirectAdminPassword();
-
-        // Use customer's primary domain or generate one
-        $domain = $user->email ? explode('@', $user->email)[0].'.local' : $baseUsername.'.local';
-
-        return [
-            'node_id' => $node->id,
-            'meta' => [
-                'username' => $baseUsername,
-                'password' => $password,
-                'domain' => $domain,
-                'node_id' => $node->id,
-                'node_name' => $node->name,
-            ],
-        ];
-    }
-
-    /**
-     * Generate DirectAdmin-safe username
-     */
-    private function generateDirectAdminUsername(User $user): string
-    {
-        // Use first part of email or customer name, sanitized to 16 chars, lowercase
-        $base = explode('@', $user->email)[0] ?? Str::slug($user->name);
-        $username = strtolower(Str::slug(substr($base, 0, 16), ''));
-
-        // Ensure it's not already taken (shouldn't be in practice, but check anyway)
-        $count = Service::where('service_meta->username', $username)->count();
-        if ($count > 0) {
-            $username = $username.substr(uniqid(), -3);
-            $username = substr($username, 0, 16);
-        }
-
-        return $username;
-    }
-
-    /**
-     * Generate DirectAdmin-safe password (16 chars, complex)
-     */
-    private function generateDirectAdminPassword(): string
-    {
-        $chars = [
-            'lower' => 'abcdefghijkmnpqrstuvwxyz', // no o or l
-            'upper' => 'ABCDEFGHJKMNPQRSTUVWXYZ', // no O or I
-            'digit' => '23456789', // no 0 or 1
-            'symbol' => '!@#$%^&*', // avoid ambiguous chars
-        ];
-
-        $password = '';
-        $password .= $chars['lower'][rand(0, strlen($chars['lower']) - 1)];
-        $password .= $chars['upper'][rand(0, strlen($chars['upper']) - 1)];
-        $password .= $chars['digit'][rand(0, strlen($chars['digit']) - 1)];
-        $password .= $chars['symbol'][rand(0, strlen($chars['symbol']) - 1)];
-
-        // Fill rest with random chars
-        for ($i = 4; $i < 16; $i++) {
-            $all = $chars['lower'].$chars['upper'].$chars['digit'].$chars['symbol'];
-            $password .= $all[rand(0, strlen($all) - 1)];
-        }
-
-        // Shuffle to avoid predictable pattern
-        $password = str_shuffle($password);
-
-        return $password;
     }
 
     /**
@@ -794,6 +740,7 @@ class CheckoutController extends Controller
                     'source_repo_url.*' => 'nullable|url|max:500',
                     'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
                 ]);
+                app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
             }
 
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -838,9 +785,14 @@ class CheckoutController extends Controller
                     throw new \Exception('No valid items in cart');
                 }
 
+                $domainAddonTotal = $request
+                    ? app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart)
+                    : 0.0;
+
                 // Calculate totals
                 $taxEnabled = Setting::getValue('tax_enabled') == 'true';
                 $taxRate = (float) Setting::getValue('tax_rate', 0);
+                $subtotal += $domainAddonTotal;
                 $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                 $total = $subtotal + $tax;
 
@@ -916,10 +868,22 @@ class CheckoutController extends Controller
                             }
                         }
 
-                        if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
-                            $daSetup = $this->setupDirectAdminService($product, $user);
-                            $serviceMeta = array_merge($serviceMeta, $daSetup['meta']);
-                            $nodeId = $daSetup['node_id'];
+                        if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin' && $request) {
+                            $hostingContext = app(SharedHostingCheckoutService::class)->buildSharedHostingContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $invoice,
+                                $order
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
+                            $nodeId = $hostingContext['node_id'];
+                            app(SharedHostingCheckoutService::class)->persistExtraInvoiceItems(
+                                $invoice,
+                                $order,
+                                $hostingContext['invoice_items']
+                            );
                         }
 
                         // For server types, capture OS and IP count from cart item
@@ -937,6 +901,7 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
+                            'invoice_id' => $invoice->id,
                             'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
                             'name' => $product->name,
                             'status' => 'pending',
@@ -1011,6 +976,7 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $domainProduct->id,
                             'order_item_id' => $orderItem->id,
+                            'invoice_id' => $invoice->id,
                             'name' => "{$item['domain']}{$item['extension']}",
                             'status' => 'pending',
                             'billing_cycle' => 'annual',

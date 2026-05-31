@@ -35,12 +35,14 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
-                <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
-                    Open Panel
-                </button>
-                <button class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+                @if ($service->isSharedHosting() && $service->getDirectAdminPanelUrl())
+                    <a href="{{ $service->getDirectAdminPanelUrl() }}" target="_blank" rel="noopener noreferrer" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
+                        Open Panel
+                    </a>
+                @endif
+                <a href="{{ route('customer.tickets.create') }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Request Support
-                </button>
+                </a>
             </div>
         </div>
 
@@ -84,6 +86,28 @@
                                 <div class="flex justify-between">
                                     <span class="text-slate-600 dark:text-slate-400">Terminated</span>
                                     <span class="text-slate-900 dark:text-white font-medium">{{ $service->terminate_date->format('M d, Y') }}</span>
+                                </div>
+                            @endif
+                            @if ($service->product->type === 'shared_hosting' && !empty($service->service_meta['domain']))
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600 dark:text-slate-400">Primary Domain</span>
+                                    <span class="text-slate-900 dark:text-white font-medium font-mono">{{ $service->service_meta['domain'] }}</span>
+                                </div>
+                            @endif
+                            @if ($service->product->type === 'shared_hosting' && !empty($service->service_meta['hosting_domain_mode']))
+                                <div class="flex justify-between">
+                                    <span class="text-slate-600 dark:text-slate-400">Domain Setup</span>
+                                    <span class="text-slate-900 dark:text-white font-medium">{{ ucfirst(str_replace('_', ' ', $service->service_meta['hosting_domain_mode'])) }}</span>
+                                </div>
+                            @endif
+                            @if (!empty($service->service_meta['nameservers']))
+                                <div class="pt-2 border-t border-slate-200 dark:border-slate-700">
+                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Point your domain nameservers to:</p>
+                                    <ul class="text-xs font-mono text-slate-800 dark:text-slate-200 space-y-1">
+                                        @foreach(array_filter($service->service_meta['nameservers']) as $ns)
+                                            <li>{{ $ns }}</li>
+                                        @endforeach
+                                    </ul>
                                 </div>
                             @endif
                         </div>
@@ -206,11 +230,64 @@
 
             <!-- Credentials Tab -->
             <div x-show="tab === 'credentials'" class="space-y-4" x-data="{ showPassword: false }">
-                <div class="bg-amber-50 dark:bg-amber-950 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
-                    <p class="text-sm text-amber-900 dark:text-amber-100">
-                        Service credentials and access information will be displayed here once your service is provisioned.
-                    </p>
-                </div>
+                @php($hostingCredentials = $service->getHostingCredentials())
+
+                @if ($service->status->value === 'active' && $service->isSharedHosting() && $hostingCredentials)
+                    <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Login</h3>
+                        <div class="space-y-3">
+                            @if (!empty($hostingCredentials['domain']))
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Primary Domain</p>
+                                    <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3">
+                                        <p class="text-sm font-mono text-slate-900 dark:text-white">{{ $hostingCredentials['domain'] }}</p>
+                                    </div>
+                                </div>
+                            @endif
+
+                            <div>
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Username</p>
+                                <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white">{{ $hostingCredentials['username'] }}</p>
+                                    <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ $hostingCredentials['username'] }}')">
+                                        Copy
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Password</p>
+                                <div class="bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between">
+                                    <p class="text-sm font-mono text-slate-900 dark:text-white" x-text="showPassword ? '{{ $hostingCredentials['password'] }}' : '•'.repeat(16)"></p>
+                                    <div class="flex items-center gap-2">
+                                        <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="showPassword = !showPassword">
+                                            <span x-show="!showPassword">Show</span>
+                                            <span x-show="showPassword">Hide</span>
+                                        </button>
+                                        <button type="button" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300" @click="navigator.clipboard.writeText('{{ $hostingCredentials['password'] }}')">
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if (!empty($hostingCredentials['panel_url']))
+                                <div>
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Control Panel</p>
+                                    <a href="{{ $hostingCredentials['panel_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
+                                        {{ $hostingCredentials['panel_url'] }}
+                                    </a>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                @elseif ($service->status->value !== 'active' || ! $hostingCredentials)
+                    <div class="bg-amber-50 dark:bg-amber-950 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                        <p class="text-sm text-amber-900 dark:text-amber-100">
+                            Service credentials and access information will be displayed here once your service is provisioned.
+                        </p>
+                    </div>
+                @endif
 
                 <!-- Server Credentials (VPS / Dedicated Server) -->
                 @if ($service->status->value === 'active' && $service->product && \App\Models\Product::isServerType($service->product->type) && $service->credentials)
@@ -253,7 +330,7 @@
                             </p>
                         </div>
                     </div>
-                @elseif ($service->status->value === 'active' && $service->credentials)
+                @elseif ($service->status->value === 'active' && $service->credentials && ! $service->isSharedHosting())
                     <!-- Generic credentials display for other product types -->
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
                         <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Access Information</h3>

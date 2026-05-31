@@ -9,6 +9,7 @@ use Illuminate\Console\Command;
 class ProvisionPendingContainersCommand extends Command
 {
     protected $signature = 'cron:provision-pending-containers';
+
     protected $description = 'Auto-provision pending container services';
 
     public function handle(): int
@@ -28,22 +29,22 @@ class ProvisionPendingContainersCommand extends Command
 
         foreach ($services as $service) {
             try {
-                $provisioningService = new ProvisioningService();
+                $provisioningService = app(ProvisioningService::class);
                 $provisioningService->provision($service);
                 $provisioned[] = $service->id;
             } catch (\Exception $e) {
                 $failed[] = $service->id;
-                \Log::error("Failed to provision service {$service->id}: " . $e->getMessage());
+                \Log::error("Failed to provision service {$service->id}: ".$e->getMessage());
             }
         }
 
-        $message = "Provisioned " . count($provisioned) . " containers";
+        $message = 'Provisioned '.count($provisioned).' containers';
         if (count($provisioned) > 0) {
-            $message .= ": [" . implode(', ', $provisioned) . "]";
+            $message .= ': ['.implode(', ', $provisioned).']';
         }
-        $message .= ". Failed " . count($failed);
+        $message .= '. Failed '.count($failed);
         if (count($failed) > 0) {
-            $message .= ": [" . implode(', ', $failed) . "]";
+            $message .= ': ['.implode(', ', $failed).']';
         }
 
         $this->info($message);

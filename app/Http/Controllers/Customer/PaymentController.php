@@ -14,6 +14,7 @@ use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\PaymentGateway\PayPalService;
 use App\Services\PaymentGateway\StripeService;
+use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -614,76 +615,7 @@ class PaymentController extends Controller
      */
     private function provisionServices(Invoice $invoice): void
     {
-        try {
-            // Get all pending services from invoice items
-            $services = $invoice->items()
-                ->whereNotNull('service_id')
-                ->with('service', 'product')
-                ->get();
-
-            $provisionedCount = 0;
-            $failedServices = [];
-
-            foreach ($services as $item) {
-                if (! $item->service) {
-                    continue;
-                }
-
-                try {
-                    // Only provision services that are pending
-                    if ($item->service->status !== 'pending') {
-                        Log::info('Service already provisioned', [
-                            'service_id' => $item->service->id,
-                            'status' => $item->service->status,
-                        ]);
-
-                        continue;
-                    }
-
-                    // Mark as provisioning
-                    $item->service->update(['status' => 'provisioning']);
-
-                    // Call the provisioning command synchronously
-                    $exitCode = \Artisan::call('service:provision', [
-                        'service_id' => $item->service->id,
-                    ]);
-
-                    if ($exitCode === 0) {
-                        $provisionedCount++;
-                        Log::info('Service provisioned successfully', [
-                            'service_id' => $item->service->id,
-                            'invoice_id' => $invoice->id,
-                            'user_id' => $invoice->user_id,
-                        ]);
-                    } else {
-                        $failedServices[] = $item->service->id;
-                        Log::warning('Service provisioning returned error code', [
-                            'service_id' => $item->service->id,
-                            'exit_code' => $exitCode,
-                        ]);
-                    }
-                } catch (\Exception $e) {
-                    $failedServices[] = $item->service->id;
-                    Log::error('Service provisioning exception', [
-                        'service_id' => $item->service->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-
-            Log::info('Services provisioning batch completed', [
-                'invoice_id' => $invoice->id,
-                'user_id' => $invoice->user_id,
-                'provisioned' => $provisionedCount,
-                'failed' => count($failedServices),
-                'failed_services' => $failedServices,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Service provisioning trigger failed', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
     }
 
     /**
@@ -692,7 +624,7 @@ class PaymentController extends Controller
     private function unsuspendServices(Invoice $invoice): void
     {
         try {
-            $provisioningService = new ProvisioningService;
+            $provisioningService = app(ProvisioningService::class);
             $notificationService = app(NotificationService::class);
 
             // Find all suspended services for this invoice

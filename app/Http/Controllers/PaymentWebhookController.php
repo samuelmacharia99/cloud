@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
+use App\Services\DomainPushService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\Provisioning\InvoiceProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -36,6 +38,7 @@ class PaymentWebhookController extends Controller
             return response('', 200);
         } catch (\Exception $e) {
             Log::error('M-Pesa callback error', ['error' => $e->getMessage()]);
+
             return response('', 200);
         }
     }
@@ -73,7 +76,7 @@ class PaymentWebhookController extends Controller
                     $order = ResellerDomainOrder::find($domainOrderId);
 
                     if ($order && $order->status === 'queued') {
-                        $domainPushService = app(\App\Services\DomainPushService::class);
+                        $domainPushService = app(DomainPushService::class);
                         $domainPushService->pushOrderWithDirectPayment($order);
 
                         Log::info('Reseller domain order pushed via M-Pesa callback', [
@@ -98,61 +101,8 @@ class PaymentWebhookController extends Controller
     private function provisionCustomerServices(Payment $payment)
     {
         try {
-            $invoice = $payment->invoice;
-
-            // Get all pending services from invoice items
-            $services = $invoice->items()
-                ->whereNotNull('service_id')
-                ->with('service', 'product')
-                ->get();
-
-            $provisionedCount = 0;
-            $failedServices = [];
-
-            foreach ($services as $item) {
-                if (!$item->service) {
-                    continue;
-                }
-
-                try {
-                    // Only provision services that are pending
-                    if ($item->service->status !== 'pending') {
-                        continue;
-                    }
-
-                    // Mark as provisioning
-                    $item->service->update(['status' => 'provisioning']);
-
-                    // Call the provisioning command synchronously
-                    $exitCode = \Artisan::call('service:provision', [
-                        'service_id' => $item->service->id,
-                    ]);
-
-                    if ($exitCode === 0) {
-                        $provisionedCount++;
-                        Log::info('Service provisioned successfully', [
-                            'service_id' => $item->service->id,
-                            'invoice_id' => $invoice->id,
-                            'user_id' => $invoice->user_id,
-                        ]);
-                    } else {
-                        $failedServices[] = $item->service->id;
-                    }
-                } catch (\Exception $e) {
-                    $failedServices[] = $item->service->id;
-                    Log::error('Service provisioning exception', [
-                        'service_id' => $item->service->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-
-            Log::info('Services provisioning batch completed via M-Pesa callback', [
-                'invoice_id' => $invoice->id,
-                'user_id' => $invoice->user_id,
-                'provisioned' => $provisionedCount,
-                'failed' => count($failedServices),
-            ]);
+            app(InvoiceProvisioningService::class)
+                ->provisionPendingServicesForInvoice($payment->invoice);
         } catch (\Exception $e) {
             Log::error('Customer service provisioning failed from webhook', [
                 'payment_id' => $payment->id,

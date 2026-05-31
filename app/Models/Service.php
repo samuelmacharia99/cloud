@@ -116,6 +116,45 @@ class Service extends Model
         return $this->status === 'failed';
     }
 
+    public function isSharedHosting(): bool
+    {
+        return $this->product?->type === 'shared_hosting'
+            && ($this->provisioning_driver_key === 'directadmin'
+                || $this->product?->provisioning_driver_key === 'directadmin');
+    }
+
+    /**
+     * @return array{username: string, password: string, domain?: string, panel_url?: string}|null
+     */
+    public function getHostingCredentials(): ?array
+    {
+        if ($this->credentials) {
+            $decoded = json_decode($this->credentials, true);
+            if (is_array($decoded) && ! empty($decoded['username'])) {
+                return array_merge($decoded, [
+                    'panel_url' => $this->node?->getDirectAdminPanelUrl(),
+                ]);
+            }
+        }
+
+        $meta = $this->service_meta ?? [];
+        if (empty($meta['username']) || empty($meta['password'])) {
+            return null;
+        }
+
+        return [
+            'username' => (string) $meta['username'],
+            'password' => (string) $meta['password'],
+            'domain' => $meta['domain'] ?? null,
+            'panel_url' => $this->node?->getDirectAdminPanelUrl(),
+        ];
+    }
+
+    public function getDirectAdminPanelUrl(): ?string
+    {
+        return $this->node?->getDirectAdminPanelUrl();
+    }
+
     // Scopes
     public function scopeActive($query)
     {

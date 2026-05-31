@@ -31,12 +31,39 @@
     @endif
 </table>
 
-@if($service->credentials)
+@if($service->credentials || $service->getHostingCredentials())
     <h2>Service Credentials</h2>
-    <p>Your service credentials have been set up. You can access them from your dashboard:</p>
-    <div class="alert alert-info">
-        {{ $service->credentials }}
-    </div>
+    @php($hostingCredentials = $service->getHostingCredentials())
+    @if($hostingCredentials)
+        <p>Your shared hosting control panel login details:</p>
+        <table>
+            @if(!empty($hostingCredentials['domain']))
+                <tr>
+                    <td><strong>Domain:</strong></td>
+                    <td>{{ $hostingCredentials['domain'] }}</td>
+                </tr>
+            @endif
+            <tr>
+                <td><strong>Username:</strong></td>
+                <td><code>{{ $hostingCredentials['username'] }}</code></td>
+            </tr>
+            <tr>
+                <td><strong>Password:</strong></td>
+                <td><code>{{ $hostingCredentials['password'] }}</code></td>
+            </tr>
+            @if(!empty($hostingCredentials['panel_url']))
+                <tr>
+                    <td><strong>Control Panel:</strong></td>
+                    <td><a href="{{ $hostingCredentials['panel_url'] }}">{{ $hostingCredentials['panel_url'] }}</a></td>
+                </tr>
+            @endif
+        </table>
+    @else
+        <p>Your service credentials have been set up. You can access them from your dashboard:</p>
+        <div class="alert alert-info">
+            {{ $service->credentials }}
+        </div>
+    @endif
 @endif
 
 <p>
