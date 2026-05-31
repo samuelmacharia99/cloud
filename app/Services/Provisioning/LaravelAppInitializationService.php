@@ -309,6 +309,92 @@ SH;
         return $slug === 'laravel';
     }
 
+    /**
+     * @return array{ready: bool, has_laravel: bool, has_blocking_files: bool, can_clear: bool}
+     */
+    public function getAppDirectoryStatus(Service $service): array
+    {
+        $service->loadMissing('containerDeployment.node');
+        $deployment = $service->containerDeployment;
+
+        $default = [
+            'ready' => false,
+            'has_laravel' => false,
+            'has_blocking_files' => false,
+            'can_clear' => false,
+        ];
+
+        if (! $deployment || $deployment->status !== 'running' || ! $deployment->node) {
+            return $default;
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            try {
+                $hasLaravel = $this->appHasLaravelProject($ssh, $deployment);
+                $ready = $this->appDirectoryIsInitializeReady($ssh, $deployment);
+
+                return [
+                    'ready' => $ready,
+                    'has_laravel' => $hasLaravel,
+                    'has_blocking_files' => ! $ready && ! $hasLaravel,
+                    'can_clear' => ! $hasLaravel,
+                ];
+            } finally {
+                $ssh->disconnect();
+            }
+        } catch (\Throwable) {
+            return $default;
+        }
+    }
+
+    /**
+     * @return array{message: string}
+     */
+    public function clearApplicationDirectory(Service $service): array
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
+        $this->assertCanInitialize($service);
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $deployment->status !== 'running') {
+            throw new \DomainException('Container must be running before clearing /app.');
+        }
+
+        if ($this->hasActiveInitialization($service)) {
+            throw new \DomainException('Wait for the current initialization to finish before clearing /app.');
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            if ($this->appHasLaravelProject($ssh, $deployment)) {
+                throw new \DomainException('A Laravel application is already installed in /app.');
+            }
+
+            $script = <<<'SH'
+set -e
+cd /app
+find . -mindepth 1 -maxdepth 1 ! -name '.talksasa' -exec rm -rf {} +
+mkdir -p public
+touch .keep index.html public/index.html
+chown -R www-data:www-data /app
+find /app -type d -exec chmod 775 {} +
+find /app -type f -exec chmod 664 {} +
+SH;
+
+            $this->dockerExec($ssh, $deployment->container_name, $script, 60, asRoot: true);
+
+            if (! $this->appDirectoryIsInitializeReady($ssh, $deployment)) {
+                throw new \RuntimeException('Could not clear all application files from /app.');
+            }
+
+            return ['message' => 'Application files cleared from /app. You can now initialize Laravel.'];
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     private function assertCanInitialize(Service $service): void
     {
         if ($service->product?->type !== 'container_hosting') {

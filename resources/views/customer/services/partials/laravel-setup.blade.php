@@ -14,21 +14,42 @@
             </p>
         </div>
 
-        <form
-            method="POST"
-            action="{{ route('customer.services.container.initialize-laravel', $service) }}"
-            @submit="if (!canInitialize) { $event.preventDefault(); return false; } return confirm('Install a fresh Laravel skeleton into /app? Existing application files will block this action.');"
-        >
-            @csrf
-            <button
-                type="submit"
-                class="px-5 py-2.5 rounded-lg font-medium transition"
-                :class="canInitialize ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed'"
-                :disabled="!canInitialize"
+        <div class="flex flex-col sm:flex-row gap-2 shrink-0">
+            <form
+                method="POST"
+                action="{{ route('customer.services.container.clear-app', $service) }}"
+                x-show="canClearApp"
+                @submit="return confirm('Remove all files in /app except Talksasa system files? This cannot be undone.');"
             >
-                ✨ Initialize Laravel app
-            </button>
-        </form>
+                @csrf
+                <button
+                    type="submit"
+                    class="px-4 py-2.5 rounded-lg font-medium transition bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 dark:text-amber-100"
+                >
+                    Clear /app
+                </button>
+            </form>
+
+            <form
+                method="POST"
+                action="{{ route('customer.services.container.initialize-laravel', $service) }}"
+                @submit="if (!canInitialize) { $event.preventDefault(); return false; } return confirm('Install a fresh Laravel skeleton into /app? Existing application files will block this action.');"
+            >
+                @csrf
+                <button
+                    type="submit"
+                    class="px-5 py-2.5 rounded-lg font-medium transition"
+                    :class="canInitialize ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed'"
+                    :disabled="!canInitialize"
+                >
+                    ✨ Initialize Laravel app
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="appDirectory?.has_blocking_files" class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+        <strong>/app contains leftover files</strong> from a previous deploy or clone. Use <strong>Clear /app</strong> on this page, or run cleanup from the Terminal tab, before initializing Laravel.
     </div>
 
     <div class="grid lg:grid-cols-2 gap-6">
@@ -88,10 +109,12 @@
 function laravelSetupPanel() {
     return {
         checklist: [],
+        appDirectory: null,
         initialization: null,
         logOutput: 'No initialization has been run yet.',
         pollTimer: null,
         canInitialize: {{ ($deployment->isRunning() ? 'true' : 'false') }},
+        canClearApp: false,
 
         init() {
             this.refresh();
@@ -110,12 +133,15 @@ function laravelSetupPanel() {
 
                 const data = await response.json();
                 this.checklist = data.checklist || [];
+                this.appDirectory = data.app_directory || null;
                 this.initialization = data.initialization || null;
                 this.logOutput = this.initialization?.log || 'No initialization has been run yet.';
 
                 const initActive = this.initialization && ['pending', 'running'].includes(this.initialization.status);
                 const appReady = this.checklist.some(item => item.key === 'app_source' && item.status === 'completed');
-                this.canInitialize = {{ $deployment->isRunning() ? 'true' : 'false' }} && !initActive && !appReady;
+                const running = {{ $deployment->isRunning() ? 'true' : 'false' }};
+                this.canInitialize = running && !initActive && !appReady;
+                this.canClearApp = running && !initActive && !appReady && !!(this.appDirectory && this.appDirectory.can_clear && this.appDirectory.has_blocking_files);
             } catch (error) {
                 console.error('Failed to refresh Laravel setup status', error);
             }

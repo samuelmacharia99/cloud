@@ -83,16 +83,14 @@ class ContainerTerminalService
             return rtrim($configured, '/').$path;
         }
 
-        $appUrl = rtrim((string) config('app.url', ''), '/');
-        if ($appUrl === '') {
-            return null;
-        }
+        // When no public URL is configured, the browser builds a same-origin
+        // WebSocket URL (nginx should proxy websocket_path to container:terminal-ws).
+        return null;
+    }
 
-        $host = parse_url($appUrl, PHP_URL_HOST) ?: 'localhost';
-        $scheme = str_starts_with($appUrl, 'https') ? 'wss' : 'ws';
-        $port = (int) config('terminal.websocket.port', 8088);
-
-        return "{$scheme}://{$host}:{$port}{$path}";
+    public function resolveWebSocketPath(): string
+    {
+        return '/'.trim((string) config('terminal.websocket.path', '/container-terminal'), '/');
     }
 
     public function executeCommand(ContainerTerminalSession $session, string $rawCommand, string $ip): array

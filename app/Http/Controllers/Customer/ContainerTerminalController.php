@@ -54,8 +54,9 @@ class ContainerTerminalController extends Controller
                 'cwd' => $session->cwd,
                 'expires_at' => $session->expires_at->toIso8601String(),
                 'websocket_url' => $this->terminalService->resolveWebSocketUrl(),
+                'websocket_path' => $this->terminalService->resolveWebSocketPath(),
                 'mode' => 'pty',
-                'welcome_message' => "Connected to container: {$deployment->container_name}\nInteractive shell (PTY). Type 'exit' to close.",
+                'welcome_message' => "Connected to container: {$deployment->container_name}\nInteractive shell. Type 'exit' to close.",
             ]);
         } catch (\Exception $e) {
             \Log::error("Failed to create terminal session for service {$service->id}: ".$e->getMessage());

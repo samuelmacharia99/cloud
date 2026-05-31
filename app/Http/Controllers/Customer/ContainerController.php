@@ -243,6 +243,27 @@ class ContainerController extends Controller
         }
     }
 
+    public function clearAppDirectory(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
+                return back()->withErrors(['error' => 'Clearing /app is only available for Laravel containers.']);
+            }
+
+            $result = $initializationService->clearApplicationDirectory($service);
+
+            return back()->with('success', $result['message']);
+        } catch (\DomainException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to clear /app for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to clear /app: '.$e->getMessage()]);
+        }
+    }
+
     public function laravelSetupStatus(Service $service, LaravelAppInitializationService $initializationService): JsonResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
@@ -255,6 +276,7 @@ class ContainerController extends Controller
 
         return response()->json([
             'checklist' => $initializationService->getSetupChecklist($service),
+            'app_directory' => $initializationService->getAppDirectoryStatus($service),
             'initialization' => $latest ? [
                 'id' => $latest->id,
                 'status' => $latest->status,

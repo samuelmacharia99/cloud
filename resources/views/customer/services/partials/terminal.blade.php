@@ -18,9 +18,11 @@
             <div class="flex items-center gap-2">
                 <span x-show="connected" class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 <span x-show="!connected" class="inline-block w-2 h-2 bg-red-500 rounded-full"></span>
-                <span x-text="connected ? 'Connected (PTY)' : 'Disconnected'"></span>
+                <span x-text="statusLabel()"></span>
+                <span x-show="mode === 'http'" x-text="`CWD: ${cwd}`" class="ml-2"></span>
             </div>
             <div class="text-right">
+                <span x-show="mode === 'http'" x-text="`Commands: ${commandCount}`"></span>
                 <span x-show="sessionExpires" x-text="sessionExpires" class="ml-2"></span>
             </div>
         </div>
@@ -28,10 +30,10 @@
 
     <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-            Interactive shell inside your container. Supports full-screen programs, <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and pagers.
+            Interactive shell inside your container. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
-            Requires the terminal WebSocket service: <code class="font-mono">php artisan container:terminal-ws</code> (Supervisor: <code class="font-mono">deploy/supervisor/container-terminal-ws.conf</code>).
+            Full PTY mode uses the WebSocket service (<code class="font-mono">php artisan container:terminal-ws</code>). If that service is unavailable, the terminal falls back to one command at a time over HTTP.
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
             Dangerous commands (sudo, docker, etc.) are blocked when you press Enter.
@@ -60,13 +62,28 @@ function containerTerminal() {
         terminalVisible: false,
         sessionStarting: false,
         connected: false,
+        mode: null,
         sessionToken: null,
         websocketUrl: null,
+        websocketPath: '/container-terminal',
         ws: null,
+        cwd: '/app',
+        inputBuffer: '',
+        history: [],
+        historyIndex: 0,
+        commandCount: 0,
         sessionExpires: null,
         expiryUpdateInterval: null,
 
         init() {},
+
+        statusLabel() {
+            if (!this.connected) {
+                return 'Disconnected';
+            }
+
+            return this.mode === 'pty' ? 'Connected (PTY)' : 'Connected (HTTP fallback)';
+        },
 
         async toggleTerminal() {
             if (this.terminalVisible) {
@@ -79,6 +96,8 @@ function containerTerminal() {
         async openTerminal() {
             this.terminalVisible = true;
             this.sessionStarting = true;
+            this.mode = null;
+            this.connected = false;
 
             await this.$nextTick();
 
@@ -104,13 +123,23 @@ function containerTerminal() {
 
                 this.sessionToken = data.session_token;
                 this.websocketUrl = data.websocket_url;
+                this.websocketPath = data.websocket_path || '/container-terminal';
+                this.cwd = data.cwd || '/app';
+                this.commandCount = 0;
+                this.inputBuffer = '';
+                this.history = [];
+                this.historyIndex = 0;
 
-                if (!this.websocketUrl) {
-                    this.terminal.write('\r\n❌ Terminal WebSocket URL is not configured. Set CONTAINER_TERMINAL_WS_PUBLIC_URL and run container:terminal-ws.\r\n');
-                    return;
+                this.terminal.write('\r\n');
+
+                try {
+                    await this.connectWebSocket();
+                    this.mode = 'pty';
+                    this.connected = true;
+                    this.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
+                } catch (error) {
+                    this.enableHttpFallback(data);
                 }
-
-                await this.connectWebSocket();
 
                 if (data.expires_at) {
                     this.updateExpiryDisplay(data.expires_at);
@@ -127,13 +156,30 @@ function containerTerminal() {
             }
         },
 
+        buildWebSocketUrl() {
+            const token = encodeURIComponent(this.sessionToken);
+            if (this.websocketUrl) {
+                return `${this.websocketUrl}?token=${token}`;
+            }
+
+            const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const path = this.websocketPath.startsWith('/') ? this.websocketPath : `/${this.websocketPath}`;
+
+            return `${scheme}//${window.location.host}${path}?token=${token}`;
+        },
+
         connectWebSocket() {
             return new Promise((resolve, reject) => {
-                const url = `${this.websocketUrl}?token=${encodeURIComponent(this.sessionToken)}`;
-                this.ws = new WebSocket(url);
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                }
+
+                this.ws = new WebSocket(this.buildWebSocketUrl());
+                let settled = false;
 
                 this.ws.onopen = () => {
-                    this.connected = true;
+                    settled = true;
                     this.sendResize();
                     resolve();
                 };
@@ -143,16 +189,33 @@ function containerTerminal() {
                 };
 
                 this.ws.onerror = () => {
-                    this.connected = false;
-                    this.terminal.write('\r\n❌ WebSocket connection failed. Is `php artisan container:terminal-ws` running?\r\n');
-                    reject(new Error('WebSocket connection failed'));
+                    if (!settled) {
+                        settled = true;
+                        reject(new Error('WebSocket connection failed'));
+                    }
                 };
 
                 this.ws.onclose = () => {
-                    this.connected = false;
-                    this.terminal.write('\r\n\r\n✓ Terminal disconnected\r\n');
+                    if (this.mode === 'pty' && this.connected) {
+                        this.connected = false;
+                        this.terminal.write('\r\n\r\n✓ Terminal disconnected\r\n');
+                    }
                 };
             });
+        },
+
+        enableHttpFallback(data) {
+            if (this.ws) {
+                this.ws.close();
+                this.ws = null;
+            }
+
+            this.mode = 'http';
+            this.connected = true;
+            this.terminal.write('⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\r\n');
+            this.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
+            this.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
+            this.writePrompt();
         },
 
         initializeTerminal() {
@@ -181,8 +244,13 @@ function containerTerminal() {
             }
 
             this.terminal.onData((data) => {
-                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                if (this.mode === 'pty' && this.ws && this.ws.readyState === WebSocket.OPEN) {
                     this.ws.send(data);
+                    return;
+                }
+
+                if (this.mode === 'http') {
+                    this.handleHttpInput(data);
                 }
             });
 
@@ -207,33 +275,212 @@ function containerTerminal() {
             });
         },
 
-        sendResize(cols, rows) {
-            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        handleHttpInput(data) {
+            if (!this.connected || this.mode !== 'http') {
                 return;
             }
 
-            const payload = {
+            if (data.startsWith('\x1b[200~')) {
+                this.insertText(data.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, ''));
+                return;
+            }
+
+            if (data.length > 1) {
+                this.insertText(data);
+                return;
+            }
+
+            const key = data;
+
+            if (key === '\x03') {
+                this.inputBuffer = '';
+                this.terminal.write('^C\r\n');
+                this.writePrompt();
+                return;
+            }
+
+            if (key === '\x0c') {
+                this.terminal.clear();
+                this.writePrompt();
+                return;
+            }
+
+            if (key === '\r' || key === '\n') {
+                if (this.inputBuffer.trim()) {
+                    this.sendCommand(this.inputBuffer);
+                    this.history.push(this.inputBuffer);
+                    this.historyIndex = this.history.length;
+                    this.inputBuffer = '';
+                } else {
+                    this.terminal.write('\r\n');
+                    this.writePrompt();
+                }
+                return;
+            }
+
+            if (key === '\x7f') {
+                if (this.inputBuffer.length > 0) {
+                    this.inputBuffer = this.inputBuffer.slice(0, -1);
+                    this.terminal.write('\b \b');
+                }
+                return;
+            }
+
+            if (key === '\x1b[A' && this.historyIndex > 0) {
+                this.historyIndex--;
+                this.restoreHistory();
+                return;
+            }
+
+            if (key === '\x1b[B') {
+                if (this.historyIndex < this.history.length - 1) {
+                    this.historyIndex++;
+                    this.restoreHistory();
+                } else if (this.historyIndex === this.history.length - 1) {
+                    this.historyIndex++;
+                    this.clearInput();
+                }
+                return;
+            }
+
+            if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127) {
+                this.inputBuffer += key;
+                this.terminal.write(key);
+            }
+        },
+
+        insertText(text) {
+            const normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+            for (const char of normalized) {
+                if (char === '\n') {
+                    continue;
+                }
+
+                const code = char.charCodeAt(0);
+                if (code >= 32 && code < 127) {
+                    this.inputBuffer += char;
+                    this.terminal.write(char);
+                }
+            }
+        },
+
+        restoreHistory() {
+            this.clearInput();
+            if (this.historyIndex < this.history.length) {
+                this.inputBuffer = this.history[this.historyIndex];
+                this.terminal.write(this.inputBuffer);
+            }
+        },
+
+        clearInput() {
+            for (let i = 0; i < this.inputBuffer.length; i++) {
+                this.terminal.write('\b \b');
+            }
+            this.inputBuffer = '';
+        },
+
+        normalizeCommand(command) {
+            return String(command)
+                .trim()
+                .replace(/\s*\\\s*$/g, '')
+                .replace(/\s*(&&|\|\||;|\|)\s*$/g, '');
+        },
+
+        async sendCommand(command) {
+            command = this.normalizeCommand(command);
+            this.terminal.write('\r\n');
+
+            if (!command) {
+                this.writePrompt();
+                return;
+            }
+
+            if (!this.sessionToken) {
+                this.terminal.write('❌ No active session\r\n');
+                this.writePrompt();
+                return;
+            }
+
+            try {
+                const response = await fetch(`/my/services/{{ $service->id }}/terminal/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_token: this.sessionToken,
+                        command: command,
+                    }),
+                });
+
+                const { data, parseError } = await this.safeJsonResponse(response);
+                const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
+
+                if (parseError || !response.ok) {
+                    this.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
+                    if (response.status === 404) {
+                        this.connected = false;
+                    }
+                } else if (data.blocked) {
+                    this.terminal.write('\x1b[31m' + formatOutput(data.output) + '\x1b[0m\r\n');
+                } else {
+                    if (data.output) {
+                        this.terminal.write(formatOutput(data.output) + '\r\n');
+                    }
+                    this.cwd = data.cwd || this.cwd;
+                    this.commandCount++;
+                }
+            } catch (error) {
+                this.terminal.write('❌ Error: ' + error.message + '\r\n');
+            }
+
+            this.writePrompt();
+        },
+
+        writePrompt() {
+            const user = 'user';
+            const container = '{{ $deployment->container_name ?? "container" }}';
+            this.terminal.write(`\x1b[32m${user}@${container}\x1b[0m:\x1b[34m${this.cwd}\x1b[0m$ `);
+        },
+
+        sendResize(cols, rows) {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN || this.mode !== 'pty') {
+                return;
+            }
+
+            this.ws.send(JSON.stringify({
                 type: 'resize',
                 cols: cols || this.terminal.cols,
                 rows: rows || this.terminal.rows,
-            };
-
-            this.ws.send(JSON.stringify(payload));
+            }));
         },
 
         async pasteFromClipboard() {
-            if (!this.connected || !this.terminal || !this.ws) {
+            if (!this.connected || !this.terminal) {
                 return;
             }
 
             try {
                 const text = await navigator.clipboard.readText();
-                if (text && this.ws.readyState === WebSocket.OPEN) {
-                    this.ws.send(text);
-                    this.terminal.focus();
+                if (!text) {
+                    return;
                 }
+
+                if (this.mode === 'pty' && this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(text);
+                } else if (this.mode === 'http') {
+                    this.insertText(text);
+                }
+
+                this.terminal.focus();
             } catch (error) {
                 this.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V.\r\n');
+                if (this.mode === 'http') {
+                    this.writePrompt();
+                }
             }
         },
 
@@ -259,11 +506,17 @@ function containerTerminal() {
             }
 
             this.connected = false;
+            this.mode = null;
             this.sessionToken = null;
+            this.inputBuffer = '';
             this.terminalVisible = false;
 
             if (this.expiryUpdateInterval) {
                 clearInterval(this.expiryUpdateInterval);
+            }
+
+            if (this.terminal) {
+                this.terminal.write('\r\n\r\n✓ Terminal closed\r\n');
             }
         },
 
