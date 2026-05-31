@@ -38,6 +38,7 @@ class ContainerGitRepositoryServiceTest extends TestCase
 
         $this->assertTrue($service->supportsTemplate('laravel'));
         $this->assertTrue($service->supportsTemplate('php'));
+        $this->assertTrue($service->supportsTemplate('ruby'));
         $this->assertFalse($service->supportsTemplate('wordpress'));
     }
 }

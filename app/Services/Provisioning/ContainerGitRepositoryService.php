@@ -11,8 +11,12 @@ class ContainerGitRepositoryService
     public function __construct(
         private ContainerAppDirectoryService $appDirectory,
         private ?LaravelAppInitializationService $laravelInitialization = null,
+        private ?ContainerStackCommandService $stackCommands = null,
+        private ?ContainerDeploymentService $deploymentService = null,
     ) {
         $this->laravelInitialization ??= app(LaravelAppInitializationService::class);
+        $this->stackCommands ??= new ContainerStackCommandService;
+        $this->deploymentService ??= app(ContainerDeploymentService::class);
     }
 
     /**
@@ -101,6 +105,12 @@ class ContainerGitRepositoryService
                     $messages,
                     $this->runLaravelPostPullSteps($service, $deployment, $ssh, $runComposer, $runMigrations)
                 );
+            } else {
+                $messages = array_merge($messages, $this->stackCommands->runPostPullSteps($service, $deployment, $ssh));
+                $runtimeMessage = $this->deploymentService->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
+                if ($runtimeMessage !== '') {
+                    $messages[] = $runtimeMessage;
+                }
             }
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];

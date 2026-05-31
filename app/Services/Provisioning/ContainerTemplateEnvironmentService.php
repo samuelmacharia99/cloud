@@ -1,0 +1,180 @@
+<?php
+
+namespace App\Services\Provisioning;
+
+use App\Models\Service;
+use Illuminate\Support\Str;
+
+class ContainerTemplateEnvironmentService
+{
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    public function prepare(object $template, array $env, Service $service, ?int $port = null): array
+    {
+        $env = $this->fillMissingRequiredVariables($template, $env, $service, $port);
+
+        if (($template->slug ?? '') === 'wordpress') {
+            $env = $this->prepareWordPressEnvironment($env);
+        }
+
+        return $env;
+    }
+
+    public function templateDefinesDatabaseSidecar(object $template): bool
+    {
+        $services = $template->compose_services ?? null;
+        if (! is_array($services)) {
+            return false;
+        }
+
+        $databaseServices = ['mysql', 'mariadb', 'postgresql', 'postgres', 'mongodb', 'mongo', 'db'];
+
+        foreach (array_keys($services) as $serviceName) {
+            if (in_array(strtolower((string) $serviceName), $databaseServices, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $compose
+     * @param  array<string, string>  $envVars
+     */
+    public function syncEmbeddedDatabaseSidecar(array &$compose, object $template, array $envVars, string $appServiceName): void
+    {
+        if (($template->slug ?? '') !== 'wordpress' || ! isset($compose['services']['mysql'])) {
+            return;
+        }
+
+        $compose['services']['mysql']['environment'] = [
+            'MYSQL_DATABASE' => $envVars['WORDPRESS_DB_NAME'] ?? 'wordpress',
+            'MYSQL_USER' => $envVars['WORDPRESS_DB_USER'] ?? 'wordpress',
+            'MYSQL_PASSWORD' => $envVars['WORDPRESS_DB_PASSWORD'] ?? Str::random(32),
+            'MYSQL_ROOT_PASSWORD' => $envVars['MYSQL_ROOT_PASSWORD'] ?? Str::random(32),
+        ];
+
+        $compose['services'][$appServiceName]['depends_on'] = ['mysql'];
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function fillMissingRequiredVariables(object $template, array $env, Service $service, ?int $port): array
+    {
+        foreach ($template->environment_variables ?? [] as $var) {
+            if (! is_array($var)) {
+                continue;
+            }
+
+            $key = (string) ($var['key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+
+            $current = trim((string) ($env[$key] ?? ''));
+            if ($current !== '') {
+                continue;
+            }
+
+            $required = (bool) ($var['required'] ?? false);
+            $secret = (bool) ($var['secret'] ?? false);
+
+            if ($secret) {
+                $env[$key] = $this->generateSecretValue($key);
+
+                continue;
+            }
+
+            if ($required) {
+                $generated = $this->generateRequiredValue($key, $template, $service, $port);
+                if ($generated !== '') {
+                    $env[$key] = $generated;
+                }
+            }
+        }
+
+        if (($template->slug ?? '') === 'strapi') {
+            $env = $this->prepareStrapiEnvironment($env);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareWordPressEnvironment(array $env): array
+    {
+        if (trim((string) ($env['WORDPRESS_DB_PASSWORD'] ?? '')) === '') {
+            $env['WORDPRESS_DB_PASSWORD'] = Str::random(32);
+        }
+
+        if (trim((string) ($env['WORDPRESS_ADMIN_PASSWORD'] ?? '')) === '') {
+            $env['WORDPRESS_ADMIN_PASSWORD'] = Str::random(20);
+        }
+
+        if (trim((string) ($env['MYSQL_ROOT_PASSWORD'] ?? '')) === '') {
+            $env['MYSQL_ROOT_PASSWORD'] = Str::random(32);
+        }
+
+        return $env;
+    }
+
+    /**
+     * @param  array<string, string>  $env
+     * @return array<string, string>
+     */
+    private function prepareStrapiEnvironment(array $env): array
+    {
+        if (trim((string) ($env['APP_KEYS'] ?? '')) === '') {
+            $env['APP_KEYS'] = implode(',', [
+                Str::random(32),
+                Str::random(32),
+                Str::random(32),
+                Str::random(32),
+            ]);
+        }
+
+        foreach (['API_TOKEN_SALT', 'ADMIN_JWT_SECRET', 'JWT_SECRET', 'TRANSFER_TOKEN_SALT'] as $key) {
+            if (trim((string) ($env[$key] ?? '')) === '') {
+                $env[$key] = Str::random(32);
+            }
+        }
+
+        return $env;
+    }
+
+    private function generateSecretValue(string $key): string
+    {
+        if ($key === 'APP_KEYS') {
+            return implode(',', [Str::random(32), Str::random(32), Str::random(32), Str::random(32)]);
+        }
+
+        return Str::random(32);
+    }
+
+    private function generateRequiredValue(string $key, object $template, Service $service, ?int $port): string
+    {
+        if ($key === 'url' && ($template->slug ?? '') === 'ghost') {
+            return $port ? "http://localhost:{$port}" : 'http://localhost';
+        }
+
+        if ($key === 'mail__from') {
+            $email = trim((string) ($service->user?->email ?? ''));
+
+            return $email !== '' ? $email : 'noreply@example.com';
+        }
+
+        if ($key === 'WORDPRESS_ADMIN_EMAIL') {
+            return trim((string) ($service->user?->email ?? '')) ?: 'admin@example.com';
+        }
+
+        return '';
+    }
+}

@@ -72,4 +72,17 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Application runtime autostart (Node.js, Python, Ruby)
+    |--------------------------------------------------------------------------
+    |
+    | Start commands are detected from Procfile, package.json, Gemfile,
+    | manage.py, and other common entrypoints after source sync on deploy.
+    |
+    */
+    'application_runtime' => [
+        'slugs' => ['nodejs', 'python', 'ruby'],
+    ],
+
 ];

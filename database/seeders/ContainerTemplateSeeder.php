@@ -271,8 +271,7 @@ class ContainerTemplateSeeder extends Seeder
                 ],
                 'compose_services' => [],
                 'setup_commands' => [
-                    'npm install',
-                    'npm start',
+                    'npm install --omit=dev',
                 ],
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
@@ -457,7 +456,9 @@ class ContainerTemplateSeeder extends Seeder
                     'app_data' => '/app',
                 ],
                 'compose_services' => [],
-                'setup_commands' => [],
+                'setup_commands' => [
+                    'bundle install --without development test',
+                ],
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
                 'is_active' => true,

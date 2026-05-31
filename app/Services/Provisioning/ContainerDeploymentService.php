@@ -29,6 +29,12 @@ class ContainerDeploymentService
 
     private ContainerAppDirectoryService $appDirectory;
 
+    private ContainerTemplateEnvironmentService $templateEnvironment;
+
+    private ContainerStackCommandService $stackCommands;
+
+    private ContainerApplicationRuntimeService $applicationRuntime;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -42,9 +48,15 @@ class ContainerDeploymentService
     public function __construct(
         ?RuntimeImageProvisioner $runtimeImages = null,
         ?ContainerAppDirectoryService $appDirectory = null,
+        ?ContainerTemplateEnvironmentService $templateEnvironment = null,
+        ?ContainerStackCommandService $stackCommands = null,
+        ?ContainerApplicationRuntimeService $applicationRuntime = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
+        $this->templateEnvironment = $templateEnvironment ?? new ContainerTemplateEnvironmentService;
+        $this->stackCommands = $stackCommands ?? new ContainerStackCommandService;
+        $this->applicationRuntime = $applicationRuntime ?? new ContainerApplicationRuntimeService;
     }
 
     /**
@@ -193,8 +205,6 @@ class ContainerDeploymentService
 
             // Render docker-compose.yml with deployment
             $hostAppPath = $this->resolveHostAppPath($template, $containerName);
-            $composeYaml = $this->renderCompose($template, $containerName, $port, $envVars, $databaseTemplate, $deployment, $selectedVersion, $hostAppPath);
-            $deployment->update(['docker_compose_content' => $composeYaml]);
 
             // Update service status
             $service->update(['status' => 'provisioning']);
@@ -221,6 +231,20 @@ class ContainerDeploymentService
                 if ($hostAppPath) {
                     $this->syncApplicationSource($ssh, $service, $template, $hostAppPath);
                 }
+
+                $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
+                $composeYaml = $this->renderCompose(
+                    $template,
+                    $containerName,
+                    $port,
+                    $envVars,
+                    $databaseTemplate,
+                    $deployment,
+                    $selectedVersion,
+                    $hostAppPath,
+                    $applicationRuntime
+                );
+                $deployment->update(['docker_compose_content' => $composeYaml]);
 
                 // Upload docker-compose.yml
                 $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
@@ -273,27 +297,13 @@ class ContainerDeploymentService
 
                 $this->appDirectory->normalizePermissions($ssh, $deployment);
 
-                // Execute setup commands
-                if ($template->setup_commands && is_array($template->setup_commands)) {
-                    foreach ($template->setup_commands as $command) {
-                        if (! empty($command)) {
-                            try {
-                                if (! $this->isSafeSetupCommand((string) $command)) {
-                                    \Log::warning("Skipped unsafe setup command for service {$service->id}", [
-                                        'command' => $command,
-                                    ]);
-
-                                    continue;
-                                }
-                                $ssh->exec("cd {$containerPath} && {$command}", self::DEPLOY_TIMEOUT);
-                            } catch (\Exception $e) {
-                                \Log::warning("Setup command failed for service {$service->id}: {$command}", [
-                                    'error' => $e->getMessage(),
-                                ]);
-                            }
-                        }
-                    }
-                }
+                $this->stackCommands->executeSetupCommands(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $template,
+                    self::DEPLOY_TIMEOUT
+                );
 
                 // Get container status
                 $status = $this->getContainerStatus($ssh, $containerName);
@@ -768,6 +778,14 @@ class ContainerDeploymentService
         $env['DATA_DIR'] = '/data';
         $env['COMPOSE_PROJECT_NAME'] = 'talksasa-'.$service->id;
 
+        if (in_array($template->slug ?? '', ['nodejs', 'ruby'], true)) {
+            $env['PORT'] = (string) ($template->default_port ?? 3000);
+        }
+
+        if (($template->slug ?? '') === 'python') {
+            $env['PORT'] = (string) ($template->default_port ?? 8000);
+        }
+
         // Generate secrets if needed
         if (! isset($env['DB_PASSWORD']) || ! $env['DB_PASSWORD']) {
             $env['DB_PASSWORD'] = Str::random(32);
@@ -781,7 +799,7 @@ class ContainerDeploymentService
             $env = array_merge($env, $this->databaseEnvironmentVariables($databaseTemplate, $env, $service));
         }
 
-        return $env;
+        return $this->templateEnvironment->prepare($template, $env, $service, $port);
     }
 
     /**
@@ -836,7 +854,7 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null): string
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null, ?ApplicationRuntime $applicationRuntime = null): string
     {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -907,6 +925,15 @@ class ContainerDeploymentService
             }
         }
 
+        if ($this->applicationRuntime->supportsTemplate($template->slug ?? null)) {
+            $runtime = $applicationRuntime ?? $this->applicationRuntime->fallbackRuntime(
+                (string) $template->slug,
+                (int) ($template->default_port ?? 3000)
+            );
+            $compose['services'][$containerName]['working_dir'] = '/app';
+            $compose['services'][$containerName]['command'] = $runtime->command;
+        }
+
         // Add volumes
         if ($template->volume_paths) {
             $compose['services'][$containerName]['volumes'] = [];
@@ -941,8 +968,10 @@ class ContainerDeploymentService
             }
         }
 
-        // Inject database sidecar if selected
-        if ($databaseTemplate) {
+        $this->templateEnvironment->syncEmbeddedDatabaseSidecar($compose, $template, $envVars, $containerName);
+
+        // Inject database sidecar if selected and template does not already define one
+        if ($databaseTemplate && ! $this->templateEnvironment->templateDefinesDatabaseSidecar($template)) {
             $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $containerName);
         }
 
@@ -1251,6 +1280,63 @@ class ContainerDeploymentService
         return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
     }
 
+    private function resolveApplicationRuntime(SSHService $ssh, $template, ?string $hostAppPath): ?ApplicationRuntime
+    {
+        if (! $hostAppPath || ! $this->applicationRuntime->supportsTemplate($template->slug ?? null)) {
+            return null;
+        }
+
+        return $this->applicationRuntime->detectFromHost(
+            $ssh,
+            $hostAppPath,
+            (string) $template->slug,
+            (int) ($template->default_port ?? 3000)
+        );
+    }
+
+    public function refreshApplicationRuntimeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+
+        if (! $template || ! $this->applicationRuntime->supportsTemplate($template->slug)) {
+            return '';
+        }
+
+        $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name);
+        if (! $hostAppPath) {
+            return '';
+        }
+
+        $runtime = $this->applicationRuntime->detectFromHost(
+            $ssh,
+            $hostAppPath,
+            (string) $template->slug,
+            (int) ($template->default_port ?? 3000)
+        );
+
+        $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $composeYaml = $this->renderCompose(
+            $template,
+            $deployment->container_name,
+            (int) $deployment->assigned_port,
+            $envVars,
+            $databaseTemplate,
+            $deployment,
+            $deployment->selected_version,
+            $hostAppPath,
+            $runtime
+        );
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $deployment->update(['docker_compose_content' => $composeYaml]);
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+        $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
+
+        return 'Application start command updated ('.$runtime->label.').';
+    }
+
     private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void
     {
         app(ContainerGitRepositoryService::class)->syncForDeploy($ssh, $service, $hostAppPath);
@@ -1327,6 +1413,19 @@ class ContainerDeploymentService
 
         if ($databaseTemplate) {
             $credentials['database'] = $this->extractDatabaseCredentials($databaseTemplate, $envVars);
+        } elseif (($service->product?->containerTemplate?->slug ?? '') === 'wordpress') {
+            $credentials['database'] = [
+                'host' => $envVars['WORDPRESS_DB_HOST'] ?? 'mysql:3306',
+                'name' => $envVars['WORDPRESS_DB_NAME'] ?? 'wordpress',
+                'username' => $envVars['WORDPRESS_DB_USER'] ?? 'wordpress',
+                'password' => $envVars['WORDPRESS_DB_PASSWORD'] ?? '',
+            ];
+        }
+
+        if (! empty($envVars['WORDPRESS_ADMIN_PASSWORD'])) {
+            $credentials['admin_password'] = $envVars['WORDPRESS_ADMIN_PASSWORD'];
+        } elseif (! empty($envVars['ADMIN_PASSWORD'])) {
+            $credentials['admin_password'] = $envVars['ADMIN_PASSWORD'];
         }
 
         return $credentials;
@@ -1343,8 +1442,12 @@ class ContainerDeploymentService
             return null;
         }
 
+        if ($this->templateEnvironment->templateDefinesDatabaseSidecar($template)) {
+            return null;
+        }
+
         // Container PHP/Laravel apps expect a SQL sidecar when checkout metadata is missing.
-        if (in_array($template->slug ?? '', ['laravel', 'php', 'wordpress'], true)) {
+        if (in_array($template->slug ?? '', ['laravel', 'php'], true)) {
             return DatabaseTemplate::query()
                 ->where('is_active', true)
                 ->where('hosting_type', 'container')
@@ -1590,24 +1693,6 @@ class ContainerDeploymentService
 
         \Log::warning("Re-uploading docker-compose.yml for deployment {$deployment->id}");
         $ssh->upload($deployment->docker_compose_content, $composeFile);
-    }
-
-    /**
-     * Basic safety validation for template setup commands.
-     */
-    private function isSafeSetupCommand(string $command): bool
-    {
-        $cmd = trim($command);
-        if ($cmd === '' || strlen($cmd) > 500) {
-            return false;
-        }
-
-        // Block common shell control/injection characters.
-        if (preg_match('/[;&|`$<>\\\\]/', $cmd)) {
-            return false;
-        }
-
-        return true;
     }
 
     /**
