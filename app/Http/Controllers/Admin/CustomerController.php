@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -312,12 +313,19 @@ class CustomerController extends Controller
                     'expires_at' => $validated['expires_at'],
                 ]);
 
+                $schedule = app(InvoiceGenerationScheduleService::class);
+                $expiresAt = Carbon::parse($validated['expires_at']);
+
                 $domain = Domain::create([
                     'user_id' => $customer->id,
+                    'reseller_id' => $customer->reseller_id,
                     'name' => $name,
                     'extension' => $extension,
                     'registered_at' => $validated['registered_at'],
-                    'expires_at' => $validated['expires_at'],
+                    'expires_at' => $expiresAt,
+                    'next_invoice_date' => $schedule->domainNextInvoiceDate(
+                        new Domain(['expires_at' => $expiresAt])
+                    ),
                     'status' => $validated['status'],
                     'nameserver_1' => $validated['nameserver_1'],
                     'nameserver_2' => $validated['nameserver_2'],
@@ -331,7 +339,7 @@ class CustomerController extends Controller
                     'domain_name' => "{$domain->name}{$domain->extension}",
                 ]);
 
-                // Create invoice if next_due_date is provided (10 days prior)
+                // Create invoice if next_due_date is provided (manual first invoice)
                 if (! empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
                     $taxEnabled = Setting::getValue('tax_enabled') == 'true';
@@ -341,7 +349,7 @@ class CustomerController extends Controller
                     $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
                     $total = $subtotal + $tax;
 
-                    $invoiceDueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
+                    $invoiceDueDate = $schedule->domainRenewalAnchorDate($domain);
 
                     Log::info('addDomain() creating invoice', [
                         'customer_id' => $customer->id,
@@ -621,7 +629,7 @@ class CustomerController extends Controller
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
-        $invoiceDueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
+        $invoiceDueDate = app(InvoiceGenerationScheduleService::class)->serviceInvoiceDueDate($service);
 
         $invoice = Invoice::create([
             'user_id' => $customer->id,

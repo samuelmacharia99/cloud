@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Services\ContainerOverageBillingService;
 use App\Services\DomainRenewalService;
+use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -23,7 +24,7 @@ class GenerateInvoicesByDateCommand extends Command
                             {--type=all : Type of invoices: service, domain, or all}
                             {--send-notifications : Send email/SMS notifications to customers}';
 
-    protected $description = 'Generate invoices for services/domains expiring on a specific date';
+    protected $description = 'Generate renewal invoices using advance windows (monthly services: 10 days, others/domains: 30 days)';
 
     public function handle(): int
     {
@@ -70,22 +71,17 @@ class GenerateInvoicesByDateCommand extends Command
     {
         $this->line('Generating service renewal invoices...');
 
-        $services = Service::with(['product', 'user', 'containerDeployment'])
-            ->where('status', 'active')
-            ->whereDate('next_due_date', '=', $date->toDateString())
-            ->whereDoesntHave('invoice', function ($q) use ($date) {
-                $q->whereIn('status', ['draft', 'unpaid'])
-                    ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
-            })
-            ->get();
+        $schedule = app(InvoiceGenerationScheduleService::class);
+        $services = $schedule->servicesDueForRenewalInvoiceQuery($date)
+            ->get()
+            ->filter(fn (Service $service) => $schedule->isServiceDueForRenewalInvoice($service, $date));
 
         if ($services->isEmpty()) {
-            $this->line('  No services expiring on this date.');
+            $this->line('  No services due for renewal invoice generation on this date.');
 
             return 0;
         }
 
-        $invoiceDueDays = (int) Setting::getValue('invoice_due_days', 14);
         $prefix = Setting::getValue('invoice_prefix', 'INV');
         $taxRate = (float) Setting::getValue('tax_rate', 0);
         $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
@@ -93,7 +89,7 @@ class GenerateInvoicesByDateCommand extends Command
         $count = 0;
         foreach ($services as $service) {
             try {
-                DB::transaction(function () use ($service, $prefix, $invoiceDueDays, $taxRate, $taxEnabled, $date, $sendNotifications, &$count) {
+                DB::transaction(function () use ($service, $prefix, $taxRate, $taxEnabled, $date, $sendNotifications, &$count, $schedule) {
                     $year = $date->format('Y');
                     $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
                     $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
@@ -101,7 +97,7 @@ class GenerateInvoicesByDateCommand extends Command
                     $price = $this->getPriceForCycle($service);
                     $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
                     $total = $price + $tax;
-                    $dueDate = $date->copy()->addDays($invoiceDueDays)->toDateString();
+                    $dueDate = $schedule->serviceInvoiceDueDate($service)->toDateString();
 
                     $invoice = Invoice::create([
                         'user_id' => $service->user_id,
@@ -133,10 +129,7 @@ class GenerateInvoicesByDateCommand extends Command
                         );
                     }
 
-                    $service->update([
-                        'invoice_id' => $invoice->id,
-                        'next_due_date' => $this->advanceDueDate($service, $date),
-                    ]);
+                    $service->update(['invoice_id' => $invoice->id]);
 
                     if ($sendNotifications) {
                         app(NotificationService::class)->notifyInvoiceGenerated($invoice);
@@ -158,17 +151,11 @@ class GenerateInvoicesByDateCommand extends Command
     {
         $this->line('Generating domain renewal invoices...');
 
-        $domains = Domain::where('status', 'active')
-            ->whereDate('expires_at', '=', $date->toDateString())
-            ->whereDoesntHave('renewalOrders', function ($q) use ($date) {
-                $q->whereIn('status', ['pending', 'invoiced'])
-                    ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
-            })
-            ->with(['user', 'domainExtension'])
-            ->get();
+        $schedule = app(InvoiceGenerationScheduleService::class);
+        $domains = $schedule->domainsDueForRenewalInvoiceQuery($date)->get();
 
         if ($domains->isEmpty()) {
-            $this->line('  No domains expiring on this date.');
+            $this->line('  No domains due for renewal invoice generation on this date.');
 
             return 0;
         }
@@ -178,8 +165,12 @@ class GenerateInvoicesByDateCommand extends Command
 
         $count = 0;
         foreach ($domains as $domain) {
+            if (! $schedule->isDomainDueForRenewalInvoice($domain, $date)) {
+                continue;
+            }
+
             try {
-                DB::transaction(function () use ($domain, $renewalYears, $paymentDays, $date, $sendNotifications, &$count) {
+                DB::transaction(function () use ($domain, $renewalYears, $paymentDays, $sendNotifications, &$count) {
                     $renewalPrice = $this->getRenewalPrice($domain);
 
                     if ($renewalPrice <= 0) {
@@ -194,7 +185,7 @@ class GenerateInvoicesByDateCommand extends Command
                         'years' => $renewalYears,
                         'amount' => $renewalPrice,
                         'status' => 'pending',
-                        'expires_at' => $date->copy()->addDays($paymentDays)->toDateString(),
+                        'expires_at' => now()->addDays($paymentDays),
                     ]);
 
                     $renewalService = app(DomainRenewalService::class);
@@ -228,17 +219,6 @@ class GenerateInvoicesByDateCommand extends Command
             'semi-annual' => (float) ($service->product->monthly_price * 6),
             'annual' => (float) $service->product->yearly_price ?: ($service->product->monthly_price * 12),
             default => (float) $service->product->price,
-        };
-    }
-
-    private function advanceDueDate(Service $service, Carbon $fromDate)
-    {
-        return match ($service->billing_cycle) {
-            'monthly' => $fromDate->copy()->addMonth(),
-            'quarterly' => $fromDate->copy()->addMonths(3),
-            'semi-annual' => $fromDate->copy()->addMonths(6),
-            'annual' => $fromDate->copy()->addYear(),
-            default => $fromDate->copy()->addMonth(),
         };
     }
 

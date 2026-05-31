@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ServiceStatus;
 use App\Models\Domain;
 use App\Models\InvoiceItem;
 use App\Models\Service;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 /**
  * Central rules for when renewal invoices should be generated ahead of due dates.
  *
+ * Applies to direct customers and reseller-managed customers alike:
  * - Monthly services: invoice N days before next_due_date (default 10).
  * - Non-monthly services (quarterly, semi-annual, annual): invoice N days before (default 30).
  * - Domains: invoice N days before expires_at (default 30, setting domain_renewal_advance_days).
@@ -35,9 +37,38 @@ class InvoiceGenerationScheduleService
 
     public function serviceAdvanceDays(Service $service): int
     {
-        return $service->billing_cycle === 'monthly'
+        return $this->advanceDaysForBillingCycle($service->billing_cycle ?? 'monthly');
+    }
+
+    public function advanceDaysForBillingCycle(string $billingCycle): int
+    {
+        return $billingCycle === 'monthly'
             ? $this->monthlyServiceAdvanceDays()
             : $this->nonMonthlyServiceAdvanceDays();
+    }
+
+    /**
+     * Date the customer/reseller should pay a service renewal invoice (service next_due_date).
+     */
+    public function serviceInvoiceDueDate(Service $service): Carbon
+    {
+        return Carbon::parse($service->next_due_date)->startOfDay();
+    }
+
+    /**
+     * Anchor date for domain renewal billing (domain expiry).
+     */
+    public function domainRenewalAnchorDate(Domain $domain): Carbon
+    {
+        return Carbon::parse($domain->expires_at)->startOfDay();
+    }
+
+    /**
+     * Planned auto-invoice date shown on reseller domain records.
+     */
+    public function domainNextInvoiceDate(Domain $domain): Carbon
+    {
+        return $this->domainRenewalAnchorDate($domain)->copy()->subDays($this->domainAdvanceDays());
     }
 
     /**
@@ -45,15 +76,34 @@ class InvoiceGenerationScheduleService
      */
     public function serviceInvoiceGenerateOnOrBefore(Service $service, ?Carbon $reference = null): Carbon
     {
-        $reference = ($reference ?? now())->copy()->startOfDay();
-        $dueDate = Carbon::parse($service->next_due_date)->startOfDay();
+        return $this->serviceInvoiceGenerateOnOrBeforeDate(
+            Carbon::parse($service->next_due_date),
+            $service->billing_cycle ?? 'monthly'
+        );
+    }
 
-        return $dueDate->copy()->subDays($this->serviceAdvanceDays($service));
+    public function serviceInvoiceGenerateOnOrBeforeDate(Carbon $nextDueDate, string $billingCycle): Carbon
+    {
+        return $nextDueDate->copy()->startOfDay()->subDays($this->advanceDaysForBillingCycle($billingCycle));
+    }
+
+    public function isResellerManagedService(Service $service): bool
+    {
+        $service->loadMissing('user');
+
+        return $service->reseller_id !== null || $service->user?->reseller_id !== null;
+    }
+
+    public function isResellerManagedDomain(Domain $domain): bool
+    {
+        $domain->loadMissing('user');
+
+        return $domain->reseller_id !== null || $domain->user?->reseller_id !== null;
     }
 
     public function isServiceDueForRenewalInvoice(Service $service, ?Carbon $reference = null): bool
     {
-        if ($service->status !== 'active' || ! $service->next_due_date) {
+        if (! $service->next_due_date || $service->status !== ServiceStatus::Active) {
             return false;
         }
 
@@ -76,17 +126,22 @@ class InvoiceGenerationScheduleService
             return false;
         }
 
-        $generateOnOrBefore = $expiresAt->copy()->subDays($this->domainAdvanceDays());
+        $generateOnOrBefore = $this->domainInvoiceGenerateOnOrBefore($domain, $reference);
 
         return $reference->greaterThanOrEqualTo($generateOnOrBefore);
+    }
+
+    public function domainInvoiceGenerateOnOrBefore(Domain $domain, ?Carbon $reference = null): Carbon
+    {
+        return $this->domainRenewalAnchorDate($domain)->copy()->subDays($this->domainAdvanceDays());
     }
 
     /**
      * Active services that are inside the advance window and have no open renewal invoice.
      */
-    public function servicesDueForRenewalInvoiceQuery(): Builder
+    public function servicesDueForRenewalInvoiceQuery(?Carbon $reference = null): Builder
     {
-        $today = now()->startOfDay();
+        $today = ($reference ?? now())->copy()->startOfDay();
         $monthlyAdvance = $this->monthlyServiceAdvanceDays();
         $nonMonthlyAdvance = $this->nonMonthlyServiceAdvanceDays();
 
@@ -110,9 +165,9 @@ class InvoiceGenerationScheduleService
     /**
      * Active domains inside the advance window without a pending/invoiced renewal order.
      */
-    public function domainsDueForRenewalInvoiceQuery(): Builder
+    public function domainsDueForRenewalInvoiceQuery(?Carbon $reference = null): Builder
     {
-        $today = now()->startOfDay();
+        $today = ($reference ?? now())->copy()->startOfDay();
         $advanceDays = $this->domainAdvanceDays();
         $lookbackDays = $advanceDays + 7;
 

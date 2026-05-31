@@ -12,6 +12,7 @@ use App\Models\ResellerPackage;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerPackageSubscriptionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -292,7 +293,14 @@ class ResellerController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($validated, $user, $name, $ext) {
+            $schedule = app(InvoiceGenerationScheduleService::class);
+
+            DB::transaction(function () use ($validated, $user, $name, $ext, $schedule) {
+                $expiresAt = Carbon::parse($validated['expires_at']);
+                $nextInvoiceDate = $validated['next_invoice_date']
+                    ? Carbon::parse($validated['next_invoice_date'])
+                    : $schedule->domainNextInvoiceDate(new Domain(['expires_at' => $expiresAt]));
+
                 Domain::create([
                     'user_id' => $validated['owner_id'],
                     'reseller_id' => $user->id,
@@ -301,8 +309,8 @@ class ResellerController extends Controller
                     'status' => $validated['status'],
                     'type' => 'registration',
                     'registered_at' => $validated['registered_at'],
-                    'expires_at' => $validated['expires_at'],
-                    'next_invoice_date' => $validated['next_invoice_date'],
+                    'expires_at' => $expiresAt,
+                    'next_invoice_date' => $nextInvoiceDate,
                     'nameserver_1' => $validated['nameserver_1'],
                     'nameserver_2' => $validated['nameserver_2'],
                     'auto_renew' => $validated['auto_renew'] ?? true,
@@ -431,7 +439,8 @@ class ResellerController extends Controller
         $count = Invoice::whereDate('created_at', now())->count() + 1;
         $number = $prefix.'-'.$date.'-'.str_pad($count, 5, '0', STR_PAD_LEFT);
 
-        $dueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
+        $schedule = app(InvoiceGenerationScheduleService::class);
+        $dueDate = $schedule->serviceInvoiceDueDate($service);
 
         $invoice = Invoice::create([
             'user_id' => $reseller->id,
