@@ -171,7 +171,24 @@
         @if ($product->resource_limits)
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Resource Limits</h3>
-                <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($product->resource_limits, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                @if ($product->type === 'container_hosting')
+                    <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">CPU Cores</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['cpu'] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Memory (MB)</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['memory'] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Disk (GB)</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['disk'] ?? '—' }}</dd>
+                        </div>
+                    </dl>
+                @else
+                    <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($product->resource_limits, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                @endif
             </div>
         @endif
     </div>

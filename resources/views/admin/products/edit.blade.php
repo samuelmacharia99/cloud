@@ -216,8 +216,8 @@
                 </div>
             </div>
 
-            <!-- Resource Limits (Full width) - Hide for VPS/Dedicated Server and Shared Hosting -->
-            <div x-show="productType !== 'vps' && productType !== 'dedicated_server' && productType !== 'shared_hosting'">
+            <!-- Resource Limits (JSON) - other product types only -->
+            <div x-show="productType !== 'vps' && productType !== 'dedicated_server' && productType !== 'shared_hosting' && productType !== 'container_hosting'">
                 <label for="resource_limits" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Resource Limits <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(JSON format, optional)</span></label>
                 <textarea id="resource_limits" name="resource_limits" rows="4" placeholder='{"cpu": "2", "memory": "2GB", "disk": "20GB"}' class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono resize-none">{{ old('resource_limits') ? (is_array(old('resource_limits')) ? json_encode(old('resource_limits')) : old('resource_limits')) : ($product->resource_limits ? json_encode($product->resource_limits) : '') }}</textarea>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter valid JSON or leave blank</p>
@@ -225,6 +225,8 @@
                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                 @enderror
             </div>
+
+            @include('admin.products.partials.container-resource-limits', ['limits' => $product->resource_limits ?? []])
 
             <!-- Container Overage Billing (conditional) -->
             @if ($product->type === 'container_hosting')

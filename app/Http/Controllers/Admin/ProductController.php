@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Product;
+use App\Http\Controllers\Controller;
 use App\Models\Currency;
+use App\Models\Product;
 use App\Models\Setting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use App\Http\Controllers\Controller;
 
 class ProductController extends Controller
 {
@@ -45,69 +45,14 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
-        $resourceLimits = $request->input('resource_limits');
-        $resourceLimitsRule = 'nullable';
-
-        if ($resourceLimits !== null && !is_array($resourceLimits)) {
-            $resourceLimitsRule = 'nullable|json';
-        }
-
-        $rules = [
-            'name' => 'required|string|max:255|unique:products,name',
-            'slug' => 'nullable|string|max:255|unique:products,slug',
-            'description' => 'nullable|string',
-            'category' => 'nullable|string|max:255',
-            'type' => 'required|in:' . implode(',', array_keys(Product::TYPES)),
-            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
-            'monthly_price' => 'nullable|numeric|min:0',
-            'yearly_price' => 'nullable|numeric|min:0',
-            'setup_fee' => 'nullable|numeric|min:0',
-            'provisioning_driver_key' => 'nullable|string',
-            'is_active' => 'boolean',
-            'visible_to_resellers' => 'boolean',
-            'featured' => 'boolean',
-            'overage_enabled' => 'boolean',
-            'cpu_overage_rate' => 'nullable|numeric|min:0',
-            'ram_overage_rate' => 'nullable|numeric|min:0',
-        ];
-
-        if ($request->input('type') === 'shared_hosting') {
-            $rules['direct_admin_package_id'] = 'required|exists:direct_admin_packages,id';
-            $rules['resource_limits'] = 'nullable';
-            $rules['wholesale_monthly_price'] = 'nullable';
-            $rules['wholesale_yearly_price'] = 'nullable';
-        } else {
-            $rules['wholesale_monthly_price'] = 'nullable|numeric|min:0';
-            $rules['wholesale_yearly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits'] = $resourceLimitsRule;
-            $rules['direct_admin_package_id'] = 'nullable';
-        }
-
-        $validated = $request->validate($rules);
+        $type = $request->input('type');
+        $validated = $request->validate($this->validationRules($type));
 
         if (empty($validated['slug'])) {
             $validated['slug'] = Str::slug($validated['name']);
         }
 
-        if (is_string($validated['resource_limits'] ?? null)) {
-            $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
-        }
-
-        if ($validated['type'] === 'shared_hosting') {
-            $validated['wholesale_monthly_price'] = null;
-            $validated['wholesale_yearly_price'] = null;
-            $validated['resource_limits'] = null;
-        } elseif ($validated['type'] === 'container_hosting') {
-            // Container hosting doesn't need setup fee, provisioning key, wholesale rates, or direct admin
-            $validated['setup_fee'] = 0;
-            $validated['provisioning_driver_key'] = null;
-            $validated['wholesale_monthly_price'] = null;
-            $validated['wholesale_yearly_price'] = null;
-            $validated['direct_admin_package_id'] = null;
-            $validated['resource_limits'] = null;
-        } else {
-            $validated['direct_admin_package_id'] = null;
-        }
+        $validated = $this->normalizeValidatedProductData($validated, $type);
 
         Product::create($validated);
 
@@ -133,64 +78,10 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
-        $resourceLimits = $request->input('resource_limits');
-        $resourceLimitsRule = 'nullable';
+        $type = $product->type;
+        $validated = $request->validate($this->validationRules($type, $product));
 
-        if ($resourceLimits !== null && !is_array($resourceLimits)) {
-            $resourceLimitsRule = 'nullable|json';
-        }
-
-        $rules = [
-            'name' => 'required|string|max:255|unique:products,name,' . $product->id,
-            'slug' => 'required|string|max:255|unique:products,slug,' . $product->id,
-            'description' => 'nullable|string',
-            'category' => 'nullable|string|max:255',
-            'type' => 'required|in:' . implode(',', array_keys(Product::TYPES)),
-            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
-            'monthly_price' => 'nullable|numeric|min:0',
-            'yearly_price' => 'nullable|numeric|min:0',
-            'setup_fee' => 'nullable|numeric|min:0',
-            'provisioning_driver_key' => 'nullable|string',
-            'is_active' => 'boolean',
-            'visible_to_resellers' => 'boolean',
-            'featured' => 'boolean',
-            'overage_enabled' => 'boolean',
-            'cpu_overage_rate' => 'nullable|numeric|min:0',
-            'ram_overage_rate' => 'nullable|numeric|min:0',
-        ];
-
-        if ($product->type === 'shared_hosting') {
-            $rules['direct_admin_package_id'] = 'required|exists:direct_admin_packages,id';
-            $rules['resource_limits'] = 'nullable';
-            $rules['wholesale_monthly_price'] = 'nullable';
-            $rules['wholesale_yearly_price'] = 'nullable';
-        } else {
-            $rules['wholesale_monthly_price'] = 'nullable|numeric|min:0';
-            $rules['wholesale_yearly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits'] = $resourceLimitsRule;
-            $rules['direct_admin_package_id'] = 'nullable';
-        }
-
-        $validated = $request->validate($rules);
-
-        if (is_string($validated['resource_limits'] ?? null)) {
-            $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
-        }
-
-        if ($product->type === 'shared_hosting') {
-            $validated['wholesale_monthly_price'] = null;
-            $validated['wholesale_yearly_price'] = null;
-            $validated['resource_limits'] = null;
-        } elseif ($product->type === 'container_hosting') {
-            $validated['setup_fee'] = 0;
-            $validated['provisioning_driver_key'] = null;
-            $validated['wholesale_monthly_price'] = null;
-            $validated['wholesale_yearly_price'] = null;
-            $validated['direct_admin_package_id'] = null;
-            $validated['resource_limits'] = null;
-        } else {
-            $validated['direct_admin_package_id'] = null;
-        }
+        $validated = $this->normalizeValidatedProductData($validated, $type);
 
         $product->update($validated);
 
@@ -204,5 +95,111 @@ class ProductController extends Controller
 
         return redirect()->route('admin.products.index')
             ->with('success', 'Product deleted successfully.');
+    }
+
+    private function validationRules(string $type, ?Product $product = null): array
+    {
+        $productId = $product?->id;
+
+        $rules = [
+            'name' => 'required|string|max:255|unique:products,name'.($productId ? ','.$productId : ''),
+            'slug' => ($productId ? 'required' : 'nullable').'|string|max:255|unique:products,slug'.($productId ? ','.$productId : ''),
+            'description' => 'nullable|string',
+            'category' => 'nullable|string|max:255',
+            'type' => 'required|in:'.implode(',', array_keys(Product::TYPES)),
+            'container_template_id' => 'nullable|required_if:type,container_hosting|exists:container_templates,id',
+            'monthly_price' => 'nullable|numeric|min:0',
+            'yearly_price' => 'nullable|numeric|min:0',
+            'setup_fee' => 'nullable|numeric|min:0',
+            'provisioning_driver_key' => 'nullable|string',
+            'is_active' => 'boolean',
+            'visible_to_resellers' => 'boolean',
+            'featured' => 'boolean',
+            'overage_enabled' => 'boolean',
+            'cpu_overage_rate' => 'nullable|numeric|min:0',
+            'ram_overage_rate' => 'nullable|numeric|min:0',
+        ];
+
+        if ($type === 'shared_hosting') {
+            $rules['direct_admin_package_id'] = 'required|exists:direct_admin_packages,id';
+            $rules['resource_limits'] = 'nullable';
+            $rules['wholesale_monthly_price'] = 'nullable';
+            $rules['wholesale_yearly_price'] = 'nullable';
+
+            return $rules;
+        }
+
+        $rules['wholesale_monthly_price'] = 'nullable|numeric|min:0';
+        $rules['wholesale_yearly_price'] = 'nullable|numeric|min:0';
+        $rules['direct_admin_package_id'] = 'nullable';
+
+        if ($type === 'container_hosting') {
+            $rules['resource_limits'] = 'nullable|array';
+            $rules['resource_limits.cpu'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.memory'] = 'nullable|integer|min:0';
+            $rules['resource_limits.disk'] = 'nullable|numeric|min:0';
+
+            return $rules;
+        }
+
+        $resourceLimits = request()->input('resource_limits');
+        $rules['resource_limits'] = ($resourceLimits !== null && ! is_array($resourceLimits))
+            ? 'nullable|json'
+            : 'nullable';
+
+        return $rules;
+    }
+
+    private function normalizeValidatedProductData(array $validated, string $type): array
+    {
+        if (is_string($validated['resource_limits'] ?? null)) {
+            $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
+        }
+
+        if ($type === 'shared_hosting') {
+            $validated['wholesale_monthly_price'] = null;
+            $validated['wholesale_yearly_price'] = null;
+            $validated['resource_limits'] = null;
+
+            return $validated;
+        }
+
+        if ($type === 'container_hosting') {
+            $validated['setup_fee'] = 0;
+            $validated['provisioning_driver_key'] = null;
+            $validated['wholesale_monthly_price'] = null;
+            $validated['wholesale_yearly_price'] = null;
+            $validated['direct_admin_package_id'] = null;
+            $validated['resource_limits'] = $this->normalizeContainerResourceLimits($validated['resource_limits'] ?? null);
+
+            return $validated;
+        }
+
+        $validated['direct_admin_package_id'] = null;
+
+        return $validated;
+    }
+
+    private function normalizeContainerResourceLimits(?array $limits): ?array
+    {
+        if (! is_array($limits)) {
+            return null;
+        }
+
+        $normalized = [];
+
+        if (array_key_exists('cpu', $limits) && $limits['cpu'] !== '' && $limits['cpu'] !== null) {
+            $normalized['cpu'] = (float) $limits['cpu'];
+        }
+
+        if (array_key_exists('memory', $limits) && $limits['memory'] !== '' && $limits['memory'] !== null) {
+            $normalized['memory'] = (int) $limits['memory'];
+        }
+
+        if (array_key_exists('disk', $limits) && $limits['disk'] !== '' && $limits['disk'] !== null) {
+            $normalized['disk'] = (float) $limits['disk'];
+        }
+
+        return $normalized === [] ? null : $normalized;
     }
 }
