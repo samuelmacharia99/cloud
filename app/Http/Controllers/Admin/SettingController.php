@@ -6,6 +6,7 @@ use App\Helpers\CronHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\Email;
+use App\Models\EmailTemplate;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Services\PaymentGateway\MpesaService;
@@ -51,12 +52,18 @@ class SettingController extends Controller
         ],
         'email' => [
             'smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_user', 'smtp_password',
-            'mail_from_name', 'mail_from_address',
+            'mail_from_name', 'mail_from_address', 'email_queue_enabled',
         ],
         'notifications' => [
             'notify_new_order', 'notify_payment', 'notify_service_suspend', 'notify_ticket',
             'notify_invoice_generated', 'notify_invoice_reminder', 'notify_invoice_overdue',
-            'notify_service_activated', 'notify_service_terminated', 'notify_domain_expiry',
+            'notify_service_activated', 'notify_service_unsuspended', 'notify_service_terminated',
+            'notify_domain_expiry', 'notify_container_backup', 'notify_container_backup_failure',
+            'notify_container_failure', 'notify_container_restart',
+            'notify_reseller_domain_queued', 'notify_reseller_domain_pushed', 'notify_reseller_new_customer_order',
+            'notify_reseller_wallet_low', 'notify_reseller_wallet_topup',
+            'notify_admin_new_order', 'notify_admin_reseller_domain_push', 'notify_admin_manual_payment',
+            'notify_admin_node_offline',
         ],
         'cron' => [
             'cron_timezone', 'cron_retention_days', 'max_execution_time',
@@ -95,6 +102,7 @@ class SettingController extends Controller
 
         // Load SMS templates for the notifications tab
         $smsTemplates = SmsTemplate::all()->keyBy('event_key');
+        $emailTemplatesList = EmailTemplate::orderBy('recipient_type')->orderBy('name')->get();
 
         // Get cron helper data for the cron tab
         try {
@@ -118,7 +126,7 @@ class SettingController extends Controller
         ];
 
         return view('admin.settings.index', compact(
-            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplates',
+            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplates', 'emailTemplatesList',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
             'gatewayStatus'
         ));
@@ -133,7 +141,7 @@ class SettingController extends Controller
         'stripe_', 'paypal_', 'bank_', 'sms_', 'domain_', 'currency_',
         'security_', 'recaptcha_', 'two_factor_', 'maintenance_',
         'registration_', 'invoice_', 'support_', 'logo_', 'favicon_',
-        'primary_', 'company_', 'footer_', 'notify_', 'cron_',
+        'primary_', 'company_', 'footer_', 'notify_', 'email_', 'cron_',
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
     ];

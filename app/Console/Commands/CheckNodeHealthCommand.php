@@ -2,15 +2,15 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Node;
 use App\Models\ContainerDeployment;
+use App\Models\Node;
+use App\Services\NotificationService;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\GenericNotification;
 
 class CheckNodeHealthCommand extends BaseCronCommand
 {
     protected $signature = 'cron:check-node-health';
+
     protected $description = 'Sets monitored nodes to offline/degraded based on last heartbeat';
 
     protected function handleCron(): string
@@ -29,7 +29,7 @@ class CheckNodeHealthCommand extends BaseCronCommand
             if (is_null($heartbeat) || $heartbeat->lt(now()->subMinutes(15))) {
                 if ($node->status !== 'offline') {
                     $node->update(['status' => 'offline']);
-                    Log::error("NODE OFFLINE: {$node->name} ({$node->ip_address}) — last heartbeat: " . ($heartbeat?->toDateTimeString() ?? 'never'));
+                    Log::error("NODE OFFLINE: {$node->name} ({$node->ip_address}) — last heartbeat: ".($heartbeat?->toDateTimeString() ?? 'never'));
 
                     // Notify admin if container node goes offline
                     if ($node->type === 'container_host') {
@@ -40,7 +40,7 @@ class CheckNodeHealthCommand extends BaseCronCommand
             } elseif ($heartbeat->lt(now()->subMinutes(5))) {
                 if ($node->status !== 'degraded') {
                     $node->update(['status' => 'degraded']);
-                    Log::warning("NODE DEGRADED: {$node->name} ({$node->ip_address}) — heartbeat " . $heartbeat->diffForHumans());
+                    Log::warning("NODE DEGRADED: {$node->name} ({$node->ip_address}) — heartbeat ".$heartbeat->diffForHumans());
                 }
                 $degraded++;
             } else {
@@ -78,7 +78,6 @@ class CheckNodeHealthCommand extends BaseCronCommand
                 return;
             }
 
-            $adminEmail = setting('admin_email', config('mail.from.address'));
             $affectedCount = $deployments->count();
 
             // Compose service list
@@ -110,16 +109,11 @@ Visit the service details page and use the "Migrate Container" option to move se
 This is an automated alert from Talksasa Cloud.
 EOT;
 
-            // Send email to admin
-            Mail::to($adminEmail)->send(new GenericNotification(
-                subject: $subject,
-                heading: 'Container Node Offline Alert',
-                body: $body
-            ));
+            app(NotificationService::class)->notifyAdminNodeOffline($subject, $body);
 
             Log::warning("Offline container node notification sent for {$node->hostname}");
         } catch (\Exception $e) {
-            Log::error("Failed to send offline node notification: " . $e->getMessage());
+            Log::error('Failed to send offline node notification: '.$e->getMessage());
         }
     }
 }

@@ -11,6 +11,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             UserSeeder::class,
             SettingSeeder::class,
+            EmailTemplateSeeder::class,
             CronJobSeeder::class,
             ContainerTemplateSeeder::class,
             DatabaseTemplateSeeder::class,

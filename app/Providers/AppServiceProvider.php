@@ -5,6 +5,10 @@ namespace App\Providers;
 use App\Models\CronJob;
 use App\Models\Setting;
 use App\Services\DomainPushService;
+use App\Services\EmailDeliveryService;
+use App\Services\EmailRateLimiter;
+use App\Services\NotificationPreferenceService;
+use App\Services\NotificationService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerMailService;
@@ -36,6 +40,10 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(WalletNotificationService::class);
+        $this->app->singleton(EmailDeliveryService::class);
+        $this->app->singleton(EmailRateLimiter::class);
+        $this->app->singleton(NotificationPreferenceService::class);
+        $this->app->singleton(NotificationService::class);
         $this->app->singleton(ResellerDomainTransferService::class);
         $this->app->singleton(ResellerBrandingResolver::class);
         $this->app->singleton(ResellerMailService::class);

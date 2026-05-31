@@ -315,7 +315,7 @@ class PaymentController extends Controller
 
             $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
 
-            NotificationService::notifyPaymentReceived($invoice);
+            app(NotificationService::class)->notifyPaymentReceived($invoice);
 
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
 

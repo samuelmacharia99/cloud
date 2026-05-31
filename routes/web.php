@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\DomainController;
 use App\Http\Controllers\Admin\DomainOrderController;
 use App\Http\Controllers\Admin\DomainRenewalController;
 use App\Http\Controllers\Admin\EmailController;
+use App\Http\Controllers\Admin\EmailTemplateController;
 use App\Http\Controllers\Admin\InvoiceController;
 use App\Http\Controllers\Admin\ManualPaymentController;
 use App\Http\Controllers\Admin\NodeController;
@@ -33,6 +34,8 @@ use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\Customer\ResellerCatalogController;
 use App\Http\Controllers\Customer\ServiceBrowserController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EmailWebhookController;
+use App\Http\Controllers\NotificationPreferenceController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Reseller\CartController;
@@ -105,6 +108,7 @@ Route::middleware(['throttle:120,1'])->group(function () {
     Route::post('/webhooks/mpesa/callback', [PaymentWebhookController::class, 'mpesaCallback'])->name('payment.mpesa.callback.legacy');
     Route::post('/webhooks/stripe', [PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
     Route::post('/webhooks/paypal', [PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
+    Route::post('/webhooks/email/bounce', [EmailWebhookController::class, 'bounce'])->name('webhooks.email.bounce');
 });
 
 // Legal pages (public, no authentication required)
@@ -208,6 +212,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // SMS Templates (AJAX)
         Route::put('admin/sms-templates/{smsTemplate}', [SmsTemplateController::class, 'update'])->name('admin.sms-templates.update');
         Route::post('admin/sms-templates/{smsTemplate}/reset', [SmsTemplateController::class, 'reset'])->name('admin.sms-templates.reset');
+
+        Route::put('admin/email-templates/{emailTemplate}', [EmailTemplateController::class, 'update'])->name('admin.email-templates.update');
+        Route::post('admin/email-templates/{emailTemplate}/reset', [EmailTemplateController::class, 'reset'])->name('admin.email-templates.reset');
 
         // Email Logs
         Route::get('admin/emails', [EmailController::class, 'index'])->name('admin.emails.index');
@@ -488,6 +495,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     });
 
     // Profile (accessible to all authenticated users)
+    Route::get('/profile/notifications', [NotificationPreferenceController::class, 'edit'])->name('profile.notifications');
+    Route::patch('/profile/notifications', [NotificationPreferenceController::class, 'update'])->name('profile.notifications.update');
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');

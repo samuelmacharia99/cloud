@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationEvent;
+use App\Mail\AdminResellerDomainPushMail;
+use App\Mail\ResellerDomainOrderMail;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
 use App\Models\WalletTransaction;
-use Illuminate\Support\Facades\Mail;
 
 class WalletNotificationService
 {
     public function __construct(
         private ResellerBrandingResolver $brandingResolver,
+        private EmailDeliveryService $emailDelivery,
+        private NotificationPreferenceService $preferences,
     ) {}
 
     public function sendLowBalanceAlert(ResellerWallet $wallet): void
@@ -21,7 +25,10 @@ class WalletNotificationService
 
         $reseller = $wallet->reseller;
         $company = $this->brandingResolver->forReseller($reseller)['company_name'];
-        $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: ".route('reseller.wallet.index');
+        $event = NotificationEvent::ResellerWalletLow;
+        $walletUrl = route('reseller.wallet.index');
+
+        $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: {$walletUrl}";
 
         try {
             app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
@@ -29,18 +36,13 @@ class WalletNotificationService
             \Log::error("Failed to send low balance SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
 
-        if ($reseller->email) {
-            try {
-                Mail::raw(
-                    "Your wallet balance is low: {$wallet->getFormattedBalance()}\n\nTop up now at: ".route('reseller.wallet.index'),
-                    function ($message) use ($reseller, $company) {
-                        $message->to($reseller->email)
-                            ->subject($company.' Wallet Low Balance Alert');
-                    }
-                );
-            } catch (\Exception $e) {
-                \Log::error("Failed to send low balance email to reseller {$reseller->id}: {$e->getMessage()}");
-            }
+        if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
+            $this->emailDelivery->sendTemplated($reseller, $event, [
+                'reseller_name' => $reseller->name,
+                'balance' => $wallet->getFormattedBalance(),
+                'wallet_url' => $walletUrl,
+                'site_name' => $company,
+            ]);
         }
 
         $wallet->update(['last_low_balance_alert_at' => now()]);
@@ -49,6 +51,7 @@ class WalletNotificationService
     public function sendTopupConfirmation(WalletTransaction $transaction): void
     {
         $reseller = $transaction->wallet->reseller;
+        $event = NotificationEvent::ResellerWalletTopup;
         $message = "Wallet top-up confirmed! Amount: {$transaction->amount} KES. New balance: {$transaction->balance_after} KES";
 
         try {
@@ -56,57 +59,32 @@ class WalletNotificationService
         } catch (\Exception $e) {
             \Log::error("Failed to send topup SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
+
+        if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
+            $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+            $this->emailDelivery->sendTemplated($reseller, $event, [
+                'reseller_name' => $reseller->name,
+                'amount' => number_format((float) $transaction->amount, 2).' KES',
+                'balance' => number_format((float) $transaction->balance_after, 2).' KES',
+                'site_name' => $company,
+            ]);
+        }
     }
 
     public function sendNewCustomerDomainOrderNotification(ResellerDomainOrder $order): void
     {
-        $reseller = $order->reseller;
-        $customer = $order->customer;
-        $walletUrl = route('reseller.wallet.index');
-        $message = "New domain order: {$order->domain_name}{$order->extension} for {$customer->name}. Customer payment received. Top up your wallet ({$order->wholesale_amount} KES required) and push the order: {$walletUrl}";
-
-        try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send new customer domain order SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
-
-        if ($reseller->email) {
-            try {
-                Mail::raw($message, function ($mail) use ($reseller) {
-                    $mail->to($reseller->email)
-                        ->subject('New customer domain order — wallet top-up required');
-                });
-            } catch (\Exception $e) {
-                \Log::error("Failed to send new customer domain order email to reseller {$reseller->id}: {$e->getMessage()}");
-            }
-        }
+        $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerNewCustomerOrder);
     }
 
     public function sendDomainQueuedNotification(ResellerDomainOrder $order): void
     {
-        $reseller = $order->reseller;
-        $customer = $order->customer;
-        $message = "Domain {$order->domain_name}{$order->extension} for customer {$customer->name} is queued. Top up your wallet to process.";
-
-        try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send queued domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerDomainQueued, 'queued');
     }
 
     public function sendDomainPushedNotification(ResellerDomainOrder $order): void
     {
-        $reseller = $order->reseller;
-        $customer = $order->customer;
-        $message = "Domain {$order->domain_name}.{$order->extension} for customer {$customer->name} has been pushed to admin. Amount debited: {$order->wholesale_amount} KES";
-
-        try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send pushed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
-        }
+        $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerDomainPushed, 'pushed');
+        $this->notifyAdminDomainPush($order);
     }
 
     public function sendDomainCompletedNotification(ResellerDomainOrder $order): void
@@ -131,6 +109,17 @@ class WalletNotificationService
                 \Log::error("Failed to send completed domain SMS to customer {$customer->id}: {$e->getMessage()}");
             }
         }
+
+        if ($reseller->email) {
+            $subject = 'Domain registered - '.$order->domain_name.$order->extension;
+            $this->emailDelivery->sendPlatformMailable(
+                $reseller->email,
+                new ResellerDomainOrderMail($order, 'completed'),
+                $subject,
+                NotificationEvent::ResellerDomainPushed,
+                $reseller
+            );
+        }
     }
 
     public function sendDomainFailedNotification(ResellerDomainOrder $order): void
@@ -143,5 +132,62 @@ class WalletNotificationService
         } catch (\Exception $e) {
             \Log::error("Failed to send failed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
+
+        if ($reseller->email) {
+            $subject = 'Domain registration failed - '.$order->domain_name.$order->extension;
+            $this->emailDelivery->sendPlatformMailable(
+                $reseller->email,
+                new ResellerDomainOrderMail($order, 'failed'),
+                $subject,
+                NotificationEvent::ResellerDomainPushed,
+                $reseller
+            );
+        }
+    }
+
+    protected function notifyResellerDomainOrder(ResellerDomainOrder $order, NotificationEvent $event, string $variant = 'queued'): void
+    {
+        $order->loadMissing('reseller', 'customer');
+        $reseller = $order->reseller;
+        $customer = $order->customer;
+        $domain = $order->domain_name.$order->extension;
+        $walletUrl = route('reseller.wallet.index');
+
+        $smsMessage = match ($event) {
+            NotificationEvent::ResellerNewCustomerOrder => "New domain order: {$domain} for {$customer->name}. Customer payment received. Top up your wallet ({$order->wholesale_amount} KES required) and push the order: {$walletUrl}",
+            NotificationEvent::ResellerDomainQueued => "Domain {$domain} for customer {$customer->name} is queued. Top up your wallet to process.",
+            NotificationEvent::ResellerDomainPushed => "Domain {$domain} for customer {$customer->name} has been pushed to admin. Amount debited: {$order->wholesale_amount} KES",
+            default => "Domain order update: {$domain}",
+        };
+
+        try {
+            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send domain order SMS to reseller {$reseller->id}: {$e->getMessage()}");
+        }
+
+        if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
+            $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+            $this->emailDelivery->sendTemplated($reseller, $event, [
+                'reseller_name' => $reseller->name,
+                'customer_name' => $customer->name,
+                'domain_name' => $domain,
+                'wholesale_amount' => number_format((float) $order->wholesale_amount, 2).' KES',
+                'wallet_url' => $walletUrl,
+                'site_name' => $company,
+            ]);
+        }
+    }
+
+    protected function notifyAdminDomainPush(ResellerDomainOrder $order): void
+    {
+        $event = NotificationEvent::AdminResellerDomainPush;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $domain = $order->domain_name.$order->extension;
+        $subject = 'Reseller domain order - '.$domain;
+        $this->emailDelivery->sendToAdmins(new AdminResellerDomainPushMail($order), $subject, $event);
     }
 }

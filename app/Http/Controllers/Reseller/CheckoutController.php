@@ -185,7 +185,7 @@ class CheckoutController extends Controller
 
                 if ($this->invoicePaymentService->amountDue($invoice) <= 0) {
                     $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice);
-                    NotificationService::notifyPaymentReceived($invoice);
+                    app(NotificationService::class)->notifyPaymentReceived($invoice);
                     app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
 
                     return redirect()->route('reseller.invoices.show', $invoice)

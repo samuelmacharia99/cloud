@@ -1132,6 +1132,17 @@
                     </fieldset>
 
                     <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Delivery</legend>
+                        <div>
+                            <input type="hidden" name="settings[email_queue_enabled]" value="0">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="settings[email_queue_enabled]" value="1" @checked(in_array($settings['email_queue_enabled'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                <span class="text-slate-700 dark:text-slate-300">Queue outbound emails (requires a queue worker)</span>
+                            </label>
+                        </div>
+                    </fieldset>
+
+                    <fieldset>
                         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Test Email</legend>
                         <div class="space-y-4">
                             <input type="email" id="test_email" placeholder="recipient@example.com" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
@@ -1151,9 +1162,10 @@
                         </button>
                     </div>
                 </form>
-            </div>
 
-            <!-- Tab: Notifications -->
+                <!-- Email Templates -->
+                @include('admin.settings.partials.email-templates-card')
+            </div>
             <div x-show="activeTab === 'notifications'" class="space-y-6" x-data="smsTemplates()">
                 <!-- Notification Triggers Form -->
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
@@ -1239,6 +1251,34 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_domain_expiry]" value="1" @checked(($settings['notify_domain_expiry'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Domain Expiry</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_service_unsuspended]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_service_unsuspended]" value="1" @checked(($settings['notify_service_unsuspended'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Service Restored</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_admin_manual_payment]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_admin_manual_payment]" value="1" @checked(($settings['notify_admin_manual_payment'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Manual Payment Submitted</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_admin_reseller_domain_push]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_admin_reseller_domain_push]" value="1" @checked(($settings['notify_admin_reseller_domain_push'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Reseller Domain Push</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_wallet_low]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_wallet_low]" value="1" @checked(($settings['notify_reseller_wallet_low'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Low Wallet Balance</span>
                                 </label>
                             </div>
                         </div>
@@ -1350,9 +1390,8 @@
                         </div>
                     </fieldset>
                 </div>
-            </div>
 
-            <!-- Tab: Cron -->
+            <!-- Tab: Notifications -->
             <div x-show="activeTab === 'cron'" class="space-y-6">
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -1914,6 +1953,131 @@
 
             setStatus(templateId, type, msg) {
                 this.status[templateId] = { type, msg };
+            }
+        };
+    }
+
+    function emailTemplates(items) {
+        const drafts = {};
+        items.forEach(item => {
+            drafts[item.id] = {
+                subject: item.subject,
+                body: item.body,
+                enabled: item.enabled,
+            };
+        });
+
+        return {
+            items,
+            drafts,
+            expanded: {},
+            emailSaving: {},
+            emailStatus: {},
+
+            recipientBadgeClass(type) {
+                const map = {
+                    admin: 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200',
+                    reseller: 'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200',
+                    customer: 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200',
+                };
+                return map[type] || map.customer;
+            },
+
+            toggle(id) {
+                this.expanded[id] = !this.expanded[id];
+            },
+
+            isExpanded(id) {
+                return !!this.expanded[id];
+            },
+
+            expandAll() {
+                this.items.forEach(item => { this.expanded[item.id] = true; });
+            },
+
+            collapseAll() {
+                this.expanded = {};
+            },
+
+            insertVariable(id, token) {
+                const draft = this.drafts[id];
+                if (!draft) return;
+                draft.body = (draft.body || '') + token;
+            },
+
+            csrfToken() {
+                return document.querySelector('meta[name="csrf-token"]')?.content
+                    || document.querySelector('input[name="_token"]')?.value;
+            },
+
+            save(id) {
+                const draft = this.drafts[id];
+                this.saveEmailTemplate(id, draft.subject, draft.body, draft.enabled);
+            },
+
+            async saveEmailTemplate(templateId, subject, body, enabled) {
+                this.emailSaving[templateId] = true;
+
+                try {
+                    const response = await fetch(`{{ route('admin.email-templates.update', '') }}/${templateId}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ subject, body, enabled }),
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': this.csrfToken(),
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const data = await response.json();
+                    this.emailStatus[templateId] = response.ok && data.success
+                        ? { type: 'success', msg: data.message }
+                        : { type: 'error', msg: data.message || 'Error saving' };
+
+                    if (response.ok && data.success) {
+                        const item = this.items.find(i => i.id === templateId);
+                        if (item) {
+                            item.subject = subject;
+                        }
+                        setTimeout(() => { this.emailStatus[templateId] = null; }, 3000);
+                    }
+                } catch (error) {
+                    this.emailStatus[templateId] = { type: 'error', msg: error.message };
+                } finally {
+                    this.emailSaving[templateId] = false;
+                }
+            },
+
+            async resetTemplate(templateId, url) {
+                if (!await window.appConfirm('Reset this email template to default?', 'Reset template', 'Reset')) {
+                    return;
+                }
+
+                this.emailSaving[templateId] = true;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-Token': this.csrfToken(),
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const data = await response.json();
+                    if (response.ok && data.success) {
+                        setTimeout(() => location.reload(), 800);
+                    }
+                    this.emailStatus[templateId] = response.ok && data.success
+                        ? { type: 'success', msg: data.message }
+                        : { type: 'error', msg: data.message || 'Error resetting' };
+                } catch (error) {
+                    this.emailStatus[templateId] = { type: 'error', msg: error.message };
+                } finally {
+                    this.emailSaving[templateId] = false;
+                }
             }
         };
     }

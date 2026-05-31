@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Email extends Model
 {
     public $timestamps = false;
+
     public $updatedAt = false;
 
-    protected $fillable = ['recipient', 'subject', 'body', 'status', 'response', 'sent_by', 'created_at'];
+    protected $fillable = ['recipient', 'user_id', 'subject', 'event_key', 'message_id', 'body', 'status', 'response', 'sent_by', 'created_at'];
 
     protected $casts = [
         'created_at' => 'datetime',

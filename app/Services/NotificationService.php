@@ -2,14 +2,19 @@
 
 namespace App\Services;
 
+use App\Enums\NotificationEvent;
+use App\Enums\PaymentStatus;
+use App\Mail\AdminManualPaymentMail;
 use App\Mail\ContainerAutoRestartedMail;
 use App\Mail\ContainerBackupCompletedMail;
 use App\Mail\ContainerBackupFailedMail;
 use App\Mail\ContainerFailedMail;
 use App\Mail\DomainExpiryMail;
+use App\Mail\GenericNotificationMail;
 use App\Mail\InvoiceGeneratedMail;
 use App\Mail\InvoiceOverdueMail;
 use App\Mail\InvoiceReminderMail;
+use App\Mail\OrderConfirmationMail;
 use App\Mail\PaymentReceivedMail;
 use App\Mail\ServiceActivatedMail;
 use App\Mail\ServiceSuspendedMail;
@@ -19,67 +24,53 @@ use App\Mail\TicketCreatedMail;
 use App\Mail\TicketRepliedMail;
 use App\Models\ContainerBackup;
 use App\Models\Domain;
-use App\Models\Email;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Service;
-use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 class NotificationService
 {
     public function __construct(
         private SmsService $smsService,
-        private ResellerMailService $resellerMail,
+        private EmailDeliveryService $emailDelivery,
+        private NotificationPreferenceService $preferences,
         private ResellerBrandingResolver $brandingResolver,
         private TalksasaSmsService $talksasaSms,
     ) {}
-
-    private function settingEnabled(string $key): bool
-    {
-        $value = Setting::getValue($key, 'true');
-
-        return in_array($value, ['1', 'true', true], true);
-    }
-
-    private function mailConfiguredFor(?User $customer = null): bool
-    {
-        if ($customer) {
-            $reseller = $this->brandingResolver->resellerForCustomer($customer);
-            if ($reseller && $this->resellerMail->resellerSmtpEnabled($reseller)) {
-                return true;
-            }
-        }
-
-        return $this->resellerMail->isConfigured();
-    }
 
     private function siteNameFor(User $customer): string
     {
         return $this->brandingResolver->forCustomer($customer)['company_name'];
     }
 
-    private function sendCustomerEmail(User $customer, $mailable, string $subject): void
+    private function sendCustomerEmail(User $customer, $mailable, string $subject, NotificationEvent $event, ?string $logBody = null): void
     {
         try {
-            $this->resellerMail->sendToCustomer($customer, $mailable, $subject);
-            $this->logEmail($customer->email, $subject, 'sent');
+            $this->emailDelivery->sendCustomerMailable($customer, $mailable, $subject, $event, $logBody);
         } catch (\Exception $e) {
-            $this->logEmail($customer->email, $subject, 'failed', $e->getMessage());
-            throw $e;
+            Log::error('Failed to send customer email', ['event' => $event->value, 'error' => $e->getMessage()]);
         }
     }
 
-    private function sendCustomerSms(User $customer, string $message): void
+    private function sendPlatformEmail(string $email, $mailable, string $subject, NotificationEvent $event, ?User $user = null, ?string $logBody = null): void
     {
-        if (! $customer->phone) {
+        try {
+            $this->emailDelivery->sendPlatformMailable($email, $mailable, $subject, $event, $user, $logBody);
+        } catch (\Exception $e) {
+            Log::error('Failed to send platform email', ['event' => $event->value, 'email' => $email, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function sendCustomerSms(User $customer, string $message, NotificationEvent $event): void
+    {
+        if (! $customer->phone || ! $this->preferences->isSmsEnabledForUser($customer, $event)) {
             return;
         }
 
@@ -98,11 +89,6 @@ class NotificationService
         }
     }
 
-    private function smtpConfigured(?User $customer = null): bool
-    {
-        return $this->mailConfiguredFor($customer);
-    }
-
     private function renderTemplate(string $eventKey, array $data, string $fallback): string
     {
         try {
@@ -116,40 +102,17 @@ class NotificationService
         }
     }
 
-    private function logEmail(string $to, string $subject, string $status, ?string $error = null, ?string $body = null): void
-    {
-        try {
-            Email::create([
-                'recipient' => $to,
-                'subject' => $subject,
-                'body' => $body ?? '',
-                'status' => $status,
-                'response' => $error,
-                'sent_by' => null,
-                'created_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to log email', ['error' => $e->getMessage()]);
-        }
-    }
-
     public function notifyInvoiceGenerated(Invoice $invoice): void
     {
-        if (! $this->mailConfiguredFor($invoice->user) || ! $this->settingEnabled('notify_invoice_generated')) {
+        $event = NotificationEvent::InvoiceGenerated;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $this->sendCustomerEmail(
-                $invoice->user,
-                new InvoiceGeneratedMail($invoice),
-                'Invoice '.$invoice->invoice_number.' Generated'
-            );
-        } catch (\Exception $e) {
-            Log::error('Failed to send invoice generated notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Invoice '.$invoice->invoice_number.' Generated';
+        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event);
 
-        if ($invoice->user->phone && $this->settingEnabled('notify_invoice_generated')) {
+        if ($invoice->user->phone) {
             try {
                 $message = $this->renderTemplate('invoice_generated', [
                     'customer_name' => $invoice->user->name,
@@ -158,7 +121,7 @@ class NotificationService
                     'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
                     'site_name' => $this->siteNameFor($invoice->user),
                 ], 'Invoice '.$invoice->invoice_number.' has been generated. Amount due: Ksh '.number_format($invoice->total, 0).'. Pay online at: '.url('/'));
-                $this->sendCustomerSms($invoice->user, $message);
+                $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice generated SMS', ['error' => $e->getMessage()]);
             }
@@ -167,21 +130,15 @@ class NotificationService
 
     public function notifyInvoiceReminder(Invoice $invoice, int $daysBefore): void
     {
-        if (! $this->mailConfiguredFor($invoice->user) || ! $this->settingEnabled('notify_invoice_reminder')) {
+        $event = NotificationEvent::InvoiceReminder;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $this->sendCustomerEmail(
-                $invoice->user,
-                new InvoiceReminderMail($invoice, $daysBefore),
-                'Payment Reminder: Invoice '.$invoice->invoice_number
-            );
-        } catch (\Exception $e) {
-            Log::error('Failed to send invoice reminder notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Payment Reminder: Invoice '.$invoice->invoice_number;
+        $this->sendCustomerEmail($invoice->user, new InvoiceReminderMail($invoice, $daysBefore), $subject, $event);
 
-        if ($invoice->user->phone && $this->settingEnabled('notify_invoice_reminder')) {
+        if ($invoice->user->phone) {
             try {
                 $fallback = $daysBefore <= 0 ? 'URGENT: Invoice '.$invoice->invoice_number.' is due today!' : 'Reminder: Invoice '.$invoice->invoice_number.' is due in '.$daysBefore.' days.';
                 $message = $this->renderTemplate('invoice_reminder', [
@@ -191,7 +148,7 @@ class NotificationService
                     'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
                     'site_name' => $this->siteNameFor($invoice->user),
                 ], $fallback);
-                $this->sendCustomerSms($invoice->user, $message);
+                $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice reminder SMS', ['error' => $e->getMessage()]);
             }
@@ -200,21 +157,15 @@ class NotificationService
 
     public function notifyInvoiceOverdue(Invoice $invoice): void
     {
-        if (! $this->mailConfiguredFor($invoice->user) || ! $this->settingEnabled('notify_invoice_overdue')) {
+        $event = NotificationEvent::InvoiceOverdue;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $this->sendCustomerEmail(
-                $invoice->user,
-                new InvoiceOverdueMail($invoice),
-                'URGENT: Invoice '.$invoice->invoice_number.' is Overdue'
-            );
-        } catch (\Exception $e) {
-            Log::error('Failed to send invoice overdue notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'URGENT: Invoice '.$invoice->invoice_number.' is Overdue';
+        $this->sendCustomerEmail($invoice->user, new InvoiceOverdueMail($invoice), $subject, $event);
 
-        if ($invoice->user->phone && $this->settingEnabled('notify_invoice_overdue')) {
+        if ($invoice->user->phone) {
             try {
                 $message = $this->renderTemplate('invoice_overdue', [
                     'customer_name' => $invoice->user->name,
@@ -222,68 +173,97 @@ class NotificationService
                     'amount' => 'Ksh '.number_format($invoice->total, 2),
                     'site_name' => $this->siteNameFor($invoice->user),
                 ], 'URGENT: Invoice '.$invoice->invoice_number.' is now overdue. Immediate payment required to avoid service suspension.');
-                $this->sendCustomerSms($invoice->user, $message);
+                $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send invoice overdue SMS', ['error' => $e->getMessage()]);
             }
         }
     }
 
-    public function notifyPaymentReceived(Payment $payment): void
+    public function notifyPaymentReceived(Payment|Invoice $source): void
     {
-        if (! $this->mailConfiguredFor($payment->invoice->user) || ! $this->settingEnabled('notify_payment')) {
+        $event = NotificationEvent::PaymentReceived;
+
+        if ($source instanceof Invoice) {
+            $invoice = $source->loadMissing('user');
+            $payment = $invoice->payments()
+                ->where('status', PaymentStatus::Completed)
+                ->latest('paid_at')
+                ->first();
+
+            if (! $payment) {
+                $this->notifyInvoicePaidWithoutPaymentRecord($invoice);
+
+                return;
+            }
+        } else {
+            $payment = $source->loadMissing('invoice.user');
+            $invoice = $payment->invoice;
+        }
+
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $this->sendCustomerEmail(
-                $payment->invoice->user,
-                new PaymentReceivedMail($payment),
-                'Payment Received for Invoice '.$payment->invoice->invoice_number
-            );
-        } catch (\Exception $e) {
-            Log::error('Failed to send payment received notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Payment Received for Invoice '.$invoice->invoice_number;
+        $this->sendCustomerEmail($invoice->user, new PaymentReceivedMail($payment), $subject, $event);
 
-        if ($payment->invoice->user->phone && $this->settingEnabled('notify_payment')) {
+        if ($invoice->user->phone) {
             try {
                 $message = $this->renderTemplate('payment_received', [
-                    'customer_name' => $payment->invoice->user->name,
+                    'customer_name' => $invoice->user->name,
                     'amount' => 'Ksh '.number_format($payment->amount, 2),
-                    'invoice_number' => $payment->invoice->invoice_number,
-                    'site_name' => $this->siteNameFor($payment->invoice->user),
-                ], 'Payment of Ksh '.number_format($payment->amount, 0).' received for invoice '.$payment->invoice->invoice_number.'. Thank you!');
-                $this->sendCustomerSms($payment->invoice->user, $message);
+                    'invoice_number' => $invoice->invoice_number,
+                    'site_name' => $this->siteNameFor($invoice->user),
+                ], 'Payment of Ksh '.number_format($payment->amount, 0).' received for invoice '.$invoice->invoice_number.'. Thank you!');
+                $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send payment received SMS', ['error' => $e->getMessage()]);
             }
         }
     }
 
-    public function notifyServiceActivated(Service $service): void
+    private function notifyInvoicePaidWithoutPaymentRecord(Invoice $invoice): void
     {
-        if (! $this->mailConfiguredFor($service->user) || ! $this->settingEnabled('notify_service_activated')) {
+        $event = NotificationEvent::PaymentReceived;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $this->sendCustomerEmail(
-                $service->user,
-                new ServiceActivatedMail($service),
-                'Your Service "'.$service->name.'" is Now Active'
-            );
-        } catch (\Exception $e) {
-            Log::error('Failed to send service activated notification', ['error' => $e->getMessage()]);
+        $data = [
+            'customer_name' => $invoice->user->name,
+            'amount' => 'Ksh '.number_format($invoice->total, 2),
+            'invoice_number' => $invoice->invoice_number,
+            'site_name' => $this->siteNameFor($invoice->user),
+        ];
+
+        $this->emailDelivery->sendTemplated($invoice->user, $event, $data);
+
+        if ($invoice->user->phone) {
+            $message = $this->renderTemplate('payment_received', $data,
+                'Payment of Ksh '.number_format($invoice->total, 0).' received for invoice '.$invoice->invoice_number.'. Thank you!');
+            $this->sendCustomerSms($invoice->user, $message, $event);
+        }
+    }
+
+    public function notifyServiceActivated(Service $service): void
+    {
+        $event = NotificationEvent::ServiceActivated;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
         }
 
-        if ($service->user->phone && $this->settingEnabled('notify_service_activated')) {
+        $subject = 'Your Service "'.$service->name.'" is Now Active';
+        $this->sendCustomerEmail($service->user, new ServiceActivatedMail($service), $subject, $event);
+
+        if ($service->user->phone) {
             try {
                 $message = $this->renderTemplate('service_activated', [
                     'customer_name' => $service->user->name,
                     'service_name' => $service->name,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Your service "'.$service->name.'" is now active and ready to use. Log in to your dashboard for details.');
-                $this->sendCustomerSms($service->user, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send service activated SMS', ['error' => $e->getMessage()]);
             }
@@ -292,26 +272,22 @@ class NotificationService
 
     public function notifyServiceSuspended(Service $service): void
     {
-        if (! $this->mailConfiguredFor($service->user) || ! $this->settingEnabled('notify_service_suspend')) {
+        $event = NotificationEvent::ServiceSuspended;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ServiceSuspendedMail($service));
-            $this->logEmail($service->user->email, 'Service Suspension Notice: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Service Suspension Notice: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send service suspended notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Service Suspension Notice: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ServiceSuspendedMail($service), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_service_suspend')) {
+        if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
                 $message = $this->renderTemplate('service_suspended', [
                     'customer_name' => $service->user->name,
                     'service_name' => $service->name,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Your service "'.$service->name.'" has been suspended due to overdue payment. Pay now to restore service.');
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send service suspended SMS', ['error' => $e->getMessage()]);
             }
@@ -320,17 +296,13 @@ class NotificationService
 
     public function notifyServiceUnsuspended(Service $service): void
     {
-        if (! $this->smtpConfigured()) {
+        $event = NotificationEvent::ServiceUnsuspended;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ServiceUnsuspendedMail($service));
-            $this->logEmail($service->user->email, 'Service Restored: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Service Restored: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send service unsuspended notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Service Restored: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ServiceUnsuspendedMail($service), $subject, $event);
 
         if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
@@ -339,7 +311,7 @@ class NotificationService
                     'service_name' => $service->name,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Your service "'.$service->name.'" has been restored. Your account is now active again.');
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send service unsuspended SMS', ['error' => $e->getMessage()]);
             }
@@ -348,26 +320,22 @@ class NotificationService
 
     public function notifyServiceTerminated(Service $service): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_service_terminated')) {
+        $event = NotificationEvent::ServiceTerminated;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ServiceTerminatedMail($service));
-            $this->logEmail($service->user->email, 'Service Termination Notice: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Service Termination Notice: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send service terminated notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Service Termination Notice: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ServiceTerminatedMail($service), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_service_terminated')) {
+        if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
                 $message = $this->renderTemplate('service_terminated', [
                     'customer_name' => $service->user->name,
                     'service_name' => $service->name,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Your service "'.$service->name.'" has been terminated. Contact support if you wish to restore it.');
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send service terminated SMS', ['error' => $e->getMessage()]);
             }
@@ -376,28 +344,24 @@ class NotificationService
 
     public function notifyDomainExpiry(Domain $domain, int $daysUntilExpiry): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_domain_expiry')) {
+        $event = NotificationEvent::DomainExpiry;
+        if (! $this->emailDelivery->mailConfiguredFor($domain->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($domain->user->email)->send(new DomainExpiryMail($domain, $daysUntilExpiry));
-            $this->logEmail($domain->user->email, 'Domain Expiry Notice: '.$domain->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($domain->user->email, 'Domain Expiry Notice: '.$domain->name, 'failed', $e->getMessage());
-            Log::error('Failed to send domain expiry notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Domain Expiry Notice: '.$domain->name;
+        $this->sendCustomerEmail($domain->user, new DomainExpiryMail($domain, $daysUntilExpiry), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $domain->user->phone && $this->settingEnabled('notify_domain_expiry')) {
+        if ($this->smsService->isConfigured() && $domain->user->phone) {
             try {
                 $fallback = $daysUntilExpiry <= 0 ? 'URGENT: Your domain '.$domain->name.' has expired!' : 'Your domain '.$domain->name.' expires in '.$daysUntilExpiry.' days. Renew now!';
                 $message = $this->renderTemplate('domain_expiry', [
                     'customer_name' => $domain->user->name,
                     'domain_name' => $domain->name,
                     'days_until_expiry' => (string) $daysUntilExpiry,
-                    'site_name' => $this->siteNameFor($service->user),
+                    'site_name' => $this->siteNameFor($domain->user),
                 ], $fallback);
-                $this->smsService->send($domain->user->phone, $message);
+                $this->sendCustomerSms($domain->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send domain expiry SMS', ['error' => $e->getMessage()]);
             }
@@ -406,67 +370,60 @@ class NotificationService
 
     public function notifyDomainRenewalInvoice(Invoice $invoice, Domain $domain): void
     {
-        if (! $this->mailConfiguredFor($invoice->user) || ! $this->settingEnabled('notify_invoice_generated')) {
+        $event = NotificationEvent::InvoiceGenerated;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($invoice->user->email)->send(new InvoiceGeneratedMail($invoice));
-            $this->logEmail($invoice->user->email, 'Domain Renewal Invoice '.$invoice->invoice_number.' for '.$domain->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($invoice->user->email, 'Domain Renewal Invoice '.$invoice->invoice_number, 'failed', $e->getMessage());
-            Log::error('Failed to send domain renewal invoice notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Domain Renewal Invoice '.$invoice->invoice_number.' for '.$domain->name;
+        $this->sendCustomerEmail($invoice->user, new InvoiceGeneratedMail($invoice), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $invoice->user->phone && $this->settingEnabled('notify_invoice_generated')) {
+        if ($this->smsService->isConfigured() && $invoice->user->phone) {
             try {
                 $message = $this->renderTemplate('invoice_generated', [
                     'customer_name' => $invoice->user->name,
                     'invoice_number' => $invoice->invoice_number,
                     'amount' => 'Ksh '.number_format($invoice->total, 2),
                     'due_date' => $invoice->due_date?->format('M d, Y') ?? 'TBD',
-                    'site_name' => $this->siteNameFor($service->user),
+                    'site_name' => $this->siteNameFor($invoice->user),
                 ], 'Domain renewal invoice '.$invoice->invoice_number.' for '.$domain->name.' has been generated. Amount due: Ksh '.number_format($invoice->total, 0).'. Pay by '.($invoice->due_date?->format('M d, Y') ?? 'due date').'.');
-                $this->smsService->send($invoice->user->phone, $message);
+                $this->sendCustomerSms($invoice->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send domain renewal invoice SMS', ['error' => $e->getMessage()]);
             }
         }
     }
 
-    /**
-     * Notify admin and customer about a new order placement.
-     * Admin receives SMS to all notification phones with order summary.
-     * Customer receives SMS with order confirmation and payment-specific instructions.
-     */
     public function notifyNewOrder(Order $order, Invoice $invoice, string $paymentMethod = 'unknown'): void
     {
-        // Notify all admins
-        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_new_order')) {
+        $customerEvent = NotificationEvent::NewOrder;
+        $adminEvent = NotificationEvent::AdminNewOrder;
+
+        if ($this->emailDelivery->mailConfiguredFor($order->user) && $this->preferences->isEmailEnabledForUser($order->user, $customerEvent)) {
+            $subject = 'Order Confirmation - '.$order->order_number;
+            $this->sendCustomerEmail($order->user, new OrderConfirmationMail($order), $subject, $customerEvent);
+        }
+
+        if ($this->preferences->isGloballyEnabled($adminEvent)) {
+            $this->emailDelivery->sendTemplated(null, $adminEvent, [
+                'order_number' => $order->order_number,
+                'customer_name' => $order->user->name,
+                'payment_method' => ucfirst($paymentMethod),
+                'amount' => 'KES '.number_format($invoice->total, 2),
+            ]);
+        }
+
+        if ($this->smsService->isConfigured() && $this->preferences->isGloballyEnabled($customerEvent)) {
             try {
                 $adminUsers = User::where('is_admin', true)
                     ->whereNotNull('notification_phones')
                     ->get();
 
-                Log::info('Notifying admins about new order', [
-                    'order_id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'admin_count' => $adminUsers->count(),
-                ]);
-
                 foreach ($adminUsers as $admin) {
                     if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
                         try {
                             $adminMessage = 'New order #'.$order->order_number.' from '.$order->user->name.'. Payment: '.ucfirst($paymentMethod).'. Amount: KES '.number_format($invoice->total, 0).'.';
-
                             $this->smsService->send($admin->notification_phones, $adminMessage);
-
-                            Log::info('Admin order notification SMS sent', [
-                                'order_id' => $order->id,
-                                'admin_id' => $admin->id,
-                                'admin_name' => $admin->name,
-                                'phone_count' => count($admin->notification_phones),
-                            ]);
                         } catch (\Exception $e) {
                             Log::error('Failed to send admin order notification SMS', [
                                 'order_id' => $order->id,
@@ -477,28 +434,17 @@ class NotificationService
                     }
                 }
             } catch (\Exception $e) {
-                Log::error('Failed to notify admins about new order', [
-                    'order_id' => $order->id,
-                    'error' => $e->getMessage(),
-                ]);
+                Log::error('Failed to notify admins about new order', ['order_id' => $order->id, 'error' => $e->getMessage()]);
             }
         }
 
-        // Notify customer
-        if ($this->smsService->isConfigured() && $order->user->phone) {
+        if ($this->smsService->isConfigured() && $order->user->phone && $this->preferences->isSmsEnabledForUser($order->user, $customerEvent)) {
             try {
                 $customerMessage = match ($paymentMethod) {
                     'manual' => 'Your order #'.$order->order_number.' (KES '.number_format($invoice->total, 0).') has been placed. Please complete your bank transfer. An admin will activate your service after payment verification.',
                     default => 'Your order #'.$order->order_number.' (KES '.number_format($invoice->total, 0).') has been placed and payment is being processed. Service credentials will be emailed once provisioned.',
                 };
-
                 $this->smsService->send($order->user->phone, $customerMessage);
-
-                Log::info('Customer order notification SMS sent', [
-                    'order_id' => $order->id,
-                    'customer_id' => $order->user->id,
-                    'payment_method' => $paymentMethod,
-                ]);
             } catch (\Exception $e) {
                 Log::error('Failed to send customer order notification SMS', [
                     'order_id' => $order->id,
@@ -509,130 +455,63 @@ class NotificationService
         }
     }
 
-    /**
-     * Notify about a new support ticket creation
-     * - Sends email to ticket owner
-     * - For reseller's customer tickets, notifies the reseller
-     * - For non-reseller customers, notifies admin
-     */
     public function notifyTicketCreated(Ticket $ticket): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_ticket')) {
+        $event = NotificationEvent::TicketCreated;
+        if (! $this->emailDelivery->mailConfiguredFor($ticket->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            // Always send to ticket owner (the customer who created it)
-            Mail::to($ticket->user->email)->send(new TicketCreatedMail($ticket));
-            $this->logEmail($ticket->user->email, 'Support Ticket #'.$ticket->id.' Created', 'sent', null, $ticket->description);
+        $subject = 'Support Ticket #'.$ticket->id.' Created';
+        $this->sendCustomerEmail($ticket->user, new TicketCreatedMail($ticket), $subject, $event, $ticket->description);
 
-            Log::info('Ticket creation notification sent to customer', [
-                'ticket_id' => $ticket->id,
-                'customer_id' => $ticket->user->id,
-            ]);
-        } catch (\Exception $e) {
-            $this->logEmail($ticket->user->email, 'Support Ticket #'.$ticket->id.' Created', 'failed', $e->getMessage(), $ticket->description);
-            Log::error('Failed to send ticket creation notification', [
-                'ticket_id' => $ticket->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Notify admin about new ticket via SMS if configured
-        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_ticket')) {
+        if ($this->smsService->isConfigured()) {
             try {
-                $adminUsers = User::where('is_admin', true)
-                    ->whereNotNull('notification_phones')
-                    ->get();
-
+                $adminUsers = User::where('is_admin', true)->whereNotNull('notification_phones')->get();
                 foreach ($adminUsers as $admin) {
                     if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
                         try {
                             $message = 'New support ticket #'.$ticket->id.' from '.$ticket->user->name.'. Priority: '.ucfirst($ticket->priority).'. Title: '.Str::limit($ticket->title, 50);
                             $this->smsService->send($admin->notification_phones, $message);
-
-                            Log::info('Ticket creation SMS sent to admin', [
-                                'ticket_id' => $ticket->id,
-                                'admin_id' => $admin->id,
-                            ]);
                         } catch (\Exception $e) {
-                            Log::error('Failed to send ticket creation SMS to admin', [
-                                'ticket_id' => $ticket->id,
-                                'admin_id' => $admin->id,
-                                'error' => $e->getMessage(),
-                            ]);
+                            Log::error('Failed to send ticket creation SMS to admin', ['ticket_id' => $ticket->id, 'error' => $e->getMessage()]);
                         }
                     }
                 }
             } catch (\Exception $e) {
-                Log::error('Failed to notify admins about ticket creation', [
-                    'ticket_id' => $ticket->id,
-                    'error' => $e->getMessage(),
-                ]);
+                Log::error('Failed to notify admins about ticket creation', ['ticket_id' => $ticket->id, 'error' => $e->getMessage()]);
             }
         }
     }
 
-    /**
-     * Notify about a new reply to a support ticket
-     * - If staff replies, send to ticket owner
-     * - If customer replies, send to assigned staff or admin
-     */
     public function notifyTicketReplied(Ticket $ticket, TicketReply $reply): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_ticket')) {
+        $event = NotificationEvent::TicketReplied;
+        if (! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
         try {
             if ($reply->is_staff_reply) {
-                // Staff replied - notify ticket owner
-                Mail::to($ticket->user->email)->send(new TicketRepliedMail($ticket, $reply));
-                $this->logEmail($ticket->user->email, 'Re: Support Ticket #'.$ticket->id, 'sent', null, $reply->message);
+                if ($this->emailDelivery->mailConfiguredFor($ticket->user)) {
+                    $subject = 'Re: Support Ticket #'.$ticket->id;
+                    $this->sendCustomerEmail($ticket->user, new TicketRepliedMail($ticket, $reply), $subject, $event, $reply->message);
+                }
 
-                Log::info('Ticket reply notification sent to customer', [
-                    'ticket_id' => $ticket->id,
-                    'reply_id' => $reply->id,
-                ]);
-
-                // Also notify customer via SMS if configured
                 if ($this->smsService->isConfigured() && $ticket->user->phone) {
-                    try {
-                        $message = 'New reply to your support ticket #'.$ticket->id.'. Status: '.ucfirst(str_replace('_', ' ', $ticket->status)).'. Check your email or log in to view.';
-                        $this->smsService->send($ticket->user->phone, $message);
-                    } catch (\Exception $e) {
-                        Log::error('Failed to send ticket reply SMS to customer', [
-                            'ticket_id' => $ticket->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+                    $message = 'New reply to your support ticket #'.$ticket->id.'. Status: '.ucfirst(str_replace('_', ' ', $ticket->status)).'. Check your email or log in to view.';
+                    $this->sendCustomerSms($ticket->user, $message, $event);
                 }
             } else {
-                // Customer replied - notify assigned staff or admins
                 $notifyUser = $ticket->assignee ?? User::where('is_admin', true)->first();
 
                 if ($notifyUser) {
-                    Mail::to($notifyUser->email)->send(new TicketRepliedMail($ticket, $reply));
-                    $this->logEmail($notifyUser->email, 'Customer Reply: Support Ticket #'.$ticket->id, 'sent', null, $reply->message);
+                    $subject = 'Customer Reply: Support Ticket #'.$ticket->id;
+                    $this->sendPlatformEmail($notifyUser->email, new TicketRepliedMail($ticket, $reply), $subject, $event, $notifyUser, $reply->message);
 
-                    Log::info('Ticket reply notification sent to staff', [
-                        'ticket_id' => $ticket->id,
-                        'reply_id' => $reply->id,
-                        'staff_id' => $notifyUser->id,
-                    ]);
-
-                    // Notify via SMS if staff has notification phones
                     if ($this->smsService->isConfigured() && $notifyUser->notification_phones && is_array($notifyUser->notification_phones)) {
-                        try {
-                            $message = 'Customer reply to ticket #'.$ticket->id.'. Title: '.Str::limit($ticket->title, 50);
-                            $this->smsService->send($notifyUser->notification_phones, $message);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to send ticket reply SMS to staff', [
-                                'ticket_id' => $ticket->id,
-                                'staff_id' => $notifyUser->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
+                        $message = 'Customer reply to ticket #'.$ticket->id.'. Title: '.Str::limit($ticket->title, 50);
+                        $this->smsService->send($notifyUser->notification_phones, $message);
                     }
                 }
             }
@@ -645,21 +524,29 @@ class NotificationService
         }
     }
 
-    public function notifyContainerBackupCompleted(Service $service, ContainerBackup $backup): void
+    public function notifyManualPaymentSubmitted(Payment $payment): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_container_backup')) {
+        $event = NotificationEvent::ManualPaymentSubmitted;
+        if (! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ContainerBackupCompletedMail($service, $backup));
-            $this->logEmail($service->user->email, 'Container Backup Completed: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Container Backup Completed: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send container backup completed notification', ['error' => $e->getMessage()]);
+        $payment->loadMissing('invoice', 'user');
+        $subject = 'Manual Payment Submitted - Invoice '.$payment->invoice->invoice_number;
+        $this->emailDelivery->sendToAdmins(new AdminManualPaymentMail($payment), $subject, $event);
+    }
+
+    public function notifyContainerBackupCompleted(Service $service, ContainerBackup $backup): void
+    {
+        $event = NotificationEvent::ContainerBackupCompleted;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
         }
 
-        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_backup')) {
+        $subject = 'Container Backup Completed: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ContainerBackupCompletedMail($service, $backup), $subject, $event);
+
+        if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
                 $message = $this->renderTemplate('container_backup_completed', [
                     'customer_name' => $service->user->name,
@@ -667,7 +554,7 @@ class NotificationService
                     'backup_name' => $backup->backup_name,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Backup of "'.$service->name.'" completed successfully.');
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send container backup completed SMS', ['error' => $e->getMessage()]);
             }
@@ -676,33 +563,21 @@ class NotificationService
 
     public function notifyContainerBackupFailed(Service $service, string $error): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_container_backup_failure')) {
+        $event = NotificationEvent::ContainerBackupFailed;
+        if (! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
-            Mail::to($adminEmail)->send(new ContainerBackupFailedMail($service, $error));
-            $this->logEmail($adminEmail, 'Container Backup Failed: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($adminEmail, 'Container Backup Failed: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send container backup failed notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Container Backup Failed: '.$service->name;
+        $this->emailDelivery->sendToAdmins(new ContainerBackupFailedMail($service, $error), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $this->settingEnabled('notify_container_backup_failure')) {
+        if ($this->smsService->isConfigured()) {
             try {
-                $adminUsers = User::where('is_admin', true)
-                    ->whereNotNull('notification_phones')
-                    ->get();
-
+                $adminUsers = User::where('is_admin', true)->whereNotNull('notification_phones')->get();
                 foreach ($adminUsers as $admin) {
                     if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
-                        try {
-                            $message = 'ALERT: Backup failed for service "'.$service->name.'". Error: '.Str::limit($error, 50);
-                            $this->smsService->send($admin->notification_phones, $message);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to send backup failure SMS to admin', ['error' => $e->getMessage()]);
-                        }
+                        $message = 'ALERT: Backup failed for service "'.$service->name.'". Error: '.Str::limit($error, 50);
+                        $this->smsService->send($admin->notification_phones, $message);
                     }
                 }
             } catch (\Exception $e) {
@@ -713,19 +588,15 @@ class NotificationService
 
     public function notifyContainerFailed(Service $service, string $reason): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_container_failure')) {
+        $event = NotificationEvent::ContainerFailed;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ContainerFailedMail($service, $reason));
-            $this->logEmail($service->user->email, 'Container Failure Alert: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Container Failure Alert: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send container failed notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Container Failure Alert: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ContainerFailedMail($service, $reason), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_failure')) {
+        if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
                 $message = $this->renderTemplate('container_failed', [
                     'customer_name' => $service->user->name,
@@ -733,7 +604,7 @@ class NotificationService
                     'reason' => $reason,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'ALERT: Your container service "'.$service->name.'" has failed. '.Str::limit($reason, 50));
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send container failed SMS', ['error' => $e->getMessage()]);
             }
@@ -742,19 +613,15 @@ class NotificationService
 
     public function notifyContainerAutoRestarted(Service $service, int $attemptCount): void
     {
-        if (! $this->smtpConfigured() || ! $this->settingEnabled('notify_container_restart')) {
+        $event = NotificationEvent::ContainerRestart;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
 
-        try {
-            Mail::to($service->user->email)->send(new ContainerAutoRestartedMail($service, $attemptCount));
-            $this->logEmail($service->user->email, 'Container Auto-Restarted: '.$service->name, 'sent');
-        } catch (\Exception $e) {
-            $this->logEmail($service->user->email, 'Container Auto-Restarted: '.$service->name, 'failed', $e->getMessage());
-            Log::error('Failed to send container auto-restart notification', ['error' => $e->getMessage()]);
-        }
+        $subject = 'Container Auto-Restarted: '.$service->name;
+        $this->sendCustomerEmail($service->user, new ContainerAutoRestartedMail($service, $attemptCount), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $service->user->phone && $this->settingEnabled('notify_container_restart')) {
+        if ($this->smsService->isConfigured() && $service->user->phone) {
             try {
                 $message = $this->renderTemplate('container_restarted', [
                     'customer_name' => $service->user->name,
@@ -762,10 +629,25 @@ class NotificationService
                     'attempt_count' => (string) $attemptCount,
                     'site_name' => $this->siteNameFor($service->user),
                 ], 'Your container service "'.$service->name.'" was automatically restarted after '.$attemptCount.' failed attempt(s).');
-                $this->smsService->send($service->user->phone, $message);
+                $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send container auto-restart SMS', ['error' => $e->getMessage()]);
             }
         }
+    }
+
+    public function notifyAdminNodeOffline(string $subject, string $body): void
+    {
+        $event = NotificationEvent::AdminNodeOffline;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $this->emailDelivery->sendToAdmins(
+            new GenericNotificationMail($subject, 'Container Node Offline Alert', $body),
+            $subject,
+            $event,
+            $body
+        );
     }
 }

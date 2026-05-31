@@ -86,7 +86,7 @@ class PaymentWebhookController extends Controller
             $invoicePaymentService = app(ResellerInvoicePaymentService::class);
 
             $invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
-            NotificationService::notifyPaymentReceived($invoice);
+            app(NotificationService::class)->notifyPaymentReceived($payment);
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
 
             Log::info('Reseller invoice payment handled via M-Pesa callback', [

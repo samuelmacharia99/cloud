@@ -140,6 +140,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(ResellerDomainOrder::class, 'reseller_id');
     }
 
+    public function notificationPreferences()
+    {
+        return $this->hasMany(UserNotificationPreference::class);
+    }
+
     public function domainRenewalOrders()
     {
         return $this->hasMany(DomainRenewalOrder::class);

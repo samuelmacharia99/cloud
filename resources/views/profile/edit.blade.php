@@ -15,6 +15,12 @@
         </div>
 
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Notifications</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Manage email and SMS alerts for your account.</p>
+            <a href="{{ route('profile.notifications') }}" class="inline-flex items-center px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white rounded-lg text-sm font-medium">Notification preferences</a>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             @include('profile.partials.delete-user-form')
         </div>
     </div>

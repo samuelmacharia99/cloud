@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\NotificationService;
 
 class ManualPaymentService implements PaymentGatewayInterface
 {
@@ -28,19 +29,19 @@ class ManualPaymentService implements PaymentGatewayInterface
 
             // Create payment record with pending status
             $payment = Payment::create([
-                'user_id'              => $userId,
-                'invoice_id'           => $invoice->id,
-                'amount'               => $invoice->total,
-                'currency'             => $customerData['currency'] ?? 'KES',
-                'payment_method'       => 'manual',
-                'transaction_reference' => 'manual-' . uniqid(),
-                'status'               => 'pending',
-                'notes'                => json_encode([
+                'user_id' => $userId,
+                'invoice_id' => $invoice->id,
+                'amount' => $invoice->total,
+                'currency' => $customerData['currency'] ?? 'KES',
+                'payment_method' => 'manual',
+                'transaction_reference' => 'manual-'.uniqid(),
+                'status' => 'pending',
+                'notes' => json_encode([
                     'payment_reference' => $customerData['payment_reference'] ?? null,
-                    'bank_name'         => $customerData['bank_name'] ?? null,
-                    'account_name'      => $customerData['account_name'] ?? null,
-                    'notes'             => $customerData['notes'] ?? null,
-                    'submitted_at'      => now()->toIso8601String(),
+                    'bank_name' => $customerData['bank_name'] ?? null,
+                    'account_name' => $customerData['account_name'] ?? null,
+                    'notes' => $customerData['notes'] ?? null,
+                    'submitted_at' => now()->toIso8601String(),
                 ]),
             ]);
 
@@ -54,42 +55,7 @@ class ManualPaymentService implements PaymentGatewayInterface
             ]);
 
             // Send notification to admin about pending manual payment
-            $adminEmail = \App\Models\Setting::getValue('admin_email', config('mail.from.address'));
-            if ($adminEmail) {
-                try {
-                    \Log::debug('Sending manual payment notification email', [
-                        'payment_id' => $payment->id,
-                        'admin_email' => $adminEmail,
-                    ]);
-
-                    \Illuminate\Support\Facades\Mail::send('emails.manual-payment-submitted', [
-                        'payment'   => $payment,
-                        'invoice'   => $invoice,
-                        'customer'  => $user,
-                    ], function ($m) use ($adminEmail, $invoice) {
-                        $m->to($adminEmail)
-                            ->subject("Manual Payment Submission - Invoice {$invoice->invoice_number}");
-                    });
-
-                    \Log::info('Manual payment notification email sent successfully', [
-                        'payment_id' => $payment->id,
-                        'admin_email' => $adminEmail,
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::warning('Failed to send manual payment notification email', [
-                        'payment_id' => $payment->id,
-                        'invoice_id' => $invoice->id,
-                        'admin_email' => $adminEmail,
-                        'error' => $e->getMessage(),
-                    ]);
-                    // Don't fail the payment submission just because email failed
-                }
-            } else {
-                \Log::warning('No admin email configured for manual payment notification', [
-                    'payment_id' => $payment->id,
-                    'invoice_id' => $invoice->id,
-                ]);
-            }
+            app(NotificationService::class)->notifyManualPaymentSubmitted($payment);
 
             \Log::info('Manual payment initiation completed successfully', [
                 'payment_id' => $payment->id,
@@ -116,7 +82,7 @@ class ManualPaymentService implements PaymentGatewayInterface
             return [
                 'success' => false,
                 'message' => 'Failed to submit manual payment. Please try again.',
-                'error'   => $e->getMessage(),
+                'error' => $e->getMessage(),
             ];
         }
     }
@@ -144,13 +110,13 @@ class ManualPaymentService implements PaymentGatewayInterface
             return [
                 'success' => false,
                 'message' => 'Payment record not found.',
-                'status'  => 'failed',
+                'status' => 'failed',
             ];
         }
 
         return [
             'success' => true,
-            'status'  => $payment->status,
+            'status' => $payment->status,
             'payment' => $payment,
         ];
     }
