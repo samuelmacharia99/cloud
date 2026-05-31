@@ -160,6 +160,10 @@
                                 <input type="number" min="1" name="settings[domain_renewal_advance_days]" value="{{ $settings['domain_renewal_advance_days'] ?? '30' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
                             <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reseller packages — days before expiry</label>
+                                <input type="number" min="1" name="settings[reseller_package_invoice_advance_days]" value="{{ $settings['reseller_package_invoice_advance_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain renewal — payment window (days)</label>
                                 <input type="number" min="1" name="settings[domain_renewal_payment_days]" value="{{ $settings['domain_renewal_payment_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
@@ -295,6 +299,12 @@
                                 <input type="password" name="mpesa_passkey" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Callback URL Token</label>
+                                <input type="password" name="mpesa_callback_token" value="{{ $settings['mpesa_callback_token'] ?? '' }}" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Required in production. Appended to the M-Pesa callback URL as <code>?token=...</code>.</p>
+                            </div>
+
                             <!-- URL Registration Section -->
                             <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-4" x-data="{ showDetails: false }">
                                 <div>
@@ -302,12 +312,16 @@
                                     <p class="text-xs text-amber-800 dark:text-amber-200">Automatically register callback URLs with Safaricom M-Pesa API</p>
                                 </div>
 
+                                @php
+                                    $mpesaCallbackToken = $settings['mpesa_callback_token'] ?? '';
+                                    $mpesaCallbackUrl = route('payment.mpesa.callback').($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
+                                @endphp
                                 <!-- Callback URL Display -->
                                 <div>
                                     <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">Your Callback URL</label>
                                     <div class="flex gap-2 items-center">
-                                        <input type="text" readonly value="{{ route('payment.mpesa.callback') }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 font-mono" />
-                                        <button type="button" @click="copyToClipboard('{{ route('payment.mpesa.callback') }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
+                                        <input type="text" readonly value="{{ $mpesaCallbackUrl }}" class="flex-1 px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-slate-700 dark:text-slate-300 font-mono" />
+                                        <button type="button" @click="copyToClipboard('{{ $mpesaCallbackUrl }}')" class="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium transition" title="Copy to clipboard">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                                             </svg>

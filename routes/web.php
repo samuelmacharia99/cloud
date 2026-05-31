@@ -45,6 +45,7 @@ use App\Http\Controllers\Reseller\PackageController;
 use App\Http\Controllers\Reseller\ServerController;
 use App\Http\Controllers\Reseller\WalletController;
 use App\Models\DomainExtension;
+use App\Models\User;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -58,6 +59,12 @@ Route::middleware(['auth'])->group(function () {
         // Check if impersonating from reseller or admin
         if (session('impersonating_reseller')) {
             $resellerId = session('impersonating_reseller');
+            $reseller = User::find($resellerId);
+            if (! $reseller || ! $reseller->is_reseller) {
+                session()->forget(['impersonating_reseller', 'impersonating_user_id']);
+                auth()->logout();
+                abort(403, 'Invalid impersonation session');
+            }
             session()->forget(['impersonating_reseller', 'impersonating_user_id']);
             auth()->logout();
             auth()->loginUsingId($resellerId);
@@ -65,6 +72,12 @@ Route::middleware(['auth'])->group(function () {
             return redirect()->route('reseller.customers.index')->with('success', 'Exited customer view.');
         } elseif (session('impersonating')) {
             $adminId = session('impersonating');
+            $admin = User::find($adminId);
+            if (! $admin || ! $admin->is_admin) {
+                session()->forget(['impersonating', 'impersonating_user_id']);
+                auth()->logout();
+                abort(403, 'Invalid impersonation session');
+            }
             session()->forget(['impersonating', 'impersonating_user_id']);
             auth()->logout();
             auth()->loginUsingId($adminId);
@@ -77,16 +90,22 @@ Route::middleware(['auth'])->group(function () {
 });
 
 // Public domain search and checkout (no authentication required)
-Route::get('/search-domains', [DomainSearchController::class, 'search'])->name('domains.search.public');
-Route::post('/sync-cart', [CheckoutController::class, 'syncCart'])->name('checkout.sync-cart');
-Route::get('/domain-checkout', [CheckoutController::class, 'showPublic'])->name('checkout.show.public');
-Route::post('/domain-checkout', [CheckoutController::class, 'processPublic'])->name('checkout.process.public');
+Route::middleware(['throttle:60,1'])->group(function () {
+    Route::get('/search-domains', [DomainSearchController::class, 'search'])->name('domains.search.public');
+    Route::post('/sync-cart', [CheckoutController::class, 'syncCart'])->name('checkout.sync-cart');
+    Route::get('/domain-checkout', [CheckoutController::class, 'showPublic'])->name('checkout.show.public');
+    Route::post('/domain-checkout', [CheckoutController::class, 'processPublic'])
+        ->middleware(['throttle:5,1', 'registration.throttle'])
+        ->name('checkout.process.public');
+});
 
 // Payment webhooks (public, no authentication required)
-Route::post('/webhooks/c2b', [PaymentWebhookController::class, 'mpesaCallback'])->name('payment.mpesa.callback');
-Route::post('/webhooks/mpesa/callback', [PaymentWebhookController::class, 'mpesaCallback'])->name('payment.mpesa.callback.legacy');
-Route::post('/webhooks/stripe', [PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
-Route::post('/webhooks/paypal', [PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
+Route::middleware(['throttle:120,1'])->group(function () {
+    Route::post('/webhooks/c2b', [PaymentWebhookController::class, 'mpesaCallback'])->name('payment.mpesa.callback');
+    Route::post('/webhooks/mpesa/callback', [PaymentWebhookController::class, 'mpesaCallback'])->name('payment.mpesa.callback.legacy');
+    Route::post('/webhooks/stripe', [PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
+    Route::post('/webhooks/paypal', [PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
+});
 
 // Legal pages (public, no authentication required)
 Route::get('/terms', fn () => view('legal.terms'))->name('terms');

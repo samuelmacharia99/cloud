@@ -10,7 +10,9 @@ use Illuminate\Support\Carbon;
 abstract class BaseCronCommand extends Command
 {
     protected ?CronJob $cronJob = null;
+
     protected ?CronJobLog $cronLog = null;
+
     protected Carbon $startTime;
 
     /**
@@ -19,32 +21,35 @@ abstract class BaseCronCommand extends Command
      */
     abstract protected function handleCron(): string;
 
-    public final function handle(): int
+    final public function handle(): int
     {
         $this->startTime = now();
-        $this->cronJob = CronJob::where('command', $this->getName())->first();
+        $commandName = trim(explode(' ', $this->signature)[0]);
+        $this->cronJob = CronJob::where('command', $commandName)->first();
 
-        // Start log entry
-        $this->cronLog = CronJobLog::create([
-            'cron_job_id' => $this->cronJob?->id,
-            'status' => 'running',
-            'started_at' => $this->startTime,
-        ]);
+        if ($this->cronJob) {
+            $this->cronLog = CronJobLog::create([
+                'cron_job_id' => $this->cronJob->id,
+                'status' => 'running',
+                'started_at' => $this->startTime,
+            ]);
 
-        // Mark parent job as running
-        $this->cronJob?->update([
-            'last_status' => 'running',
-            'last_ran_at' => $this->startTime,
-        ]);
+            $this->cronJob->update([
+                'last_status' => 'running',
+                'last_ran_at' => $this->startTime,
+            ]);
+        }
 
         try {
             $output = $this->handleCron();
             $this->finishLog('success', $output);
             $this->info($output);
+
             return self::SUCCESS;
         } catch (\Throwable $e) {
             $this->finishLog('failed', null, $e);
             $this->error($e->getMessage());
+
             return self::FAILURE;
         }
     }
@@ -56,7 +61,7 @@ abstract class BaseCronCommand extends Command
         $this->cronLog?->update([
             'status' => $status,
             'output' => $output,
-            'exception' => $e ? $e->getMessage() . "\n" . $e->getTraceAsString() : null,
+            'exception' => $e ? $e->getMessage()."\n".$e->getTraceAsString() : null,
             'duration_ms' => $durationMs,
             'finished_at' => now(),
         ]);

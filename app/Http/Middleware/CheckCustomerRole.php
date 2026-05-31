@@ -9,8 +9,12 @@ class CheckCustomerRole
 {
     public function handle(Request $request, Closure $next)
     {
-        if (!auth()->check()) {
+        if (! auth()->check()) {
             abort(403, 'Unauthorized access');
+        }
+
+        if (auth()->user()->is_admin && ! session('impersonating')) {
+            return redirect()->route('dashboard');
         }
 
         if (auth()->user()->is_reseller) {

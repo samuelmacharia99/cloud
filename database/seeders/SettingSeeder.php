@@ -34,6 +34,7 @@ class SettingSeeder extends Seeder
             ['key' => 'domain_renewal_advance_days', 'value' => '30', 'description' => 'Generate domain renewal invoices this many days before expiry'],
             ['key' => 'domain_renewal_payment_days', 'value' => '10', 'description' => 'Days customer has to pay a domain renewal invoice'],
             ['key' => 'domain_renewal_years', 'value' => '1', 'description' => 'Default years for automated domain renewal invoices'],
+            ['key' => 'reseller_package_invoice_advance_days', 'value' => '10', 'description' => 'Generate reseller package renewal invoices this many days before package expiry'],
 
             // Tax settings
             ['key' => 'tax_enabled', 'value' => 'true', 'description' => 'Enable tax calculations'],
@@ -49,6 +50,7 @@ class SettingSeeder extends Seeder
             ['key' => 'mpesa_consumer_key', 'value' => '', 'description' => 'M-Pesa Daraja API consumer key'],
             ['key' => 'mpesa_consumer_secret', 'value' => '', 'description' => 'M-Pesa Daraja API consumer secret'],
             ['key' => 'mpesa_environment', 'value' => 'sandbox', 'description' => 'M-Pesa API environment (sandbox or production)'],
+            ['key' => 'mpesa_callback_token', 'value' => '', 'description' => 'Secret token for M-Pesa callback URL (required in production)'],
             ['key' => 'card_enabled', 'value' => 'true', 'description' => 'Enable card payments'],
             ['key' => 'stripe_key', 'value' => 'sk_test_', 'description' => 'Stripe secret key'],
             ['key' => 'bank_transfer_enabled', 'value' => 'true', 'description' => 'Enable bank transfer payments'],

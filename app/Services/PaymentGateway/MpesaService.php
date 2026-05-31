@@ -315,6 +315,28 @@ class MpesaService implements PaymentGatewayInterface
                         }
                     }
 
+                    if ($mpesaAmount !== null && (int) ceil((float) $lockedPayment->amount) !== (int) $mpesaAmount) {
+                        Log::error('M-Pesa callback rejected: amount mismatch', [
+                            'payment_id' => $lockedPayment->id,
+                            'expected' => (int) ceil((float) $lockedPayment->amount),
+                            'received' => (int) $mpesaAmount,
+                        ]);
+
+                        $lockedPayment->update([
+                            'status' => PaymentStatus::Failed->value,
+                            'notes' => json_encode([
+                                'result_code' => 'amount_mismatch',
+                                'expected_amount' => (int) ceil((float) $lockedPayment->amount),
+                                'received_amount' => (int) $mpesaAmount,
+                            ]),
+                        ]);
+
+                        return [
+                            'success' => false,
+                            'message' => 'Payment amount does not match invoice total',
+                        ];
+                    }
+
                     $lockedPayment->update([
                         'status' => PaymentStatus::Completed->value,
                         'paid_at' => now(),
@@ -510,7 +532,14 @@ class MpesaService implements PaymentGatewayInterface
      */
     private function buildCallbackUrl(): string
     {
-        return rtrim($this->siteUrl, '/').'/webhooks/c2b';
+        $url = rtrim($this->siteUrl, '/').'/webhooks/c2b';
+        $token = Setting::getValue('mpesa_callback_token', '');
+
+        if ($token !== '') {
+            $url .= '?token='.urlencode($token);
+        }
+
+        return $url;
     }
 
     /**

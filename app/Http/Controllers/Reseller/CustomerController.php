@@ -162,6 +162,13 @@ class CustomerController extends Controller
 
         $resellerId = session('impersonating_reseller');
 
+        $reseller = User::find($resellerId);
+        if (! $reseller || ! $reseller->is_reseller) {
+            session()->forget(['impersonating_reseller', 'impersonating_user_id']);
+            auth()->logout();
+            abort(403, 'Invalid impersonation session');
+        }
+
         // Clear impersonation session data
         session()->forget(['impersonating_reseller', 'impersonating_user_id']);
 

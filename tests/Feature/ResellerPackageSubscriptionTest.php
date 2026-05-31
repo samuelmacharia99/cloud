@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\CronJob;
 use App\Models\Invoice;
 use App\Models\ResellerPackage;
 use App\Models\Setting;
@@ -113,13 +114,20 @@ class ResellerPackageSubscriptionTest extends TestCase
         $this->assertSame(5300.0, (float) $invoice->total);
     }
 
-    public function test_generate_reseller_invoices_targets_packages_expiring_in_five_days(): void
+    public function test_generate_reseller_invoices_targets_packages_expiring_in_ten_days(): void
     {
+        CronJob::create([
+            'name' => 'Generate Reseller Package Invoices',
+            'command' => 'cron:generate-reseller-invoices',
+            'schedule' => '0 2 * * *',
+            'enabled' => true,
+        ]);
+
         $package = $this->createPackage();
         $reseller = User::factory()->reseller()->create([
             'reseller_package_id' => $package->id,
             'package_subscribed_at' => now()->subMonth(),
-            'package_expires_at' => now()->addDays(5)->startOfDay(),
+            'package_expires_at' => now()->addDays(10)->startOfDay(),
         ]);
 
         $this->artisan('cron:generate-reseller-invoices')->assertSuccessful();

@@ -117,7 +117,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Generate Reseller Package Invoices',
-                'description' => 'Creates renewal invoices for reseller packages 5 days before expiry.',
+                'description' => 'Creates renewal invoices for reseller packages 10 days before expiry.',
                 'command' => 'cron:generate-reseller-invoices',
                 'schedule' => '0 2 * * *',
                 'enabled' => true,

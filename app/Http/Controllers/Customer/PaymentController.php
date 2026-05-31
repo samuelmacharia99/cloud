@@ -446,7 +446,7 @@ class PaymentController extends Controller
 
         try {
             /** @var StripeService $gateway */
-            $gateway = PaymentGatewayFactory::makeForInvoice('stripe', $invoice);
+            $gateway = PaymentGatewayFactory::make('stripe');
 
             // Verify signature using raw body — must happen before any parsing
             try {
@@ -493,7 +493,7 @@ class PaymentController extends Controller
     {
         try {
             /** @var PayPalService $gateway */
-            $gateway = PaymentGatewayFactory::makeForInvoice('paypal', $invoice);
+            $gateway = PaymentGatewayFactory::make('paypal');
 
             if (! $gateway->verifyWebhook($request)) {
                 Log::warning('PayPal webhook signature verification failed');
@@ -773,18 +773,44 @@ class PaymentController extends Controller
             'checkout_request_id' => 'required|string',
         ]);
 
-        try {
-            $checkoutRequestId = $request->input('checkout_request_id');
+        $checkoutRequestId = $request->input('checkout_request_id');
 
+        $payment = Payment::query()
+            ->where('transaction_reference', $checkoutRequestId)
+            ->where('invoice_id', $invoice->id)
+            ->where('user_id', auth()->id())
+            ->first();
+
+        if (! $payment) {
+            return response()->json([
+                'status' => 'error',
+                'success' => false,
+                'message' => 'Payment not found for this invoice',
+            ], 404);
+        }
+
+        if ($payment->status->value === 'completed') {
+            return response()->json(['status' => 'completed', 'success' => true]);
+        }
+
+        if ($payment->status->value === 'failed') {
+            $notes = json_decode($payment->notes, true) ?? [];
+
+            return response()->json([
+                'status' => 'failed',
+                'success' => false,
+                'message' => $notes['result_desc'] ?? 'Payment was cancelled or failed',
+            ]);
+        }
+
+        try {
             $gateway = PaymentGatewayFactory::makeForInvoice('mpesa', $invoice);
             $result = $gateway->verify($checkoutRequestId);
 
-            // If payment is confirmed, update the database and process completion
             if ($result['success'] && $result['status'] === 'completed') {
-                $payment = Payment::where('transaction_reference', $checkoutRequestId)->first();
+                $payment->refresh();
 
-                if ($payment && $payment->status !== 'completed') {
-                    // Update payment status
+                if ($payment->status->value !== 'completed') {
                     $payment->update([
                         'status' => 'completed',
                         'paid_at' => now(),
@@ -795,16 +821,15 @@ class PaymentController extends Controller
                         'invoice_id' => $invoice->id,
                         'checkout_request_id' => $checkoutRequestId,
                     ]);
+                }
 
-                    // Process completion (handles overpayments, invoice update, and provisioning)
-                    try {
-                        $this->processPaymentCompletion($payment, $invoice);
-                    } catch (\Exception $e) {
-                        Log::error('Payment completion processing failed', [
-                            'payment_id' => $payment->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+                try {
+                    $this->processPaymentCompletion($payment, $invoice);
+                } catch (\Exception $e) {
+                    Log::error('Payment completion processing failed', [
+                        'payment_id' => $payment->id,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
 
@@ -816,6 +841,7 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             Log::error('M-Pesa status poll error', [
                 'invoice_id' => $invoice->id,
+                'checkout_request_id' => $checkoutRequestId,
                 'error' => $e->getMessage(),
             ]);
 

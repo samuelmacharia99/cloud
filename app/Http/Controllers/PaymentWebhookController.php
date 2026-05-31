@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
+use App\Models\Setting;
 use App\Services\DomainPushService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\Provisioning\InvoiceProvisioningService;
@@ -17,6 +18,14 @@ class PaymentWebhookController extends Controller
      */
     public function mpesaCallback(Request $request)
     {
+        if (! $this->isValidMpesaCallback($request)) {
+            Log::warning('M-Pesa callback rejected: invalid callback token', [
+                'ip' => $request->ip(),
+            ]);
+
+            return response('', 403);
+        }
+
         try {
             $gateway = PaymentGatewayFactory::make('mpesa');
             $result = $gateway->handleCallback($request->all());
@@ -41,6 +50,23 @@ class PaymentWebhookController extends Controller
 
             return response('', 200);
         }
+    }
+
+    private function isValidMpesaCallback(Request $request): bool
+    {
+        $token = Setting::getValue('mpesa_callback_token', '');
+
+        if ($token === '') {
+            if (Setting::getValue('mpesa_environment', 'sandbox') === 'production') {
+                Log::error('M-Pesa callback token is not configured in production');
+
+                return false;
+            }
+
+            return true;
+        }
+
+        return hash_equals($token, (string) $request->query('token', ''));
     }
 
     /**

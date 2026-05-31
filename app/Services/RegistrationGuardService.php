@@ -54,8 +54,8 @@ class RegistrationGuardService
             ]);
         }
 
-        RateLimiter::hit($ipKey, decay: 86400);
-        RateLimiter::hit($globalKey, decay: 3600);
+        RateLimiter::hit($ipKey, 86400);
+        RateLimiter::hit($globalKey, 3600);
     }
 
     public function makeFormToken(): string

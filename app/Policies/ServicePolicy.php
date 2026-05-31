@@ -2,8 +2,8 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\Service;
+use App\Models\User;
 use Illuminate\Auth\Access\Response;
 
 class ServicePolicy
@@ -104,6 +104,20 @@ class ServicePolicy
         return $user->is_admin
             ? Response::allow()
             : Response::deny('Only administrators can refresh service status.');
+    }
+
+    /**
+     * Customer can manage container lifecycle for their own services. Admin can manage any.
+     */
+    public function manageContainer(User $user, Service $service): Response
+    {
+        if ($service->product?->type !== 'container_hosting') {
+            return Response::deny('This action is only available for container services.');
+        }
+
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only manage your own container services.');
     }
 
     /**

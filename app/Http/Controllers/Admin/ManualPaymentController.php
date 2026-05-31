@@ -2,18 +2,20 @@
 
 namespace App\Http\Controllers\Admin;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use App\Models\ManualPaymentSetting;
+use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class ManualPaymentController extends Controller
 {
     public function __construct()
     {
         $this->middleware(function ($request, $next) {
-            if (!auth()->user()->is_admin) {
+            if (! auth()->user()->is_admin) {
                 abort(403);
             }
+
             return $next($request);
         });
     }
@@ -46,8 +48,8 @@ class ManualPaymentController extends Controller
     public function update(Request $request)
     {
         \Log::info('Manual payment update request received', [
-            'request_data' => $request->all(),
             'admin_id' => auth()->id(),
+            'fields' => array_keys($request->except(['_token'])),
         ]);
 
         try {
@@ -62,7 +64,7 @@ class ManualPaymentController extends Controller
             \Log::info('Manual payment validation passed', [
                 'validated_data' => $validated,
             ]);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             \Log::error('Manual payment validation failed', [
                 'errors' => $e->errors(),
                 'admin_id' => auth()->id(),

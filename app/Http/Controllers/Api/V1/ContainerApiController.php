@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use App\Models\Service;
-use App\Models\ContainerBackup;
 use App\Http\Controllers\Controller;
-use App\Services\Provisioning\ContainerDeploymentService;
+use App\Models\ContainerBackup;
+use App\Models\Service;
 use App\Services\Provisioning\ContainerBackupService;
+use App\Services\Provisioning\ContainerDeploymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -17,11 +17,11 @@ class ContainerApiController extends Controller
      */
     public function show(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         $deployment = $service->containerDeployment;
 
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'No container deployment found'], 404);
         }
 
@@ -44,10 +44,10 @@ class ContainerApiController extends Controller
      */
     public function start(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $deploymentService->unsuspend($service);
 
             return response()->json(['message' => 'Container started']);
@@ -61,10 +61,10 @@ class ContainerApiController extends Controller
      */
     public function stop(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $deploymentService->suspend($service);
 
             return response()->json(['message' => 'Container stopped']);
@@ -78,10 +78,10 @@ class ContainerApiController extends Controller
      */
     public function restart(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $deploymentService->restart($service);
 
             return response()->json(['message' => 'Container restarted']);
@@ -95,11 +95,11 @@ class ContainerApiController extends Controller
      */
     public function logs(Service $service, Request $request): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
             $lines = $request->get('lines', 100);
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $logs = $deploymentService->getLogs($service, $lines);
 
             return response()->json(['logs' => $logs]);
@@ -113,11 +113,11 @@ class ContainerApiController extends Controller
      */
     public function metrics(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return response()->json(['error' => 'No deployment found'], 404);
             }
 
@@ -141,10 +141,10 @@ class ContainerApiController extends Controller
      */
     public function createBackup(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
-            $backupService = new ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backup = $backupService->createBackup($service, 'manual');
 
             return response()->json([
@@ -164,10 +164,10 @@ class ContainerApiController extends Controller
      */
     public function listBackups(Service $service): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         try {
-            $backupService = new ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backups = $backupService->listServiceBackups($service);
 
             return response()->json([
@@ -191,14 +191,14 @@ class ContainerApiController extends Controller
      */
     public function restoreBackup(Service $service, ContainerBackup $backup): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         if ($backup->service_id !== $service->id) {
             return response()->json(['error' => 'Backup does not belong to this service'], 403);
         }
 
         try {
-            $backupService = new ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->restoreBackup($backup);
 
             return response()->json(['message' => 'Container restored from backup']);
@@ -212,14 +212,14 @@ class ContainerApiController extends Controller
      */
     public function deleteBackup(Service $service, ContainerBackup $backup): JsonResponse
     {
-        $this->authorize('view', $service);
+        $this->authorize('manageContainer', $service);
 
         if ($backup->service_id !== $service->id) {
             return response()->json(['error' => 'Backup does not belong to this service'], 403);
         }
 
         try {
-            $backupService = new ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->deleteBackup($backup);
 
             return response()->json(['message' => 'Backup deleted']);

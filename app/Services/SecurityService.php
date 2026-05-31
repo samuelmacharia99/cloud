@@ -40,7 +40,7 @@ class SecurityService
         $limit = $config['login_attempts'] ?? 5;
         $window = $config['login_window'] ?? 15;
 
-        return RateLimiter::tooManyAttempts($key, $limit, decay: $window * 60);
+        return RateLimiter::tooManyAttempts($key, $limit);
     }
 
     /**
@@ -52,7 +52,7 @@ class SecurityService
         $key = 'login_attempts:' . $email;
         $window = $config['login_window'] ?? 15;
 
-        RateLimiter::hit($key, decay: $window * 60);
+        RateLimiter::hit($key, $window * 60);
     }
 
     /**
@@ -85,7 +85,7 @@ class SecurityService
         $key = 'email_verification:' . $email;
         $limit = $config['email_verification'] ?? 5;
 
-        return RateLimiter::tooManyAttempts($key, $limit, decay: 3600);
+        return RateLimiter::tooManyAttempts($key, $limit);
     }
 
     /**
@@ -94,7 +94,7 @@ class SecurityService
     public static function recordEmailVerificationAttempt(string $email): void
     {
         $key = 'email_verification:' . $email;
-        RateLimiter::hit($key, decay: 3600);
+        RateLimiter::hit($key, 3600);
     }
 
     /**
@@ -106,7 +106,7 @@ class SecurityService
         $key = 'password_reset:' . $email;
         $limit = $config['password_reset'] ?? 3;
 
-        return RateLimiter::tooManyAttempts($key, $limit, decay: 3600);
+        return RateLimiter::tooManyAttempts($key, $limit);
     }
 
     /**
@@ -115,7 +115,7 @@ class SecurityService
     public static function recordPasswordResetAttempt(string $email): void
     {
         $key = 'password_reset:' . $email;
-        RateLimiter::hit($key, decay: 3600);
+        RateLimiter::hit($key, 3600);
     }
 
     /**

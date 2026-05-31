@@ -257,7 +257,9 @@ class CustomerController extends Controller
         Log::info('addDomain() called', [
             'customer_id' => $customer->id,
             'customer_name' => $customer->name,
-            'request_data' => $request->all(),
+            'domain_name' => $request->input('name'),
+            'extension' => $request->input('extension'),
+            'status' => $request->input('status'),
         ]);
 
         if ($customer->is_admin) {

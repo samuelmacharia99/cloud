@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
+use App\Models\DomainRenewalOrder;
+use App\Services\DomainRenewalService;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class DomainController extends Controller
 {
@@ -38,7 +41,7 @@ class DomainController extends Controller
         if ($request->filled('owner')) {
             $query->whereHas('user', function ($q) use ($request) {
                 $q->where('name', 'like', "%{$request->owner}%")
-                  ->orWhere('email', 'like', "%{$request->owner}%");
+                    ->orWhere('email', 'like', "%{$request->owner}%");
             });
         }
 
@@ -60,7 +63,7 @@ class DomainController extends Controller
 
         // Filter by days until expiry
         if ($request->filled('expiry_warning')) {
-            $days = (int)$request->expiry_warning;
+            $days = (int) $request->expiry_warning;
             $query->whereBetween('expires_at', [now(), now()->addDays($days)]);
         }
 
@@ -205,7 +208,7 @@ class DomainController extends Controller
     {
         \Log::info('Domain update request', [
             'domain_id' => $domain->id,
-            'request_data' => $request->all(),
+            'fields' => array_keys($request->except(['_token', '_method'])),
         ]);
 
         try {
@@ -238,7 +241,7 @@ class DomainController extends Controller
 
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Failed to update domain: ' . $e->getMessage());
+                ->with('error', 'Failed to update domain: '.$e->getMessage());
         }
     }
 
@@ -255,20 +258,20 @@ class DomainController extends Controller
     {
         try {
             // Check if domain has extension pricing
-            if (!$domain->domainExtension) {
+            if (! $domain->domainExtension) {
                 return redirect()->route('admin.domains.show', $domain)
                     ->with('error', 'Domain extension not found. Cannot generate invoice.');
             }
 
             // Check if domain has an owner
-            if (!$domain->user) {
+            if (! $domain->user) {
                 return redirect()->route('admin.domains.show', $domain)
                     ->with('error', 'Domain owner not found. Cannot generate invoice.');
             }
 
             // Get renewal price (wholesale for resellers, retail for customers)
             $pricing = $domain->domainExtension->getPricingForUser($domain->user, 1);
-            if (!$pricing || !$pricing->renewal_price) {
+            if (! $pricing || ! $pricing->renewal_price) {
                 return redirect()->route('admin.domains.show', $domain)
                     ->with('error', 'No pricing available for renewal. Please configure domain extension pricing.');
             }
@@ -285,7 +288,7 @@ class DomainController extends Controller
             }
 
             // Create renewal order and invoice
-            $renewalOrder = \App\Models\DomainRenewalOrder::create([
+            $renewalOrder = DomainRenewalOrder::create([
                 'domain_id' => $domain->id,
                 'user_id' => $domain->user_id,
                 'years' => 1,
@@ -294,11 +297,11 @@ class DomainController extends Controller
                 'expires_at' => now()->addDays(10),
             ]);
 
-            $renewalService = app(\App\Services\DomainRenewalService::class);
+            $renewalService = app(DomainRenewalService::class);
             $invoice = $renewalService->createInvoice($renewalOrder);
 
             // Send notification
-            app(\App\Services\NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
+            app(NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
 
             return redirect()->route('admin.domains.show', $domain)
                 ->with('success', "Invoice {$invoice->invoice_number} generated successfully. Customer notified via email and SMS.");
@@ -309,7 +312,7 @@ class DomainController extends Controller
             ]);
 
             return redirect()->route('admin.domains.show', $domain)
-                ->with('error', 'Failed to generate invoice: ' . $e->getMessage());
+                ->with('error', 'Failed to generate invoice: '.$e->getMessage());
         }
     }
 }

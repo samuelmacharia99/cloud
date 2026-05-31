@@ -25,6 +25,7 @@ class SettingController extends Controller
             'billing_vat_number', 'invoice_prefix', 'invoice_due_days', 'grace_period_days',
             'service_monthly_invoice_advance_days', 'service_renewal_invoice_advance_days',
             'domain_renewal_advance_days', 'domain_renewal_payment_days', 'domain_renewal_years',
+            'reseller_package_invoice_advance_days',
         ],
         'tax' => [
             'tax_enabled', 'tax_rate', 'tax_name', 'tax_inclusive', 'tax_number',
@@ -32,7 +33,7 @@ class SettingController extends Controller
         'payment_methods' => [
             // M-Pesa
             'mpesa_enabled', 'mpesa_shortcode', 'mpesa_passkey',
-            'mpesa_consumer_key', 'mpesa_consumer_secret', 'mpesa_environment',
+            'mpesa_consumer_key', 'mpesa_consumer_secret', 'mpesa_environment', 'mpesa_callback_token',
             // Stripe
             'stripe_enabled', 'stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret',
             // PayPal
@@ -151,7 +152,7 @@ class SettingController extends Controller
         // Don't save empty values for sensitive settings (like API tokens)
         // This prevents password fields from clearing saved credentials when left blank
         $sensitiveFields = [
-            'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret',
+            'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret', 'mpesa_callback_token',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
             'paypal_client_secret', 'recaptcha_secret_key',
         ];
@@ -202,7 +203,7 @@ class SettingController extends Controller
         $this->authorize('batchUpdate', Setting::class);
 
         $request->validate([
-            'file' => 'required|image|max:5120', // 5MB max
+            'file' => 'required|file|image|mimes:jpeg,png,gif,webp,ico|max:5120',
             'type' => 'required|in:logo,favicon',
         ]);
 
@@ -359,8 +360,7 @@ class SettingController extends Controller
 
     public function debugLog(Request $request)
     {
-        // Only available in local/debug environments; return 404 in production
-        if (! app()->isLocal() && ! config('app.debug')) {
+        if (! app()->isLocal()) {
             abort(404);
         }
 
@@ -425,6 +425,13 @@ class SettingController extends Controller
     public function simulateMpesaPayment(Request $request)
     {
         $this->authorize('batchUpdate', Setting::class);
+
+        if (Setting::getValue('mpesa_environment', 'sandbox') === 'production') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment simulation is disabled in production.',
+            ], 403);
+        }
 
         $request->validate([
             'phone_number' => 'required|string|min:10',
