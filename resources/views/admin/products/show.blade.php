@@ -191,6 +191,26 @@
                 @endif
             </div>
         @endif
+
+        @if ($product->type === 'container_hosting' && $product->overage_enabled)
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Overage Billing</h3>
+                <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">CPU Rate</dt>
+                        <dd class="text-sm text-slate-900 dark:text-white mt-1">KES {{ number_format((float) ($product->cpu_overage_rate ?? 0), 2) }} / core-hour</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">RAM Rate</dt>
+                        <dd class="text-sm text-slate-900 dark:text-white mt-1">KES {{ number_format((float) ($product->ram_overage_rate ?? 0), 2) }} / GB-hour</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Disk Rate</dt>
+                        <dd class="text-sm text-slate-900 dark:text-white mt-1">KES {{ number_format((float) ($product->disk_overage_rate ?? 0), 2) }} / GB-hour</dd>
+                    </div>
+                </dl>
+            </div>
+        @endif
     </div>
 
     <!-- Services Tab -->

@@ -118,6 +118,7 @@ class ProductController extends Controller
             'overage_enabled' => 'boolean',
             'cpu_overage_rate' => 'nullable|numeric|min:0',
             'ram_overage_rate' => 'nullable|numeric|min:0',
+            'disk_overage_rate' => 'nullable|numeric|min:0',
         ];
 
         if ($type === 'shared_hosting') {

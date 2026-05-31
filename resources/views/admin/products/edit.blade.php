@@ -239,7 +239,7 @@
                                 <input type="checkbox" name="overage_enabled" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('overage_enabled', $product->overage_enabled))>
                                 <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable overage billing</span>
                             </label>
-                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Charge customers for usage above template allocation</p>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Charge customers for usage above the included package limits</p>
                         </div>
 
                         <!-- CPU Overage Rate -->
@@ -256,6 +256,15 @@
                             <label for="ram_overage_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM Overage Rate (KES/GB-hour)</label>
                             <input type="number" id="ram_overage_rate" name="ram_overage_rate" value="{{ old('ram_overage_rate', $product->ram_overage_rate ?? 0) }}" step="0.01" min="0" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_overage_rate') border-red-500 @enderror">
                             @error('ram_overage_rate')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <!-- Disk Overage Rate -->
+                        <div>
+                            <label for="disk_overage_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk Overage Rate (KES/GB-hour)</label>
+                            <input type="number" id="disk_overage_rate" name="disk_overage_rate" value="{{ old('disk_overage_rate', $product->disk_overage_rate ?? 0) }}" step="0.01" min="0" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('disk_overage_rate') border-red-500 @enderror">
+                            @error('disk_overage_rate')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
                         </div>

@@ -2,14 +2,16 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Service;
 use App\Models\Domain;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\DomainRenewalOrder;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Services\ContainerOverageBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -30,16 +32,17 @@ class GenerateInvoicesByDateCommand extends Command
         $sendNotifications = $this->hasOption('send-notifications') && $this->option('send-notifications');
 
         try {
-            $date = \Carbon\Carbon::createFromFormat('Y-m-d', $dateString);
+            $date = Carbon::createFromFormat('Y-m-d', $dateString);
         } catch (\Exception $e) {
-            $this->error("Invalid date format. Use YYYY-MM-DD");
+            $this->error('Invalid date format. Use YYYY-MM-DD');
+
             return 1;
         }
 
         $this->info("Generating invoices for date: {$date->format('l, F j, Y')}");
-        $this->info("Type: " . ucfirst($type));
+        $this->info('Type: '.ucfirst($type));
         if ($sendNotifications) {
-            $this->info("Notifications: ENABLED");
+            $this->info('Notifications: ENABLED');
         }
         $this->newLine();
 
@@ -55,29 +58,30 @@ class GenerateInvoicesByDateCommand extends Command
         }
 
         $this->newLine();
-        $this->info("✓ Complete!");
+        $this->info('✓ Complete!');
         $this->line("Service invoices generated: {$serviceCount}");
         $this->line("Domain invoices generated: {$domainCount}");
-        $this->line("Total: " . ($serviceCount + $domainCount));
+        $this->line('Total: '.($serviceCount + $domainCount));
 
         return 0;
     }
 
-    private function generateServiceInvoices(\Carbon\Carbon $date, bool $sendNotifications): int
+    private function generateServiceInvoices(Carbon $date, bool $sendNotifications): int
     {
-        $this->line("Generating service renewal invoices...");
+        $this->line('Generating service renewal invoices...');
 
-        $services = Service::with(['product', 'user'])
+        $services = Service::with(['product', 'user', 'containerDeployment'])
             ->where('status', 'active')
             ->whereDate('next_due_date', '=', $date->toDateString())
             ->whereDoesntHave('invoice', function ($q) use ($date) {
                 $q->whereIn('status', ['draft', 'unpaid'])
-                  ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
+                    ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
             })
             ->get();
 
         if ($services->isEmpty()) {
-            $this->line("  No services expiring on this date.");
+            $this->line('  No services expiring on this date.');
+
             return 0;
         }
 
@@ -92,7 +96,7 @@ class GenerateInvoicesByDateCommand extends Command
                 DB::transaction(function () use ($service, $prefix, $invoiceDueDays, $taxRate, $taxEnabled, $date, $sendNotifications, &$count) {
                     $year = $date->format('Y');
                     $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
-                    $number = $prefix . '-' . $year . '-' . str_pad($sequence, 5, '0', STR_PAD_LEFT);
+                    $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
 
                     $price = $this->getPriceForCycle($service);
                     $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
@@ -107,21 +111,26 @@ class GenerateInvoicesByDateCommand extends Command
                         'subtotal' => $price,
                         'tax' => $tax,
                         'total' => $total,
-                        'notes' => 'Manual invoice generation for ' . $date->format('M d, Y') . '.',
+                        'notes' => 'Manual invoice generation for '.$date->format('M d, Y').'.',
                     ]);
 
                     InvoiceItem::create([
                         'invoice_id' => $invoice->id,
                         'service_id' => $service->id,
                         'product_id' => $service->product_id,
-                        'description' => $service->product->name . ' — ' . ucfirst($service->billing_cycle),
+                        'description' => $service->product->name.' — '.ucfirst($service->billing_cycle),
                         'quantity' => 1,
                         'unit_price' => $price,
                         'amount' => $price,
                     ]);
 
                     if ($service->product->overage_enabled && $service->containerDeployment) {
-                        $this->addOverageItems($invoice, $service, $taxEnabled, $taxRate);
+                        app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
+                            $invoice,
+                            $service,
+                            $taxEnabled,
+                            $taxRate
+                        );
                     }
 
                     $service->update([
@@ -133,7 +142,7 @@ class GenerateInvoicesByDateCommand extends Command
                         app(NotificationService::class)->notifyInvoiceGenerated($invoice);
                     }
 
-                    $this->line("  ✓ Service: {$service->name} → Invoice {$invoice->invoice_number} (KES " . number_format($invoice->total, 2) . ")");
+                    $this->line("  ✓ Service: {$service->name} → Invoice {$invoice->invoice_number} (KES ".number_format($invoice->total, 2).')');
                     $count++;
                 });
             } catch (\Exception $e) {
@@ -145,21 +154,22 @@ class GenerateInvoicesByDateCommand extends Command
         return $count;
     }
 
-    private function generateDomainInvoices(\Carbon\Carbon $date, bool $sendNotifications): int
+    private function generateDomainInvoices(Carbon $date, bool $sendNotifications): int
     {
-        $this->line("Generating domain renewal invoices...");
+        $this->line('Generating domain renewal invoices...');
 
         $domains = Domain::where('status', 'active')
             ->whereDate('expires_at', '=', $date->toDateString())
             ->whereDoesntHave('renewalOrders', function ($q) use ($date) {
                 $q->whereIn('status', ['pending', 'invoiced'])
-                  ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
+                    ->whereDate('created_at', '>=', $date->copy()->subDays(7)->toDateString());
             })
             ->with(['user', 'domainExtension'])
             ->get();
 
         if ($domains->isEmpty()) {
-            $this->line("  No domains expiring on this date.");
+            $this->line('  No domains expiring on this date.');
+
             return 0;
         }
 
@@ -174,6 +184,7 @@ class GenerateInvoicesByDateCommand extends Command
 
                     if ($renewalPrice <= 0) {
                         $this->error("  ✗ {$domain->name}{$domain->extension} - no pricing available");
+
                         return;
                     }
 
@@ -193,7 +204,7 @@ class GenerateInvoicesByDateCommand extends Command
                         app(NotificationService::class)->notifyDomainRenewalInvoice($invoice, $domain);
                     }
 
-                    $this->line("  ✓ Domain: {$domain->name}{$domain->extension} → Invoice {$invoice->invoice_number} (KES " . number_format($invoice->total, 2) . ")");
+                    $this->line("  ✓ Domain: {$domain->name}{$domain->extension} → Invoice {$invoice->invoice_number} (KES ".number_format($invoice->total, 2).')');
                     $count++;
                 });
             } catch (\Exception $e) {
@@ -211,7 +222,7 @@ class GenerateInvoicesByDateCommand extends Command
             return (float) $service->custom_price;
         }
 
-        return match($service->billing_cycle) {
+        return match ($service->billing_cycle) {
             'monthly' => (float) $service->product->monthly_price,
             'quarterly' => (float) ($service->product->monthly_price * 3),
             'semi-annual' => (float) ($service->product->monthly_price * 6),
@@ -220,9 +231,9 @@ class GenerateInvoicesByDateCommand extends Command
         };
     }
 
-    private function advanceDueDate(Service $service, \Carbon\Carbon $fromDate)
+    private function advanceDueDate(Service $service, Carbon $fromDate)
     {
-        return match($service->billing_cycle) {
+        return match ($service->billing_cycle) {
             'monthly' => $fromDate->copy()->addMonth(),
             'quarterly' => $fromDate->copy()->addMonths(3),
             'semi-annual' => $fromDate->copy()->addMonths(6),
@@ -234,81 +245,12 @@ class GenerateInvoicesByDateCommand extends Command
     private function getRenewalPrice(Domain $domain): float
     {
         $extension = $domain->domainExtension;
-        if (!$extension) {
+        if (! $extension) {
             return 0;
         }
 
         $pricing = $extension->getRetailPricing(1);
+
         return (float) ($pricing->renewal_price ?? $pricing->price ?? 0);
-    }
-
-    private function addOverageItems(Invoice $invoice, Service $service, bool $taxEnabled, float $taxRate): void
-    {
-        $deployment = $service->containerDeployment;
-        $template = $service->product->containerTemplate;
-        $product = $service->product;
-
-        if (!$deployment || !$template) {
-            return;
-        }
-
-        $from = $service->last_invoice_date ?? $service->created_at;
-        $to = now();
-        $billingHours = (float) $from->diffInHours($to);
-
-        if ($billingHours <= 0) {
-            return;
-        }
-
-        $avgCpuPercent = \App\Models\ContainerMetric::averageCpuPercent($deployment, $from, $to);
-        $avgMemoryMb = \App\Models\ContainerMetric::averageMemoryMb($deployment, $from, $to);
-
-        $avgCpuCores = $avgCpuPercent / 100;
-        $avgMemoryGb = $avgMemoryMb / 1024;
-
-        $includedCores = $template->required_cpu_cores;
-        $includedGb = $template->required_ram_mb / 1024;
-
-        $cpuOverageHours = max(0, $avgCpuCores - $includedCores) * $billingHours;
-        $memoryOverageGbHours = max(0, $avgMemoryGb - $includedGb) * $billingHours;
-
-        $cpuOverageAmount = $cpuOverageHours * $product->cpu_overage_rate;
-        $memoryOverageAmount = $memoryOverageGbHours * $product->ram_overage_rate;
-
-        if ($cpuOverageAmount > 0) {
-            $cpuTax = $taxEnabled ? round($cpuOverageAmount * $taxRate / 100, 2) : 0;
-
-            InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'service_id' => $service->id,
-                'product_id' => $service->product_id,
-                'description' => "CPU Overage — {$cpuOverageHours} core-hours @ KES {$product->cpu_overage_rate}/hour",
-                'quantity' => $cpuOverageHours,
-                'unit_price' => $product->cpu_overage_rate,
-                'amount' => $cpuOverageAmount,
-            ]);
-
-            $invoice->increment('subtotal', $cpuOverageAmount);
-            $invoice->increment('tax', $cpuTax);
-            $invoice->increment('total', $cpuOverageAmount + $cpuTax);
-        }
-
-        if ($memoryOverageAmount > 0) {
-            $memTax = $taxEnabled ? round($memoryOverageAmount * $taxRate / 100, 2) : 0;
-
-            InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'service_id' => $service->id,
-                'product_id' => $service->product_id,
-                'description' => "RAM Overage — {$memoryOverageGbHours} GB-hours @ KES {$product->ram_overage_rate}/GB-hour",
-                'quantity' => $memoryOverageGbHours,
-                'unit_price' => $product->ram_overage_rate,
-                'amount' => $memoryOverageAmount,
-            ]);
-
-            $invoice->increment('subtotal', $memoryOverageAmount);
-            $invoice->increment('tax', $memTax);
-            $invoice->increment('total', $memoryOverageAmount + $memTax);
-        }
     }
 }

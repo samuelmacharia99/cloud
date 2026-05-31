@@ -29,6 +29,7 @@ class Product extends Model
         'direct_admin_package_id',
         'cpu_overage_rate',
         'ram_overage_rate',
+        'disk_overage_rate',
         'overage_enabled',
         'is_active',
         'visible_to_resellers',
@@ -50,6 +51,7 @@ class Product extends Model
         'setup_fee' => 'decimal:2',
         'cpu_overage_rate' => 'float',
         'ram_overage_rate' => 'float',
+        'disk_overage_rate' => 'float',
         'overage_enabled' => 'boolean',
     ];
 
@@ -67,7 +69,7 @@ class Product extends Model
         parent::boot();
 
         static::saving(function ($product) {
-            if ($product->type === 'container_hosting' && !$product->provisioning_driver_key) {
+            if ($product->type === 'container_hosting' && ! $product->provisioning_driver_key) {
                 $product->provisioning_driver_key = 'container';
             }
         });
@@ -107,5 +109,50 @@ class Product extends Model
     public static function isServerType(string $type): bool
     {
         return in_array($type, ['vps', 'dedicated_server']);
+    }
+
+    /**
+     * Included CPU (cores), memory (MB), and disk (GB) for container overage billing.
+     * Product resource_limits take precedence, then template, then deployment overrides.
+     *
+     * @return array{cpu: float, memory_mb: int, disk_gb: float}
+     */
+    public function getIncludedContainerLimits(
+        ?ContainerTemplate $template = null,
+        ?ContainerDeployment $deployment = null
+    ): array {
+        $limits = $this->resource_limits ?? [];
+
+        $cpu = isset($limits['cpu']) && $limits['cpu'] !== '' && $limits['cpu'] !== null
+            ? (float) $limits['cpu']
+            : null;
+
+        $memoryMb = isset($limits['memory']) && $limits['memory'] !== '' && $limits['memory'] !== null
+            ? (int) $limits['memory']
+            : null;
+
+        $diskGb = isset($limits['disk']) && $limits['disk'] !== '' && $limits['disk'] !== null
+            ? (float) $limits['disk']
+            : null;
+
+        if ($cpu === null && $template) {
+            $cpu = (float) $template->required_cpu_cores;
+        }
+        if ($cpu === null && $deployment?->cpu_limit) {
+            $cpu = (float) $deployment->cpu_limit;
+        }
+
+        if ($memoryMb === null && $template) {
+            $memoryMb = (int) $template->required_ram_mb;
+        }
+        if ($memoryMb === null && $deployment?->memory_limit_mb) {
+            $memoryMb = (int) $deployment->memory_limit_mb;
+        }
+
+        return [
+            'cpu' => $cpu ?? 1.0,
+            'memory_mb' => $memoryMb ?? 256,
+            'disk_gb' => $diskGb ?? 0.0,
+        ];
     }
 }

@@ -91,7 +91,7 @@ class InvoiceGenerationScheduleService
         $nonMonthlyAdvance = $this->nonMonthlyServiceAdvanceDays();
 
         $query = Service::query()
-            ->with(['product', 'user', 'containerDeployment'])
+            ->with(['product.containerTemplate', 'user', 'containerDeployment.node'])
             ->where('status', 'active')
             ->whereNotNull('next_due_date')
             ->where(function (Builder $q) use ($today, $monthlyAdvance, $nonMonthlyAdvance) {

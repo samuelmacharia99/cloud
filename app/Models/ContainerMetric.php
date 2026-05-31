@@ -19,6 +19,7 @@ class ContainerMetric extends Model
         'net_io_tx_bytes',
         'block_io_read_bytes',
         'block_io_write_bytes',
+        'disk_used_gb',
         'recorded_at',
     ];
 
@@ -32,6 +33,7 @@ class ContainerMetric extends Model
         'net_io_tx_bytes' => 'integer',
         'block_io_read_bytes' => 'integer',
         'block_io_write_bytes' => 'integer',
+        'disk_used_gb' => 'float',
     ];
 
     // Relationships
@@ -61,6 +63,15 @@ class ContainerMetric extends Model
         $avg = self::where('container_deployment_id', $deployment->id)
             ->whereBetween('recorded_at', [$from, $to])
             ->avg('memory_used_mb');
+
+        return (float) ($avg ?? 0);
+    }
+
+    public static function averageDiskUsedGb(ContainerDeployment $deployment, Carbon $from, Carbon $to): float
+    {
+        $avg = self::where('container_deployment_id', $deployment->id)
+            ->whereBetween('recorded_at', [$from, $to])
+            ->avg('disk_used_gb');
 
         return (float) ($avg ?? 0);
     }

@@ -4,13 +4,15 @@ namespace App\Console\Commands;
 
 use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
+use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Log;
 
 class CollectContainerMetricsCommand extends BaseCronCommand
 {
     protected $signature = 'cron:collect-container-metrics';
-    protected $description = 'Collect Docker container metrics (CPU, memory, I/O) via docker stats';
+
+    protected $description = 'Collect Docker container metrics (CPU, memory, disk, I/O) via docker stats';
 
     protected function handleCron(): string
     {
@@ -27,8 +29,9 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         foreach ($deployments as $nodeId => $nodeDeployments) {
             $node = $nodeDeployments->first()->node;
 
-            if (!$node) {
+            if (! $node) {
                 $nodeErrors[] = "Node {$nodeId} not found";
+
                 continue;
             }
 
@@ -42,13 +45,13 @@ class CollectContainerMetricsCommand extends BaseCronCommand
                         $collected++;
                     } catch (\Exception $e) {
                         $failed++;
-                        Log::warning("Failed to collect metrics for deployment {$deployment->id}: " . $e->getMessage());
+                        Log::warning("Failed to collect metrics for deployment {$deployment->id}: ".$e->getMessage());
                     }
                 }
             } catch (\Exception $e) {
                 $failed += $nodeDeployments->count();
-                $nodeErrors[] = "Node {$node->hostname}: " . $e->getMessage();
-                Log::error("SSH connection error for node {$node->id}: " . $e->getMessage());
+                $nodeErrors[] = "Node {$node->hostname}: ".$e->getMessage();
+                Log::error("SSH connection error for node {$node->id}: ".$e->getMessage());
             } finally {
                 if ($ssh) {
                     $ssh->disconnect();
@@ -60,8 +63,8 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         if ($failed > 0) {
             $message .= ". Failed: {$failed}";
         }
-        if (!empty($nodeErrors)) {
-            $message .= ". Errors: " . implode('; ', $nodeErrors);
+        if (! empty($nodeErrors)) {
+            $message .= '. Errors: '.implode('; ', $nodeErrors);
         }
 
         return $message;
@@ -81,7 +84,7 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         );
 
         $data = json_decode(trim($output), true);
-        if (!$data || empty($data['cpu'])) {
+        if (! $data || empty($data['cpu'])) {
             throw new \Exception("Failed to parse docker stats for {$containerName}");
         }
 
@@ -113,6 +116,8 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         $blockReadBytes = $this->parseDataToBytes($blockReadStr);
         $blockWriteBytes = $this->parseDataToBytes($blockWriteStr);
 
+        $diskUsedGb = $this->collectDiskUsedGb($ssh, $deployment);
+
         // Create metric record
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
@@ -124,8 +129,22 @@ class CollectContainerMetricsCommand extends BaseCronCommand
             'net_io_tx_bytes' => $netTxBytes,
             'block_io_read_bytes' => $blockReadBytes,
             'block_io_write_bytes' => $blockWriteBytes,
+            'disk_used_gb' => $diskUsedGb,
             'recorded_at' => now(),
         ]);
+    }
+
+    private function collectDiskUsedGb(SSHService $ssh, ContainerDeployment $deployment): float
+    {
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $pathArg = escapeshellarg($containerPath);
+        $output = trim($ssh->exec("du -sb {$pathArg} 2>/dev/null | awk '{print $1}'", 15));
+
+        if ($output === '' || ! is_numeric($output)) {
+            return 0.0;
+        }
+
+        return round(((float) $output) / (1024 * 1024 * 1024), 4);
     }
 
     /**
