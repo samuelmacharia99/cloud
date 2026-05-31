@@ -2,68 +2,60 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Invoice;
 use App\Models\User;
+use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Console\Command;
 
 class GenerateResellerInvoicesCommand extends Command
 {
     protected $signature = 'cron:generate-reseller-invoices';
 
-    protected $description = 'Generate renewal invoices for reseller packages (10 days before expiry)';
+    protected $description = 'Generate renewal invoices for reseller packages (5 days before expiry)';
+
+    public function __construct(
+        private ResellerPackageSubscriptionService $subscriptions,
+    ) {
+        parent::__construct();
+    }
 
     public function handle()
     {
-        $advanceDays = 10;
-        $upcomingDate = now()->addDays($advanceDays);
+        $advanceDays = 5;
+        $targetDate = now()->addDays($advanceDays)->toDateString();
 
         $resellers = User::where('is_reseller', true)
             ->whereNotNull('reseller_package_id')
             ->whereNotNull('package_expires_at')
-            ->whereBetween('package_expires_at', [now(), $upcomingDate])
+            ->whereDate('package_expires_at', $targetDate)
             ->get();
 
         $createdCount = 0;
         $skippedCount = 0;
 
         foreach ($resellers as $reseller) {
-            // Skip if reseller already has an unpaid reseller subscription invoice
-            $existingUnpaid = Invoice::where('user_id', $reseller->id)
-                ->where('type', 'reseller_subscription')
-                ->where('status', 'unpaid')
-                ->exists();
-
-            if ($existingUnpaid) {
+            if ($this->subscriptions->pendingSubscriptionInvoice($reseller)) {
                 $this->info("Skipping reseller #{$reseller->id} ({$reseller->email}): existing unpaid invoice");
                 $skippedCount++;
+
                 continue;
             }
 
-            // Create invoice for package renewal
             $package = $reseller->resellerPackage;
-            if (!$package) {
+            if (! $package) {
                 $this->warn("Reseller #{$reseller->id} has no associated package");
+
                 continue;
             }
 
-            Invoice::create([
-                'user_id'        => $reseller->id,
-                'type'           => 'reseller_subscription',
-                'invoice_number' => 'INV-' . strtoupper(uniqid()),
-                'status'         => 'unpaid',
-                'due_date'       => $reseller->package_expires_at,
-                'subtotal'       => $package->price,
-                'tax'            => 0,
-                'total'          => $package->price,
-                'notes'          => "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})",
-            ]);
+            $this->subscriptions->createSubscriptionInvoice($reseller, $package, renewal: true);
 
-            $this->info("Created invoice for reseller #{$reseller->id} ({$reseller->email})");
+            $this->info("Created renewal invoice for reseller #{$reseller->id} ({$reseller->email})");
             $createdCount++;
         }
 
-        $this->line("");
-        $this->info("Reseller invoice generation completed!");
+        $this->line('');
+        $this->info('Reseller invoice generation completed!');
+        $this->info("Target expiry date: {$targetDate}");
         $this->info("Created: {$createdCount} | Skipped: {$skippedCount}");
     }
 }

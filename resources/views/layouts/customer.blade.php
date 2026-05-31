@@ -349,5 +349,6 @@
         </div>
 
         @stack('scripts')
+        <x-app-dialog />
     </body>
 </html>

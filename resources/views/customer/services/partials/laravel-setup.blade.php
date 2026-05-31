@@ -20,7 +20,8 @@
                 method="POST"
                 action="{{ route('customer.services.container.clear-app', $service) }}"
                 x-show="canClearApp"
-                @submit="return confirm('Remove all files in /app except Talksasa system files? This cannot be undone.');"
+                data-confirm="Remove all files in /app except Talksasa system files? This cannot be undone."
+                data-confirm-title="Clear application files"
             >
                 @csrf
                 <button
@@ -34,7 +35,9 @@
             <form
                 method="POST"
                 action="{{ route('customer.services.container.initialize-laravel', $service) }}"
-                @submit="if (!canInitialize) { $event.preventDefault(); return false; } return confirm('Install a fresh Laravel skeleton into /app? Existing application files will block this action.');"
+                data-confirm="Install a fresh Laravel skeleton into /app? Existing application files will block this action."
+                data-confirm-title="Initialize Laravel"
+                @submit="if (!canInitialize) { $event.preventDefault(); $event.stopImmediatePropagation(); return false; }"
             >
                 @csrf
                 <button

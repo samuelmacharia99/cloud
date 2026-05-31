@@ -309,8 +309,8 @@ function fileManager() {
             }
         },
 
-        closeEditor() {
-            if (!this.editorReadOnly && this.editorDirty && !confirm('Discard unsaved changes?')) {
+        async closeEditor() {
+            if (!this.editorReadOnly && this.editorDirty && !await window.appConfirm('Discard unsaved changes?', 'Unsaved changes')) {
                 return;
             }
 
@@ -425,7 +425,7 @@ function fileManager() {
         },
 
         async deleteFile(name) {
-            if (!confirm(`Delete "${name}"?`)) return;
+            if (!await window.appConfirm(`Delete "${name}"?`, 'Delete file', 'Delete')) return;
 
             const path = this.joinPath(this.currentPath, name);
 
@@ -451,7 +451,7 @@ function fileManager() {
         },
 
         async deleteSelected() {
-            if (!confirm(`Delete ${this.selected.size} item(s)?`)) return;
+            if (!await window.appConfirm(`Delete ${this.selected.size} item(s)?`, 'Delete selected', 'Delete')) return;
 
             for (let name of this.selected) {
                 await this.deleteFile(name);

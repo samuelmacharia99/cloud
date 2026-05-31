@@ -11,7 +11,7 @@
             <p class="text-sm text-slate-500">Opened by {{ $ticket->user?->name }} · <x-status-badge :status="$ticket->status" type="ticket" /></p>
         </div>
         @if (!$ticket->isClosed())
-            <form action="{{ route('reseller.tickets.close', $ticket) }}" method="POST" onsubmit="return confirm('Close this ticket?')">
+            <form action="{{ route('reseller.tickets.close', $ticket) }}" method="POST" data-confirm='Close this ticket?'>
                 @csrf
                 @method('PATCH')
                 <button type="submit" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">Close Ticket</button>

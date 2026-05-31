@@ -110,7 +110,7 @@
             @if(!$ticket->isClosed())
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Close Ticket</h3>
-                <form action="{{ route('customer.tickets.close', $ticket) }}" method="POST" onsubmit="return confirm('Are you sure you want to close this ticket?');">
+                <form action="{{ route('customer.tickets.close', $ticket) }}" method="POST" data-confirm='Are you sure you want to close this ticket?'>
                     @csrf
                     @method('PATCH')
                     <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">

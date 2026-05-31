@@ -52,7 +52,7 @@
                                         <p class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($item['total'], 2) }}</p>
                                     </div>
 
-                                    <form method="POST" action="{{ route('reseller.cart.remove', $key) }}" onsubmit="return confirm('Remove this item?');">
+                                    <form method="POST" action="{{ route('reseller.cart.remove', $key) }}" data-confirm='Remove this item?'>
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300">
@@ -97,7 +97,7 @@
                             Proceed to Checkout
                         </a>
 
-                        <form method="POST" action="{{ route('reseller.cart.clear') }}" onsubmit="return confirm('Clear entire cart?');">
+                        <form method="POST" action="{{ route('reseller.cart.clear') }}" data-confirm='Clear entire cart?'>
                             @csrf
                             <button type="submit" class="w-full px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition">
                                 Clear Cart

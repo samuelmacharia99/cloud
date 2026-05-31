@@ -80,7 +80,7 @@
                         <a href="{{ route('services.edit', $service) }}" class="flex-1 px-4 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-colors">
                             Edit
                         </a>
-                        <form action="{{ route('services.destroy', $service) }}" method="POST" onsubmit="return confirm('Are you sure?');" class="flex-1">
+                        <form action="{{ route('services.destroy', $service) }}" method="POST" data-confirm='Are you sure?' class="flex-1">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="w-full px-4 py-2 rounded-lg bg-red-100 text-red-700 text-sm font-medium hover:bg-red-200 transition-colors">

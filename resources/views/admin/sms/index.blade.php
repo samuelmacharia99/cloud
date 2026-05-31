@@ -146,11 +146,13 @@
                     <!-- Submit -->
                     <button
                         type="submit"
-                        @click="
-                            const count = recipientType === 'all' ? {{ $customers->count() }} : selectedCustomers.length;
-                            if (!confirm('Send SMS to ' + count + ' customer(s)?')) {
-                                event.preventDefault();
-                            }
+                        @click.prevent="
+                            (async () => {
+                                const count = recipientType === 'all' ? {{ $customers->count() }} : selectedCustomers.length;
+                                if (await window.appConfirm('Send SMS to ' + count + ' customer(s)?', 'Send SMS', 'Send')) {
+                                    $el.closest('form').requestSubmit();
+                                }
+                            })();
                         "
                         class="w-full px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         :disabled="recipientType === 'custom' && selectedCustomers.length === 0"

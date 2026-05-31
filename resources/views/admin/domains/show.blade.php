@@ -36,7 +36,7 @@
                 </svg>
                 Edit
             </a>
-            <form action="{{ route('admin.domains.destroy', $domain) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this domain? This action cannot be undone.');">
+            <form action="{{ route('admin.domains.destroy', $domain) }}" method="POST" data-confirm='Are you sure you want to delete this domain? This action cannot be undone.'>
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">

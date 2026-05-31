@@ -165,16 +165,16 @@
                                 🔗 Visit Service
                             </a>
 
-                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" class="inline-flex flex-col sm:flex-row sm:items-center gap-2">
+                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" class="inline-flex flex-col sm:flex-row sm:items-center gap-2" id="redeploy-form">
                                 @csrf
                                 <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 px-2">
-                                    <input type="checkbox" name="reset_database" value="1" @checked(config('containers.redeploy.reset_database_default', false)) class="rounded border-slate-300 dark:border-slate-600">
+                                    <input type="checkbox" name="reset_database" value="1" id="reset-database-checkbox" @checked(config('containers.redeploy.reset_database_default', false)) class="rounded border-slate-300 dark:border-slate-600">
                                     Reset database (deletes all DB data)
                                 </label>
                                 <button
-                                    type="submit"
+                                    type="button"
                                     class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
-                                    onclick="return confirmRedeploy(this.form);"
+                                    onclick="confirmRedeploy(document.getElementById('redeploy-form'))"
                                     title="Recreates containers; keeps /app files unless you reset the database"
                                 >
                                     ♻️ Redeploy Stack
@@ -235,7 +235,7 @@
                                                 @if ($backup->status === 'completed')
                                                     <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
                                                         @csrf
-                                                        <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700" onclick="return confirm('Restore from this backup?')">
+                                                        <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                                                             Restore
                                                         </button>
                                                     </form>
@@ -243,7 +243,7 @@
                                                 <form method="POST" action="{{ route('customer.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700" onclick="return confirm('Delete this backup?')">
+                                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
                                                         Delete
                                                     </button>
                                                 </form>
@@ -301,7 +301,7 @@
                                                 <form method="POST" action="{{ route('customer.services.container.domains.unbind', [$service, $domain]) }}" style="display:inline;">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700" onclick="return confirm('Remove this domain?')">
+                                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
                                                         Remove
                                                     </button>
                                                 </form>
@@ -476,7 +476,7 @@
 </div>
 
 <script>
-function confirmRedeploy(form) {
+async function confirmRedeploy(form) {
     const resetDb = form.querySelector('input[name="reset_database"]')?.checked;
     let message = 'Redeploy stack now? This recreates the container runtime and keeps /app files.';
     if (resetDb) {
@@ -485,7 +485,11 @@ function confirmRedeploy(form) {
     } else {
         message += '\n\nDatabase data is kept unless you tick Reset database.';
     }
-    return confirm(message);
+
+    const accepted = await window.appConfirm(message, 'Redeploy stack', 'Redeploy');
+    if (accepted) {
+        form.submit();
+    }
 }
 
 function fetchLogs() {
@@ -578,7 +582,7 @@ async function importDatabaseSql() {
         return;
     }
 
-    if (!confirm('Import this SQL file into your service database? This may change or overwrite existing data.')) {
+    if (!(await window.appConfirm('Import this SQL file into your service database? This may change or overwrite existing data.', 'Import SQL', 'Import'))) {
         return;
     }
 

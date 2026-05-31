@@ -578,5 +578,6 @@
             <div class="absolute bottom-0 right-0 w-[600px] h-[600px] rounded-full bg-gradient-to-t from-purple-600/15 via-transparent to-transparent blur-3xl"></div>
         </div>
     </div>
+    <x-app-dialog />
 </body>
 </html>

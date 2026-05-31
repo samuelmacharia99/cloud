@@ -84,7 +84,7 @@
                                 <a href="{{ route('admin.reseller-packages.edit', $package) }}" class="flex-1 px-3 py-2 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800 rounded-lg text-sm font-medium transition-colors text-center">
                                     Edit
                                 </a>
-                                <form action="{{ route('admin.reseller-packages.destroy', $package) }}" method="POST" class="flex-1" onsubmit="return confirm('Are you sure?')">
+                                <form action="{{ route('admin.reseller-packages.destroy', $package) }}" method="POST" class="flex-1" data-confirm='Are you sure?'>
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="w-full px-3 py-2 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800 rounded-lg text-sm font-medium transition-colors">

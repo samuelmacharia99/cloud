@@ -119,7 +119,7 @@
                         </button>
                     @endif
                     @if ($service->status->value === 'active')
-                        <form action="{{ route('customer.services.renew', $service) }}" method="POST" onsubmit="return confirm('Are you sure you want to renew this service? An invoice will be created.');">
+                        <form action="{{ route('customer.services.renew', $service) }}" method="POST" data-confirm='Are you sure you want to renew this service? An invoice will be created.'>
                             @csrf
                             <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
                                 Renew Service

@@ -136,21 +136,21 @@
             @if ($deployment->status === 'pending')
                 <form method="POST" action="{{ route('admin.services.container.provision', $service) }}" style="display:inline;">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700" onclick="return confirm('Provision this container now?')">
+                    <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                         Provision
                     </button>
                 </form>
             @elseif ($deployment->isRunning())
                 <form method="POST" action="{{ route('admin.services.container.suspend', $service) }}" style="display:inline;">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700" onclick="return confirm('Suspend this container?')">
+                    <button type="submit" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700">
                         Suspend
                     </button>
                 </form>
 
                 <form method="POST" action="{{ route('admin.services.container.restart', $service) }}" style="display:inline;">
                     @csrf
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700" onclick="return confirm('Restart this container?')">
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                         Restart
                     </button>
                 </form>
@@ -173,7 +173,7 @@
                     <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300">
                     Reset DB
                 </label>
-                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700" onclick="return confirm('Redeploy this container stack? Optionally reset the database volume (destructive).')">
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
                     Redeploy
                 </button>
             </form>
@@ -234,7 +234,7 @@
                                 <form method="POST" action="{{ route('admin.services.container.domains.unbind', [$service, $domain]) }}" style="display:inline;">
                                     @csrf
                                     @method('DELETE')
-                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700" onclick="return confirm('Remove this domain?')">
+                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
                                         Remove
                                     </button>
                                 </form>
@@ -276,7 +276,7 @@
                             @if ($backup->status === 'completed')
                             <form method="POST" action="{{ route('admin.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
                                 @csrf
-                                <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700" onclick="return confirm('Restore from this backup?')">
+                                <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700">
                                     Restore
                                 </button>
                             </form>
@@ -284,7 +284,7 @@
                             <form method="POST" action="{{ route('admin.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700" onclick="return confirm('Delete this backup?')">
+                                <button type="submit" class="px-3 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700">
                                     Delete
                                 </button>
                             </form>

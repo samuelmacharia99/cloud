@@ -373,5 +373,6 @@
             }
         }
     </script>
+    <x-app-dialog />
 </body>
 </html>

@@ -66,7 +66,7 @@
                 method="POST"
                 action="{{ route('customer.services.container.git-repository.pull', $service) }}"
                 class="space-y-3"
-                onsubmit="return confirm('Pull the latest code from Git into /app?');"
+                data-confirm='Pull the latest code from Git into /app?'
             >
                 @csrf
                 <div class="flex flex-col gap-2 text-sm text-slate-700 dark:text-slate-300">

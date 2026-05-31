@@ -19,6 +19,21 @@
         </div>
     @endif
 
+    <!-- Pending Payment Alert -->
+    @if ($pendingInvoice)
+        <div class="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h3 class="font-semibold text-blue-900 dark:text-blue-100">Payment required</h3>
+                <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Invoice #{{ $pendingInvoice->invoice_number }} is awaiting payment before your selected plan becomes active.
+                </p>
+            </div>
+            <a href="{{ route('reseller.payment.select-method', $pendingInvoice) }}" class="inline-flex justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+                Pay now
+            </a>
+        </div>
+    @endif
+
     <!-- No Package Alert -->
     @if (!$user->hasResellerPackage())
         <div class="p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg">
@@ -165,10 +180,10 @@
                         Cannot Downgrade
                     </button>
                 @else
-                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" onsubmit="return confirm('You will be charged Ksh {{ number_format($package->price, 0) }} for this plan. Continue?')">
+                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="You will be charged Ksh {{ number_format($package->price, 0) }} for this plan. Continue?" data-confirm-title="Confirm subscription">
                         @csrf
                         <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
-                            {{ $user->resellerPackage ? 'Upgrade' : 'Subscribe' }}
+                            {{ $user->resellerPackage ? 'Upgrade & pay' : 'Subscribe & pay' }}
                         </button>
                     </form>
                 @endif

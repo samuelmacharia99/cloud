@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\InvoiceStatus;
+use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -28,8 +30,18 @@ class Invoice extends Model
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
-        'status' => \App\Enums\InvoiceStatus::class,
+        'status' => InvoiceStatus::class,
     ];
+
+    protected static function booted(): void
+    {
+        static::updated(function (self $invoice) {
+            if ($invoice->wasChanged('status') && $invoice->isPaid()) {
+                app(ResellerPackageSubscriptionService::class)
+                    ->activateFromPaidInvoice($invoice);
+            }
+        });
+    }
 
     public function user()
     {
@@ -64,12 +76,12 @@ class Invoice extends Model
             'invoice_id',
             'credit_id'
         )->withPivot('amount_applied')
-        ->withTimestamps();
+            ->withTimestamps();
     }
 
     public function isPaid(): bool
     {
-        return $this->status === 'paid';
+        return $this->status === InvoiceStatus::Paid;
     }
 
     public function isOverdue(): bool

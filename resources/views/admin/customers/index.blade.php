@@ -142,7 +142,7 @@
                                         </svg>
                                     </button>
 
-                                    <form method="POST" action="{{ route('admin.customers.destroy', $customer) }}" class="inline" onsubmit="return confirm('Are you sure you want to delete this customer?');">
+                                    <form method="POST" action="{{ route('admin.customers.destroy', $customer) }}" class="inline" data-confirm='Are you sure you want to delete this customer?'>
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="Delete customer">

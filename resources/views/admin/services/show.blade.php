@@ -100,7 +100,7 @@
                 @endif
 
                 @if (in_array($service->status->value, ['active', 'suspended', 'pending']))
-                    <form method="POST" action="{{ route('admin.services.terminate', $service) }}" class="inline" onsubmit="return confirm('Are you sure you want to terminate this service?');">
+                    <form method="POST" action="{{ route('admin.services.terminate', $service) }}" class="inline" data-confirm='Are you sure you want to terminate this service?'>
                         @csrf
                         <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm">
                             Terminate

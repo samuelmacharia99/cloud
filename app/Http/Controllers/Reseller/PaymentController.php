@@ -4,13 +4,15 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Enums\PaymentStatus;
 use App\Enums\ServiceStatus;
+use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
+use App\Services\DomainPushService;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 
@@ -24,7 +26,7 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
-        if (!in_array($invoice->status->value, ['unpaid', 'overdue'])) {
+        if (! in_array($invoice->status->value, ['unpaid', 'overdue'])) {
             return redirect()->route('reseller.invoices.show', $invoice)
                 ->with('info', 'This invoice has already been paid');
         }
@@ -60,7 +62,7 @@ class PaymentController extends Controller
                 'phone' => $request->input('phone'),
             ]);
 
-            if (!($initiateData['success'] ?? false)) {
+            if (! ($initiateData['success'] ?? false)) {
                 return redirect()->back()
                     ->with('error', $initiateData['message'] ?? 'Payment initiation failed');
             }
@@ -81,7 +83,7 @@ class PaymentController extends Controller
                 ->with('success', 'Payment initiated. Please check your email for payment instructions.');
         } catch (\Exception $e) {
             return redirect()->back()
-                ->with('error', 'Payment initiation failed: ' . $e->getMessage());
+                ->with('error', 'Payment initiation failed: '.$e->getMessage());
         }
     }
 
@@ -110,7 +112,7 @@ class PaymentController extends Controller
             ->latest()
             ->first();
 
-        if (!$payment) {
+        if (! $payment) {
             return response()->json(['status' => 'error', 'message' => 'Payment not found']);
         }
 
@@ -121,9 +123,10 @@ class PaymentController extends Controller
 
         if ($payment->status->value === 'failed') {
             $notes = json_decode($payment->notes, true) ?? [];
+
             return response()->json([
                 'status' => 'failed',
-                'message' => $notes['result_desc'] ?? 'Payment was cancelled or failed'
+                'message' => $notes['result_desc'] ?? 'Payment was cancelled or failed',
             ]);
         }
 
@@ -133,6 +136,7 @@ class PaymentController extends Controller
 
             if ($result['status'] === 'completed') {
                 $this->processPaymentCompletion($payment, $invoice);
+
                 return response()->json(['status' => 'completed']);
             }
 
@@ -183,7 +187,7 @@ class PaymentController extends Controller
                 ->with('success', 'Payment received successfully!');
         } catch (\Exception $e) {
             return redirect()->route('reseller.invoices.show', $invoice)
-                ->with('error', 'Payment verification failed: ' . $e->getMessage());
+                ->with('error', 'Payment verification failed: '.$e->getMessage());
         }
     }
 
@@ -219,7 +223,7 @@ class PaymentController extends Controller
                 ->with('success', 'Payment received successfully!');
         } catch (\Exception $e) {
             return redirect()->route('reseller.invoices.show', $invoice)
-                ->with('error', 'Payment verification failed: ' . $e->getMessage());
+                ->with('error', 'Payment verification failed: '.$e->getMessage());
         }
     }
 
@@ -257,7 +261,7 @@ class PaymentController extends Controller
         } catch (\Exception $e) {
             return redirect()->back()
                 ->withInput()
-                ->with('error', 'Failed to submit payment proof: ' . $e->getMessage());
+                ->with('error', 'Failed to submit payment proof: '.$e->getMessage());
         }
     }
 
@@ -275,11 +279,14 @@ class PaymentController extends Controller
         try {
             \DB::beginTransaction();
 
-            $invoice->update(['status' => 'paid']);
+            $invoice->update([
+                'status' => 'paid',
+                'paid_date' => now(),
+            ]);
             $payment->update(['status' => PaymentStatus::Completed]);
 
             // Notify about payment
-            \App\Services\NotificationService::notifyPaymentReceived($invoice);
+            NotificationService::notifyPaymentReceived($invoice);
 
             // Push all queued domain orders linked to this invoice
             foreach ($invoice->items as $item) {
@@ -288,7 +295,7 @@ class PaymentController extends Controller
                     $order = ResellerDomainOrder::find($domainOrderId);
 
                     if ($order && $order->status === 'queued') {
-                        $domainPushService = app(\App\Services\DomainPushService::class);
+                        $domainPushService = app(DomainPushService::class);
                         $domainPushService->pushOrderWithDirectPayment($order);
                     }
                 }

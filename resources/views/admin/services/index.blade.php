@@ -157,7 +157,7 @@
                                         </form>
                                     @endif
 
-                                    <form method="POST" action="{{ route('admin.services.destroy', $service) }}" class="inline" onsubmit="return confirm('Delete service #{{ $service->id }}? This cannot be undone.')">
+                                    <form method="POST" action="{{ route('admin.services.destroy', $service) }}" class="inline" data-confirm='Delete service #{{ $service->id }}? This cannot be undone.'>
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">

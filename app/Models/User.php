@@ -234,7 +234,7 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function getNextInvoiceDateAttribute(): ?Carbon
     {
-        return $this->package_expires_at?->subDays(10);
+        return $this->package_expires_at?->subDays(5);
     }
 
     public function getPackageSuspendDateAttribute(): ?Carbon

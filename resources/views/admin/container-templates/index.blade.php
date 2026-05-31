@@ -92,7 +92,7 @@
                         <form method="POST" action="{{ route('admin.container-templates.destroy', $template) }}" style="display:inline;">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200" onclick="return confirm('Are you sure?')">
+                            <button type="submit" class="px-3 py-2 bg-red-100 text-red-700 rounded hover:bg-red-200">
                                 Delete
                             </button>
                         </form>

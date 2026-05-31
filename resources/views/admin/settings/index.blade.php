@@ -806,12 +806,11 @@
 
                             // Confirm production registration
                             if (environment === 'production') {
-                                if (!confirm('⚠️ WARNING: You are registering URLs for PRODUCTION!\n\n' +
-                                    'This will enable LIVE M-Pesa transactions.\n' +
-                                    'You can only register once in production.\n\n' +
-                                    'Make sure:\n✅ Your system is ready for live payments\n✅ Your SSL certificate is valid\n✅ Your URLs are publicly accessible\n\n' +
-                                    'Response Type: ' + responseType + '\n\n' +
-                                    'Continue?')) {
+                                if (!await window.appConfirm(
+                                    '⚠️ WARNING: You are registering URLs for PRODUCTION!\n\nThis will enable LIVE M-Pesa transactions.\nYou can only register once in production.\n\nMake sure:\n✅ Your system is ready for live payments\n✅ Your SSL certificate is valid\n✅ Your URLs are publicly accessible\n\nResponse Type: ' + responseType + '\n\nContinue?',
+                                    'Production M-Pesa registration',
+                                    'Continue'
+                                )) {
                                     this.registering.mpesa = false;
                                     return;
                                 }
@@ -1867,7 +1866,7 @@
             },
 
             async resetTemplate(templateId, url) {
-                if (!confirm('Reset this template to the default message?')) {
+                if (!await window.appConfirm('Reset this template to the default message?', 'Reset template', 'Reset')) {
                     return;
                 }
 

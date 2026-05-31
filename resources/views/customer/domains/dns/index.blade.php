@@ -129,7 +129,7 @@
                                                 <form action="{{ route('customer.domains.dns.delete-record', [$domain, $record]) }}" method="POST" style="display: inline;">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button type="submit" onclick="return confirm('Are you sure?')" class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium">
+                                                    <button type="submit" class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium">
                                                         Delete
                                                     </button>
                                                 </form>

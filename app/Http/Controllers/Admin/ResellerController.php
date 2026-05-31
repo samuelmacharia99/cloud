@@ -2,20 +2,21 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\User;
-use App\Models\Service;
+use App\Http\Controllers\Controller;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\ResellerPackage;
-use App\Models\Invoice;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Models\User;
+use App\Services\ResellerPackageSubscriptionService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\Controller;
 
 class ResellerController extends Controller
 {
@@ -47,7 +48,7 @@ class ResellerController extends Controller
 
     public function show(User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $user->load('resellerPackage');
 
@@ -63,8 +64,8 @@ class ResellerController extends Controller
         // Also include domains where reseller_id = $user->id (manually added domains)
         $domains = Domain::where(function ($q) use ($customerIds, $user) {
             $q->whereIn('user_id', $customerIds)
-              ->orWhere('user_id', $user->id)
-              ->orWhere('reseller_id', $user->id);
+                ->orWhere('user_id', $user->id)
+                ->orWhere('reseller_id', $user->id);
         })->with('user')->latest()->get();
 
         // Get enabled domain extensions for the add domain form
@@ -73,8 +74,8 @@ class ResellerController extends Controller
 
         // Build owner options: reseller first, then customers
         $ownerOptions = collect()
-            ->push(['id' => $user->id, 'label' => $user->name . ' (' . $user->email . ') — Reseller'])
-            ->merge($customers->map(fn($c) => ['id' => $c->id, 'label' => $c->name . ' (' . $c->email . ')']));
+            ->push(['id' => $user->id, 'label' => $user->name.' ('.$user->email.') — Reseller'])
+            ->merge($customers->map(fn ($c) => ['id' => $c->id, 'label' => $c->name.' ('.$c->email.')']));
 
         // Get all invoices for this reseller (includes domain renewals, subscriptions, etc.)
         $resellerInvoices = Invoice::where('user_id', $user->id)
@@ -97,6 +98,7 @@ class ResellerController extends Controller
         // is_reseller is intentionally not mass-assignable on User; set explicitly.
         $user->is_reseller = true;
         $user->save();
+
         return back()->with('success', 'User promoted to reseller.');
     }
 
@@ -107,30 +109,32 @@ class ResellerController extends Controller
         // is_reseller is intentionally not mass-assignable on User; set explicitly.
         $user->is_reseller = false;
         $user->save();
+
         return back()->with('success', 'Reseller status removed.');
     }
 
     public function create()
     {
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+
         return view('admin.resellers.create', compact('packages'));
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'                => 'required|string|max:255',
-            'email'               => 'required|email|unique:users,email',
-            'password'            => 'required|min:8|confirmed',
-            'phone'               => 'nullable|string|max:30',
-            'company'             => 'nullable|string|max:255',
-            'country'             => 'nullable|string|max:100',
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|min:8|confirmed',
+            'phone' => 'nullable|string|max:30',
+            'company' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
-            'notes'               => 'nullable|string|max:1000',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         $user = User::create(array_merge($validated, [
-            'status'                => 'active',
+            'status' => 'active',
             'package_subscribed_at' => $validated['reseller_package_id'] ? now() : null,
         ]));
 
@@ -144,25 +148,26 @@ class ResellerController extends Controller
 
     public function edit(User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+
         return view('admin.resellers.edit', compact('user', 'packages'));
     }
 
     public function update(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $validated = $request->validate([
-            'name'                => 'required|string|max:255',
-            'email'               => 'required|email|unique:users,email,' . $user->id,
-            'password'            => 'nullable|min:8|confirmed',
-            'phone'               => 'nullable|string|max:30',
-            'company'             => 'nullable|string|max:255',
-            'country'             => 'nullable|string|max:100',
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,'.$user->id,
+            'password' => 'nullable|min:8|confirmed',
+            'phone' => 'nullable|string|max:30',
+            'company' => 'nullable|string|max:255',
+            'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
-            'notes'               => 'nullable|string|max:1000',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         // Only update password if provided
@@ -178,66 +183,51 @@ class ResellerController extends Controller
 
     public function assignPackage(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $validated = $request->validate([
             'reseller_package_id' => 'required|exists:reseller_packages,id',
         ]);
 
         $user->update([
-            'reseller_package_id'   => $validated['reseller_package_id'],
+            'reseller_package_id' => $validated['reseller_package_id'],
             'package_subscribed_at' => now(),
-            'package_expires_at'    => now()->addMonth(),
+            'package_expires_at' => now()->addMonth(),
         ]);
 
         $package = ResellerPackage::find($validated['reseller_package_id']);
+
         return back()->with('success', "Package '{$package->name}' assigned to {$user->name}.");
     }
 
     public function upgradePackage(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $validated = $request->validate([
             'reseller_package_id' => 'required|exists:reseller_packages,id',
         ]);
 
         $newPackage = ResellerPackage::find($validated['reseller_package_id']);
+        $subscriptionService = app(ResellerPackageSubscriptionService::class);
 
-        // Update reseller's package
-        $user->update([
-            'reseller_package_id'   => $newPackage->id,
-            'package_subscribed_at' => now(),
-            'package_expires_at'    => now()->addMonth(),
-        ]);
-
-        // Generate invoice for the new plan
-        $invoice = Invoice::create([
-            'user_id'        => $user->id,
-            'type'           => 'reseller_subscription',
-            'invoice_number' => 'INV-' . strtoupper(uniqid()),
-            'status'         => 'unpaid',
-            'due_date'       => now()->addDays(7),
-            'subtotal'       => $newPackage->price,
-            'tax'            => 0,
-            'total'          => $newPackage->price,
-            'notes'          => "Reseller Package Upgrade: {$newPackage->name}",
-        ]);
+        $existingInvoice = $subscriptionService->pendingSubscriptionInvoice($user, $newPackage);
+        $invoice = $existingInvoice ?: $subscriptionService->createSubscriptionInvoice($user, $newPackage);
 
         return redirect()->route('admin.resellers.show', $user)
-            ->with('success', "Package upgraded to {$newPackage->name}. Invoice #{$invoice->invoice_number} generated.");
+            ->with('success', "Upgrade invoice #{$invoice->invoice_number} generated. The new plan activates after payment.");
     }
 
     public function updateBilling(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $validated = $request->validate([
             'next_invoice_date' => 'required|date',
         ]);
 
         $user->update([
-            'package_expires_at' => \Carbon\Carbon::parse($validated['next_invoice_date'])->addDays(10),
+            'package_expires_at' => Carbon::parse($validated['next_invoice_date'])->addDays(5),
         ]);
 
         return redirect()->route('admin.resellers.show', $user)
@@ -246,7 +236,7 @@ class ResellerController extends Controller
 
     public function impersonate(User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         // Store the admin ID in session for later exit
         session(['impersonating' => auth()->id(), 'impersonating_user_id' => $user->id]);
@@ -261,7 +251,7 @@ class ResellerController extends Controller
 
     public function addDomain(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         Log::info('Admin adding domain to reseller', ['reseller_id' => $user->id]);
 
@@ -286,15 +276,15 @@ class ResellerController extends Controller
             ->push($user->id)
             ->unique();
 
-        abort_if(!$allowedIds->contains($validated['owner_id']), 403, 'This owner is not managed by this reseller.');
+        abort_if(! $allowedIds->contains($validated['owner_id']), 403, 'This owner is not managed by this reseller.');
 
         // Parse domain name: strip extension suffix if present in input
         $domainInput = $validated['domain_name'];
         $ext = $validated['extension'];
         $bare = ltrim($ext, '.');
 
-        if (str_ends_with($domainInput, '.' . $bare)) {
-            $name = substr($domainInput, 0, -strlen('.' . $bare));
+        if (str_ends_with($domainInput, '.'.$bare)) {
+            $name = substr($domainInput, 0, -strlen('.'.$bare));
         } elseif (str_contains($domainInput, '.')) {
             $name = explode('.', $domainInput, 2)[0];
         } else {
@@ -322,7 +312,7 @@ class ResellerController extends Controller
                 Log::info('Domain created successfully', [
                     'reseller_id' => $user->id,
                     'owner_id' => $validated['owner_id'],
-                    'domain' => $name . '.' . $ext,
+                    'domain' => $name.'.'.$ext,
                 ]);
             });
 
@@ -340,20 +330,20 @@ class ResellerController extends Controller
 
     public function addService(Request $request, User $user)
     {
-        abort_if(!$user->is_reseller, 404);
+        abort_if(! $user->is_reseller, 404);
 
         $validated = $request->validate([
-            'owner_id'         => 'required|exists:users,id',
-            'product_id'       => 'required|exists:products,id',
-            'name'             => 'required|string|max:255',
-            'billing_cycle'    => 'required|in:monthly,quarterly,semi-annual,annual',
-            'status'           => 'required|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
-            'commenced_at'     => 'nullable|date|before_or_equal:next_due_date',
-            'next_due_date'    => 'required|date',
-            'username'         => 'nullable|string|max:255',
-            'password'         => 'nullable|string|max:255',
-            'ip_address'       => 'nullable|string|max:45',
-            'notes'            => 'nullable|string|max:1000',
+            'owner_id' => 'required|exists:users,id',
+            'product_id' => 'required|exists:products,id',
+            'name' => 'required|string|max:255',
+            'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
+            'status' => 'required|in:active,pending,provisioning,suspended,terminated,failed,cancelled',
+            'commenced_at' => 'nullable|date|before_or_equal:next_due_date',
+            'next_due_date' => 'required|date',
+            'username' => 'nullable|string|max:255',
+            'password' => 'nullable|string|max:255',
+            'ip_address' => 'nullable|string|max:45',
+            'notes' => 'nullable|string|max:1000',
             'generate_invoice' => 'boolean',
         ]);
 
@@ -362,40 +352,40 @@ class ResellerController extends Controller
             ->distinct()->pluck('user_id')
             ->push($user->id)->unique();
 
-        abort_if(!$allowedIds->contains((int) $validated['owner_id']), 403, 'This owner is not managed by this reseller.');
+        abort_if(! $allowedIds->contains((int) $validated['owner_id']), 403, 'This owner is not managed by this reseller.');
 
         $product = Product::findOrFail($validated['product_id']);
-        abort_if(!in_array($product->type, ['vps', 'dedicated_server']), 422, 'Only VPS and Dedicated Server products can be added to resellers.');
-        abort_if(!$product->is_active, 422, 'Product is not available.');
+        abort_if(! in_array($product->type, ['vps', 'dedicated_server']), 422, 'Only VPS and Dedicated Server products can be added to resellers.');
+        abort_if(! $product->is_active, 422, 'Product is not available.');
 
         try {
             $createdService = DB::transaction(function () use ($validated, $user, $product) {
                 $serviceMeta = [];
-                if (!empty($validated['username'])) {
+                if (! empty($validated['username'])) {
                     $serviceMeta['username'] = $validated['username'];
                 }
-                if (!empty($validated['password'])) {
+                if (! empty($validated['password'])) {
                     $serviceMeta['password'] = $validated['password'];
                 }
-                if (!empty($validated['ip_address'])) {
+                if (! empty($validated['ip_address'])) {
                     $serviceMeta['ip_address'] = $validated['ip_address'];
                 }
 
                 $service = Service::create([
-                    'user_id'                 => $validated['owner_id'],
-                    'reseller_id'             => $user->id,
-                    'product_id'              => $validated['product_id'],
-                    'name'                    => $validated['name'],
-                    'status'                  => $validated['status'],
-                    'billing_cycle'           => $validated['billing_cycle'],
-                    'commenced_at'            => $validated['commenced_at'] ?? null,
-                    'next_due_date'           => $validated['next_due_date'],
+                    'user_id' => $validated['owner_id'],
+                    'reseller_id' => $user->id,
+                    'product_id' => $validated['product_id'],
+                    'name' => $validated['name'],
+                    'status' => $validated['status'],
+                    'billing_cycle' => $validated['billing_cycle'],
+                    'commenced_at' => $validated['commenced_at'] ?? null,
+                    'next_due_date' => $validated['next_due_date'],
                     'provisioning_driver_key' => $product->provisioning_driver_key,
-                    'service_meta'            => !empty($serviceMeta) ? $serviceMeta : null,
-                    'notes'                   => $validated['notes'] ?? null,
+                    'service_meta' => ! empty($serviceMeta) ? $serviceMeta : null,
+                    'notes' => $validated['notes'] ?? null,
                 ]);
 
-                if (!empty($validated['generate_invoice'])) {
+                if (! empty($validated['generate_invoice'])) {
                     $invoice = $this->createResellerServiceInvoice($user, $product, $service, $validated);
                     $service->update(['invoice_id' => $invoice->id]);
                 }
@@ -405,18 +395,18 @@ class ResellerController extends Controller
 
             Log::info('Admin added service to reseller', [
                 'reseller_id' => $user->id,
-                'service_id'  => $createdService->id,
-                'product_id'  => $product->id,
+                'service_id' => $createdService->id,
+                'product_id' => $product->id,
             ]);
 
             return back()->with('success', "Service '{$validated['name']}' added to {$user->name} successfully.");
         } catch (\Exception $e) {
             Log::error('Admin addService to reseller failed', [
                 'reseller_id' => $user->id,
-                'error'       => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
 
-            return back()->with('error', 'Failed to add service: ' . $e->getMessage())->withInput();
+            return back()->with('error', 'Failed to add service: '.$e->getMessage())->withInput();
         }
     }
 
@@ -424,44 +414,44 @@ class ResellerController extends Controller
     {
         $monthlyBase = (float) ($product->wholesale_monthly_price ?? $product->monthly_price ?? 0);
         $price = match ($validated['billing_cycle']) {
-            'monthly'     => $monthlyBase,
-            'quarterly'   => $monthlyBase * 3,
+            'monthly' => $monthlyBase,
+            'quarterly' => $monthlyBase * 3,
             'semi-annual' => $monthlyBase * 6,
-            'annual'      => (float) ($product->wholesale_yearly_price ?? ($monthlyBase * 12)),
-            default       => 0,
+            'annual' => (float) ($product->wholesale_yearly_price ?? ($monthlyBase * 12)),
+            default => 0,
         };
 
         $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate    = (float) Setting::getValue('tax_rate', 0);
-        $tax        = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-        $total      = $price + $tax;
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
+        $total = $price + $tax;
 
-        $prefix  = Setting::getValue('invoice_prefix', 'INV');
-        $date    = now()->format('Ymd');
-        $count   = Invoice::whereDate('created_at', now())->count() + 1;
-        $number  = $prefix . '-' . $date . '-' . str_pad($count, 5, '0', STR_PAD_LEFT);
+        $prefix = Setting::getValue('invoice_prefix', 'INV');
+        $date = now()->format('Ymd');
+        $count = Invoice::whereDate('created_at', now())->count() + 1;
+        $number = $prefix.'-'.$date.'-'.str_pad($count, 5, '0', STR_PAD_LEFT);
 
         $dueDate = Carbon::parse($validated['next_due_date'])->subDays(10);
 
         $invoice = Invoice::create([
-            'user_id'        => $reseller->id,
+            'user_id' => $reseller->id,
             'invoice_number' => $number,
-            'status'         => 'unpaid',
-            'due_date'       => $dueDate,
-            'subtotal'       => $price,
-            'tax'            => $tax,
-            'total'          => $total,
-            'notes'          => 'Reseller Service: ' . $service->name,
+            'status' => 'unpaid',
+            'due_date' => $dueDate,
+            'subtotal' => $price,
+            'tax' => $tax,
+            'total' => $total,
+            'notes' => 'Reseller Service: '.$service->name,
         ]);
 
         InvoiceItem::create([
-            'invoice_id'  => $invoice->id,
-            'service_id'  => $service->id,
-            'product_id'  => $product->id,
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
             'description' => $service->name,
-            'quantity'    => 1,
-            'unit_price'  => $price,
-            'amount'      => $price,
+            'quantity' => 1,
+            'unit_price' => $price,
+            'amount' => $price,
         ]);
 
         return $invoice;

@@ -78,12 +78,12 @@
                             <td class="px-6 py-4 text-right">
                                 <div class="flex items-center justify-end gap-2">
                                     @if($order->status === 'queued')
-                                    <form method="POST" action="{{ route('reseller.domain-orders.push', $order) }}" class="inline" onsubmit="return confirm('Push this domain order now?');">
+                                    <form method="POST" action="{{ route('reseller.domain-orders.push', $order) }}" class="inline" data-confirm='Push this domain order now?'>
                                         @csrf
                                         <button type="submit" class="px-3 py-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition">Push</button>
                                     </form>
                                     @elseif($order->status === 'failed' && $order->canRetry())
-                                    <form method="POST" action="{{ route('reseller.domain-orders.retry', $order) }}" class="inline" onsubmit="return confirm('Retry this domain order?');">
+                                    <form method="POST" action="{{ route('reseller.domain-orders.retry', $order) }}" class="inline" data-confirm='Retry this domain order?'>
                                         @csrf
                                         <button type="submit" class="px-3 py-1 text-sm font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded transition">Retry</button>
                                     </form>

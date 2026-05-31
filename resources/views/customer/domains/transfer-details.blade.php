@@ -199,7 +199,7 @@
         </a>
 
         @if($domain->isTransferPending() || $domain->isTransferInitiated())
-            <form action="{{ route('customer.domains.cancel-transfer', $domain) }}" method="POST" class="flex-1" onsubmit="return confirm('Are you sure you want to cancel this transfer? This action cannot be undone.');">
+            <form action="{{ route('customer.domains.cancel-transfer', $domain) }}" method="POST" class="flex-1" data-confirm='Are you sure you want to cancel this transfer? This action cannot be undone.'>
                 @csrf
                 @method('POST')
                 <button type="submit" class="w-full px-6 py-3 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-semibold rounded-lg hover:bg-red-200 dark:hover:bg-red-900/40 transition">

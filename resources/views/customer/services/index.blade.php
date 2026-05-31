@@ -88,7 +88,7 @@
                             <form method="POST"
                                   action="{{ route('customer.services.renew', $service) }}"
                                   class="flex-1"
-                                  onsubmit="return confirm('Generate a renewal invoice for {{ addslashes($service->product->name) }}?\n\nYou will be taken to the payment page.')">
+                                  data-confirm='Generate a renewal invoice for {{ addslashes($service->product->name) }}?\n\nYou will be taken to the payment page.'>
                                 @csrf
                                 <button type="submit"
                                         class="w-full px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">

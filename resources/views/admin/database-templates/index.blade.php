@@ -44,7 +44,7 @@
                         <form method="POST" action="{{ route('admin.database-templates.destroy', $template) }}">
                             @csrf
                             @method('DELETE')
-                            <button type="submit" class="px-3 py-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200" onclick="return confirm('Delete this database template?')">
+                            <button type="submit" class="px-3 py-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200">
                                 Delete
                             </button>
                         </form>

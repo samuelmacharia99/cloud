@@ -30,7 +30,7 @@
             <a href="{{ route('reseller.catalog.edit', $catalogItem) }}" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
                 Edit
             </a>
-            <form method="POST" action="{{ route('reseller.catalog.destroy', $catalogItem) }}" class="inline" onsubmit="return confirm('Are you sure?')">
+            <form method="POST" action="{{ route('reseller.catalog.destroy', $catalogItem) }}" class="inline" data-confirm='Are you sure?'>
                 @csrf
                 @method('DELETE')
                 <button type="submit" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">

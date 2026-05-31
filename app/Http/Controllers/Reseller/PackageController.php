@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\ResellerPackage;
-use App\Models\Invoice;
+use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Http\Request;
 
 class PackageController extends Controller
 {
+    public function __construct(
+        private ResellerPackageSubscriptionService $subscriptions,
+    ) {}
+
     /**
      * Display available packages and current plan.
      * GET /my/packages
@@ -25,85 +29,55 @@ class PackageController extends Controller
             ->orderBy('price', 'asc')
             ->get();
 
-        // Usage stats for current plan
         $currentServices = $user->getManagedActiveServicesCount();
         $currentCustomers = $user->getManagedCustomersCount();
+        $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
 
         return view('reseller.packages.index', compact(
             'user',
             'packages',
             'billingCycle',
             'currentServices',
-            'currentCustomers'
+            'currentCustomers',
+            'pendingInvoice',
         ));
     }
 
     /**
-     * Subscribe to a package or upgrade to a higher tier.
+     * Start checkout for a package subscription or upgrade.
      * POST /my/packages/{package}/subscribe
      */
     public function subscribe(ResellerPackage $package)
     {
         $user = auth()->user();
 
-        // Guard: must be a reseller
-        if (!$user->isReseller()) {
+        if (! $user->isReseller()) {
             abort(403, 'Only resellers can subscribe to packages.');
         }
 
-        // Guard: package must be active
-        if (!$package->active) {
+        if (! $package->active) {
             return back()->with('error', 'This package is not available.');
         }
 
-        // Guard: downgrade prevention
         if ($user->resellerPackage && $package->price < $user->resellerPackage->price) {
             return back()->with('error', 'You cannot downgrade to a lower-tier package.');
         }
 
-        // Guard: same package re-subscription
         if ($user->reseller_package_id === $package->id) {
             return back()->with('info', 'You are already subscribed to this package.');
         }
 
-        // Create an invoice for the subscription
-        $invoice = $this->createPackageInvoice($user, $package);
+        $existingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user, $package);
+        if ($existingInvoice) {
+            return redirect()
+                ->route('reseller.payment.select-method', $existingInvoice)
+                ->with('info', 'Complete payment for invoice #'.$existingInvoice->invoice_number.' to activate this plan.');
+        }
 
-        // Assign the package (active immediately regardless of payment)
-        $user->update([
-            'reseller_package_id' => $package->id,
-            'package_subscribed_at' => now(),
-        ]);
+        $invoice = $this->subscriptions->createSubscriptionInvoice($user, $package);
 
         return redirect()
-            ->route('reseller.packages.index')
-            ->with('success', "Successfully subscribed to {$package->name}. Invoice #{$invoice->invoice_number} has been generated for payment.");
-    }
-
-    /**
-     * Creates an unpaid invoice for the package subscription.
-     */
-    private function createPackageInvoice($user, ResellerPackage $package): Invoice
-    {
-        $invoiceNumber = 'INV-' . strtoupper(uniqid());
-
-        $invoice = Invoice::create([
-            'user_id'        => $user->id,
-            'type'           => 'reseller_subscription',
-            'invoice_number' => $invoiceNumber,
-            'status'         => 'unpaid',
-            'due_date'       => now()->addDays(7),
-            'subtotal'       => $package->price,
-            'tax'            => 0,
-            'total'          => $package->price,
-            'notes'          => "Reseller Package: {$package->name} ({$package->billing_cycle})",
-        ]);
-
-        // Update the reseller's package expiry date
-        $user->update([
-            'package_expires_at' => now()->addMonth(),
-        ]);
-
-        return $invoice;
+            ->route('reseller.payment.select-method', $invoice)
+            ->with('success', 'Invoice #'.$invoice->invoice_number.' created. Complete payment to activate your plan.');
     }
 }

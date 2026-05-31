@@ -82,5 +82,6 @@
                 </button>
             </div>
         </div>
+        <x-app-dialog />
     </body>
 </html>

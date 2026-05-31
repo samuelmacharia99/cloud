@@ -134,7 +134,7 @@
                                 Edit
                             </button>
                             @if ($currency->code !== 'KES')
-                                <form action="{{ route('admin.currencies.destroy', $currency) }}" method="POST" style="display:inline;" onsubmit="return confirm('Delete this currency?');">
+                                <form action="{{ route('admin.currencies.destroy', $currency) }}" method="POST" style="display:inline;" data-confirm='Delete this currency?'>
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="ml-3 text-red-600 dark:text-red-400 hover:underline text-sm font-semibold">Delete</button>
