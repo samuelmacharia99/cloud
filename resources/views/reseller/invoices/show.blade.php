@@ -16,12 +16,30 @@
     selectedGateway: '',
     mpesaPhone: '',
     submitting: false,
+    applyWallet: false,
+    walletBalance: {{ (float) $wallet->balance }},
+    amountDue: {{ (float) $amountDue }},
+    invoiceTotal: {{ (float) $invoice->total }},
+    walletAlreadyApplied: {{ (float) $invoice->wallet_amount_applied }},
+
+    get walletToApply() {
+        if (!this.applyWallet) {
+            return 0;
+        }
+
+        return Math.min(this.walletBalance, this.amountDue);
+    },
+
+    get payableAmount() {
+        return Math.max(0, this.amountDue - this.walletToApply);
+    },
 
     async openPaymentModal() {
         this.showPaymentModal = true;
         this.loadingGateways = true;
         this.selectedGateway = '';
         this.mpesaPhone = '';
+        this.applyWallet = false;
 
         try {
             const url = '{{ route("reseller.payment.select-method", $invoice) }}';
@@ -39,6 +57,8 @@
                 const data = await res.json();
                 console.log('Gateways received:', data);
                 this.gateways = data.gateways || {};
+                this.walletBalance = data.wallet_balance ?? this.walletBalance;
+                this.amountDue = data.amount_due ?? this.amountDue;
                 console.log('Gateways set to:', this.gateways);
 
                 if (Object.keys(this.gateways).length > 0) {
@@ -65,9 +85,13 @@
     },
 
     submitPayment() {
-        if (!this.selectedGateway) {
+        if (!this.selectedGateway && this.payableAmount > 0) {
             alert('Please select a payment method');
             return;
+        }
+
+        if (this.payableAmount <= 0 && this.applyWallet) {
+            this.selectedGateway = 'wallet';
         }
 
         this.submitting = true;
@@ -87,6 +111,14 @@
         csrfInput.name = '_token';
         csrfInput.value = document.querySelector('meta[name=csrf-token]').content;
         form.appendChild(csrfInput);
+
+        if (this.applyWallet) {
+            const walletInput = document.createElement('input');
+            walletInput.type = 'hidden';
+            walletInput.name = 'apply_wallet';
+            walletInput.value = '1';
+            form.appendChild(walletInput);
+        }
 
         if (this.selectedGateway === 'mpesa' && this.mpesaPhone) {
             const phoneInput = document.createElement('input');
@@ -271,9 +303,21 @@
                         <span class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($invoice->tax, 2) }}</span>
                     </div>
                     <div class="flex justify-between py-3 bg-purple-50 dark:bg-purple-900/20 px-3 rounded">
-                        <span class="text-base font-bold text-slate-900 dark:text-white">Total Due</span>
+                        <span class="text-base font-bold text-slate-900 dark:text-white">Total</span>
                         <span class="text-lg font-bold text-slate-900 dark:text-white">KES {{ number_format($invoice->total, 2) }}</span>
                     </div>
+                    @if((float) $invoice->wallet_amount_applied > 0)
+                    <div class="flex justify-between py-2 mt-2 text-emerald-700 dark:text-emerald-300">
+                        <span class="text-sm">Wallet Applied</span>
+                        <span class="text-sm font-semibold">- KES {{ number_format($invoice->wallet_amount_applied, 2) }}</span>
+                    </div>
+                    @endif
+                    @if(in_array($invoice->status->value, ['unpaid', 'overdue']))
+                    <div class="flex justify-between py-3 mt-2 bg-purple-100 dark:bg-purple-900/40 px-3 rounded">
+                        <span class="text-base font-bold text-slate-900 dark:text-white">Amount Due</span>
+                        <span class="text-lg font-bold text-purple-700 dark:text-purple-300">KES {{ number_format($amountDue, 2) }}</span>
+                    </div>
+                    @endif
                 </div>
             </div>
 
@@ -356,6 +400,24 @@
 
         <!-- Body -->
         <div class="p-6 space-y-4">
+            <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
+                    <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES <span x-text="walletBalance.toFixed(2)"></span></p>
+                </div>
+                <template x-if="walletBalance > 0 && amountDue > 0">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" x-model="applyWallet" class="mt-1 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+                        <span class="text-sm text-slate-700 dark:text-slate-300">
+                            Apply wallet balance
+                            <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyWallet">
+                                KES <span x-text="walletToApply.toFixed(2)"></span> from wallet · Pay KES <span x-text="payableAmount.toFixed(2)"></span> via selected method
+                            </span>
+                        </span>
+                    </label>
+                </template>
+            </div>
+
             <template x-if="loadingGateways">
                 <div class="flex items-center justify-center py-8">
                     <div class="w-5 h-5 bg-purple-600 rounded-full animate-bounce"></div>
@@ -364,7 +426,7 @@
 
             <template x-if="!loadingGateways && Object.keys(gateways).length > 0">
                 <form @submit.prevent="submitPayment()">
-                    <div class="space-y-3">
+                    <div class="space-y-3" x-show="payableAmount > 0">
                         <template x-for="(entry, index) in Object.entries(gateways)" :key="index">
                             <label class="flex items-start p-4 border-2 rounded-lg cursor-pointer transition" :class="selectedGateway === entry[0] ? 'border-purple-500 bg-purple-50 dark:bg-purple-950' : 'border-slate-200 dark:border-slate-700 hover:border-purple-300'">
                                 <input type="radio" name="method" :value="entry[0]" x-model="selectedGateway" class="w-5 h-5 mt-1 rounded-full border-slate-300 text-purple-600 focus:ring-0 focus:border-purple-500 transition">
@@ -376,8 +438,12 @@
                         </template>
                     </div>
 
+                    <div x-show="payableAmount <= 0 && applyWallet" class="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-sm text-emerald-800 dark:text-emerald-200">
+                        Your wallet will cover the full amount due. Click continue to complete payment.
+                    </div>
+
                     <!-- M-Pesa Phone Input -->
-                    <template x-if="selectedGateway === 'mpesa'">
+                    <template x-if="selectedGateway === 'mpesa' && payableAmount > 0">
                         <div class="mt-4 p-4 bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg">
                             <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Phone Number</label>
                             <input type="tel" name="phone" placeholder="254712345678" x-model="mpesaPhone" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">

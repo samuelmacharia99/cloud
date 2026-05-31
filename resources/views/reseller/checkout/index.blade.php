@@ -18,7 +18,17 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Review your order details before placing it.</p>
     </div>
 
-    <div class="grid lg:grid-cols-3 gap-6">
+    <div class="grid lg:grid-cols-3 gap-6" x-data="{
+        applyWallet: {{ old('apply_wallet') ? 'true' : 'false' }},
+        walletBalance: {{ (float) $wallet->balance }},
+        total: {{ (float) $total }},
+        get walletApplied() {
+            return this.applyWallet ? Math.min(this.walletBalance, this.total) : 0;
+        },
+        get amountDue() {
+            return Math.max(0, this.total - this.walletApplied);
+        }
+    }">
         <!-- Order Details -->
         <div class="lg:col-span-2 space-y-6">
             @if ($errors->any())
@@ -72,12 +82,34 @@
             <!-- Payment Info -->
             <div class="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
                 <h3 class="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">Payment</h3>
-                <p class="text-sm text-purple-800 dark:text-purple-300">An invoice will be generated. You can pay via M-Pesa, Stripe, PayPal, or submit manual payment proof.</p>
+                <p class="text-sm text-purple-800 dark:text-purple-300">You can apply your wallet balance at checkout. Any remaining amount can be paid via M-Pesa, card, PayPal, or manual proof.</p>
             </div>
 
             <!-- Place Order Form -->
             <form method="POST" action="{{ route('reseller.checkout.process') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                 @csrf
+
+                @if($wallet->balance > 0)
+                <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
+                        <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES {{ number_format($wallet->balance, 2) }}</p>
+                    </div>
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" name="apply_wallet" value="1" x-model="applyWallet" class="mt-1 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+                        <span class="text-sm text-slate-700 dark:text-slate-300">
+                            Apply wallet balance to this order
+                            <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyWallet">
+                                Up to KES {{ number_format($walletApplicable, 2) }} will be used from your wallet.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+                @else
+                <div class="mb-6 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Wallet balance: <strong class="text-slate-900 dark:text-white">KES 0.00</strong>. <a href="{{ route('reseller.wallet.index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Top up your wallet</a> to pay from balance.</p>
+                </div>
+                @endif
 
                 <div class="mb-6">
                     <label class="flex items-start gap-3 cursor-pointer">
@@ -120,14 +152,25 @@
                         </div>
                     @endif
 
-                    <div class="flex justify-between items-center pt-3">
-                        <span class="text-lg font-semibold text-slate-900 dark:text-white">Total Due</span>
-                        <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KES {{ number_format($total, 2) }}</span>
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-600 dark:text-slate-400">Order Total</span>
+                        <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($total, 2) }}</span>
+                    </div>
+
+                    <div class="flex justify-between items-center text-emerald-700 dark:text-emerald-300" x-show="walletApplied > 0" x-cloak>
+                        <span>Wallet Applied</span>
+                        <span class="font-semibold">- KES <span x-text="walletApplied.toFixed(2)"></span></span>
+                    </div>
+
+                    <div class="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-700">
+                        <span class="text-lg font-semibold text-slate-900 dark:text-white">Amount Due</span>
+                        <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KES <span x-text="amountDue.toFixed(2)"></span></span>
                     </div>
                 </div>
 
                 <p class="text-xs text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 p-3 rounded">
-                    Your domains will be registered once payment is confirmed. You'll receive a confirmation email with all details.
+                    <span x-show="amountDue <= 0">Your wallet will cover this order in full when you place it.</span>
+                    <span x-show="amountDue > 0">After placing the order, pay any remaining balance to register your domains.</span>
                 </p>
             </div>
         </div>

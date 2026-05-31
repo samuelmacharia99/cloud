@@ -9,10 +9,19 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
+use App\Services\DomainPushService;
+use App\Services\NotificationService;
+use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
+    public function __construct(
+        protected ResellerWalletService $walletService,
+        protected ResellerInvoicePaymentService $invoicePaymentService,
+    ) {}
+
     public function show()
     {
         $cart = session(CartController::CART_KEY, []);
@@ -39,12 +48,27 @@ class CheckoutController extends Controller
         $total = $subtotal + $tax;
 
         $user = auth()->user();
+        $wallet = $this->walletService->getOrCreate($user);
+        $walletApplicable = min((float) $wallet->balance, $total);
 
-        return view('reseller.checkout.index', compact('items', 'subtotal', 'tax', 'taxEnabled', 'taxRate', 'total', 'user'));
+        return view('reseller.checkout.index', compact(
+            'items',
+            'subtotal',
+            'tax',
+            'taxEnabled',
+            'taxRate',
+            'total',
+            'user',
+            'wallet',
+            'walletApplicable',
+        ));
     }
 
     public function process(Request $request)
     {
+        $request->validate([
+            'agree' => 'required|accepted',
+        ]);
         $cart = session(CartController::CART_KEY, []);
 
         if (empty($cart)) {
@@ -154,6 +178,24 @@ class CheckoutController extends Controller
             ]);
 
             session()->forget(CartController::CART_KEY);
+
+            if ($request->boolean('apply_wallet')) {
+                $this->invoicePaymentService->applyWallet($invoice, $reseller, true);
+                $invoice->refresh();
+
+                if ($this->invoicePaymentService->amountDue($invoice) <= 0) {
+                    $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice);
+                    NotificationService::notifyPaymentReceived($invoice);
+                    app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+
+                    return redirect()->route('reseller.invoices.show', $invoice)
+                        ->with('success', 'Order placed and paid using your wallet balance.');
+                }
+
+                return redirect()->route('reseller.invoices.show', $invoice)
+                    ->with('success', 'Order placed. Wallet applied — pay the remaining KES '
+                        .number_format($this->invoicePaymentService->amountDue($invoice), 2).' to complete.');
+            }
 
             return redirect()->route('reseller.invoices.show', $invoice)
                 ->with('success', 'Order created successfully. Please proceed to payment.');

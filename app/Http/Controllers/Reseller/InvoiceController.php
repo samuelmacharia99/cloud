@@ -2,13 +2,20 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\InvoicePdfService;
+use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class InvoiceController extends Controller
 {
+    public function __construct(
+        protected ResellerWalletService $walletService,
+        protected ResellerInvoicePaymentService $invoicePaymentService,
+    ) {}
+
     public function index(Request $request)
     {
         $invoices = Invoice::where('user_id', auth()->id())
@@ -23,7 +30,10 @@ class InvoiceController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403);
 
         $invoice->load('items.product', 'payments');
-        return view('reseller.invoices.show', compact('invoice'));
+        $wallet = $this->walletService->getOrCreate(auth()->user());
+        $amountDue = $this->invoicePaymentService->amountDue($invoice);
+
+        return view('reseller.invoices.show', compact('invoice', 'wallet', 'amountDue'));
     }
 
     /**
