@@ -16,6 +16,7 @@ use App\Services\PaymentGateway\PayPalService;
 use App\Services\PaymentGateway\StripeService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session;
@@ -626,11 +627,7 @@ class PaymentController extends Controller
         try {
             $provisioningService = app(ProvisioningService::class);
             $notificationService = app(NotificationService::class);
-
-            // Find all suspended services for this invoice
-            $services = Service::where('invoice_id', $invoice->id)
-                ->where('status', 'suspended')
-                ->get();
+            $services = app(ServiceOverdueEnforcementService::class)->suspendedServicesForPaidInvoice($invoice);
 
             foreach ($services as $service) {
                 try {

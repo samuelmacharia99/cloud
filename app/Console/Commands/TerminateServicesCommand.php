@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Support\Facades\Log;
 
 class TerminateServicesCommand extends BaseCronCommand
@@ -21,14 +21,9 @@ class TerminateServicesCommand extends BaseCronCommand
             return 'Termination skipped: terminate_after_unpaid_months must be at least 1.';
         }
 
-        $cutoffDate = now()->subMonths($unpaidMonths)->toDateString();
-
-        $services = Service::with('invoice')
-            ->whereIn('status', ['active', 'suspended'])
-            ->whereHas('invoice', function ($query) use ($cutoffDate) {
-                $query->whereIn('status', ['unpaid', 'overdue'])
-                    ->where('due_date', '<=', $cutoffDate);
-            })
+        $cutoffDate = now()->subMonths($unpaidMonths)->startOfDay();
+        $services = app(ServiceOverdueEnforcementService::class)
+            ->servicesWithUnpaidInvoiceOnOrBeforeQuery($cutoffDate)
             ->get();
 
         $count = 0;

@@ -9,12 +9,12 @@ use App\Http\Requests\StorePaymentRequest;
 use App\Http\Requests\UpdatePaymentRequest;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Service;
 use App\Models\User;
 use App\Notifications\ManualPaymentRejected;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
@@ -247,11 +247,7 @@ class PaymentController extends Controller
         try {
             $provisioningService = app(ProvisioningService::class);
             $notificationService = app(NotificationService::class);
-
-            // Find all suspended services for this invoice
-            $services = Service::where('invoice_id', $invoice->id)
-                ->where('status', 'suspended')
-                ->get();
+            $services = app(ServiceOverdueEnforcementService::class)->suspendedServicesForPaidInvoice($invoice);
 
             foreach ($services as $service) {
                 try {

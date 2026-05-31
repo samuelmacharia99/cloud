@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Enums\ServiceStatus;
 use App\Models\Domain;
 use App\Models\Service;
 use App\Services\DomainTransferService;
@@ -84,9 +85,9 @@ class ProvisioningService
             }
 
             // Only update status if suspension was successful
-            if ($suspended && $service->status !== 'suspended') {
+            if ($suspended && $service->status !== ServiceStatus::Suspended) {
                 $service->update([
-                    'status' => 'suspended',
+                    'status' => ServiceStatus::Suspended,
                     'suspend_date' => now(),
                 ]);
             }
@@ -127,9 +128,9 @@ class ProvisioningService
             }
 
             // Update status if not already updated by driver
-            if ($service->status !== 'active') {
+            if ($service->status !== ServiceStatus::Active) {
                 $service->update([
-                    'status' => 'active',
+                    'status' => ServiceStatus::Active,
                     'suspend_date' => null,
                 ]);
             }

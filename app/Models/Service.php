@@ -58,6 +58,11 @@ class Service extends Model
         return $this->belongsTo(Invoice::class);
     }
 
+    public function invoiceItems()
+    {
+        return $this->hasMany(InvoiceItem::class);
+    }
+
     public function reseller()
     {
         return $this->belongsTo(User::class, 'reseller_id');
@@ -88,32 +93,32 @@ class Service extends Model
     // Status helpers
     public function isActive(): bool
     {
-        return $this->status === 'active';
+        return $this->status === ServiceStatus::Active;
     }
 
     public function isSuspended(): bool
     {
-        return $this->status === 'suspended';
+        return $this->status === ServiceStatus::Suspended;
     }
 
     public function isTerminated(): bool
     {
-        return $this->status === 'terminated';
+        return $this->status === ServiceStatus::Terminated;
     }
 
     public function isPending(): bool
     {
-        return $this->status === 'pending';
+        return $this->status === ServiceStatus::Pending;
     }
 
     public function isProvisioning(): bool
     {
-        return $this->status === 'provisioning';
+        return $this->status === ServiceStatus::Provisioning;
     }
 
     public function isFailed(): bool
     {
-        return $this->status === 'failed';
+        return $this->status === ServiceStatus::Failed;
     }
 
     public function isSharedHosting(): bool
@@ -158,17 +163,17 @@ class Service extends Model
     // Scopes
     public function scopeActive($query)
     {
-        return $query->where('status', 'active');
+        return $query->where('status', ServiceStatus::Active);
     }
 
     public function scopeSuspended($query)
     {
-        return $query->where('status', 'suspended');
+        return $query->where('status', ServiceStatus::Suspended);
     }
 
     public function scopeTerminated($query)
     {
-        return $query->where('status', 'terminated');
+        return $query->where('status', ServiceStatus::Terminated);
     }
 
     protected static function booted(): void
