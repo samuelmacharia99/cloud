@@ -25,6 +25,18 @@ class ContainerDeployOptionsTest extends TestCase
         $options = new ContainerDeployOptions(resetDatabase: true);
 
         $this->assertFalse($options->shouldResetDatabase(true));
+        $this->assertTrue($options->shouldPrepareLaravelApplication('laravel'));
+        $this->assertTrue($options->shouldRunLaravelMigrations('laravel'));
+        $this->assertTrue($options->shouldSyncLaravelDatabase('laravel'));
+    }
+
+    #[Test]
+    public function it_prepares_laravel_on_redeploy_without_running_migrations_by_default(): void
+    {
+        $options = ContainerDeployOptions::redeploy(resetDatabase: false);
+
+        $this->assertTrue($options->shouldPrepareLaravelApplication('laravel'));
+        $this->assertFalse($options->shouldRunLaravelMigrations('laravel'));
         $this->assertFalse($options->shouldSyncLaravelDatabase('laravel'));
     }
 }

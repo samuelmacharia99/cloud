@@ -17,7 +17,8 @@ class LaravelDatabaseSyncService
     public function syncIfInstalled(
         Service $service,
         ContainerDeployment $deployment,
-        SSHService $ssh
+        SSHService $ssh,
+        bool $runMigrations = false
     ): ?string {
         if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
             return null;
@@ -25,6 +26,12 @@ class LaravelDatabaseSyncService
 
         if (! $this->appDirectory->hasLaravelProject($ssh, $deployment)) {
             return null;
+        }
+
+        $message = $this->initialization->configureApplicationEnvironment($service, $deployment, $ssh);
+
+        if (! $runMigrations) {
+            return $message;
         }
 
         $databaseTemplate = $this->deploymentService->resolveDatabaseTemplateForService($service);
@@ -43,6 +50,12 @@ class LaravelDatabaseSyncService
             $envValues
         );
 
-        return $this->initialization->syncApplicationDatabase($service, $deployment, $ssh);
+        try {
+            $this->initialization->runApplicationMigrations($service, $ssh, $deployment);
+
+            return $message.' Migrations applied.';
+        } catch (\Throwable $e) {
+            return $message.' Migrations could not run automatically: '.$e->getMessage();
+        }
     }
 }

@@ -220,7 +220,11 @@ class LaravelAppInitializationService
                     $appScaffolded = $this->appDirectory->hasLaravelProject($ssh, $deployment);
                     $envConfigured = $this->remoteFileExists($ssh, $deployment, '/app/.env');
                     $appKeySet = $appScaffolded && $this->envValuePresent($ssh, $deployment, 'APP_KEY');
-                    $migrationsOk = $appScaffolded && $this->migrationsTableExists($ssh, $deployment);
+                    $migrationsOk = $appScaffolded && $this->migrationsTableExists(
+                        $ssh,
+                        $deployment,
+                        is_array($deployment->env_values) ? $deployment->env_values : []
+                    );
                 } finally {
                     $ssh->disconnect();
                 }
@@ -306,7 +310,7 @@ class LaravelAppInitializationService
         return $slug === 'laravel';
     }
 
-    public function syncApplicationDatabase(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    public function configureApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
         $hostAppPath = $this->appDirectory->hostAppPath($deployment);
@@ -321,20 +325,42 @@ class LaravelAppInitializationService
             30
         );
 
+        $this->ensureApplicationKey($ssh, $deployment, $timeout);
+        $this->clearCachedConfig($ssh, $deployment);
+
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $serviceMeta]);
+
+        return 'Laravel .env updated from deployment credentials and application key ensured.';
+    }
+
+    public function syncApplicationDatabase(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
+        $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
+        $message = $this->configureApplicationEnvironment($service, $deployment, $ssh);
 
         try {
-            $this->runMigrationsWithRetry($ssh, $deployment, $timeout);
-            $serviceMeta['laravel_database_synced_at'] = now()->toIso8601String();
-            $service->update(['service_meta' => $serviceMeta]);
+            $this->runApplicationMigrations($service, $ssh, $deployment, $timeout);
 
-            return 'Laravel .env updated from deployment credentials and migrations applied.';
+            return $message.' Migrations applied.';
         } catch (\Throwable $e) {
-            $service->update(['service_meta' => $serviceMeta]);
-
-            return 'Laravel .env updated from deployment credentials. Migrations could not run automatically: '.$e->getMessage();
+            return $message.' Migrations could not run automatically: '.$e->getMessage();
         }
+    }
+
+    public function runApplicationMigrations(
+        Service $service,
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        ?int $timeout = null
+    ): void {
+        $timeout ??= (int) config('containers.laravel_init.command_timeout_seconds', 600);
+        $this->runMigrationsWithRetry($ssh, $deployment, $timeout);
+
+        $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
+        $serviceMeta['laravel_database_synced_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $serviceMeta]);
     }
 
     private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
@@ -526,14 +552,32 @@ class LaravelAppInitializationService
         }
     }
 
-    private function migrationsTableExists(SSHService $ssh, ContainerDeployment $deployment): bool
+    /**
+     * @param  array<string, string>  $envValues
+     */
+    private function migrationsTableExists(SSHService $ssh, ContainerDeployment $deployment, array $envValues): bool
     {
+        $database = (string) ($envValues['DB_DATABASE'] ?? $envValues['MYSQL_DATABASE'] ?? 'appdb');
+        $username = (string) ($envValues['DB_USERNAME'] ?? $envValues['MYSQL_USER'] ?? 'appuser');
+        $password = (string) ($envValues['DB_PASSWORD'] ?? $envValues['MYSQL_PASSWORD'] ?? '');
+
+        $script = 'try { '
+            .'$pdo = new PDO('
+            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
+            .'"'.addslashes($username).'", '
+            .'"'.addslashes($password).'", '
+            .'[PDO::ATTR_TIMEOUT => 5]'
+            .'); '
+            .'$result = $pdo->query("SHOW TABLES LIKE \'migrations\'"); '
+            .'exit($result && $result->rowCount() > 0 ? 0 : 1); '
+            .'} catch (Throwable $e) { exit(1); }';
+
         try {
             $this->dockerExec(
                 $ssh,
                 $deployment->container_name,
-                'set -e; cd /app; php artisan migrate:status --no-interaction >/dev/null 2>&1',
-                120
+                'php -r '.escapeshellarg($script),
+                20
             );
 
             return true;
@@ -572,6 +616,11 @@ class LaravelAppInitializationService
             'DB_PASSWORD' => $envValues['DB_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? ''),
         ];
 
+        $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY');
+        if ($existingAppKey !== null && $existingAppKey !== '') {
+            $replacements['APP_KEY'] = $existingAppKey;
+        }
+
         $lines = preg_split("/\r\n|\n|\r/", $example) ?: [];
         $seen = [];
         $result = [];
@@ -602,6 +651,46 @@ class LaravelAppInitializationService
         }
 
         return implode("\n", $result)."\n";
+    }
+
+    private function readExistingEnvValue(SSHService $ssh, ContainerDeployment $deployment, string $key): ?string
+    {
+        try {
+            $script = 'set -e; cd /app; test -f .env; grep -E "^'.preg_quote($key, '/').'=" .env | head -n1 | cut -d= -f2- | tr -d "\r"';
+            $value = trim($this->dockerExec($ssh, $deployment->container_name, $script, 20));
+
+            return $value === '' ? null : trim($value, "\"'");
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function ensureApplicationKey(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
+    {
+        if ($this->envValuePresent($ssh, $deployment, 'APP_KEY')) {
+            return;
+        }
+
+        $this->dockerExec(
+            $ssh,
+            $deployment->container_name,
+            'set -e; cd /app; php artisan key:generate --force --no-interaction',
+            $timeout
+        );
+    }
+
+    private function clearCachedConfig(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'set -e; cd /app; php artisan config:clear --no-interaction',
+                30
+            );
+        } catch (\Throwable) {
+            // Non-fatal; a stale config cache should not block deployment sync.
+        }
     }
 
     private function quoteEnvValue(string $value): string

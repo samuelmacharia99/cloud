@@ -19,10 +19,22 @@ final class ContainerDeployOptions
         return $this->isRedeploy && $this->resetDatabase && $hasDatabaseSidecar;
     }
 
+    public function shouldPrepareLaravelApplication(string $templateSlug): bool
+    {
+        return $templateSlug === 'laravel';
+    }
+
     public function shouldSyncLaravelDatabase(string $templateSlug): bool
     {
-        return $this->isRedeploy
-            && $this->resetDatabase
-            && $templateSlug === 'laravel';
+        return $this->shouldRunLaravelMigrations($templateSlug);
+    }
+
+    public function shouldRunLaravelMigrations(string $templateSlug): bool
+    {
+        if ($templateSlug !== 'laravel') {
+            return false;
+        }
+
+        return ! $this->isRedeploy || ($this->isRedeploy && $this->resetDatabase);
     }
 }

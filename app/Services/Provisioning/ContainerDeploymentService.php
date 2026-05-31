@@ -325,23 +325,29 @@ class ContainerDeploymentService
                 // row/port after redeploys, otherwise nginx may point to stale ports.
                 $this->reattachAndRebindDomains($service, $deployment);
 
-                if ($options->shouldSyncLaravelDatabase((string) ($template->slug ?? ''))) {
+                if ($options->shouldPrepareLaravelApplication((string) ($template->slug ?? ''))) {
                     try {
                         $laravelDatabaseSyncMessage = app(LaravelDatabaseSyncService::class)
-                            ->syncIfInstalled($service, $deployment->fresh(), $ssh);
+                            ->syncIfInstalled(
+                                $service,
+                                $deployment->fresh(),
+                                $ssh,
+                                $options->shouldRunLaravelMigrations((string) ($template->slug ?? ''))
+                            );
 
                         if ($laravelDatabaseSyncMessage) {
-                            $this->recordDeploymentEvent($service, $deployment, 'laravel_database_synced', [
+                            $this->recordDeploymentEvent($service, $deployment, 'laravel_application_prepared', [
                                 'message' => $laravelDatabaseSyncMessage,
+                                'migrations' => $options->shouldRunLaravelMigrations((string) ($template->slug ?? '')),
                             ]);
                         }
                     } catch (\Throwable $syncError) {
-                        $laravelDatabaseSyncMessage = 'Laravel database sync failed: '.$syncError->getMessage();
+                        $laravelDatabaseSyncMessage = 'Laravel application preparation failed: '.$syncError->getMessage();
                         \Log::warning($laravelDatabaseSyncMessage, [
                             'service_id' => $service->id,
                             'error' => $syncError->getMessage(),
                         ]);
-                        $this->recordDeploymentEvent($service, $deployment, 'laravel_database_sync_failed', [
+                        $this->recordDeploymentEvent($service, $deployment, 'laravel_application_prepare_failed', [
                             'error' => $syncError->getMessage(),
                         ]);
                     }
