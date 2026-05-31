@@ -2,40 +2,51 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Console\Scheduling\Schedule;
 use App\Models\CronJob;
-use Illuminate\Support\Facades\View;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\DomainPushService;
+use App\Services\ResellerDomainTransferService;
+use App\Services\ResellerWalletService;
+use App\Services\WalletNotificationService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
         $this->app->singleton('wallet-service', function () {
-            return new \App\Services\ResellerWalletService($this->app['db']);
+            return new ResellerWalletService($this->app['db']);
         });
 
         $this->app->singleton('domain-push-service', function () {
-            return new \App\Services\DomainPushService(
+            return new DomainPushService(
                 $this->app['db'],
                 $this->app['wallet-service'],
-                app(\App\Services\WalletNotificationService::class)
+                app(WalletNotificationService::class)
             );
         });
 
-        $this->app->singleton(\App\Services\WalletNotificationService::class);
-        $this->app->singleton(\App\Services\ResellerDomainTransferService::class);
+        $this->app->singleton(WalletNotificationService::class);
+        $this->app->singleton(ResellerDomainTransferService::class);
     }
 
     public function boot(): void
     {
+        $this->configureRateLimiting();
+
         // Load mail settings from database
         $this->loadMailConfigFromDatabase();
 
         // Share reseller branding with all views
         View::composer('*', function ($view) {
-            if (!auth()->check()) {
+            if (! auth()->check()) {
                 return;
             }
 
@@ -79,8 +90,18 @@ class AppServiceProvider extends ServiceProvider
                 }
             } catch (\Exception $e) {
                 // Silently fail on fresh install when cron_jobs table doesn't exist yet
-                \Illuminate\Support\Facades\Log::debug('Cron jobs not loaded: ' . $e->getMessage());
+                Log::debug('Cron jobs not loaded: '.$e->getMessage());
             }
+        });
+    }
+
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('laravel-container-actions', function (Request $request) {
+            $service = $request->route('service');
+            $serviceId = is_object($service) ? $service->id : $service;
+
+            return Limit::perMinute(20)->by(($request->user()?->id ?? $request->ip()).'|service:'.$serviceId);
         });
     }
 
@@ -90,17 +111,17 @@ class AppServiceProvider extends ServiceProvider
     private function loadMailConfigFromDatabase(): void
     {
         try {
-            if (!\Schema::hasTable('settings')) {
+            if (! \Schema::hasTable('settings')) {
                 return;
             }
 
-            $smtpHost = \App\Models\Setting::getValue('smtp_host');
-            $smtpPort = \App\Models\Setting::getValue('smtp_port');
-            $smtpUser = \App\Models\Setting::getValue('smtp_user');
-            $smtpPassword = \App\Models\Setting::getValue('smtp_password');
-            $smtpEncryption = \App\Models\Setting::getValue('smtp_encryption', 'tls');
-            $mailFromName = \App\Models\Setting::getValue('mail_from_name');
-            $mailFromAddress = \App\Models\Setting::getValue('mail_from_address');
+            $smtpHost = Setting::getValue('smtp_host');
+            $smtpPort = Setting::getValue('smtp_port');
+            $smtpUser = Setting::getValue('smtp_user');
+            $smtpPassword = Setting::getValue('smtp_password');
+            $smtpEncryption = Setting::getValue('smtp_encryption', 'tls');
+            $mailFromName = Setting::getValue('mail_from_name');
+            $mailFromAddress = Setting::getValue('mail_from_address');
 
             // Override mail config if database values exist
             if ($smtpHost) {

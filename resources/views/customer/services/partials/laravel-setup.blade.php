@@ -118,7 +118,18 @@ function laravelSetupPanel() {
 
         init() {
             this.refresh();
-            this.pollTimer = setInterval(() => this.refresh(), 4000);
+            this.schedulePoll();
+        },
+
+        schedulePoll() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+            }
+
+            const initActive = this.initialization && ['pending', 'running'].includes(this.initialization.status);
+            const intervalMs = initActive ? 5000 : 15000;
+
+            this.pollTimer = setInterval(() => this.refresh(), intervalMs);
         },
 
         async refresh() {
@@ -132,6 +143,7 @@ function laravelSetupPanel() {
                 }
 
                 const data = await response.json();
+                const previousStatus = this.initialization?.status;
                 this.checklist = data.checklist || [];
                 this.appDirectory = data.app_directory || null;
                 this.initialization = data.initialization || null;
@@ -142,6 +154,12 @@ function laravelSetupPanel() {
                 const running = {{ $deployment->isRunning() ? 'true' : 'false' }};
                 this.canInitialize = running && !initActive && !appReady;
                 this.canClearApp = running && !initActive && !appReady && !!(this.appDirectory && this.appDirectory.can_clear && this.appDirectory.has_blocking_files);
+
+                const currentStatus = this.initialization?.status;
+                const wasActive = previousStatus && ['pending', 'running'].includes(previousStatus);
+                if (initActive !== wasActive || (initActive && currentStatus !== previousStatus)) {
+                    this.schedulePoll();
+                }
             } catch (error) {
                 console.error('Failed to refresh Laravel setup status', error);
             }
