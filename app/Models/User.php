@@ -152,6 +152,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->is_reseller;
     }
 
+    public function isCustomer(): bool
+    {
+        return ! $this->is_admin && ! $this->is_reseller;
+    }
+
     public function getOutstandingBalance(): float
     {
         return $this->invoices()

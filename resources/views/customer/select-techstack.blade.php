@@ -60,13 +60,6 @@
         @endforeach
     </div>
 
-    <!-- Alternative: Browse Services -->
-    <div class="flex justify-center pt-4">
-        <a href="{{ route('customer.browse-services') }}" class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-            Browse All Services
-        </a>
-    </div>
-
     <!-- Hidden form for static-site skip -->
     <form id="skip-db-form" method="POST" action="{{ route('customer.confirm-techstack') }}" class="hidden">
         @csrf
