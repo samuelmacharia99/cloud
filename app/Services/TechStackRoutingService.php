@@ -9,28 +9,38 @@ use Illuminate\Database\Eloquent\Collection;
 
 class TechStackRoutingService
 {
+    public static function isLaravel(ContainerTemplate $language): bool
+    {
+        return strtolower($language->slug) === 'laravel';
+    }
+
     /**
      * Determine hosting type and product based on language + database selection
      *
      * Database Restrictions:
-     * - PHP & WordPress & Laravel: MySQL and MariaDB only (DirectAdmin shared hosting)
+     * - PHP & WordPress: MySQL and MariaDB only (DirectAdmin shared hosting)
+     * - Laravel: customer chooses shared (DirectAdmin) or container hosting
      * - Static Site: no database (Container hosting)
      * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Container hosting)
      */
     public static function determineHostingType(
         ContainerTemplate $language,
-        ?DatabaseTemplate $database
+        ?DatabaseTemplate $database,
+        ?string $deploymentPlatform = null
     ): array {
         $hosting_type = 'container';
         $database_name = $database?->name ?? 'None';
         $database_slug = $database?->slug ?? 'none';
 
-        if ($language->hosting_type === 'directadmin' && $database && in_array($database->type, ['mysql', 'mariadb'])) {
+        if (self::isLaravel($language) && $deploymentPlatform) {
+            $hosting_type = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
+        } elseif ($language->hosting_type === 'directadmin' && $database && in_array($database->type, ['mysql', 'mariadb'])) {
             $hosting_type = 'directadmin';
         }
 
         return [
             'hosting_type' => $hosting_type,
+            'deployment_platform' => $deploymentPlatform,
             'language' => $language->name,
             'database' => $database_name,
             'language_slug' => $language->slug,
@@ -86,8 +96,19 @@ class TechStackRoutingService
     /**
      * Get available databases for a given language
      */
-    public static function getAvailableDatabasesForLanguage(ContainerTemplate $language): Collection
-    {
+    public static function getAvailableDatabasesForLanguage(
+        ContainerTemplate $language,
+        ?string $deploymentPlatform = null
+    ): Collection {
+        if (self::isLaravel($language) && $deploymentPlatform) {
+            $hostingType = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
+
+            return DatabaseTemplate::active()
+                ->whereIn('type', ['mysql', 'mariadb'])
+                ->where('hosting_type', $hostingType)
+                ->get();
+        }
+
         // PHP stacks use MySQL/MariaDB; hosting type depends on template routing.
         if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
             $hostingType = $language->hosting_type ?? 'container';

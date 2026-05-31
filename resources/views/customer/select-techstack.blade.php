@@ -35,7 +35,9 @@
                     <div class="flex-1">
                         <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
                         <div class="flex gap-2 mt-1">
-                            @if($language->hosting_type === 'directadmin')
+                            @if($language->slug === 'laravel')
+                                <span class="inline-block text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded-full">Shared or Container</span>
+                            @elseif($language->hosting_type === 'directadmin')
                                 <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared Hosting</span>
                             @else
                                 <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Container</span>
@@ -91,9 +93,16 @@
             <!-- Modal Header -->
             <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                 <div>
-                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Select Database</h2>
+                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white"
+                        x-text="modalStep === 'hosting' ? 'Choose Hosting Platform' : 'Select Database'"></h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        Choose a database for <span class="font-semibold" x-text="selectedLanguage.name"></span>
+                        <span x-show="modalStep === 'hosting'">
+                            How should <span class="font-semibold" x-text="selectedLanguage.name"></span> be deployed?
+                        </span>
+                        <span x-show="modalStep === 'database'">
+                            Choose a database for <span class="font-semibold" x-text="selectedLanguage.name"></span>
+                            on <span class="font-semibold" x-text="deploymentPlatformLabel"></span>
+                        </span>
                     </p>
                 </div>
                 <button
@@ -106,8 +115,49 @@
                 </button>
             </div>
 
+            <!-- Laravel hosting platform step -->
+            <div class="p-6 space-y-4" x-show="modalStep === 'hosting'">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button type="button" @click="selectDeploymentPlatform('container')"
+                        class="relative p-5 border-2 rounded-xl text-left transition-all"
+                        :class="deploymentPlatform === 'container'
+                            ? 'border-purple-600 dark:border-purple-500 bg-purple-50 dark:bg-purple-950/30 shadow-md'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-600'">
+                        <span class="absolute top-3 right-3 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-1 rounded-full">Recommended</span>
+                        <div class="text-2xl mb-2">🐳</div>
+                        <p class="font-semibold text-slate-900 dark:text-white">Container Hosting</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                            Docker-based Laravel runtime with flexible PHP versions and isolated resources.
+                        </p>
+                    </button>
+
+                    <button type="button" @click="selectDeploymentPlatform('shared')"
+                        class="p-5 border-2 rounded-xl text-left transition-all"
+                        :class="deploymentPlatform === 'shared'
+                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-md'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600'">
+                        <div class="text-2xl mb-2">🌐</div>
+                        <p class="font-semibold text-slate-900 dark:text-white">Shared Hosting</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                            DirectAdmin shared hosting with cPanel-style management and bundled MySQL.
+                        </p>
+                    </button>
+                </div>
+
+                <div class="flex gap-3 pt-2">
+                    <button type="button" @click="continueToDatabaseStep()"
+                        class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
+                        Continue
+                    </button>
+                    <button type="button" @click="closeModal()"
+                        class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        Back
+                    </button>
+                </div>
+            </div>
+
             <!-- Database Options -->
-            <div class="p-6 space-y-3">
+            <div class="p-6 space-y-3" x-show="modalStep === 'database'">
                 <template x-if="availableDatabases.length > 0">
                     <div class="space-y-3">
                         <template x-for="db in availableDatabases" :key="db.id">
@@ -149,7 +199,7 @@
             </div>
 
             <!-- Hosting Info -->
-            <template x-if="selectedDatabase.id">
+            <template x-if="selectedDatabase.id && modalStep === 'database'">
                 <div class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                     <!-- Hosting Type Info -->
                     <div class="p-4 rounded-lg" :class="hostingTypeInfo.bgClass">
@@ -168,6 +218,9 @@
                             @csrf
                             <input type="hidden" name="language_id" :value="selectedLanguage.id">
                             <input type="hidden" name="database_id" :value="selectedDatabase.id">
+                            <template x-if="isLaravelSelection">
+                                <input type="hidden" name="deployment_platform" :value="deploymentPlatform">
+                            </template>
                             <button
                                 type="submit"
                                 class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
@@ -176,7 +229,7 @@
                             </button>
                         </form>
                         <button
-                            @click="showDatabaseModal = false"
+                            @click="goBackFromDatabaseStep()"
                             type="button"
                             class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                         >
@@ -196,14 +249,25 @@ function techstackSelector() {
         selectedDatabase: {},
         availableDatabases: [],
         showDatabaseModal: false,
+        modalStep: 'database',
+        deploymentPlatform: 'container',
         loading: false,
         confirmTechstackUrl: '{{ route("customer.confirm-techstack") }}',
+
+        get isLaravelSelection() {
+            return this.selectedLanguage.slug === 'laravel';
+        },
+
+        get deploymentPlatformLabel() {
+            return this.deploymentPlatform === 'shared' ? 'Shared Hosting' : 'Container Hosting';
+        },
 
         selectLanguageAndShowModal(languageId) {
             const language = @json($languages).find(l => l.id == languageId);
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
+            this.deploymentPlatform = 'container';
 
             // Skip database modal for static sites
             if (language.slug === 'static-site') {
@@ -214,8 +278,38 @@ function techstackSelector() {
                 return;
             }
 
+            this.modalStep = language.slug === 'laravel' ? 'hosting' : 'database';
             this.showDatabaseModal = true;
-            this.loadDatabases(languageId);
+
+            if (this.modalStep === 'database') {
+                this.loadDatabases(languageId);
+            }
+        },
+
+        selectDeploymentPlatform(platform) {
+            this.deploymentPlatform = platform;
+        },
+
+        continueToDatabaseStep() {
+            this.modalStep = 'database';
+            this.selectedDatabase = {};
+            this.loadDatabases(this.selectedLanguage.id);
+        },
+
+        goBackFromDatabaseStep() {
+            if (this.isLaravelSelection) {
+                this.modalStep = 'hosting';
+                this.selectedDatabase = {};
+                this.availableDatabases = [];
+                return;
+            }
+
+            this.closeModal();
+        },
+
+        closeModal() {
+            this.showDatabaseModal = false;
+            this.modalStep = 'database';
         },
 
         selectDatabase(db) {
@@ -225,7 +319,16 @@ function techstackSelector() {
         async loadDatabases(languageId) {
             this.loading = true;
             try {
-                const response = await fetch(`/api/languages/${languageId}/databases`);
+                let url = `/api/languages/${languageId}/databases`;
+                if (this.isLaravelSelection) {
+                    url += `?deployment_platform=${this.deploymentPlatform}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error('Failed to load databases');
+                }
+
                 const data = await response.json();
                 this.availableDatabases = data.databases;
             } catch (error) {
@@ -236,20 +339,23 @@ function techstackSelector() {
         },
 
         get hostingTypeInfo() {
-            const isDirectAdmin = this.selectedLanguage.hosting_type === 'directadmin';
+            const isShared = this.isLaravelSelection
+                ? this.deploymentPlatform === 'shared'
+                : this.selectedLanguage.hosting_type === 'directadmin';
+
             return {
-                emoji: isDirectAdmin ? '🌐' : '🐳',
-                label: isDirectAdmin ? 'DirectAdmin Shared Hosting' : 'Container Hosting',
-                description: isDirectAdmin
-                    ? 'Your application will be deployed to shared hosting with DirectAdmin control panel'
-                    : 'Your application will be deployed to a containerized environment with Docker',
-                bgClass: isDirectAdmin
+                emoji: isShared ? '🌐' : '🐳',
+                label: isShared ? 'DirectAdmin Shared Hosting' : 'Container Hosting',
+                description: isShared
+                    ? 'Your Laravel app will be deployed to shared hosting with DirectAdmin control panel'
+                    : 'Your Laravel app will run in a containerized environment with Docker',
+                bgClass: isShared
                     ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
                     : 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700',
-                textClass: isDirectAdmin
+                textClass: isShared
                     ? 'text-blue-900 dark:text-blue-200'
                     : 'text-purple-900 dark:text-purple-200',
-                descClass: isDirectAdmin
+                descClass: isShared
                     ? 'text-blue-700 dark:text-blue-300'
                     : 'text-purple-700 dark:text-purple-300',
             };

@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Customer;
 
-use App\Models\Product;
+use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
-use App\Models\DatabaseTemplate;
 use App\Models\Currency;
+use App\Models\DatabaseTemplate;
+use App\Models\Product;
 use App\Models\Setting;
 use App\Services\TechStackRoutingService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class ServiceBrowserController extends Controller
 {
@@ -32,13 +32,23 @@ class ServiceBrowserController extends Controller
     /**
      * Get available databases for selected language (AJAX)
      */
-    public function getAvailableDatabases($languageId)
+    public function getAvailableDatabases(Request $request, $languageId)
     {
         $language = ContainerTemplate::findOrFail($languageId);
-        $databases = TechStackRoutingService::getAvailableDatabasesForLanguage($language);
+        $deploymentPlatform = $request->query('deployment_platform');
+
+        if ($deploymentPlatform && ! in_array($deploymentPlatform, ['shared', 'container'], true)) {
+            return response()->json(['message' => 'Invalid deployment platform.'], 422);
+        }
+
+        if (TechStackRoutingService::isLaravel($language) && ! $deploymentPlatform) {
+            return response()->json(['message' => 'Deployment platform is required for Laravel.'], 422);
+        }
+
+        $databases = TechStackRoutingService::getAvailableDatabasesForLanguage($language, $deploymentPlatform);
 
         return response()->json([
-            'databases' => $databases->map(fn($db) => [
+            'databases' => $databases->map(fn ($db) => [
                 'id' => $db->id,
                 'name' => $db->name,
                 'slug' => $db->slug,
@@ -56,7 +66,7 @@ class ServiceBrowserController extends Controller
         $languages = TechStackRoutingService::getAvailableLanguagesForDatabase($database);
 
         return response()->json([
-            'languages' => $languages->map(fn($lang) => [
+            'languages' => $languages->map(fn ($lang) => [
                 'id' => $lang->id,
                 'name' => $lang->name,
                 'slug' => $lang->slug,
@@ -73,18 +83,34 @@ class ServiceBrowserController extends Controller
         $request->validate([
             'language_id' => 'required|exists:container_templates,id',
             'database_id' => 'nullable|exists:database_templates,id',
+            'deployment_platform' => 'nullable|in:shared,container',
         ]);
 
         $language = ContainerTemplate::findOrFail($request->language_id);
         $database = $request->database_id ? DatabaseTemplate::findOrFail($request->database_id) : null;
 
+        if (TechStackRoutingService::isLaravel($language) && ! $request->deployment_platform) {
+            return back()->with('error', 'Please choose shared or container hosting for Laravel.');
+        }
+
+        if (TechStackRoutingService::isLaravel($language) && $database) {
+            $expectedHosting = $request->deployment_platform === 'shared' ? 'directadmin' : 'container';
+            if ($database->hosting_type !== $expectedHosting) {
+                return back()->with('error', 'Selected database does not match the chosen hosting platform.');
+            }
+        }
+
         // Validate combination
-        if (!TechStackRoutingService::isValidCombination($language, $database)) {
+        if (! TechStackRoutingService::isValidCombination($language, $database)) {
             return back()->with('error', 'Invalid techstack combination selected');
         }
 
         // Determine hosting type
-        $routing = TechStackRoutingService::determineHostingType($language, $database);
+        $routing = TechStackRoutingService::determineHostingType(
+            $language,
+            $database,
+            $request->deployment_platform
+        );
 
         // Get all available products for this hosting type
         $productsQuery = Product::where('is_active', true);
@@ -93,7 +119,7 @@ class ServiceBrowserController extends Controller
             $productsQuery->where('type', 'shared_hosting');
         } else {
             $productsQuery->where('type', 'container_hosting')
-                         ->where('container_template_id', $language->id);
+                ->where('container_template_id', $language->id);
         }
 
         $products = $productsQuery->orderBy('order')->get();
@@ -108,6 +134,9 @@ class ServiceBrowserController extends Controller
             'language_name' => $language->name,
             'hosting_type' => $routing['hosting_type'],
         ];
+        if ($request->deployment_platform) {
+            $techstackData['deployment_platform'] = $request->deployment_platform;
+        }
         if ($database) {
             $techstackData['database_id'] = $database->id;
             $techstackData['database_name'] = $database->name;
@@ -160,7 +189,7 @@ class ServiceBrowserController extends Controller
         $products = $query->orderBy('order')->get();
 
         return response()->json([
-            'products' => $products->map(fn($p) => [
+            'products' => $products->map(fn ($p) => [
                 'id' => $p->id,
                 'name' => $p->name,
                 'slug' => $p->slug,
