@@ -306,6 +306,42 @@ class LaravelAppInitializationService
         return $slug === 'laravel';
     }
 
+    public function syncApplicationDatabase(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
+        $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
+
+        $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues);
+        $ssh->upload($envContent, $hostAppPath.'/.env');
+        $this->dockerExec(
+            $ssh,
+            $deployment->container_name,
+            'set -e; cd /app; test -f .env',
+            30
+        );
+
+        $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
+        $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
+
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'set -e; cd /app; php artisan migrate --force --no-interaction',
+                $timeout
+            );
+            $serviceMeta['laravel_database_synced_at'] = now()->toIso8601String();
+            $service->update(['service_meta' => $serviceMeta]);
+
+            return 'Laravel .env updated from deployment credentials and migrations applied.';
+        } catch (\Throwable $e) {
+            $service->update(['service_meta' => $serviceMeta]);
+
+            return 'Laravel .env updated from deployment credentials. Migrations could not run automatically: '.$e->getMessage();
+        }
+    }
+
     /**
      * @return array{ready: bool, has_laravel: bool, has_blocking_files: bool, can_clear: bool, blocking_paths?: array<int, string>}
      */

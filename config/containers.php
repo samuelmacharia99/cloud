@@ -44,4 +44,14 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Redeploy behaviour
+    |--------------------------------------------------------------------------
+    */
+    'redeploy' => [
+        // When true, the redeploy form pre-checks "Reset database" (destructive).
+        'reset_database_default' => (bool) env('CONTAINER_REDEPLOY_RESET_DATABASE_DEFAULT', false),
+    ],
+
 ];

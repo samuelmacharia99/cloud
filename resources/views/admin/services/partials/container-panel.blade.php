@@ -167,9 +167,13 @@
                 Edit
             </a>
 
-            <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" style="display:inline;">
+            <form method="POST" action="{{ route('admin.services.container.redeploy', $service) }}" class="inline-flex items-center gap-2">
                 @csrf
-                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700" onclick="return confirm('This will terminate and redeploy the container. Continue?')">
+                <label class="inline-flex items-center gap-1 text-xs text-slate-600">
+                    <input type="checkbox" name="reset_database" value="1" class="rounded border-slate-300">
+                    Reset DB
+                </label>
+                <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700" onclick="return confirm('Redeploy this container stack? Optionally reset the database volume (destructive).')">
                     Redeploy
                 </button>
             </form>

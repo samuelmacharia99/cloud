@@ -14,6 +14,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
@@ -169,7 +170,7 @@ class ContainerController extends Controller
     /**
      * Redeploy container stack
      */
-    public function redeploy(Service $service): RedirectResponse
+    public function redeploy(Service $service, Request $request): RedirectResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
 
@@ -205,10 +206,22 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Container host is not properly configured (missing SSH credentials). Please contact support.']);
             }
 
+            $resetDatabase = $request->boolean('reset_database');
             $containerService = new ContainerDeploymentService;
-            $containerService->deploy($service);
+            $result = $containerService->deploy(
+                $service,
+                ContainerDeployOptions::redeploy($resetDatabase)
+            );
 
-            return back()->with('success', 'Container stack redeployed successfully');
+            $message = 'Container stack redeployed successfully.';
+            if ($result->databaseReset) {
+                $message .= ' Database volume was reset to a fresh empty database.';
+            }
+            if ($result->laravelDatabaseSyncMessage) {
+                $message .= ' '.$result->laravelDatabaseSyncMessage;
+            }
+
+            return back()->with('success', $message);
         } catch (\Exception $e) {
             \Log::error("Failed to redeploy container for service {$service->id}: ".$e->getMessage());
 

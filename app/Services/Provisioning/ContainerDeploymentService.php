@@ -50,8 +50,11 @@ class ContainerDeploymentService
     /**
      * Deploy a service as a Docker Compose container
      */
-    public function deploy(Service $service): void
+    public function deploy(Service $service, ?ContainerDeployOptions $options = null): ContainerDeployResult
     {
+        $options ??= new ContainerDeployOptions;
+        $databaseReset = false;
+        $laravelDatabaseSyncMessage = null;
         $deployStartedAt = microtime(true);
 
         try {
@@ -204,6 +207,16 @@ class ContainerDeploymentService
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
                 $ssh->mkdirp($containerPath);
 
+                if ($options->shouldResetDatabase($databaseTemplate !== null)) {
+                    $this->tearDownStack($ssh, $containerPath, removeVolumes: true);
+                    $databaseReset = true;
+                    $this->recordDeploymentEvent($service, $deployment, 'database_volume_reset', [
+                        'container_name' => $containerName,
+                    ]);
+                } elseif ($options->isRedeploy) {
+                    $this->tearDownStack($ssh, $containerPath, removeVolumes: false);
+                }
+
                 // Prepare application source on host path (git clone/pull) before starting compose.
                 if ($hostAppPath) {
                     $this->syncApplicationSource($ssh, $service, $template, $hostAppPath);
@@ -312,6 +325,28 @@ class ContainerDeploymentService
                 // row/port after redeploys, otherwise nginx may point to stale ports.
                 $this->reattachAndRebindDomains($service, $deployment);
 
+                if ($options->shouldSyncLaravelDatabase((string) ($template->slug ?? ''))) {
+                    try {
+                        $laravelDatabaseSyncMessage = app(LaravelDatabaseSyncService::class)
+                            ->syncIfInstalled($service, $deployment->fresh(), $ssh);
+
+                        if ($laravelDatabaseSyncMessage) {
+                            $this->recordDeploymentEvent($service, $deployment, 'laravel_database_synced', [
+                                'message' => $laravelDatabaseSyncMessage,
+                            ]);
+                        }
+                    } catch (\Throwable $syncError) {
+                        $laravelDatabaseSyncMessage = 'Laravel database sync failed: '.$syncError->getMessage();
+                        \Log::warning($laravelDatabaseSyncMessage, [
+                            'service_id' => $service->id,
+                            'error' => $syncError->getMessage(),
+                        ]);
+                        $this->recordDeploymentEvent($service, $deployment, 'laravel_database_sync_failed', [
+                            'error' => $syncError->getMessage(),
+                        ]);
+                    }
+                }
+
                 // Increment container count on node
                 $node->increment('container_count');
 
@@ -329,6 +364,8 @@ class ContainerDeploymentService
                     'assigned_port' => $port,
                     'duration_ms' => (int) ((microtime(true) - $deployStartedAt) * 1000),
                 ]);
+
+                return new ContainerDeployResult($databaseReset, $laravelDatabaseSyncMessage);
             } catch (SSHCommandException|SSHConnectionException $e) {
                 $deployment->update([
                     'status' => 'failed',
@@ -944,6 +981,108 @@ class ContainerDeploymentService
         }
 
         throw new \RuntimeException("Container failed to reach healthy state after {$timeoutSeconds} seconds");
+    }
+
+    public function resolveDatabaseTemplateForService(Service $service): ?DatabaseTemplate
+    {
+        $service->loadMissing('product.containerTemplate');
+
+        if (! $service->product?->containerTemplate) {
+            return null;
+        }
+
+        return $this->resolveDatabaseTemplate($service, $service->product->containerTemplate);
+    }
+
+    public function waitForDatabaseSidecar(
+        SSHService $ssh,
+        string $containerPath,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars,
+        int $timeoutSeconds = 120
+    ): void {
+        $delaySeconds = 5;
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
+        $pathArg = escapeshellarg($containerPath);
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            try {
+                if ($this->databaseSidecarIsReady($ssh, $pathArg, $databaseTemplate, $envVars)) {
+                    return;
+                }
+            } catch (\Throwable $e) {
+                \Log::debug('Database readiness check failed', [
+                    'attempt' => $attempt + 1,
+                    'max_attempts' => $maxAttempts,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            if ($attempt < $maxAttempts - 1) {
+                sleep($delaySeconds);
+            }
+        }
+
+        throw new \RuntimeException('Database did not become ready within '.$timeoutSeconds.' seconds.');
+    }
+
+    private function tearDownStack(SSHService $ssh, string $containerPath, bool $removeVolumes): void
+    {
+        $composeFile = escapeshellarg($containerPath.'/docker-compose.yml');
+        $pathArg = escapeshellarg($containerPath);
+
+        try {
+            $exists = trim($ssh->exec("[ -f {$composeFile} ] && echo yes || echo no", 10));
+            if ($exists !== 'yes') {
+                return;
+            }
+
+            $volumeFlag = $removeVolumes ? '-v ' : '';
+            @$ssh->exec(
+                "cd {$pathArg} && docker compose -f docker-compose.yml down {$volumeFlag}--remove-orphans",
+                self::DEPLOY_TIMEOUT
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to tear down existing compose stack before deploy', [
+                'container_path' => $containerPath,
+                'remove_volumes' => $removeVolumes,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function databaseSidecarIsReady(
+        SSHService $ssh,
+        string $containerPathArg,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars
+    ): bool {
+        return match ($databaseTemplate->type) {
+            'mysql', 'mariadb' => $this->mysqlSidecarIsReady($ssh, $containerPathArg, $envVars),
+            'postgresql' => $this->postgresqlSidecarIsReady($ssh, $containerPathArg, $envVars),
+            default => true,
+        };
+    }
+
+    private function mysqlSidecarIsReady(SSHService $ssh, string $containerPathArg, array $envVars): bool
+    {
+        $password = escapeshellarg((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $command = "cd {$containerPathArg} && docker compose exec -T -e MYSQL_PWD={$password} db mysqladmin ping -h localhost --silent";
+
+        $ssh->exec($command, 20);
+
+        return true;
+    }
+
+    private function postgresqlSidecarIsReady(SSHService $ssh, string $containerPathArg, array $envVars): bool
+    {
+        $user = escapeshellarg((string) ($envVars['POSTGRES_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser'));
+        $password = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $command = "cd {$containerPathArg} && docker compose exec -T -e PGPASSWORD={$password} db pg_isready -U {$user} -h localhost";
+
+        $ssh->exec($command, 20);
+
+        return true;
     }
 
     private function isStrictHealthCheckEnabled($template): bool

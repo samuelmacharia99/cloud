@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Service;
-use App\Models\ContainerMetric;
-use App\Models\ContainerDomain;
 use App\Http\Controllers\Controller;
+use App\Models\ContainerBackup;
+use App\Models\ContainerDomain;
+use App\Models\ContainerMetric;
+use App\Models\Service;
+use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\NginxProxyService;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class ContainerController extends Controller
@@ -31,13 +34,14 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->restart($service);
 
             return back()->with('success', 'Container restarted successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to restart container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to restart container: ' . $e->getMessage()]);
+            \Log::error("Failed to restart container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to restart container: '.$e->getMessage()]);
         }
     }
 
@@ -53,13 +57,14 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->suspend($service);
 
             return back()->with('success', 'Container suspended successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to suspend container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to suspend container: ' . $e->getMessage()]);
+            \Log::error("Failed to suspend container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to suspend container: '.$e->getMessage()]);
         }
     }
 
@@ -83,13 +88,14 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->unsuspend($service);
 
             return back()->with('success', 'Container started successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to start container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to start container: ' . $e->getMessage()]);
+            \Log::error("Failed to start container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to start container: '.$e->getMessage()]);
         }
     }
 
@@ -105,20 +111,21 @@ class ContainerController extends Controller
                 return response()->json(['error' => 'Service is not a container hosting service'], 400);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $logs = $containerService->getLogs($service, 100);
 
             return response()->json(['logs' => $logs]);
         } catch (\Exception $e) {
-            \Log::error("Failed to fetch logs for service {$service->id}: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to fetch logs: ' . $e->getMessage()], 500);
+            \Log::error("Failed to fetch logs for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to fetch logs: '.$e->getMessage()], 500);
         }
     }
 
     /**
      * Redeploy a container (terminate and recreate)
      */
-    public function redeploy(Service $service): RedirectResponse
+    public function redeploy(Service $service, Request $request): RedirectResponse
     {
         $this->authorizeServiceAccess($service);
 
@@ -127,21 +134,26 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            $containerService = new ContainerDeploymentService();
+            $resetDatabase = $request->boolean('reset_database');
+            $containerService = new ContainerDeploymentService;
+            $result = $containerService->deploy(
+                $service,
+                ContainerDeployOptions::redeploy($resetDatabase)
+            );
 
-            // Terminate existing deployment
-            $containerService->terminate($service);
+            $message = 'Container redeployed successfully.';
+            if ($result->databaseReset) {
+                $message .= ' Database volume was reset.';
+            }
+            if ($result->laravelDatabaseSyncMessage) {
+                $message .= ' '.$result->laravelDatabaseSyncMessage;
+            }
 
-            // Clear node assignment to trigger fresh node selection
-            $service->update(['node_id' => null]);
-
-            // Re-provision
-            $containerService->deploy($service);
-
-            return back()->with('success', 'Container redeployed successfully');
+            return back()->with('success', $message);
         } catch (\Exception $e) {
-            \Log::error("Failed to redeploy container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to redeploy container: ' . $e->getMessage()]);
+            \Log::error("Failed to redeploy container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to redeploy container: '.$e->getMessage()]);
         }
     }
 
@@ -158,7 +170,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return response()->json(['labels' => [], 'cpu' => [], 'memory' => []]);
             }
 
@@ -168,9 +180,9 @@ class ContainerController extends Controller
                 ->orderBy('recorded_at')
                 ->get();
 
-            $labels = $metrics->map(fn($m) => $m->recorded_at->format('H:i'))->toArray();
-            $cpuData = $metrics->map(fn($m) => round($m->cpu_percentage, 2))->toArray();
-            $memoryData = $metrics->map(fn($m) => $m->memory_used_mb)->toArray();
+            $labels = $metrics->map(fn ($m) => $m->recorded_at->format('H:i'))->toArray();
+            $cpuData = $metrics->map(fn ($m) => round($m->cpu_percentage, 2))->toArray();
+            $memoryData = $metrics->map(fn ($m) => $m->memory_used_mb)->toArray();
 
             return response()->json([
                 'labels' => $labels,
@@ -178,7 +190,8 @@ class ContainerController extends Controller
                 'memory' => $memoryData,
             ]);
         } catch (\Exception $e) {
-            \Log::error("Failed to fetch metrics for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to fetch metrics for service {$service->id}: ".$e->getMessage());
+
             return response()->json(['error' => 'Failed to fetch metrics'], 500);
         }
     }
@@ -200,7 +213,7 @@ class ContainerController extends Controller
             ]);
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
@@ -212,13 +225,14 @@ class ContainerController extends Controller
             ]);
 
             // Bind domain to nginx
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $nginxService->bind($domain);
 
             return back()->with('success', "Domain {$domain->domain} bound successfully");
         } catch (\Exception $e) {
-            \Log::error("Failed to bind domain for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to bind domain: ' . $e->getMessage()]);
+            \Log::error("Failed to bind domain for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to bind domain: '.$e->getMessage()]);
         }
     }
 
@@ -240,13 +254,14 @@ class ContainerController extends Controller
 
             $domainName = $domain->domain;
 
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $nginxService->unbind($domain);
 
             return back()->with('success', "Domain {$domainName} unbind successfully");
         } catch (\Exception $e) {
-            \Log::error("Failed to unbind domain for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to unbind domain: ' . $e->getMessage()]);
+            \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to unbind domain: '.$e->getMessage()]);
         }
     }
 
@@ -270,13 +285,14 @@ class ContainerController extends Controller
                 return back()->withErrors(['error' => 'Domain must be active to enable SSL']);
             }
 
-            $nginxService = new NginxProxyService();
+            $nginxService = new NginxProxyService;
             $nginxService->enableSsl($domain);
 
             return back()->with('success', "SSL enabled for {$domain->domain}");
         } catch (\Exception $e) {
-            \Log::error("Failed to enable SSL for domain {$domain->domain}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to enable SSL: ' . $e->getMessage()]);
+            \Log::error("Failed to enable SSL for domain {$domain->domain}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
         }
     }
 
@@ -285,17 +301,18 @@ class ContainerController extends Controller
         $this->authorizeServiceAccess($service);
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backup = $backupService->createBackup($service, 'manual');
 
             return back()->with('success', "Backup '{$backup->backup_name}' created successfully.");
         } catch (\Exception $e) {
-            \Log::error("Failed to create backup for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Backup failed: ' . $e->getMessage()]);
+            \Log::error("Failed to create backup for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
         }
     }
 
-    public function restoreBackup(Service $service, \App\Models\ContainerBackup $backup)
+    public function restoreBackup(Service $service, ContainerBackup $backup)
     {
         $this->authorizeServiceAccess($service);
 
@@ -304,17 +321,18 @@ class ContainerController extends Controller
         }
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->restoreBackup($backup);
 
             return back()->with('success', "Container restored from backup '{$backup->backup_name}'.");
         } catch (\Exception $e) {
-            \Log::error("Failed to restore backup {$backup->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Restore failed: ' . $e->getMessage()]);
+            \Log::error("Failed to restore backup {$backup->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Restore failed: '.$e->getMessage()]);
         }
     }
 
-    public function deleteBackup(Service $service, \App\Models\ContainerBackup $backup)
+    public function deleteBackup(Service $service, ContainerBackup $backup)
     {
         $this->authorizeServiceAccess($service);
 
@@ -323,13 +341,14 @@ class ContainerController extends Controller
         }
 
         try {
-            $backupService = new \App\Services\Provisioning\ContainerBackupService();
+            $backupService = new ContainerBackupService;
             $backupService->deleteBackup($backup);
 
             return back()->with('success', "Backup '{$backup->backup_name}' deleted.");
         } catch (\Exception $e) {
-            \Log::error("Failed to delete backup {$backup->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Delete failed: ' . $e->getMessage()]);
+            \Log::error("Failed to delete backup {$backup->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Delete failed: '.$e->getMessage()]);
         }
     }
 
@@ -345,7 +364,7 @@ class ContainerController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return back()->withErrors(['error' => 'Container not deployed yet']);
         }
 
@@ -369,7 +388,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
@@ -390,8 +409,9 @@ class ContainerController extends Controller
 
             return back()->with('success', "Container status updated from {$oldStatus} to {$validated['status']}");
         } catch (\Exception $e) {
-            \Log::error("Failed to update container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to update container: ' . $e->getMessage()]);
+            \Log::error("Failed to update container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to update container: '.$e->getMessage()]);
         }
     }
 
@@ -408,7 +428,7 @@ class ContainerController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return back()->withErrors(['error' => 'Container not deployed yet']);
             }
 
@@ -417,7 +437,7 @@ class ContainerController extends Controller
             }
 
             // Provision the container
-            $containerService = new ContainerDeploymentService();
+            $containerService = new ContainerDeploymentService;
             $containerService->deploy($service);
 
             \Log::info('Container provisioned via admin action', [
@@ -428,8 +448,9 @@ class ContainerController extends Controller
 
             return back()->with('success', 'Container provisioning started successfully');
         } catch (\Exception $e) {
-            \Log::error("Failed to provision container for service {$service->id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Failed to provision container: ' . $e->getMessage()]);
+            \Log::error("Failed to provision container for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to provision container: '.$e->getMessage()]);
         }
     }
 }

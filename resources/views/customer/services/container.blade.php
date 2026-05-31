@@ -155,13 +155,17 @@
                                 🔗 Visit Service
                             </a>
 
-                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" style="display:inline;">
+                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" class="inline-flex flex-col sm:flex-row sm:items-center gap-2">
                                 @csrf
+                                <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 px-2">
+                                    <input type="checkbox" name="reset_database" value="1" @checked(config('containers.redeploy.reset_database_default', false)) class="rounded border-slate-300 dark:border-slate-600">
+                                    Reset database (deletes all DB data)
+                                </label>
                                 <button
                                     type="submit"
                                     class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
-                                    onclick="return confirm('Redeploy stack now? This recreates the container runtime and keeps /app files. It does not reinstall Laravel.')"
-                                    title="Recreates containers; keeps /app files"
+                                    onclick="return confirmRedeploy(this.form);"
+                                    title="Recreates containers; keeps /app files unless you reset the database"
                                 >
                                     ♻️ Redeploy Stack
                                 </button>
@@ -370,6 +374,7 @@
 
                                 <p class="text-sm text-slate-600 dark:text-slate-400">
                                     Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application container.
+                                    For Laravel, tick <strong>Reset database</strong> on redeploy to wipe data and auto-update <code class="font-mono">/app/.env</code> plus migrations when the app is already installed.
                                 </p>
 
                                 <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
@@ -454,6 +459,18 @@
 </div>
 
 <script>
+function confirmRedeploy(form) {
+    const resetDb = form.querySelector('input[name="reset_database"]')?.checked;
+    let message = 'Redeploy stack now? This recreates the container runtime and keeps /app files.';
+    if (resetDb) {
+        message += '\n\nThe database volume will be wiped (all tables and data deleted).';
+        message += '\nIf Laravel is installed, /app/.env will be refreshed and migrations will run.';
+    } else {
+        message += '\n\nDatabase data is kept unless you tick Reset database.';
+    }
+    return confirm(message);
+}
+
 function fetchLogs() {
     const logsContent = document.getElementById('logs-content');
     logsContent.innerHTML = '<p class="text-slate-500">Loading logs...</p>';

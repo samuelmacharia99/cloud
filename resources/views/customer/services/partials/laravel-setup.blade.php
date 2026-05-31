@@ -11,6 +11,7 @@
                 <strong>Redeploy stack</strong> recreates the container runtime and keeps files in <code class="font-mono text-xs">/app</code>.
                 It does <strong>not</strong> install Laravel. Click <strong>Initialize Laravel app</strong> to scaffold a fresh project
                 (leftover files are cleared automatically), or set a Git repository at checkout and redeploy to pull code.
+                Use <strong>Reset database</strong> on redeploy to wipe MySQL and auto-sync Laravel <code class="font-mono text-xs">.env</code> when the app is already installed.
             </p>
         </div>
 
