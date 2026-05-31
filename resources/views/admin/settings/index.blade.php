@@ -24,7 +24,6 @@
                     <button @click="activeTab = 'cron'" :class="activeTab === 'cron' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Cron</button>
                     <button @click="activeTab = 'sms'" :class="activeTab === 'sms' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">SMS</button>
                     <button @click="activeTab = 'security'" :class="activeTab === 'security' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Security</button>
-                    <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Domains</button>
                 </div>
             </div>
 
@@ -991,6 +990,29 @@
                         </div>
                     </fieldset>
 
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Default Domain Nameservers</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Used as defaults during domain registration checkout.</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS1</label>
+                                <input type="text" name="settings[domain_ns1]" value="{{ $settings['domain_ns1'] ?? 'ns1.talksasa.cloud' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS2</label>
+                                <input type="text" name="settings[domain_ns2]" value="{{ $settings['domain_ns2'] ?? 'ns2.talksasa.cloud' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS3 <span class="text-slate-400 font-normal">(optional)</span></label>
+                                <input type="text" name="settings[domain_ns3]" value="{{ $settings['domain_ns3'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS4 <span class="text-slate-400 font-normal">(optional)</span></label>
+                                <input type="text" name="settings[domain_ns4]" value="{{ $settings['domain_ns4'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                         <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                         <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
@@ -1166,7 +1188,7 @@
                 <!-- Email Templates -->
                 @include('admin.settings.partials.email-templates-card')
             </div>
-            <div x-show="activeTab === 'notifications'" class="space-y-6" x-data="smsTemplates()">
+            <div x-show="activeTab === 'notifications'" class="space-y-6">
                 <!-- Notification Triggers Form -->
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -1294,104 +1316,9 @@
                         </button>
                     </div>
                 </form>
+            </div>
 
-                <!-- SMS Message Templates -->
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8">
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-2">SMS Message Templates</legend>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Customize SMS messages sent for each event. Use {variable} placeholders which will be replaced with actual values. Each message is limited to 320 characters.</p>
-
-                        <div class="space-y-6">
-                            @foreach([
-                                'new_order' => ['title' => 'New Order', 'desc' => 'Sent to admin and customer when an order is placed'],
-                                'payment_received' => ['title' => 'Payment Received', 'desc' => 'Sent to customer when payment is confirmed'],
-                                'invoice_generated' => ['title' => 'Invoice Generated', 'desc' => 'Sent to customer when a new invoice is created'],
-                                'invoice_reminder' => ['title' => 'Invoice Reminder', 'desc' => 'Sent before invoice is due'],
-                                'invoice_overdue' => ['title' => 'Invoice Overdue', 'desc' => 'Sent when invoice becomes overdue'],
-                                'service_activated' => ['title' => 'Service Activated', 'desc' => 'Sent when service is activated'],
-                                'service_suspended' => ['title' => 'Service Suspended', 'desc' => 'Sent when service is suspended'],
-                                'service_terminated' => ['title' => 'Service Terminated', 'desc' => 'Sent when service is terminated'],
-                                'domain_expiry' => ['title' => 'Domain Expiry', 'desc' => 'Sent before domain expires'],
-                                'ticket_created' => ['title' => 'Support Ticket', 'desc' => 'Sent when a support ticket is created'],
-                            ] as $eventKey => $eventInfo)
-                                @php
-                                    $template = $smsTemplates[$eventKey] ?? null;
-                                    if (!$template) continue;
-                                @endphp
-                                <div x-data="{ body: @js($template->body), chars: {{ strlen($template->body) }} }" class="border border-slate-200 dark:border-slate-700 rounded-lg p-6 space-y-4">
-                                    <!-- Header -->
-                                    <div class="flex items-start justify-between">
-                                        <div>
-                                            <h3 class="font-semibold text-slate-900 dark:text-white">{{ $eventInfo['title'] }}</h3>
-                                            <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $eventInfo['desc'] }}</p>
-                                        </div>
-                                        <span class="inline-block px-2 py-1 rounded text-xs font-medium {{ $template->recipient_type === 'both' ? 'bg-purple-100 dark:bg-purple-900 text-purple-900 dark:text-purple-200' : ($template->recipient_type === 'admin' ? 'bg-orange-100 dark:bg-orange-900 text-orange-900 dark:text-orange-200' : 'bg-blue-100 dark:bg-blue-900 text-blue-900 dark:text-blue-200') }}">
-                                            {{ ucfirst($template->recipient_type) }}
-                                        </span>
-                                    </div>
-
-                                    <!-- Available Variables -->
-                                    @if($template->available_variables && count($template->available_variables) > 0)
-                                        <div class="space-y-2">
-                                            <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase">Available Variables:</p>
-                                            <div class="flex flex-wrap gap-2">
-                                                @foreach($template->available_variables as $var)
-                                                    <button type="button" @click="body = body + '{{{ $var }}}'; chars = body.length" class="px-2 py-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded text-xs transition-colors font-mono">
-                                                        {{{ $var }}}
-                                                    </button>
-                                                @endforeach
-                                            </div>
-                                        </div>
-                                    @endif
-
-                                    <!-- Message Body -->
-                                    <div class="space-y-2">
-                                        <div class="flex items-center justify-between">
-                                            <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Message</label>
-                                            <span class="text-xs text-slate-500 dark:text-slate-400"><span x-text="chars"></span>/320</span>
-                                        </div>
-                                        <textarea x-model="body" @input="chars = body.length" maxlength="320" rows="3" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white resize-none"></textarea>
-                                        <p class="text-xs text-slate-500 dark:text-slate-400">Character count: {{ count($template->available_variables) > 0 ? 'Approx. (variables will be replaced)' : 'Exact' }}</p>
-                                    </div>
-
-                                    <!-- Recipient Type -->
-                                    <div class="space-y-2">
-                                        <label class="text-sm font-medium text-slate-700 dark:text-slate-300">Send To</label>
-                                        <select @change="$dispatch('recipient-changed')" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" data-event="{{ $eventKey }}">
-                                            <option value="customer" @selected($template->recipient_type === 'customer')>Customer Only</option>
-                                            <option value="admin" @selected($template->recipient_type === 'admin')>Admin Only</option>
-                                            <option value="both" @selected($template->recipient_type === 'both')>Both Customer & Admin</option>
-                                        </select>
-                                    </div>
-
-                                    <!-- Actions -->
-                                    <div class="flex gap-2 pt-4 border-t border-slate-200 dark:border-slate-700">
-                                        <button type="button" @click="saveTemplate({{ $template->id }}, $el)" :disabled="saving[{{ $template->id }}]" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors flex items-center gap-2 text-sm">
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                            </svg>
-                                            <span x-show="!saving[{{ $template->id }}]">Save Template</span>
-                                            <span x-show="saving[{{ $template->id }}]" class="flex items-center gap-2">
-                                                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                                </svg>
-                                                Saving...
-                                            </span>
-                                        </button>
-                                        <button type="button" @click="resetTemplate({{ $template->id }}, '{{ route('admin.sms-templates.reset', $template->id) }}')" class="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition-colors text-sm">
-                                            Reset to Default
-                                        </button>
-                                        <div class="flex-1"></div>
-                                        <div x-show="status[{{ $template->id }}]" :class="status[{{ $template->id }}]?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm font-medium" x-text="status[{{ $template->id }}]?.msg"></div>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    </fieldset>
-                </div>
-
-            <!-- Tab: Notifications -->
+            <!-- Tab: Cron -->
             <div x-show="activeTab === 'cron'" class="space-y-6">
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -1533,11 +1460,16 @@
 
             <!-- Tab: SMS -->
             <div x-show="activeTab === 'sms'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <div class="px-6 py-5 border-b border-slate-200 dark:border-slate-800">
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">SMS Configuration</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Talksasa SMS API credentials and test sending.</p>
+                    </div>
+                    <form method="POST" action="{{ route('admin.settings.update') }}" class="p-6 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
                     <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">SMS Configuration</legend>
+                        <legend class="text-base font-semibold text-slate-900 dark:text-white mb-4">Provider settings</legend>
                         <div class="space-y-4">
                             <div>
                                 <input type="hidden" name="settings[sms_enabled]" value="0">
@@ -1588,10 +1520,11 @@
                             Save SMS
                         </button>
                     </div>
-                </form>
-            </div>
+                    </form>
+                </div>
 
-            <!-- Tab: Security -->
+                @include('admin.settings.partials.sms-templates-card')
+            </div>
             <div x-show="activeTab === 'security'" class="space-y-6">
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -1658,68 +1591,6 @@
                 </form>
             </div>
 
-            <!-- Tab: Domains -->
-            <div x-show="activeTab === 'domains'" class="space-y-6">
-                <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
-                    @csrf
-
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Default Nameservers</legend>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Configure the default nameservers that customers will use when registering domains. These can be overridden per domain during checkout.</p>
-
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Primary Nameserver (NS1) <span class="text-red-500">*</span></label>
-                                <input type="text" name="settings[domain_ns1]" value="{{ $settings['domain_ns1'] ?? 'ns1.talksasa.cloud' }}" placeholder="ns1.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Required. Used as the default for all new domain registrations.</p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Secondary Nameserver (NS2)</label>
-                                <input type="text" name="settings[domain_ns2]" value="{{ $settings['domain_ns2'] ?? 'ns2.talksasa.cloud' }}" placeholder="ns2.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Recommended for DNS redundancy.</p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tertiary Nameserver (NS3)</label>
-                                <input type="text" name="settings[domain_ns3]" value="{{ $settings['domain_ns3'] ?? '' }}" placeholder="ns3.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Additional nameserver for enhanced reliability.</p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Quaternary Nameserver (NS4)</label>
-                                <input type="text" name="settings[domain_ns4]" value="{{ $settings['domain_ns4'] ?? '' }}" placeholder="ns4.talksasa.cloud" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Optional. Additional nameserver for enhanced reliability.</p>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/50 rounded-lg p-4">
-                        <div class="flex gap-3">
-                            <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zm-11-1a1 1 0 11-2 0 1 1 0 012 0zM8 8a1 1 0 000 2h6a1 1 0 000-2H8zm1 5a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"/></svg>
-                            <div class="text-sm text-blue-900 dark:text-blue-100">
-                                <p class="font-semibold">About nameservers:</p>
-                                <ul class="list-disc list-inside mt-2 space-y-1">
-                                    <li>Nameservers tell the internet where your domain is hosted</li>
-                                    <li>At least one nameserver (NS1) is required</li>
-                                    <li>Additional nameservers provide redundancy and load balancing</li>
-                                    <li>Customers can override these settings per domain during checkout</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
-                        <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
-                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                            </svg>
-                            Save Domain Settings
-                        </button>
-                    </div>
-                </form>
-            </div>
         </div>
     </div>
 </div>
@@ -1871,88 +1742,135 @@
     }
 
     // SMS Templates Manager
-    function smsTemplates() {
+    function smsTemplates(items) {
+        const drafts = {};
+        items.forEach(item => {
+            drafts[item.id] = {
+                body: item.body,
+                recipient_type: item.recipient_type,
+            };
+        });
+
         return {
-            saving: {},
-            status: {},
+            items,
+            drafts,
+            expanded: {},
+            smsSaving: {},
+            smsStatus: {},
 
-            async saveTemplate(templateId, container) {
-                const recipientSelect = container.querySelector('select');
-                const textarea = container.querySelector('textarea');
+            recipientBadgeClass(type) {
+                const map = {
+                    admin: 'bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200',
+                    both: 'bg-purple-100 dark:bg-purple-900/40 text-purple-800 dark:text-purple-200',
+                    customer: 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200',
+                };
+                return map[type] || map.customer;
+            },
 
-                if (!textarea.value.trim()) {
-                    this.setStatus(templateId, 'error', 'Message cannot be empty');
+            recipientLabel(type) {
+                if (type === 'both') return 'Customer & admin';
+                return type.charAt(0).toUpperCase() + type.slice(1);
+            },
+
+            toggle(id) {
+                this.expanded[id] = !this.expanded[id];
+            },
+
+            isExpanded(id) {
+                return !!this.expanded[id];
+            },
+
+            expandAll() {
+                this.items.forEach(item => { this.expanded[item.id] = true; });
+            },
+
+            collapseAll() {
+                this.expanded = {};
+            },
+
+            insertVariable(id, token) {
+                const draft = this.drafts[id];
+                if (!draft) return;
+                draft.body = (draft.body || '') + token;
+            },
+
+            csrfToken() {
+                return document.querySelector('meta[name="csrf-token"]')?.content
+                    || document.querySelector('input[name="_token"]')?.value;
+            },
+
+            save(id) {
+                const draft = this.drafts[id];
+                if (!draft.body?.trim()) {
+                    this.smsStatus[id] = { type: 'error', msg: 'Message cannot be empty' };
                     return;
                 }
+                this.saveTemplate(id, draft.body, draft.recipient_type);
+            },
 
-                this.saving[templateId] = true;
+            async saveTemplate(templateId, body, recipientType) {
+                this.smsSaving[templateId] = true;
 
                 try {
                     const response = await fetch(`{{ route('admin.sms-templates.update', '') }}/${templateId}`, {
                         method: 'PUT',
-                        body: JSON.stringify({
-                            body: textarea.value,
-                            recipient_type: recipientSelect.value,
-                        }),
+                        body: JSON.stringify({ body, recipient_type: recipientType }),
                         headers: {
                             'Content-Type': 'application/json',
-                            'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
+                            'X-CSRF-Token': this.csrfToken(),
                             'Accept': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest'
                         }
                     });
 
                     const data = await response.json();
+                    this.smsStatus[templateId] = response.ok && data.success
+                        ? { type: 'success', msg: data.message }
+                        : { type: 'error', msg: data.message || 'Error saving' };
 
                     if (response.ok && data.success) {
-                        this.setStatus(templateId, 'success', '✅ ' + data.message);
-                        setTimeout(() => {
-                            this.status[templateId] = null;
-                        }, 3000);
-                    } else {
-                        this.setStatus(templateId, 'error', '❌ ' + (data.message || 'Error saving'));
+                        const item = this.items.find(i => i.id === templateId);
+                        if (item) {
+                            item.body = body;
+                        }
+                        setTimeout(() => { this.smsStatus[templateId] = null; }, 3000);
                     }
                 } catch (error) {
-                    this.setStatus(templateId, 'error', '❌ Error: ' + error.message);
+                    this.smsStatus[templateId] = { type: 'error', msg: error.message };
                 } finally {
-                    this.saving[templateId] = false;
+                    this.smsSaving[templateId] = false;
                 }
             },
 
             async resetTemplate(templateId, url) {
-                if (!await window.appConfirm('Reset this template to the default message?', 'Reset template', 'Reset')) {
+                if (!await window.appConfirm('Reset this SMS template to default?', 'Reset template', 'Reset')) {
                     return;
                 }
 
-                this.saving[templateId] = true;
+                this.smsSaving[templateId] = true;
 
                 try {
                     const response = await fetch(url, {
                         method: 'POST',
                         headers: {
-                            'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
+                            'X-CSRF-Token': this.csrfToken(),
                             'Accept': 'application/json',
                             'X-Requested-With': 'XMLHttpRequest'
                         }
                     });
 
                     const data = await response.json();
-
                     if (response.ok && data.success) {
-                        this.setStatus(templateId, 'success', '✅ ' + data.message);
-                        setTimeout(() => location.reload(), 2000);
-                    } else {
-                        this.setStatus(templateId, 'error', '❌ ' + (data.message || 'Error resetting'));
+                        setTimeout(() => location.reload(), 800);
                     }
+                    this.smsStatus[templateId] = response.ok && data.success
+                        ? { type: 'success', msg: data.message }
+                        : { type: 'error', msg: data.message || 'Error resetting' };
                 } catch (error) {
-                    this.setStatus(templateId, 'error', '❌ Error: ' + error.message);
+                    this.smsStatus[templateId] = { type: 'error', msg: error.message };
                 } finally {
-                    this.saving[templateId] = false;
+                    this.smsSaving[templateId] = false;
                 }
-            },
-
-            setStatus(templateId, type, msg) {
-                this.status[templateId] = { type, msg };
             }
         };
     }

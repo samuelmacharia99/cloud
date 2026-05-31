@@ -46,6 +46,8 @@ class SettingController extends Controller
         ],
         'provisioning' => [
             'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
+            'domain_ns1', 'domain_ns2', 'domain_ns3', 'domain_ns4',
+            'directadmin_api_url', 'directadmin_api_user', 'directadmin_api_password', 'directadmin_default_package',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
@@ -70,9 +72,6 @@ class SettingController extends Controller
         ],
         'sms' => [
             'sms_enabled', 'sms_api_token', 'sms_sender_id',
-        ],
-        'directadmin' => [
-            'directadmin_api_url', 'directadmin_api_user', 'directadmin_api_password', 'directadmin_default_package',
         ],
         'security' => [
             'recaptcha_enabled', 'recaptcha_site_key', 'recaptcha_secret_key',
@@ -101,7 +100,7 @@ class SettingController extends Controller
         $currencies = Currency::active()->get();
 
         // Load SMS templates for the notifications tab
-        $smsTemplates = SmsTemplate::all()->keyBy('event_key');
+        $smsTemplatesList = SmsTemplate::orderBy('recipient_type')->orderBy('name')->get();
         $emailTemplatesList = EmailTemplate::orderBy('recipient_type')->orderBy('name')->get();
 
         // Get cron helper data for the cron tab
@@ -126,7 +125,7 @@ class SettingController extends Controller
         ];
 
         return view('admin.settings.index', compact(
-            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplates', 'emailTemplatesList',
+            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
             'gatewayStatus'
         ));
