@@ -3,6 +3,15 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    @php
+        $branding = $emailBranding ?? [
+            'company_name' => \App\Models\Setting::getValue('company_name', config('app.name', 'Talksasa Cloud')),
+            'logo_url' => \App\Models\Setting::getValue('logo_url'),
+            'footer_text' => \App\Models\Setting::getValue('footer_text', ''),
+            'primary_color' => \App\Models\Setting::getValue('primary_color', '#2563eb'),
+        ];
+        $primaryColor = $branding['primary_color'] ?? '#2563eb';
+    @endphp
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -20,7 +29,7 @@
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
         .header {
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, {{ $primaryColor }} 0%, {{ $primaryColor }}dd 100%);
             padding: 30px;
             text-align: center;
             color: white;
@@ -59,7 +68,7 @@
         .cta-button {
             display: inline-block;
             padding: 12px 24px;
-            background-color: #2563eb;
+            background-color: {{ $primaryColor }};
             color: white;
             text-decoration: none;
             border-radius: 6px;
@@ -68,7 +77,7 @@
             text-align: center;
         }
         .cta-button:hover {
-            background-color: #1d4ed8;
+            opacity: 0.9;
         }
         .alert {
             padding: 15px;
@@ -138,34 +147,24 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
-            @php
-                $logo = \App\Models\Setting::getValue('logo_url', '');
-                $company = \App\Models\Setting::getValue('company_name', 'Talksasa Cloud');
-            @endphp
-            @if($logo)
-                <img src="{{ $logo }}" alt="{{ $company }}" class="logo">
+            @if(!empty($branding['logo_url']))
+                <img src="{{ $branding['logo_url'] }}" alt="{{ $branding['company_name'] }}" class="logo">
             @endif
-            <p class="company-name">{{ $company }}</p>
+            <p class="company-name">{{ $branding['company_name'] }}</p>
         </div>
 
-        <!-- Content -->
         <div class="content">
             @yield('content')
         </div>
 
-        <!-- Footer -->
         <div class="footer">
-            @php
-                $footerText = \App\Models\Setting::getValue('footer_text', '');
-            @endphp
-            @if($footerText)
-                <p>{{ $footerText }}</p>
+            @if(!empty($branding['footer_text']))
+                <p>{{ $branding['footer_text'] }}</p>
             @else
-                <p>© {{ now()->year }} {{ $company }}. All rights reserved.</p>
+                <p>&copy; {{ now()->year }} {{ $branding['company_name'] }}. All rights reserved.</p>
             @endif
-            <p class="text-muted">This is an automated email from {{ $company }}. Please do not reply to this email.</p>
+            <p class="text-muted">This is an automated email from {{ $branding['company_name'] }}. Please do not reply to this email.</p>
         </div>
     </div>
 </body>

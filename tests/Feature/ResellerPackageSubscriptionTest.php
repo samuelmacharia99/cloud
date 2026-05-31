@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Invoice;
 use App\Models\ResellerPackage;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -79,6 +80,37 @@ class ResellerPackageSubscriptionTest extends TestCase
 
         $reseller->refresh();
         $this->assertTrue($reseller->package_expires_at->greaterThan($originalExpiry));
+    }
+
+    public function test_subscription_invoice_includes_admin_tax_when_enabled(): void
+    {
+        Setting::create(['key' => 'tax_enabled', 'value' => 'true']);
+        Setting::create(['key' => 'tax_rate', 'value' => '16']);
+
+        $reseller = $this->createReseller();
+        $package = $this->createPackage(['price' => 5300]);
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $package);
+
+        $this->assertSame(5300.0, (float) $invoice->subtotal);
+        $this->assertSame(848.0, (float) $invoice->tax);
+        $this->assertSame(6148.0, (float) $invoice->total);
+    }
+
+    public function test_subscription_invoice_has_no_tax_when_disabled(): void
+    {
+        Setting::create(['key' => 'tax_enabled', 'value' => 'false']);
+
+        $reseller = $this->createReseller();
+        $package = $this->createPackage(['price' => 5300]);
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $package);
+
+        $this->assertSame(5300.0, (float) $invoice->subtotal);
+        $this->assertSame(0.0, (float) $invoice->tax);
+        $this->assertSame(5300.0, (float) $invoice->total);
     }
 
     public function test_generate_reseller_invoices_targets_packages_expiring_in_five_days(): void

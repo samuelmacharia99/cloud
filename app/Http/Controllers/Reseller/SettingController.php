@@ -3,23 +3,26 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\UpdateMpesaSettingsRequest;
-use App\Http\Requests\UpdateSmsSettingsRequest;
-use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\RegisterMpesaUrlsRequest;
 use App\Http\Requests\TestSmsRequest;
 use App\Http\Requests\TestSmtpRequest;
 use App\Http\Requests\UpdateBrandingSettingsRequest;
+use App\Http\Requests\UpdateMpesaSettingsRequest;
+use App\Http\Requests\UpdateSmsSettingsRequest;
+use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\UploadBrandingFileRequest;
-use App\Services\ResellerSettingsService;
-use App\Services\TalksasaSmsService;
+use App\Jobs\ProvisionResellerSslJob;
+use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
+use App\Services\ResellerMailService;
+use App\Services\ResellerSettingsService;
 use App\Services\ResellerSslService;
-use Illuminate\Support\Facades\Log;
-use Illuminate\View\View;
+use App\Services\TalksasaSmsService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
+use Illuminate\View\View;
 
 class SettingController extends Controller
 {
@@ -27,7 +30,9 @@ class SettingController extends Controller
         private ResellerSettingsService $settingsService,
         private TalksasaSmsService $smsService,
         private ResellerBrandingService $brandingService,
-        private ResellerSslService $sslService
+        private ResellerSslService $sslService,
+        private ResellerBrandingResolver $brandingResolver,
+        private ResellerMailService $resellerMail,
     ) {}
 
     public function index(): View
@@ -40,6 +45,8 @@ class SettingController extends Controller
             'smsSettings' => $this->settingsService->getSmsSettings($user),
             'smtpSettings' => $this->settingsService->getSmtpSettings($user),
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
+            'brandingStatus' => $this->brandingResolver->status($user),
+            'registrationInviteUrl' => $this->brandingResolver->signedRegistrationUrl($user),
         ]);
     }
 
@@ -102,7 +109,7 @@ class SettingController extends Controller
         try {
             $user = auth()->user();
             $phone = $request->input('phone');
-            $message = 'This is a test SMS from Talksasa Cloud. Your SMS configuration is working correctly!';
+            $message = 'This is a test SMS from '.($this->brandingResolver->forReseller($user)['company_name'] ?? config('app.name')).'. Your SMS configuration is working correctly!';
 
             Log::info('Test SMS: Initiating', [
                 'reseller_id' => $user->id,
@@ -119,7 +126,7 @@ class SettingController extends Controller
                     'talksasa_status' => $result['talksasa_status'],
                 ]);
 
-                return back()->with('success', 'Test SMS sent successfully to ' . $phone . '. Check your phone for the message.');
+                return back()->with('success', 'Test SMS sent successfully to '.$phone.'. Check your phone for the message.');
             } else {
                 Log::warning('Test SMS: API rejected request', [
                     'reseller_id' => $user->id,
@@ -127,6 +134,7 @@ class SettingController extends Controller
                 ]);
 
                 $errorMessage = $result['message'] ?? 'Failed to send test SMS';
+
                 return back()->with('error', $errorMessage);
             }
         } catch (\Exception $e) {
@@ -173,7 +181,9 @@ class SettingController extends Controller
                 'test_email' => $request->input('test_email'),
             ]);
 
-            return back()->with('success', 'Test email would be sent to ' . $request->input('test_email'));
+            $this->resellerMail->sendTest($user, $request->input('test_email'));
+
+            return back()->with('success', 'Test email sent to '.$request->input('test_email'));
         } catch (\Exception $e) {
             Log::error('Failed to test SMTP', [
                 'error' => $e->getMessage(),
@@ -189,9 +199,12 @@ class SettingController extends Controller
     {
         try {
             $user = auth()->user();
+            $previousDomain = $user->settings['branding']['custom_domain'] ?? null;
             $this->settingsService->updateBrandingSettings($user, $request->validated());
+            $this->brandingResolver->forgetDomainCache($previousDomain);
+            $this->brandingResolver->forgetDomainCache($request->input('custom_domain'));
 
-            return back()->with('success', 'Branding settings updated successfully.');
+            return back()->with('success', 'Branding settings updated successfully. SSL will be provisioned automatically once DNS is configured.');
         } catch (\Exception $e) {
             Log::error('Failed to update branding settings', [
                 'error' => $e->getMessage(),
@@ -213,6 +226,7 @@ class SettingController extends Controller
             $this->brandingService->uploadFile($user, $file, $type);
 
             $typeLabel = ucfirst($type);
+
             return back()->with('success', "{$typeLabel} uploaded successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to upload branding file', [
@@ -232,13 +246,14 @@ class SettingController extends Controller
             $user = auth()->user();
             $type = $request->input('type');
 
-            if (!in_array($type, ['logo', 'favicon'])) {
+            if (! in_array($type, ['logo', 'favicon'])) {
                 return back()->with('error', 'Invalid file type.');
             }
 
             $this->brandingService->deleteFile($user, $type);
 
             $typeLabel = ucfirst($type);
+
             return back()->with('success', "{$typeLabel} deleted successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to delete branding file', [
@@ -293,7 +308,7 @@ class SettingController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to check DNS: ' . $e->getMessage(),
+                'message' => 'Failed to check DNS: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -303,35 +318,19 @@ class SettingController extends Controller
         try {
             $user = auth()->user();
 
-            Log::info('SSL issuance initiated', [
-                'reseller_id' => $user->id,
-            ]);
-
-            $result = $this->sslService->issueCertificate($user);
-
-            if ($result['success']) {
-                Log::info('SSL certificate issued successfully', [
-                    'reseller_id' => $user->id,
-                    'message' => $result['message'],
-                ]);
-
-                return back()->with('success', $result['message']);
-            } else {
-                Log::warning('SSL certificate issuance failed', [
-                    'reseller_id' => $user->id,
-                    'message' => $result['message'],
-                ]);
-
-                return back()->with('error', $result['message']);
+            if ($this->sslService->queueProvision($user, 'manual')) {
+                return back()->with('success', 'SSL provisioning has been queued. This usually completes within a few minutes once DNS is correct.');
             }
+
+            return back()->with('info', 'SSL is already queued or provisioning. Check back shortly.');
         } catch (\Exception $e) {
-            Log::error('Exception during SSL issuance', [
+            Log::error('Exception during SSL queue', [
                 'error' => $e->getMessage(),
                 'reseller_id' => auth()->id(),
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to issue SSL certificate. Please try again.');
+            return back()->with('error', 'Failed to queue SSL provisioning. Please try again.');
         }
     }
 
@@ -340,35 +339,17 @@ class SettingController extends Controller
         try {
             $user = auth()->user();
 
-            Log::info('SSL renewal initiated', [
-                'reseller_id' => $user->id,
-            ]);
+            ProvisionResellerSslJob::dispatch($user->id, 'renew');
 
-            $result = $this->sslService->renewCertificate($user);
-
-            if ($result['success']) {
-                Log::info('SSL certificate renewed successfully', [
-                    'reseller_id' => $user->id,
-                    'message' => $result['message'],
-                ]);
-
-                return back()->with('success', $result['message']);
-            } else {
-                Log::warning('SSL certificate renewal failed', [
-                    'reseller_id' => $user->id,
-                    'message' => $result['message'],
-                ]);
-
-                return back()->with('error', $result['message']);
-            }
+            return back()->with('success', 'SSL renewal has been queued.');
         } catch (\Exception $e) {
-            Log::error('Exception during SSL renewal', [
+            Log::error('Exception during SSL renewal queue', [
                 'error' => $e->getMessage(),
                 'reseller_id' => auth()->id(),
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to renew SSL certificate. Please try again.');
+            return back()->with('error', 'Failed to queue SSL renewal. Please try again.');
         }
     }
 }

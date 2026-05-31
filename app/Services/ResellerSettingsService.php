@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Jobs\ProvisionResellerSslJob;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
@@ -133,11 +134,17 @@ class ResellerSettingsService
     {
         return $this->getSettings($user, 'branding', [
             'company_name' => '',
+            'tagline' => '',
             'custom_domain' => null,
             'logo_url' => null,
             'logo_path' => null,
             'favicon_url' => null,
             'favicon_path' => null,
+            'primary_color' => '#7c3aed',
+            'footer_text' => '',
+            'support_email' => '',
+            'support_phone' => '',
+            'ssl' => [],
             'updated_at' => null,
         ]);
     }
@@ -146,29 +153,45 @@ class ResellerSettingsService
     {
         $settings = $user->settings ?? [];
         $currentBranding = $settings['branding'] ?? [];
+        $previousDomain = $currentBranding['custom_domain'] ?? null;
+        $newDomain = $data['custom_domain'] ?? null;
 
-        $settings['branding'] = [
+        $settings['branding'] = array_merge($currentBranding, [
             'company_name' => $data['company_name'],
-            'custom_domain' => $data['custom_domain'] ?? null,
-            'logo_url' => $currentBranding['logo_url'] ?? null,
-            'logo_path' => $currentBranding['logo_path'] ?? null,
-            'favicon_url' => $currentBranding['favicon_url'] ?? null,
-            'favicon_path' => $currentBranding['favicon_path'] ?? null,
+            'tagline' => $data['tagline'] ?? '',
+            'custom_domain' => $newDomain,
+            'primary_color' => $data['primary_color'] ?? '#7c3aed',
+            'footer_text' => $data['footer_text'] ?? '',
+            'support_email' => $data['support_email'] ?? '',
+            'support_phone' => $data['support_phone'] ?? '',
             'updated_at' => now(),
-        ];
+        ]);
+
+        if ($newDomain !== $previousDomain) {
+            $settings['branding']['ssl'] = app(ResellerSslService::class)->sslStatusForDomain($newDomain);
+
+            if ($previousDomain) {
+                app(ResellerBrandingResolver::class)->forgetDomainCache($previousDomain);
+            }
+        }
 
         $user->update([self::SETTINGS_KEY => $settings]);
 
         Log::info('Reseller branding settings updated', [
             'reseller_id' => $user->id,
             'company_name' => $data['company_name'],
-            'custom_domain' => $data['custom_domain'] ?? null,
+            'custom_domain' => $newDomain,
         ]);
+
+        if ($newDomain !== $previousDomain && ! empty($newDomain)) {
+            ProvisionResellerSslJob::dispatch($user->id);
+        }
     }
 
     private function getSettings(User $user, string $key, array $defaults): array
     {
         $settings = $user->settings ?? [];
+
         return array_merge($defaults, $settings[$key] ?? []);
     }
 }

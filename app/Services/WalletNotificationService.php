@@ -2,22 +2,26 @@
 
 namespace App\Services;
 
-use App\Models\ResellerWallet;
 use App\Models\ResellerDomainOrder;
+use App\Models\ResellerWallet;
 use App\Models\WalletTransaction;
-use App\Models\User;
-use Mail;
+use Illuminate\Support\Facades\Mail;
 
 class WalletNotificationService
 {
+    public function __construct(
+        private ResellerBrandingResolver $brandingResolver,
+    ) {}
+
     public function sendLowBalanceAlert(ResellerWallet $wallet): void
     {
-        if (!$wallet->needsLowBalanceAlert()) {
+        if (! $wallet->needsLowBalanceAlert()) {
             return;
         }
 
         $reseller = $wallet->reseller;
-        $message = "Your Talksasa wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: " . route('reseller.wallet.index');
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+        $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: ".route('reseller.wallet.index');
 
         try {
             app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
@@ -28,10 +32,10 @@ class WalletNotificationService
         if ($reseller->email) {
             try {
                 Mail::raw(
-                    "Your wallet balance is low: {$wallet->getFormattedBalance()}\n\nTop up now at: " . route('reseller.wallet.index'),
-                    function ($message) use ($reseller) {
+                    "Your wallet balance is low: {$wallet->getFormattedBalance()}\n\nTop up now at: ".route('reseller.wallet.index'),
+                    function ($message) use ($reseller, $company) {
                         $message->to($reseller->email)
-                            ->subject('Talksasa Wallet Low Balance Alert');
+                            ->subject($company.' Wallet Low Balance Alert');
                     }
                 );
             } catch (\Exception $e) {
@@ -84,19 +88,23 @@ class WalletNotificationService
     {
         $reseller = $order->reseller;
         $customer = $order->customer;
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
 
-        $message = "Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
+        $resellerMessage = "Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
+        $customerMessage = "{$company}: Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
+            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $resellerMessage);
         } catch (\Exception $e) {
             \Log::error("Failed to send completed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
 
-        try {
-            app('talksasa-sms-service')->sendSms($customer, $customer->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send completed domain SMS to customer {$customer->id}: {$e->getMessage()}");
+        if ($customer->phone) {
+            try {
+                app('talksasa-sms-service')->sendSms($reseller, $customer->phone, $customerMessage);
+            } catch (\Exception $e) {
+                \Log::error("Failed to send completed domain SMS to customer {$customer->id}: {$e->getMessage()}");
+            }
         }
     }
 

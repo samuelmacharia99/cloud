@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\ResellerPackage;
+use App\Models\Setting;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -34,17 +35,35 @@ class ResellerPackageSubscriptionService
             ? "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})"
             : "Reseller Package: {$package->name} ({$package->billing_cycle})";
 
+        $amounts = $this->calculateAmounts((float) $package->price);
+
         return Invoice::create([
             'user_id' => $user->id,
             'type' => 'reseller_subscription',
             'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
             'status' => 'unpaid',
             'due_date' => now()->addDays(7),
-            'subtotal' => $package->price,
-            'tax' => 0,
-            'total' => $package->price,
+            'subtotal' => $amounts['subtotal'],
+            'tax' => $amounts['tax'],
+            'total' => $amounts['total'],
             'notes' => $label.' '.self::PACKAGE_META_PREFIX.$package->id.']',
         ]);
+    }
+
+    /**
+     * @return array{subtotal: float, tax: float, total: float}
+     */
+    public function calculateAmounts(float $subtotal): array
+    {
+        $taxEnabled = in_array(Setting::getValue('tax_enabled'), ['1', 'true', true], true);
+        $taxRate = (float) Setting::getValue('tax_rate', 0);
+        $tax = $taxEnabled ? round($subtotal * $taxRate / 100, 2) : 0;
+
+        return [
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'total' => round($subtotal + $tax, 2),
+        ];
     }
 
     public function pendingSubscriptionInvoice(User $user, ?ResellerPackage $package = null): ?Invoice

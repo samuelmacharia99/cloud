@@ -5,6 +5,7 @@ use App\Http\Middleware\CheckCustomerRole;
 use App\Http\Middleware\CheckResellerRole;
 use App\Http\Middleware\EnforceResellerLimits;
 use App\Http\Middleware\LogActivity;
+use App\Http\Middleware\ResolveResellerTenant;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SkipVerificationIfImpersonating;
 use App\Http\Middleware\ThrottleRegistration;
@@ -30,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
             StartSession::class,
+            ResolveResellerTenant::class,
             ShareErrorsFromSession::class,
             VerifyCsrfToken::class,
             AuthenticateSession::class,

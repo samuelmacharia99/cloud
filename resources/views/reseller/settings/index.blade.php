@@ -428,6 +428,28 @@
                     </div>
 
                     <div class="p-6 space-y-6">
+                        @if(!empty($brandingStatus))
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @foreach($brandingStatus as $key => $item)
+                                <div class="flex items-start gap-3 p-4 rounded-lg border {{ $item['ready'] ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/30' }}">
+                                    <span class="text-lg">{{ $item['ready'] ? '✓' : '○' }}</span>
+                                    <div>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $item['label'] }}</p>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $item['hint'] }}</p>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        @endif
+
+                        @if(!empty($registrationInviteUrl))
+                        <div class="p-4 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
+                            <p class="text-sm font-medium text-slate-900 dark:text-white mb-2">Customer registration invite link</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Share this link so new customers register under your brand and are linked to your account.</p>
+                            <input type="text" readonly value="{{ $registrationInviteUrl }}" class="w-full px-3 py-2 text-xs font-mono border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300">
+                        </div>
+                        @endif
+
                         <!-- Company Name Form -->
                         <form action="{{ route('reseller.settings.branding.update') }}" method="POST" class="space-y-6">
                             @csrf
@@ -442,6 +464,49 @@
                                 @error('company_name')
                                     <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
                                 @enderror
+                            </div>
+
+                            <!-- Tagline -->
+                            <div>
+                                <label for="tagline" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tagline</label>
+                                <input type="text" id="tagline" name="tagline"
+                                    value="{{ old('tagline', $brandingSettings['tagline'] ?? '') }}"
+                                    placeholder="e.g., Reliable hosting for your business"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
+                            </div>
+
+                            <!-- Primary Color -->
+                            <div>
+                                <label for="primary_color" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Primary Color</label>
+                                <input type="color" id="primary_color" name="primary_color"
+                                    value="{{ old('primary_color', $brandingSettings['primary_color'] ?? '#7c3aed') }}"
+                                    class="h-10 w-20 border border-slate-300 dark:border-slate-600 rounded-lg cursor-pointer">
+                            </div>
+
+                            <!-- Support Email -->
+                            <div>
+                                <label for="support_email" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Support Email</label>
+                                <input type="email" id="support_email" name="support_email"
+                                    value="{{ old('support_email', $brandingSettings['support_email'] ?? '') }}"
+                                    placeholder="support@yourcompany.com"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
+                            </div>
+
+                            <!-- Support Phone -->
+                            <div>
+                                <label for="support_phone" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Support Phone</label>
+                                <input type="text" id="support_phone" name="support_phone"
+                                    value="{{ old('support_phone', $brandingSettings['support_phone'] ?? '') }}"
+                                    placeholder="+254..."
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
+                            </div>
+
+                            <!-- Footer Text -->
+                            <div>
+                                <label for="footer_text" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Footer Text</label>
+                                <textarea id="footer_text" name="footer_text" rows="2"
+                                    placeholder="Shown in emails and customer portal footer"
+                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">{{ old('footer_text', $brandingSettings['footer_text'] ?? '') }}</textarea>
                             </div>
 
                             <!-- Custom Domain -->
@@ -572,7 +637,10 @@
 
                             <!-- DNS Check Section -->
                             <div class="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-lg border border-slate-200 dark:border-slate-700 mb-6">
-                                <p class="text-sm font-medium text-slate-900 dark:text-white mb-4">Before setting up SSL, verify your DNS is correctly configured:</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                                    SSL is provisioned automatically in the background once your domain points to this server.
+                                    Use the DNS check below to confirm configuration.
+                                </p>
                                 <div class="flex gap-3">
                                     <button type="button" @click="checkDns()" :disabled="checking" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-500 text-white text-sm font-medium rounded-lg transition">
                                         <span x-show="!checking">Check DNS</span>
@@ -600,7 +668,14 @@
 
                             <!-- SSL Status -->
                             <div class="space-y-4">
-                                @if($sslStatus['status'] === 'active')
+                                @if(in_array($sslStatus['status'] ?? 'none', ['pending', 'provisioning']))
+                                    <div class="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                                        <p class="text-sm font-medium text-blue-900 dark:text-blue-300">SSL provisioning in progress</p>
+                                        <p class="text-xs text-blue-700 dark:text-blue-400 mt-1">
+                                            A background job is issuing your certificate. Refresh this page in a few minutes.
+                                        </p>
+                                    </div>
+                                @elseif($sslStatus['status'] === 'active')
                                     <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-lg border border-emerald-200 dark:border-emerald-800">
                                         <div>
                                             <p class="text-sm font-medium text-emerald-900 dark:text-emerald-300">SSL Certificate Active</p>
@@ -626,18 +701,23 @@
                                         <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST" class="flex gap-3">
                                             @csrf
                                             <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition">
-                                                Retry SSL Setup
+                                                Retry now
                                             </button>
                                         </form>
                                     </div>
                                 @else
-                                    <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST">
-                                        @csrf
-                                        <button type="submit" x-bind:disabled="!dnsResult || !dnsResult.match || !dnsResult.certbot_available" :class="(!dnsResult || !dnsResult.match || !dnsResult.certbot_available) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-700'" class="px-6 py-2 bg-amber-600 text-white font-medium rounded-lg transition">
-                                            Setup SSL Certificate
-                                        </button>
-                                    </form>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400">Click "Check DNS" first to verify your domain is properly configured.</p>
+                                    <div class="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+                                        <p class="text-sm font-medium text-amber-900 dark:text-amber-300 mb-2">Waiting for DNS</p>
+                                        <p class="text-xs text-amber-700 dark:text-amber-400 mb-3">
+                                            Save your custom domain, point DNS to this server, and SSL will be issued automatically every 15 minutes.
+                                        </p>
+                                        <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST">
+                                            @csrf
+                                            <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">
+                                                Queue SSL now
+                                            </button>
+                                        </form>
+                                    </div>
                                 @endif
                             </div>
                         </div>

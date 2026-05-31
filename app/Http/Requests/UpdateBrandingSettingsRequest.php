@@ -15,7 +15,12 @@ class UpdateBrandingSettingsRequest extends FormRequest
     {
         return [
             'company_name' => 'required|string|max:100|min:2',
+            'tagline' => 'nullable|string|max:120',
             'custom_domain' => 'nullable|string|max:253|regex:/^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i',
+            'primary_color' => 'nullable|string|regex:/^#[0-9A-Fa-f]{6}$/',
+            'footer_text' => 'nullable|string|max:500',
+            'support_email' => 'nullable|email|max:255',
+            'support_phone' => 'nullable|string|max:30',
         ];
     }
 

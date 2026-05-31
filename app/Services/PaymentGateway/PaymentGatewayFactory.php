@@ -3,6 +3,9 @@
 namespace App\Services\PaymentGateway;
 
 use App\Enums\PaymentMethod;
+use App\Models\Invoice;
+use App\Models\User;
+use App\Services\ResellerBrandingResolver;
 use InvalidArgumentException;
 
 class PaymentGatewayFactory
@@ -10,27 +13,61 @@ class PaymentGatewayFactory
     /**
      * Create payment gateway instance based on method
      */
-    public static function make(PaymentMethod|string $method): PaymentGatewayInterface
+    public static function make(PaymentMethod|string $method, ?User $reseller = null): PaymentGatewayInterface
     {
         $method = $method instanceof PaymentMethod ? $method->value : $method;
 
         return match ($method) {
-            'mpesa' => new MpesaService(),
-            'stripe' => new StripeService(),
-            'paypal' => new PayPalService(),
-            'manual' => new ManualPaymentService(),
+            'mpesa' => new MpesaService($reseller),
+            'stripe' => new StripeService,
+            'paypal' => new PayPalService,
+            'manual' => new ManualPaymentService,
             default => throw new InvalidArgumentException("Unsupported payment method: {$method}"),
         };
     }
 
+    public static function makeForInvoice(PaymentMethod|string $method, Invoice $invoice): PaymentGatewayInterface
+    {
+        $invoice->loadMissing('user');
+        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
+
+        return self::make($method, $reseller);
+    }
+
     /**
-     * Get available payment gateways
+     * Get available payment gateways (platform defaults)
      */
     public static function getAvailableGateways(): array
     {
+        return self::buildGatewayList(null);
+    }
+
+    public static function getAvailableGatewaysForInvoice(Invoice $invoice): array
+    {
+        $invoice->loadMissing('user');
+        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
+
+        return self::buildGatewayList($reseller);
+    }
+
+    /**
+     * Check if specific gateway is available
+     */
+    public static function isAvailable(string $method): bool
+    {
+        $gateways = self::getAvailableGateways();
+
+        return isset($gateways[$method]);
+    }
+
+    /**
+     * @return array<string, array{label: string, icon: string, color: string, description: string}>
+     */
+    private static function buildGatewayList(?User $reseller): array
+    {
         $gateways = [];
 
-        $mpesa = new MpesaService();
+        $mpesa = new MpesaService($reseller);
         if ($mpesa->isConfigured()) {
             $gateways['mpesa'] = [
                 'label' => 'M-PESA',
@@ -40,7 +77,7 @@ class PaymentGatewayFactory
             ];
         }
 
-        $stripe = new StripeService();
+        $stripe = new StripeService;
         if ($stripe->isConfigured()) {
             $gateways['stripe'] = [
                 'label' => 'Stripe',
@@ -50,7 +87,7 @@ class PaymentGatewayFactory
             ];
         }
 
-        $paypal = new PayPalService();
+        $paypal = new PayPalService;
         if ($paypal->isConfigured()) {
             $gateways['paypal'] = [
                 'label' => 'PayPal',
@@ -60,8 +97,7 @@ class PaymentGatewayFactory
             ];
         }
 
-        // Manual payment option (always available as fallback)
-        $manual = new ManualPaymentService();
+        $manual = new ManualPaymentService;
         if ($manual->isConfigured()) {
             $gateways['manual'] = [
                 'label' => 'Manual Payment',
@@ -72,14 +108,5 @@ class PaymentGatewayFactory
         }
 
         return $gateways;
-    }
-
-    /**
-     * Check if specific gateway is available
-     */
-    public static function isAvailable(string $method): bool
-    {
-        $gateways = self::getAvailableGateways();
-        return isset($gateways[$method]);
     }
 }

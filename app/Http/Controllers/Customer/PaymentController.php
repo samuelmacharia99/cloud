@@ -2,16 +2,24 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
-use App\Models\Payment;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Service;
-use App\Services\CreditService;
+use App\Models\Setting;
+use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\PaymentGateway\PayPalService;
+use App\Services\PaymentGateway\StripeService;
+use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\Controller;
+use Stripe\Checkout\Session;
+use Stripe\Exception\SignatureVerificationException;
+use Stripe\Stripe;
 
 class PaymentController extends Controller
 {
@@ -35,6 +43,7 @@ class PaymentController extends Controller
         abort_if($payment->user_id !== auth()->id(), 403);
 
         $payment->load('invoice');
+
         return view('customer.payments.show', compact('payment'));
     }
 
@@ -52,7 +61,7 @@ class PaymentController extends Controller
                 ->with('info', 'This invoice has already been paid');
         }
 
-        $availableGateways = PaymentGatewayFactory::getAvailableGateways();
+        $availableGateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);
 
         if (empty($availableGateways)) {
             return redirect()->route('customer.invoices.show', $invoice)
@@ -80,7 +89,7 @@ class PaymentController extends Controller
         ]);
 
         try {
-            $gateway = PaymentGatewayFactory::make($request->payment_method);
+            $gateway = PaymentGatewayFactory::makeForInvoice($request->payment_method, $invoice);
 
             // Prepare customer data
             $customerData = [
@@ -91,7 +100,7 @@ class PaymentController extends Controller
             // Initiate payment
             $result = $gateway->initiate($invoice, $customerData);
 
-            if (!$result['success']) {
+            if (! $result['success']) {
                 return back()->with('error', $result['message'] ?? 'Payment initiation failed');
             }
 
@@ -157,12 +166,12 @@ class PaymentController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
         $checkoutRequestId = $request->get('checkout_request_id');
-        if (!$checkoutRequestId) {
+        if (! $checkoutRequestId) {
             return back()->with('error', 'Missing checkout request ID');
         }
 
         try {
-            $gateway = PaymentGatewayFactory::make('mpesa');
+            $gateway = PaymentGatewayFactory::makeForInvoice('mpesa', $invoice);
             $result = $gateway->verify($checkoutRequestId);
 
             if ($result['success']) {
@@ -206,7 +215,7 @@ class PaymentController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
         $sessionId = $request->get('session_id');
-        if (!$sessionId) {
+        if (! $sessionId) {
             return redirect()->route('customer.invoices.show', $invoice)
                 ->with('error', 'Missing session ID');
         }
@@ -214,8 +223,8 @@ class PaymentController extends Controller
         try {
             // Retrieve the session from Stripe to verify metadata invoice_id matches this invoice
             try {
-                \Stripe\Stripe::setApiKey(\App\Models\Setting::getValue('stripe_secret_key', ''));
-                $session = \Stripe\Checkout\Session::retrieve($sessionId);
+                Stripe::setApiKey(Setting::getValue('stripe_secret_key', ''));
+                $session = Session::retrieve($sessionId);
                 $metaInvoiceId = $session->metadata->invoice_id ?? null;
 
                 if ((string) $metaInvoiceId !== (string) $invoice->id) {
@@ -233,11 +242,12 @@ class PaymentController extends Controller
                     'session_id' => $sessionId,
                     'error' => $e->getMessage(),
                 ]);
+
                 return redirect()->route('customer.invoices.show', $invoice)
                     ->with('error', 'Payment verification failed');
             }
 
-            $gateway = PaymentGatewayFactory::make('stripe');
+            $gateway = PaymentGatewayFactory::makeForInvoice('stripe', $invoice);
             $result = $gateway->verify($sessionId);
 
             if ($result['success']) {
@@ -300,15 +310,15 @@ class PaymentController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
         $orderId = $request->get('token');
-        if (!$orderId) {
+        if (! $orderId) {
             return redirect()->route('customer.invoices.show', $invoice)
                 ->with('error', 'Missing PayPal order ID');
         }
 
         try {
             // Verify the PayPal order's custom_id matches this invoice before capturing
-            /** @var \App\Services\PaymentGateway\PayPalService $gateway */
-            $gateway = PaymentGatewayFactory::make('paypal');
+            /** @var PayPalService $gateway */
+            $gateway = PaymentGatewayFactory::makeForInvoice('paypal', $invoice);
             $orderDetails = $gateway->getOrder($orderId);
 
             if ($orderDetails !== null) {
@@ -415,6 +425,7 @@ class PaymentController extends Controller
             return response('', 200);
         } catch (\Exception $e) {
             Log::error('M-Pesa callback error', ['error' => $e->getMessage()]);
+
             return response('', 200);
         }
     }
@@ -428,21 +439,24 @@ class PaymentController extends Controller
 
         if (empty($signature)) {
             Log::warning('Stripe webhook received without signature header');
+
             return response()->json(['error' => 'Missing signature'], 400);
         }
 
         try {
-            /** @var \App\Services\PaymentGateway\StripeService $gateway */
-            $gateway = PaymentGatewayFactory::make('stripe');
+            /** @var StripeService $gateway */
+            $gateway = PaymentGatewayFactory::makeForInvoice('stripe', $invoice);
 
             // Verify signature using raw body — must happen before any parsing
             try {
                 $verifiedData = $gateway->verifyWebhookSignature($request->getContent(), $signature);
-            } catch (\Stripe\Exception\SignatureVerificationException $e) {
+            } catch (SignatureVerificationException $e) {
                 Log::warning('Stripe webhook signature verification failed', ['error' => $e->getMessage()]);
+
                 return response()->json(['error' => 'Invalid signature'], 400);
             } catch (\UnexpectedValueException $e) {
                 Log::warning('Stripe webhook payload error', ['error' => $e->getMessage()]);
+
                 return response()->json(['error' => 'Invalid payload'], 400);
             }
 
@@ -466,6 +480,7 @@ class PaymentController extends Controller
             return response()->json($result);
         } catch (\Exception $e) {
             Log::error('Stripe webhook error', ['error' => $e->getMessage()]);
+
             return response()->json(['success' => false], 500);
         }
     }
@@ -476,11 +491,12 @@ class PaymentController extends Controller
     public function paypalWebhook(Request $request)
     {
         try {
-            /** @var \App\Services\PaymentGateway\PayPalService $gateway */
-            $gateway = PaymentGatewayFactory::make('paypal');
+            /** @var PayPalService $gateway */
+            $gateway = PaymentGatewayFactory::makeForInvoice('paypal', $invoice);
 
-            if (!$gateway->verifyWebhook($request)) {
+            if (! $gateway->verifyWebhook($request)) {
                 Log::warning('PayPal webhook signature verification failed');
+
                 return response()->json(['error' => 'Invalid webhook signature'], 400);
             }
 
@@ -504,6 +520,7 @@ class PaymentController extends Controller
             return response()->json($result);
         } catch (\Exception $e) {
             Log::error('PayPal webhook error', ['error' => $e->getMessage()]);
+
             return response()->json(['success' => false], 500);
         }
     }
@@ -573,12 +590,12 @@ class PaymentController extends Controller
     private function processDomainRenewals(Invoice $invoice): void
     {
         try {
-            $renewalOrders = \App\Models\DomainRenewalOrder::where('invoice_id', $invoice->id)
+            $renewalOrders = DomainRenewalOrder::where('invoice_id', $invoice->id)
                 ->where('status', 'invoiced')
                 ->get();
 
             foreach ($renewalOrders as $order) {
-                $renewalService = app(\App\Services\DomainRenewalService::class);
+                $renewalService = app(DomainRenewalService::class);
                 $renewalService->pushRenewalToAdmin($order);
             }
         } catch (\Exception $e) {
@@ -608,7 +625,7 @@ class PaymentController extends Controller
             $failedServices = [];
 
             foreach ($services as $item) {
-                if (!$item->service) {
+                if (! $item->service) {
                     continue;
                 }
 
@@ -619,6 +636,7 @@ class PaymentController extends Controller
                             'service_id' => $item->service->id,
                             'status' => $item->service->status,
                         ]);
+
                         continue;
                     }
 
@@ -674,8 +692,8 @@ class PaymentController extends Controller
     private function unsuspendServices(Invoice $invoice): void
     {
         try {
-            $provisioningService = new \App\Services\Provisioning\ProvisioningService();
-            $notificationService = app(\App\Services\NotificationService::class);
+            $provisioningService = new ProvisioningService;
+            $notificationService = app(NotificationService::class);
 
             // Find all suspended services for this invoice
             $services = Service::where('invoice_id', $invoice->id)
@@ -724,26 +742,26 @@ class PaymentController extends Controller
 
             foreach ($services as $service) {
                 $newDueDate = match ($service->billing_cycle) {
-                    'monthly'     => now()->addMonth(),
-                    'quarterly'   => now()->addMonths(3),
+                    'monthly' => now()->addMonth(),
+                    'quarterly' => now()->addMonths(3),
                     'semi-annual' => now()->addMonths(6),
-                    'annual'      => now()->addYear(),
-                    default       => now()->addMonth(),
+                    'annual' => now()->addYear(),
+                    default => now()->addMonth(),
                 };
 
                 $service->update(['next_due_date' => $newDueDate]);
 
                 Log::info('Service billing date advanced after payment', [
-                    'service_id'    => $service->id,
-                    'invoice_id'    => $invoice->id,
+                    'service_id' => $service->id,
+                    'invoice_id' => $invoice->id,
                     'billing_cycle' => $service->billing_cycle,
-                    'new_due_date'  => $newDueDate->toDateString(),
+                    'new_due_date' => $newDueDate->toDateString(),
                 ]);
             }
         } catch (\Exception $e) {
             Log::error('Failed to advance service billing dates', [
                 'invoice_id' => $invoice->id,
-                'error'      => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
         }
     }
@@ -772,13 +790,13 @@ class PaymentController extends Controller
 
         $validated = $request->validate([
             'payment_reference' => 'nullable|string|max:100',
-            'bank_name'        => 'nullable|string|max:100',
-            'account_name'     => 'nullable|string|max:100',
-            'notes'            => 'nullable|string|max:1000',
+            'bank_name' => 'nullable|string|max:100',
+            'account_name' => 'nullable|string|max:100',
+            'notes' => 'nullable|string|max:1000',
         ]);
 
         try {
-            $gateway = PaymentGatewayFactory::make('manual');
+            $gateway = PaymentGatewayFactory::makeForInvoice('manual', $invoice);
             $result = $gateway->initiate($invoice, array_merge($validated, [
                 'currency' => 'KES',
             ]));
@@ -826,7 +844,7 @@ class PaymentController extends Controller
         try {
             $checkoutRequestId = $request->input('checkout_request_id');
 
-            $gateway = PaymentGatewayFactory::make('mpesa');
+            $gateway = PaymentGatewayFactory::makeForInvoice('mpesa', $invoice);
             $result = $gateway->verify($checkoutRequestId);
 
             // If payment is confirmed, update the database and process completion

@@ -4,7 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Authentication') — {{ config('app.name', 'Talksasa Cloud') }}</title>
+    <title>@yield('title', 'Authentication') — {{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa Cloud') }}</title>
+
+    @isset($resellerBranding['favicon_url'])
+    <link rel="icon" type="image/x-icon" href="{{ $resellerBranding['favicon_url'] }}">
+    @endisset
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.bunny.net">
@@ -457,12 +461,16 @@
             <!-- Header: Logo -->
             <div class="auth-header">
                 <a href="/" class="inline-flex items-center gap-3 group">
+                    @if(!empty($resellerBranding['logo_url']))
+                        <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-11 w-auto max-w-[140px] object-contain">
+                    @else
                     <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:shadow-xl group-hover:shadow-purple-500/20 transition-shadow">
-                        T
+                        {{ strtoupper(substr($resellerBranding['company_name'] ?? 'T', 0, 1)) }}
                     </div>
+                    @endif
                     <div>
-                        <div class="font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-white">Talksasa</div>
-                        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 tracking-wide">CLOUD</div>
+                        <div class="font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-white">{{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa') }}</div>
+                        <div class="text-xs font-medium text-slate-500 dark:text-slate-400 tracking-wide">{{ strtoupper($resellerBranding['tagline'] ?? 'CLOUD') }}</div>
                     </div>
                 </a>
             </div>
@@ -482,7 +490,7 @@
                         <a href="#" class="hover:text-slate-700 dark:hover:text-slate-300 transition">Privacy</a>
                         <a href="#" class="hover:text-slate-700 dark:hover:text-slate-300 transition">Contact</a>
                     </div>
-                    <div class="hidden sm:block text-slate-400 dark:text-slate-500">© 2026 Talksasa</div>
+                    <div class="hidden sm:block text-slate-400 dark:text-slate-500">&copy; {{ date('Y') }} {{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa') }}</div>
                 </div>
             </div>
         </div>

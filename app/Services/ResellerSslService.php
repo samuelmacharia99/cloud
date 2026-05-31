@@ -2,12 +2,154 @@
 
 namespace App\Services;
 
+use App\Jobs\ProvisionResellerSslJob;
+use App\Models\Setting;
 use App\Models\User;
-use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use Exception;
+use Illuminate\Support\Facades\Log;
 
 class ResellerSslService
 {
+    private const RENEW_WITHIN_DAYS = 14;
+
+    private const RETRY_AFTER_MINUTES = 60;
+
+    public function queueProvision(User $reseller, string $reason = 'manual'): bool
+    {
+        $domain = $reseller->settings['branding']['custom_domain'] ?? null;
+
+        if (empty($domain)) {
+            return false;
+        }
+
+        $ssl = $this->getSslStatus($reseller);
+
+        if (in_array($ssl['status'], ['pending', 'provisioning'], true)) {
+            if (! $this->isStale($ssl, $ssl['status'] === 'pending' ? 15 : 20)) {
+                return false;
+            }
+        }
+
+        if ($ssl['status'] === 'failed' && ! $this->canRetry($ssl)) {
+            return false;
+        }
+
+        $this->updateSslStatus($reseller, [
+            'status' => 'pending',
+            'domain' => $domain,
+            'error' => null,
+            'queued_reason' => $reason,
+            'queued_at' => now()->toIso8601String(),
+        ]);
+
+        ProvisionResellerSslJob::dispatch($reseller->id);
+
+        Log::info('Queued reseller SSL provisioning job', [
+            'reseller_id' => $reseller->id,
+            'domain' => $domain,
+            'reason' => $reason,
+        ]);
+
+        return true;
+    }
+
+    public function shouldProcess(User $reseller): bool
+    {
+        $domain = $reseller->settings['branding']['custom_domain'] ?? null;
+
+        if (empty($domain)) {
+            return false;
+        }
+
+        $ssl = $this->getSslStatus($reseller);
+
+        if (in_array($ssl['status'], ['pending', 'provisioning'], true)) {
+            return $this->isStale($ssl, $ssl['status'] === 'pending' ? 15 : 20);
+        }
+
+        if ($ssl['status'] === 'active') {
+            return $this->expiresWithinDays($ssl, self::RENEW_WITHIN_DAYS);
+        }
+
+        if ($ssl['status'] === 'failed') {
+            return $this->canRetry($ssl);
+        }
+
+        return in_array($ssl['status'], ['none', 'failed'], true) || empty($ssl['status']);
+    }
+
+    public function processAutomatically(User $reseller): array
+    {
+        $reseller->refresh();
+        $domain = $reseller->settings['branding']['custom_domain'] ?? null;
+
+        if (empty($domain)) {
+            return ['action' => 'skipped', 'success' => false, 'message' => 'No custom domain configured.'];
+        }
+
+        $ssl = $this->getSslStatus($reseller);
+
+        if ($ssl['status'] === 'active' && $this->expiresWithinDays($ssl, self::RENEW_WITHIN_DAYS)) {
+            $this->updateSslStatus($reseller, [
+                'status' => 'provisioning',
+                'last_attempt_at' => now()->toIso8601String(),
+            ]);
+
+            $result = $this->renewCertificate($reseller);
+
+            return array_merge(['action' => 'renew'], $result);
+        }
+
+        if ($ssl['status'] === 'active') {
+            return ['action' => 'skipped', 'success' => true, 'message' => 'Certificate is still valid.'];
+        }
+
+        $this->updateSslStatus($reseller, [
+            'status' => 'provisioning',
+            'domain' => $domain,
+            'last_attempt_at' => now()->toIso8601String(),
+        ]);
+
+        $result = $this->issueCertificate($reseller);
+
+        return array_merge(['action' => 'issue'], $result);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function sslStatusForDomain(?string $domain): array
+    {
+        if (empty($domain)) {
+            return [
+                'status' => 'none',
+                'domain' => null,
+                'cert_path' => null,
+                'key_path' => null,
+                'issued_at' => null,
+                'expires_at' => null,
+                'error' => null,
+                'queued_reason' => null,
+                'queued_at' => null,
+                'last_attempt_at' => null,
+            ];
+        }
+
+        return [
+            'status' => 'pending',
+            'domain' => $domain,
+            'cert_path' => null,
+            'key_path' => null,
+            'issued_at' => null,
+            'expires_at' => null,
+            'error' => null,
+            'queued_reason' => 'domain_updated',
+            'queued_at' => now()->toIso8601String(),
+            'last_attempt_at' => null,
+        ];
+    }
+
     public function checkDns(string $domain): array
     {
         try {
@@ -43,7 +185,7 @@ class ResellerSslService
                 'domain_ip' => null,
                 'server_ip' => null,
                 'match' => false,
-                'message' => 'Unable to check DNS: ' . $e->getMessage(),
+                'message' => 'Unable to check DNS: '.$e->getMessage(),
             ];
         }
     }
@@ -52,9 +194,11 @@ class ResellerSslService
     {
         try {
             exec('which certbot', $output, $exitCode);
+
             return $exitCode === 0;
         } catch (Exception $e) {
             Log::warning('Certbot availability check failed', ['error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -73,7 +217,7 @@ class ResellerSslService
             }
 
             // Check if certbot is available
-            if (!$this->isCertbotAvailable()) {
+            if (! $this->isCertbotAvailable()) {
                 return [
                     'success' => false,
                     'message' => 'certbot is not installed on this server. Install with: sudo apt install certbot',
@@ -82,31 +226,31 @@ class ResellerSslService
 
             // Check DNS resolution
             $dnsCheck = $this->checkDns($customDomain);
-            if (!$dnsCheck['match']) {
+            if (! $dnsCheck['match']) {
                 return [
                     'success' => false,
-                    'message' => 'Custom domain does not resolve to this server. Ensure your DNS A record points to: ' . $dnsCheck['server_ip'],
+                    'message' => 'Custom domain does not resolve to this server. Ensure your DNS A record points to: '.$dnsCheck['server_ip'],
                 ];
             }
 
             // Create challenge directory
             $challengePath = public_path('.well-known/acme-challenge');
-            if (!is_dir($challengePath)) {
+            if (! is_dir($challengePath)) {
                 @mkdir($challengePath, 0755, true);
                 Log::info('Created ACME challenge directory', ['path' => $challengePath]);
             }
 
             // Get admin email
-            $adminEmail = \App\Models\Setting::getValue('admin_email', 'admin@talksasa.cloud');
+            $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
 
             // Run certbot — escape all user-supplied and system-derived values
             $webroot = public_path();
-            $command = "certbot certonly --webroot"
-                . " -d " . escapeshellarg($customDomain)
-                . " --webroot-path " . escapeshellarg($webroot)
-                . " --non-interactive --agree-tos"
-                . " --email " . escapeshellarg($adminEmail)
-                . " 2>&1";
+            $command = 'certbot certonly --webroot'
+                .' -d '.escapeshellarg($customDomain)
+                .' --webroot-path '.escapeshellarg($webroot)
+                .' --non-interactive --agree-tos'
+                .' --email '.escapeshellarg($adminEmail)
+                .' 2>&1';
 
             Log::info('Running certbot for reseller', [
                 'reseller_id' => $reseller->id,
@@ -135,7 +279,7 @@ class ResellerSslService
 
                 return [
                     'success' => false,
-                    'message' => 'Failed to issue certificate: ' . $errorMsg,
+                    'message' => 'Failed to issue certificate: '.$errorMsg,
                 ];
             }
 
@@ -143,7 +287,7 @@ class ResellerSslService
             $certPath = "/etc/letsencrypt/live/{$customDomain}/fullchain.pem";
             $keyPath = "/etc/letsencrypt/live/{$customDomain}/privkey.pem";
 
-            if (!file_exists($certPath) || !file_exists($keyPath)) {
+            if (! file_exists($certPath) || ! file_exists($keyPath)) {
                 Log::error('Certificate files not found after certbot', [
                     'reseller_id' => $reseller->id,
                     'domain' => $customDomain,
@@ -179,7 +323,7 @@ class ResellerSslService
 
             return [
                 'success' => true,
-                'message' => 'SSL certificate issued successfully. Valid until ' . ($expiryDate?->format('M d, Y') ?? 'unknown'),
+                'message' => 'SSL certificate issued successfully. Valid until '.($expiryDate?->format('M d, Y') ?? 'unknown'),
                 'expires_at' => $expiryDate?->toIso8601String(),
             ];
         } catch (Exception $e) {
@@ -191,7 +335,7 @@ class ResellerSslService
 
             return [
                 'success' => false,
-                'message' => 'An error occurred: ' . $e->getMessage(),
+                'message' => 'An error occurred: '.$e->getMessage(),
             ];
         }
     }
@@ -208,14 +352,14 @@ class ResellerSslService
                 ];
             }
 
-            if (!$this->isCertbotAvailable()) {
+            if (! $this->isCertbotAvailable()) {
                 return [
                     'success' => false,
                     'message' => 'certbot is not installed on this server.',
                 ];
             }
 
-            $command = "certbot renew --cert-name " . escapeshellarg($customDomain) . " --quiet 2>&1";
+            $command = 'certbot renew --cert-name '.escapeshellarg($customDomain).' --quiet 2>&1';
 
             Log::info('Running certbot renew for reseller', [
                 'reseller_id' => $reseller->id,
@@ -236,7 +380,7 @@ class ResellerSslService
 
                 return [
                     'success' => false,
-                    'message' => 'Failed to renew certificate: ' . $errorMsg,
+                    'message' => 'Failed to renew certificate: '.$errorMsg,
                 ];
             }
 
@@ -259,7 +403,7 @@ class ResellerSslService
 
             return [
                 'success' => true,
-                'message' => 'SSL certificate renewed successfully. Valid until ' . ($expiryDate?->format('M d, Y') ?? 'unknown'),
+                'message' => 'SSL certificate renewed successfully. Valid until '.($expiryDate?->format('M d, Y') ?? 'unknown'),
             ];
         } catch (Exception $e) {
             Log::error('Exception while renewing certificate', [
@@ -269,7 +413,7 @@ class ResellerSslService
 
             return [
                 'success' => false,
-                'message' => 'An error occurred: ' . $e->getMessage(),
+                'message' => 'An error occurred: '.$e->getMessage(),
             ];
         }
     }
@@ -284,9 +428,13 @@ class ResellerSslService
             'issued_at' => null,
             'expires_at' => null,
             'error' => null,
+            'queued_reason' => null,
+            'queued_at' => null,
+            'last_attempt_at' => null,
         ];
 
         $ssl = $reseller->settings['branding']['ssl'] ?? [];
+
         return array_merge($defaults, $ssl);
     }
 
@@ -294,7 +442,7 @@ class ResellerSslService
     {
         $settings = $reseller->settings ?? [];
 
-        if (!isset($settings['branding'])) {
+        if (! isset($settings['branding'])) {
             $settings['branding'] = [];
         }
 
@@ -306,26 +454,28 @@ class ResellerSslService
         $reseller->update(['settings' => $settings]);
     }
 
-    private function getCertificateExpiry(string $certPath): ?\Carbon\Carbon
+    private function getCertificateExpiry(string $certPath): ?Carbon
     {
         try {
-            if (!file_exists($certPath)) {
+            if (! file_exists($certPath)) {
                 return null;
             }
 
-            exec("openssl x509 -enddate -noout -in " . escapeshellarg($certPath) . " 2>/dev/null", $output, $exitCode);
+            exec('openssl x509 -enddate -noout -in '.escapeshellarg($certPath).' 2>/dev/null', $output, $exitCode);
 
             if ($exitCode !== 0 || empty($output)) {
                 return null;
             }
 
             $dateString = str_replace('notAfter=', '', $output[0]);
-            return \Carbon\Carbon::createFromFormat('M d H:i:s Y T', $dateString);
+
+            return Carbon::createFromFormat('M d H:i:s Y T', $dateString);
         } catch (Exception $e) {
             Log::warning('Failed to parse certificate expiry', [
                 'cert_path' => $certPath,
                 'error' => $e->getMessage(),
             ]);
+
             return null;
         }
     }
@@ -341,5 +491,32 @@ class ResellerSslService
         }
 
         return 'Unknown error. Check server logs for details.';
+    }
+
+    private function canRetry(array $ssl): bool
+    {
+        return $this->isStale($ssl, self::RETRY_AFTER_MINUTES, 'last_attempt_at');
+    }
+
+    private function isStale(array $ssl, int $minutes, string $field = 'queued_at'): bool
+    {
+        $timestamp = $ssl[$field] ?? $ssl['queued_at'] ?? $ssl['last_attempt_at'] ?? null;
+
+        if (! $timestamp) {
+            return true;
+        }
+
+        return now()->diffInMinutes(Carbon::parse($timestamp)) >= $minutes;
+    }
+
+    private function expiresWithinDays(array $ssl, int $days): bool
+    {
+        $expiresAt = $ssl['expires_at'] ?? null;
+
+        if (! $expiresAt) {
+            return false;
+        }
+
+        return Carbon::parse($expiresAt)->lte(now()->addDays($days));
     }
 }

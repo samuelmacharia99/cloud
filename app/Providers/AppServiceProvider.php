@@ -4,10 +4,12 @@ namespace App\Providers;
 
 use App\Models\CronJob;
 use App\Models\Setting;
-use App\Models\User;
 use App\Services\DomainPushService;
+use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerDomainTransferService;
+use App\Services\ResellerMailService;
 use App\Services\ResellerWalletService;
+use App\Services\TalksasaSmsService;
 use App\Services\WalletNotificationService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
@@ -35,6 +37,10 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->singleton(WalletNotificationService::class);
         $this->app->singleton(ResellerDomainTransferService::class);
+        $this->app->singleton(ResellerBrandingResolver::class);
+        $this->app->singleton(ResellerMailService::class);
+        $this->app->singleton(TalksasaSmsService::class);
+        $this->app->alias(TalksasaSmsService::class, 'talksasa-sms-service');
     }
 
     public function boot(): void
@@ -44,38 +50,7 @@ class AppServiceProvider extends ServiceProvider
         // Load mail settings from database
         $this->loadMailConfigFromDatabase();
 
-        // Share reseller branding with all views
-        View::composer('*', function ($view) {
-            if (! auth()->check()) {
-                return;
-            }
-
-            $user = auth()->user();
-            $reseller = null;
-
-            if ($user->is_reseller) {
-                $reseller = $user;
-            } elseif ($user->reseller_id) {
-                $reseller = User::find($user->reseller_id);
-            }
-
-            $branding = $reseller ? ($reseller->settings['branding'] ?? []) : [];
-
-            $view->with('resellerBranding', array_merge([
-                'company_name' => config('app.name'),
-                'custom_domain' => null,
-                'logo_url' => null,
-                'favicon_url' => null,
-            ], $branding));
-
-            // Share wallet balance for resellers
-            if ($user->is_reseller) {
-                $wallet = $user->wallet;
-                $view->with('walletBalance', $wallet?->balance ?? 0);
-                $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
-                $view->with('walletCurrency', $wallet?->currency ?? 'KES');
-            }
-        });
+        $this->shareResellerWalletData();
 
         // Register dynamic cron job scheduler
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
@@ -92,6 +67,20 @@ class AppServiceProvider extends ServiceProvider
                 // Silently fail on fresh install when cron_jobs table doesn't exist yet
                 Log::debug('Cron jobs not loaded: '.$e->getMessage());
             }
+        });
+    }
+
+    private function shareResellerWalletData(): void
+    {
+        View::composer(['layouts.reseller', 'dashboard.reseller'], function ($view) {
+            if (! auth()->check() || ! auth()->user()->is_reseller) {
+                return;
+            }
+
+            $wallet = auth()->user()->wallet;
+            $view->with('walletBalance', $wallet?->balance ?? 0);
+            $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
+            $view->with('walletCurrency', $wallet?->currency ?? 'KES');
         });
     }
 

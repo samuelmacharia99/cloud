@@ -102,6 +102,20 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Provision Reseller SSL',
+                'description' => 'Automatically issues and renews Let\'s Encrypt SSL for reseller custom domains.',
+                'command' => 'cron:provision-reseller-ssl',
+                'schedule' => '*/15 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Generate Reseller Package Invoices',
+                'description' => 'Creates renewal invoices for reseller packages 5 days before expiry.',
+                'command' => 'cron:generate-reseller-invoices',
+                'schedule' => '0 2 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Renew SSL Certificates',
                 'description' => 'Renews expiring SSL certificates for container domains using certbot.',
                 'command' => 'cron:renew-ssl-certificates',

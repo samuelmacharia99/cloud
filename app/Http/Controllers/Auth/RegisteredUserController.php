@@ -9,14 +9,19 @@ use App\Models\EmailVerificationCode;
 use App\Models\User;
 use App\Services\RegistrationGuardService;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class RegisteredUserController extends Controller
 {
-    public function create(RegistrationGuardService $guard): View
+    public function create(Request $request, RegistrationGuardService $guard): View
     {
+        if ($request->hasValidSignature() && $request->query('reseller')) {
+            session(['registration_reseller_id' => (int) $request->query('reseller')]);
+        }
+
         return view('auth.register-premium', [
             'registrationToken' => $guard->makeFormToken(),
         ]);
@@ -29,6 +34,7 @@ class RegisteredUserController extends Controller
         }
 
         $validated = $request->validated();
+        $resellerId = session('registration_reseller_id');
 
         $user = User::create([
             'name' => $validated['name'],
@@ -37,7 +43,10 @@ class RegisteredUserController extends Controller
             'password' => Hash::make($validated['password']),
             'email_verified_at' => null,
             'status' => 'inactive',
+            'reseller_id' => $resellerId ?: null,
         ]);
+
+        session()->forget('registration_reseller_id');
 
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
