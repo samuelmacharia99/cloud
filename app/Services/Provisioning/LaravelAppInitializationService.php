@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\DB;
 
 class LaravelAppInitializationService
 {
+    private const COMPOSER_BIN = '/usr/local/bin/composer';
+
     public const STEP_DEFINITIONS = [
         'validate' => 'Validate container and application directory',
         'scaffold' => 'Download Laravel application skeleton',
@@ -84,6 +86,8 @@ class LaravelAppInitializationService
                     throw new \RuntimeException('/app contains existing application files. Remove them or use Git deploy before initializing.');
                 }
 
+                $this->assertComposerAvailable($ssh, $deployment);
+
                 return 'Application directory is ready for Laravel scaffold.';
             });
 
@@ -91,16 +95,17 @@ class LaravelAppInitializationService
                 $constraint = (string) config('containers.laravel_init.composer_constraint', '^12.0');
                 $package = 'laravel/laravel:'.str_replace("'", '', $constraint);
                 $packageArg = escapeshellarg($package);
-                $script = <<<SH
-set -e
-cd /app
-rm -f index.html public/index.html .keep 2>/dev/null || true
-rm -rf /tmp/talksasa-laravel-init
-composer create-project {$packageArg} /tmp/talksasa-laravel-init --prefer-dist --no-interaction --no-progress
-cp -a /tmp/talksasa-laravel-init/. /app/
-rm -rf /tmp/talksasa-laravel-init
-test -f /app/artisan
-SH;
+                $composer = $this->composerInvoke('');
+                $script = implode('; ', [
+                    'set -e',
+                    'cd /app',
+                    'rm -f index.html public/index.html .keep 2>/dev/null || true',
+                    'rm -rf /tmp/talksasa-laravel-init',
+                    trim($composer.' create-project '.$packageArg.' /tmp/talksasa-laravel-init --prefer-dist --no-interaction --no-progress'),
+                    'cp -a /tmp/talksasa-laravel-init/. /app/',
+                    'rm -rf /tmp/talksasa-laravel-init',
+                    'test -f /app/artisan',
+                ]);
 
                 $output = $this->dockerExec($ssh, $deployment->container_name, $script, $timeout);
 
@@ -111,7 +116,7 @@ SH;
                 $output = $this->dockerExec(
                     $ssh,
                     $deployment->container_name,
-                    'set -e; cd /app; composer install --no-interaction --no-progress --optimize-autoloader',
+                    'set -e; cd /app; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
                     $timeout
                 );
 
@@ -618,10 +623,45 @@ SH;
         bool $asRoot = false
     ): string {
         $userFlag = $asRoot ? '-u 0' : '-u www-data';
+        $script = $this->wrapContainerScript($script);
 
         return $ssh->exec(
             'docker exec '.$userFlag.' -w /app '.escapeshellarg($containerName).' sh -lc '.escapeshellarg($script),
             $timeout
         );
+    }
+
+    private function wrapContainerScript(string $script): string
+    {
+        if (str_contains($script, 'PATH="/usr/local/bin:/usr/bin:/bin"')) {
+            return $script;
+        }
+
+        return 'export PATH="/usr/local/bin:/usr/bin:/bin"; '.$script;
+    }
+
+    private function composerInvoke(string $arguments): string
+    {
+        $arguments = trim($arguments);
+
+        return $arguments === ''
+            ? 'php '.self::COMPOSER_BIN
+            : 'php '.self::COMPOSER_BIN.' '.$arguments;
+    }
+
+    private function assertComposerAvailable(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'test -f '.self::COMPOSER_BIN.' && php '.self::COMPOSER_BIN.' --version >/dev/null',
+                20
+            );
+        } catch (\Throwable) {
+            throw new \RuntimeException(
+                'Composer is not available in this container. Redeploy the stack so the Talksasa PHP runtime image is used, then try again.'
+            );
+        }
     }
 }
