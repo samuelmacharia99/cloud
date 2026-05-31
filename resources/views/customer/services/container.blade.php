@@ -108,16 +108,26 @@
         @endif
 
         @if ($deployment)
+            @php
+                $containerTabs = ['overview', 'files', 'terminal', 'backups', 'domains', 'database', 'logs'];
+                if (! empty($supportsGitRepository)) {
+                    array_splice($containerTabs, array_search('database', $containerTabs, true) + 1, 0, 'github');
+                }
+                $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
+            @endphp
             <!-- Tab Navigation -->
-            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8" x-data="{ activeTab: 'overview' }">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8" x-data="{ activeTab: @js($initialTab) }">
                 <div class="border-b border-slate-200 dark:border-slate-700">
-                    <nav class="flex" role="tablist">
+                    <nav class="flex flex-wrap" role="tablist">
                         <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📊 Overview</button>
                         <button @click="activeTab = 'files'" :class="activeTab === 'files' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📁 Files</button>
                         <button @click="activeTab = 'terminal'" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
                         <button @click="activeTab = 'backups'" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
                         <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
                         <button @click="activeTab = 'database'" :class="activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🗄️ Database</button>
+                        @if (!empty($supportsGitRepository))
+                            <button @click="activeTab = 'github'" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🐙 GitHub</button>
+                        @endif
                         <button @click="activeTab = 'logs'" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
                     </nav>
                 </div>
@@ -175,8 +185,6 @@
                         @if (!empty($isLaravelTemplate))
                             @include('customer.services.partials.laravel-setup')
                         @endif
-
-                        @include('customer.services.partials.git-repository')
 
                         <!-- Stats Dashboard -->
                         @include('customer.services.partials.enhanced-stats')
@@ -438,6 +446,13 @@
                             @endif
                         </div>
                     </div>
+
+                    @if (!empty($supportsGitRepository))
+                        <!-- GitHub Tab -->
+                        <div x-show="activeTab === 'github'">
+                            @include('customer.services.partials.git-repository')
+                        </div>
+                    @endif
 
                     <!-- Logs Tab -->
                     <div x-show="activeTab === 'logs'">

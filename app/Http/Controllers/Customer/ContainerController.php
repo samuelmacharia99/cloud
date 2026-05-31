@@ -328,7 +328,9 @@ class ContainerController extends Controller
                 (string) $request->input('source_repo_branch', 'main')
             );
 
-            return back()->with('success', 'Git repository saved. Use Pull latest to sync code into /app.');
+            return redirect()
+                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+                ->with('success', 'Git repository saved. Use Pull latest to sync code into /app.');
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
@@ -363,7 +365,9 @@ class ContainerController extends Controller
                 $request->boolean('run_migrations', true),
             );
 
-            return back()->with('success', $result['message']);
+            return redirect()
+                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+                ->with('success', $result['message']);
         } catch (\InvalidArgumentException $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
