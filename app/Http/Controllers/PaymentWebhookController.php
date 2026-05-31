@@ -3,19 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
-use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
 use App\Services\DomainPushService;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\Provisioning\InvoiceProvisioningService;
+use App\Services\ResellerInvoicePaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class PaymentWebhookController extends Controller
 {
-    /**
-     * Handle M-Pesa callback for both customers and resellers
-     */
     public function mpesaCallback(Request $request)
     {
         if (! $this->isValidMpesaCallback($request)) {
@@ -30,17 +28,11 @@ class PaymentWebhookController extends Controller
             $gateway = PaymentGatewayFactory::make('mpesa');
             $result = $gateway->handleCallback($request->all());
 
-            // If payment was successful, handle completion based on payment type
             if ($result['success'] && isset($result['payment_id'])) {
-                $payment = Payment::find($result['payment_id']);
+                $payment = Payment::with('invoice.user')->find($result['payment_id']);
+
                 if ($payment && $payment->invoice) {
-                    // Check if this is a reseller payment (domain registration)
-                    if ($this->isResellerDomainPayment($payment->invoice)) {
-                        $this->handleResellerDomainPayment($payment);
-                    } else {
-                        // Customer payment - provision services
-                        $this->provisionCustomerServices($payment);
-                    }
+                    $this->handleCompletedInvoicePayment($payment);
                 }
             }
 
@@ -69,62 +61,59 @@ class PaymentWebhookController extends Controller
         return hash_equals($token, (string) $request->query('token', ''));
     }
 
-    /**
-     * Check if payment is for reseller domain order
-     */
-    private function isResellerDomainPayment($invoice): bool
+    private function handleCompletedInvoicePayment(Payment $payment): void
     {
-        if ($invoice->type !== 'service' && $invoice->type !== null) {
-            return false;
+        $invoice = $payment->invoice;
+        $user = $invoice->user;
+
+        if ($user->is_reseller) {
+            $this->handleResellerInvoicePayment($payment);
+
+            return;
         }
 
-        foreach ($invoice->items as $item) {
-            if ($item->product_type === 'Domain') {
-                return true;
-            }
-        }
+        $this->provisionCustomerServices($payment);
 
-        return false;
+        if ($user->reseller_id !== null) {
+            $this->processResellerCustomerDomainOrders($invoice);
+        }
     }
 
-    /**
-     * Handle reseller domain payment completion
-     */
-    private function handleResellerDomainPayment(Payment $payment)
+    private function handleResellerInvoicePayment(Payment $payment): void
     {
         try {
             $invoice = $payment->invoice;
+            $invoicePaymentService = app(ResellerInvoicePaymentService::class);
 
-            // Push all queued domain orders linked to this invoice
-            foreach ($invoice->items as $item) {
-                if ($item->product_type === 'Domain' && isset($item->custom_options['domain_order_id'])) {
-                    $domainOrderId = $item->custom_options['domain_order_id'];
-                    $order = ResellerDomainOrder::find($domainOrderId);
+            $invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
+            NotificationService::notifyPaymentReceived($invoice);
+            app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
 
-                    if ($order && $order->status === 'queued') {
-                        $domainPushService = app(DomainPushService::class);
-                        $domainPushService->pushOrderWithDirectPayment($order);
-
-                        Log::info('Reseller domain order pushed via M-Pesa callback', [
-                            'payment_id' => $payment->id,
-                            'domain_order_id' => $order->id,
-                            'domain_name' => $order->domain_name,
-                        ]);
-                    }
-                }
-            }
+            Log::info('Reseller invoice payment handled via M-Pesa callback', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $payment->invoice_id,
+            ]);
         } catch (\Exception $e) {
-            Log::error('Reseller domain payment completion failed', [
+            Log::error('Reseller invoice payment completion failed', [
                 'payment_id' => $payment->id,
                 'error' => $e->getMessage(),
             ]);
         }
     }
 
-    /**
-     * Handle customer payment completion - provision services
-     */
-    private function provisionCustomerServices(Payment $payment)
+    private function processResellerCustomerDomainOrders($invoice): void
+    {
+        try {
+            app('domain-push-service')->handlePaidDomainInvoice($invoice);
+        } catch (\Exception $e) {
+            Log::error('Reseller customer domain order processing failed from webhook', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function provisionCustomerServices(Payment $payment): void
     {
         try {
             app(InvoiceProvisioningService::class)

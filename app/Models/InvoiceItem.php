@@ -13,16 +13,19 @@ class InvoiceItem extends Model
         'invoice_id',
         'service_id',
         'product_id',
+        'product_type',
         'domain_id',
         'description',
         'quantity',
         'unit_price',
         'amount',
+        'custom_options',
     ];
 
     protected $casts = [
         'unit_price' => 'decimal:2',
         'amount' => 'decimal:2',
+        'custom_options' => 'array',
     ];
 
     public function invoice()

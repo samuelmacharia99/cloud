@@ -7,11 +7,12 @@ use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Services\DomainPushService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +21,8 @@ class PaymentController extends Controller
 {
     public function __construct(
         protected PaymentGatewayFactory $gatewayFactory,
+        protected ResellerInvoicePaymentService $invoicePaymentService,
+        protected ResellerWalletService $walletService,
     ) {}
 
     public function selectMethod(Invoice $invoice)
@@ -32,12 +35,18 @@ class PaymentController extends Controller
         }
 
         $gateways = $this->gatewayFactory->getAvailableGateways();
+        $wallet = $this->walletService->getOrCreate(auth()->user());
+        $amountDue = $this->invoicePaymentService->amountDue($invoice);
 
         if (request()->wantsJson()) {
-            return response()->json(['gateways' => $gateways]);
+            return response()->json([
+                'gateways' => $gateways,
+                'wallet_balance' => $wallet->balance,
+                'amount_due' => $amountDue,
+            ]);
         }
 
-        return view('reseller.payment.select-method', compact('invoice', 'gateways'));
+        return view('reseller.payment.select-method', compact('invoice', 'gateways', 'wallet', 'amountDue'));
     }
 
     public function initiate(Request $request, Invoice $invoice)
@@ -45,21 +54,42 @@ class PaymentController extends Controller
         abort_if($invoice->user_id !== auth()->id(), 403);
 
         $request->validate([
-            'method' => 'required|string|in:mpesa,stripe,paypal,manual',
+            'method' => 'required|string|in:mpesa,stripe,paypal,manual,wallet',
             'phone' => 'required_if:method,mpesa|nullable|string',
+            'apply_wallet' => 'nullable|boolean',
         ]);
 
         $method = $request->input('method');
+        $reseller = auth()->user();
 
         try {
+            if ($request->boolean('apply_wallet') || $method === 'wallet') {
+                $this->invoicePaymentService->applyWallet($invoice, $reseller, true);
+                $invoice->refresh();
+            }
+
+            if ($this->invoicePaymentService->amountDue($invoice) <= 0) {
+                $this->processPaymentCompletion(null, $invoice->fresh());
+
+                return redirect()->route('reseller.invoices.show', $invoice)
+                    ->with('success', 'Invoice paid successfully using your wallet balance.');
+            }
+
+            if ($method === 'wallet') {
+                return redirect()->back()
+                    ->with('error', 'Wallet balance is not enough to cover this invoice. Apply wallet and choose another payment method for the remainder.');
+            }
+
             if ($method === 'manual') {
                 return redirect()->route('reseller.payment.manual-form', $invoice);
             }
 
             $gateway = $this->gatewayFactory->make($method);
+            $amountDue = $this->invoicePaymentService->amountDue($invoice);
 
             $initiateData = $gateway->initiate($invoice, [
                 'phone' => $request->input('phone'),
+                'charge_amount' => $amountDue,
             ]);
 
             if (! ($initiateData['success'] ?? false)) {
@@ -116,7 +146,6 @@ class PaymentController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Payment not found']);
         }
 
-        // Check current payment status first (may have been updated by callback)
         if ($payment->status->value === 'completed') {
             return response()->json(['status' => 'completed']);
         }
@@ -254,6 +283,7 @@ class PaymentController extends Controller
             $gateway = $this->gatewayFactory->make('manual');
             $initiateData = $gateway->initiate($invoice, [
                 'proof' => $request->input('proof'),
+                'charge_amount' => $this->invoicePaymentService->amountDue($invoice),
             ]);
 
             return redirect()->route('reseller.payment.manual-submitted', $initiateData['payment_id'] ?? '')
@@ -274,34 +304,21 @@ class PaymentController extends Controller
         return view('reseller.payment.manual-submitted', ['payment' => $payment]);
     }
 
-    private function processPaymentCompletion(Payment $payment, Invoice $invoice)
+    private function processPaymentCompletion(?Payment $payment, Invoice $invoice): void
     {
         try {
             \DB::beginTransaction();
 
-            $invoice->update([
-                'status' => 'paid',
-                'paid_date' => now(),
-            ]);
-            $payment->update(['status' => PaymentStatus::Completed]);
-
-            // Notify about payment
-            NotificationService::notifyPaymentReceived($invoice);
-
-            // Push all queued domain orders linked to this invoice
-            foreach ($invoice->items as $item) {
-                if ($item->product_type === 'Domain' && isset($item->custom_options['domain_order_id'])) {
-                    $domainOrderId = $item->custom_options['domain_order_id'];
-                    $order = ResellerDomainOrder::find($domainOrderId);
-
-                    if ($order && $order->status === 'queued') {
-                        $domainPushService = app(DomainPushService::class);
-                        $domainPushService->pushOrderWithDirectPayment($order);
-                    }
-                }
+            if ($payment) {
+                $payment->update(['status' => PaymentStatus::Completed, 'paid_at' => now()]);
             }
 
-            // Provision pending services linked to this invoice
+            $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
+
+            NotificationService::notifyPaymentReceived($invoice);
+
+            app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+
             foreach ($invoice->items as $item) {
                 if ($item->service_id) {
                     $service = Service::find($item->service_id);

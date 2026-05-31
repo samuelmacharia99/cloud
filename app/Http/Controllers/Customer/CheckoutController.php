@@ -16,6 +16,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\ResellerDomainOrderService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -407,6 +408,7 @@ class CheckoutController extends Controller
                             'product_id' => $domainProduct->id,
                             'order_item_id' => $orderItem->id,
                             'invoice_id' => $invoice->id,
+                            'reseller_id' => $user->reseller_id,
                             'name' => "{$item['domain']}{$item['extension']}",
                             'status' => 'pending',
                             'billing_cycle' => 'annual',
@@ -421,7 +423,7 @@ class CheckoutController extends Controller
                         ]);
 
                         // Create InvoiceItem
-                        InvoiceItem::create([
+                        InvoiceItem::create(array_merge([
                             'invoice_id' => $invoice->id,
                             'service_id' => $service->id,
                             'product_id' => $domainProduct->id,
@@ -429,7 +431,7 @@ class CheckoutController extends Controller
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
-                        ]);
+                        ], $this->resellerDomainInvoiceItemFields($user, $domain, $invoice, $item)));
                     }
                 }
 
@@ -977,6 +979,7 @@ class CheckoutController extends Controller
                             'product_id' => $domainProduct->id,
                             'order_item_id' => $orderItem->id,
                             'invoice_id' => $invoice->id,
+                            'reseller_id' => $user->reseller_id,
                             'name' => "{$item['domain']}{$item['extension']}",
                             'status' => 'pending',
                             'billing_cycle' => 'annual',
@@ -991,7 +994,7 @@ class CheckoutController extends Controller
                         ]);
 
                         // Create InvoiceItem
-                        InvoiceItem::create([
+                        InvoiceItem::create(array_merge([
                             'invoice_id' => $invoice->id,
                             'service_id' => $service->id,
                             'product_id' => $domainProduct->id,
@@ -999,7 +1002,7 @@ class CheckoutController extends Controller
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
-                        ]);
+                        ], $this->resellerDomainInvoiceItemFields($user, $domain, $invoice, $item)));
                     }
                 }
 
@@ -1020,5 +1023,20 @@ class CheckoutController extends Controller
 
             return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
+    }
+
+    private function resellerDomainInvoiceItemFields(User $user, Domain $domain, Invoice $invoice, array $item): array
+    {
+        $domainOrder = app(ResellerDomainOrderService::class)->createForCustomerCheckout(
+            $user,
+            $domain,
+            $invoice,
+            $item['domain'],
+            $item['extension'],
+            (int) $item['years'],
+            (float) $item['amount'],
+        );
+
+        return app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder);
     }
 }

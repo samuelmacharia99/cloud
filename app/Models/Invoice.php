@@ -21,6 +21,7 @@ class Invoice extends Model
         'subtotal',
         'tax',
         'total',
+        'wallet_amount_applied',
         'notes',
     ];
 
@@ -30,6 +31,7 @@ class Invoice extends Model
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
+        'wallet_amount_applied' => 'decimal:2',
         'status' => InvoiceStatus::class,
     ];
 
@@ -113,6 +115,11 @@ class Invoice extends Model
     public function isFullyPaid(): bool
     {
         return $this->getAmountRemaining() <= 0;
+    }
+
+    public function amountDue(): float
+    {
+        return max(0, round((float) $this->total - (float) ($this->wallet_amount_applied ?? 0), 2));
     }
 
     public function scopeResellerSubscription($query)

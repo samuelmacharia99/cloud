@@ -74,6 +74,7 @@ class MpesaService implements PaymentGatewayInterface
     {
         try {
             $phone = $this->sanitizePhone($customerData['phone'] ?? '');
+            $chargeAmount = (float) ($customerData['charge_amount'] ?? $invoice->amountDue());
             $token = $this->getAccessToken();
 
             if (! $token) {
@@ -88,7 +89,7 @@ class MpesaService implements PaymentGatewayInterface
                 'Password' => $password,
                 'Timestamp' => $timestamp,
                 'TransactionType' => 'CustomerPayBillOnline',
-                'Amount' => (int) ceil($invoice->total),
+                'Amount' => (int) ceil($chargeAmount),
                 'PartyA' => $phone,
                 'PartyB' => $this->businessShortCode,
                 'PhoneNumber' => $phone,
@@ -121,7 +122,7 @@ class MpesaService implements PaymentGatewayInterface
             Payment::create([
                 'user_id' => $invoice->user_id,
                 'invoice_id' => $invoice->id,
-                'amount' => $invoice->total,
+                'amount' => $chargeAmount,
                 'currency' => 'KES',
                 'payment_method' => 'mpesa',
                 'transaction_reference' => $data['CheckoutRequestID'] ?? null,

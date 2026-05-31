@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
+use App\Models\Setting;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class CheckoutController extends Controller
 {
@@ -32,8 +33,8 @@ class CheckoutController extends Controller
             }
         }
 
-        $taxEnabled = \App\Models\Setting::getValue('tax_enabled') === 'true';
-        $taxRate = $taxEnabled ? (float) \App\Models\Setting::getValue('tax_rate', 0) : 0;
+        $taxEnabled = Setting::getValue('tax_enabled') === 'true';
+        $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
@@ -63,7 +64,7 @@ class CheckoutController extends Controller
                 if ($item['type'] === 'domain') {
                     $extension = DomainExtension::where('extension', $item['extension'])->first();
 
-                    if (!$extension) {
+                    if (! $extension) {
                         throw new \Exception("Extension {$item['extension']} not found");
                     }
 
@@ -72,7 +73,7 @@ class CheckoutController extends Controller
                         ->where('period_years', $item['years'])
                         ->first();
 
-                    if (!$wholesalePrice) {
+                    if (! $wholesalePrice) {
                         throw new \Exception("No wholesale pricing for {$item['extension']} ({$item['years']} years)");
                     }
 
@@ -106,7 +107,7 @@ class CheckoutController extends Controller
 
                     // Create invoice item with domain order reference
                     $invoiceItems[] = [
-                        'description' => $item['domain'] . $item['extension'] . ' (' . $item['years'] . ' year' . ($item['years'] > 1 ? 's' : '') . ')',
+                        'description' => $item['domain'].$item['extension'].' ('.$item['years'].' year'.($item['years'] > 1 ? 's' : '').')',
                         'quantity' => 1,
                         'unit_price' => $wholesaleAmount,
                         'custom_options' => ['domain_order_id' => $order->id],
@@ -114,8 +115,8 @@ class CheckoutController extends Controller
                 }
             }
 
-            $taxEnabled = \App\Models\Setting::getValue('tax_enabled') === 'true';
-            $taxRate = $taxEnabled ? (float) \App\Models\Setting::getValue('tax_rate', 0) : 0;
+            $taxEnabled = Setting::getValue('tax_enabled') === 'true';
+            $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
             $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
             $total = $subtotal + $tax;
 
@@ -124,7 +125,7 @@ class CheckoutController extends Controller
                 'user_id' => $reseller->id,
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'status' => 'unpaid',
-                'due_date' => now()->addDays((int) \App\Models\Setting::getValue('invoice_due_days', 30)),
+                'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
                 'subtotal' => $subtotal,
                 'tax' => $taxEnabled ? $tax : 0,
                 'total' => $total,
@@ -147,6 +148,11 @@ class CheckoutController extends Controller
 
             \DB::commit();
 
+            // Link domain orders to this invoice for self-purchase push flow
+            ResellerDomainOrder::whereIn('id', $domainOrders)->update([
+                'customer_invoice_id' => $invoice->id,
+            ]);
+
             session()->forget(CartController::CART_KEY);
 
             return redirect()->route('reseller.invoices.show', $invoice)
@@ -156,16 +162,16 @@ class CheckoutController extends Controller
 
             return redirect()->route('reseller.checkout.show')
                 ->withInput()
-                ->with('error', 'Failed to create order: ' . $e->getMessage());
+                ->with('error', 'Failed to create order: '.$e->getMessage());
         }
     }
 
     private function generateInvoiceNumber(): string
     {
-        $prefix = \App\Models\Setting::getValue('invoice_prefix', 'INV');
+        $prefix = Setting::getValue('invoice_prefix', 'INV');
         $date = now()->format('Ymd');
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
-        return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
     }
 }

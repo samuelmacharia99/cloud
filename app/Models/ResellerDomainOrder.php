@@ -14,6 +14,7 @@ class ResellerDomainOrder extends Model
         'wallet_transaction_id',
         'admin_order_id',
         'admin_invoice_id',
+        'customer_invoice_id',
         'domain_name',
         'extension',
         'years',
@@ -68,6 +69,11 @@ class ResellerDomainOrder extends Model
     public function adminInvoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class, 'admin_invoice_id');
+    }
+
+    public function customerInvoice(): BelongsTo
+    {
+        return $this->belongsTo(Invoice::class, 'customer_invoice_id');
     }
 
     public function isExpired(): bool

@@ -58,11 +58,36 @@ class WalletNotificationService
         }
     }
 
+    public function sendNewCustomerDomainOrderNotification(ResellerDomainOrder $order): void
+    {
+        $reseller = $order->reseller;
+        $customer = $order->customer;
+        $walletUrl = route('reseller.wallet.index');
+        $message = "New domain order: {$order->domain_name}{$order->extension} for {$customer->name}. Customer payment received. Top up your wallet ({$order->wholesale_amount} KES required) and push the order: {$walletUrl}";
+
+        try {
+            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send new customer domain order SMS to reseller {$reseller->id}: {$e->getMessage()}");
+        }
+
+        if ($reseller->email) {
+            try {
+                Mail::raw($message, function ($mail) use ($reseller) {
+                    $mail->to($reseller->email)
+                        ->subject('New customer domain order — wallet top-up required');
+                });
+            } catch (\Exception $e) {
+                \Log::error("Failed to send new customer domain order email to reseller {$reseller->id}: {$e->getMessage()}");
+            }
+        }
+    }
+
     public function sendDomainQueuedNotification(ResellerDomainOrder $order): void
     {
         $reseller = $order->reseller;
         $customer = $order->customer;
-        $message = "Domain {$order->domain_name}.{$order->extension} for customer {$customer->name} is queued. Top up your wallet to process.";
+        $message = "Domain {$order->domain_name}{$order->extension} for customer {$customer->name} is queued. Top up your wallet to process.";
 
         try {
             app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
