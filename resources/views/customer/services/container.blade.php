@@ -176,6 +176,8 @@
                             @include('customer.services.partials.laravel-setup')
                         @endif
 
+                        @include('customer.services.partials.git-repository')
+
                         <!-- Stats Dashboard -->
                         @include('customer.services.partials.enhanced-stats')
                     </div>

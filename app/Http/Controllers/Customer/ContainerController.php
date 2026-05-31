@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
+use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
+use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Jobs\InitializeContainerAppJob;
 use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
@@ -16,6 +18,7 @@ use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerFileService;
+use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
@@ -57,6 +60,9 @@ class ContainerController extends Controller
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
         $isLaravelTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
+        $gitRepositoryService = app(ContainerGitRepositoryService::class);
+        $supportsGitRepository = $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug);
+        $gitRepository = $supportsGitRepository ? $gitRepositoryService->repositorySettings($service) : null;
 
         return view('customer.services.container', compact(
             'service',
@@ -64,7 +70,9 @@ class ContainerController extends Controller
             'status',
             'databaseContext',
             'databaseConsoleEnabled',
-            'isLaravelTemplate'
+            'isLaravelTemplate',
+            'supportsGitRepository',
+            'gitRepository',
         ));
     }
 
@@ -300,6 +308,69 @@ class ContainerController extends Controller
                 'completed_at' => $latest->completed_at?->toIso8601String(),
             ] : null,
         ]);
+    }
+
+    public function updateGitRepository(
+        Service $service,
+        UpdateContainerGitRepositoryRequest $request,
+        ContainerGitRepositoryService $gitRepositoryService
+    ): RedirectResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return back()->withErrors(['error' => 'Git repository connections are not supported for this container type.']);
+        }
+
+        try {
+            $gitRepositoryService->connect(
+                $service,
+                $request->input('source_repo_url'),
+                (string) $request->input('source_repo_branch', 'main')
+            );
+
+            return back()->with('success', 'Git repository saved. Use Pull latest to sync code into /app.');
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to connect Git repository for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to save repository settings: '.$e->getMessage()]);
+        }
+    }
+
+    public function pullGitRepository(
+        Service $service,
+        PullContainerGitRepositoryRequest $request,
+        ContainerGitRepositoryService $gitRepositoryService
+    ): RedirectResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return back()->withErrors(['error' => 'Git repository pulls are not supported for this container type.']);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $deployment->status !== 'running') {
+            return back()->withErrors(['error' => 'Start the container before pulling code from Git.']);
+        }
+
+        try {
+            $result = $gitRepositoryService->pull(
+                $service,
+                $deployment,
+                $request->boolean('replace_existing'),
+                $request->boolean('run_composer', true),
+                $request->boolean('run_migrations', true),
+            );
+
+            return back()->with('success', $result['message']);
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to pull Git repository for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to pull repository: '.$e->getMessage()]);
+        }
     }
 
     private function reconcileStuckProvisioningState(Service $service, $deployment, ?array $status): void

@@ -1253,49 +1253,7 @@ class ContainerDeploymentService
 
     private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void
     {
-        $ssh->mkdirp($hostAppPath);
-
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $repoUrl = trim((string) ($meta['source_repo_url'] ?? ''));
-        $branch = trim((string) ($meta['source_repo_branch'] ?? 'main'));
-        if ($branch === '') {
-            $branch = 'main';
-        }
-
-        // If no source configured, keep folder available for uploads/file manager usage.
-        if ($repoUrl === '') {
-            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
-
-            return;
-        }
-
-        // Best-effort clone/pull workflow.
-        // Uses host git so application files persist and can be mounted to container path.
-        $pathArg = escapeshellarg($hostAppPath);
-        $repoArg = escapeshellarg($repoUrl);
-        $branchArg = escapeshellarg($branch);
-        $script = 'set -e; '
-            ."if [ -d {$pathArg}/.git ]; then "
-            ."cd {$pathArg}; "
-            ."git fetch --depth=1 origin {$branchArg}; "
-            ."git checkout -f {$branchArg}; "
-            .'git reset --hard FETCH_HEAD; '
-            .'else '
-            ."rm -rf {$pathArg}; "
-            ."git clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}; "
-            .'fi';
-
-        try {
-            $ssh->exec('sh -lc '.escapeshellarg($script), 120);
-        } catch (\Exception $e) {
-            \Log::warning("Failed to sync application source for service {$service->id}", [
-                'service_id' => $service->id,
-                'branch' => $branch,
-                'error' => $e->getMessage(),
-            ]);
-            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
-            // Continue deployment; user can still upload files manually.
-        }
+        app(ContainerGitRepositoryService::class)->syncForDeploy($ssh, $service, $hostAppPath);
     }
 
     /**

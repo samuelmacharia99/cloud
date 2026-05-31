@@ -372,6 +372,18 @@ class LaravelAppInitializationService
         $service->update(['service_meta' => $serviceMeta]);
     }
 
+    public function runComposerInstall(SSHService $ssh, ContainerDeployment $deployment, ?int $timeout = null): void
+    {
+        $timeout ??= (int) config('containers.laravel_init.command_timeout_seconds', 600);
+
+        $this->dockerExec(
+            $ssh,
+            $deployment->container_name,
+            'set -e; cd /app; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
+            $timeout
+        );
+    }
+
     private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
     {
         $maxAttempts = (int) config('containers.redeploy.migrate_max_attempts', 6);
