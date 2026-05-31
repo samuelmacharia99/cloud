@@ -2,23 +2,25 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
+use App\Models\Currency;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Node;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
-use App\Models\Currency;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use App\Http\Controllers\Controller;
 use Illuminate\Auth\Events\Registered;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class CheckoutController extends Controller
 {
@@ -65,7 +67,9 @@ class CheckoutController extends Controller
 
             if ($item['type'] === 'product') {
                 $product = Product::find($item['product_id']);
-                if (!$product) continue;
+                if (! $product) {
+                    continue;
+                }
 
                 $item['name'] = $product->name;
                 $item['description'] = $product->description ?? $product->name;
@@ -77,9 +81,17 @@ class CheckoutController extends Controller
                 if ($product->type === 'container_hosting' && $product->containerTemplate) {
                     $item['container_template'] = $product->containerTemplate;
                 }
+            } elseif ($item['type'] === 'reseller_product') {
+                $prepared = $this->prepareResellerProductCartItem($item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
-                if (!$extension) continue;
+                if (! $extension) {
+                    continue;
+                }
 
                 $pricing = $extension->getRetailPricing($item['years']);
                 $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
@@ -149,14 +161,24 @@ class CheckoutController extends Controller
 
                     if ($item['type'] === 'product') {
                         $product = Product::find($item['product_id']);
-                        if (!$product) continue;
+                        if (! $product) {
+                            continue;
+                        }
 
                         $price = $this->getProductPrice($product, $item['billing_cycle']);
                         $item['unit_price'] = $price;
                         $item['amount'] = $price;
+                    } elseif ($item['type'] === 'reseller_product') {
+                        $prepared = $this->prepareResellerProductCartItem($item);
+                        if ($prepared === null) {
+                            continue;
+                        }
+                        $item = $prepared;
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
-                        if (!$extension) continue;
+                        if (! $extension) {
+                            continue;
+                        }
 
                         $pricing = $extension->getRetailPricing($item['years']);
                         $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
@@ -192,7 +214,7 @@ class CheckoutController extends Controller
                 $order = Order::create([
                     'user_id' => $user->id,
                     'invoice_id' => $invoice->id,
-                    'order_number' => 'ORD-' . uniqid(),
+                    'order_number' => 'ORD-'.uniqid(),
                     'status' => 'pending',
                     'payment_status' => 'unpaid',
                     'subtotal' => $subtotal,
@@ -225,26 +247,26 @@ class CheckoutController extends Controller
                         if ($product->type === 'container_hosting') {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
-                            if (!empty($envValues)) {
+                            if (! empty($envValues)) {
                                 $serviceMeta['env_values'] = $envValues;
                             }
 
                             // Store selected version for templated containers
                             $selectedVersionKey = "selected_version[{$item['key']}]";
                             $selectedVersion = $request->input($selectedVersionKey);
-                            if (!empty($selectedVersion)) {
+                            if (! empty($selectedVersion)) {
                                 $serviceMeta['selected_version'] = $selectedVersion;
                             }
 
                             // Store selected database for provisioning
                             $techstack = session('selected_techstack', []);
-                            if (!empty($techstack['database_id'])) {
+                            if (! empty($techstack['database_id'])) {
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
 
                             // Optional app source to deploy into container filesystem.
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
-                            if (!empty($sourceRepoUrl)) {
+                            if (! empty($sourceRepoUrl)) {
                                 $serviceMeta['source_repo_url'] = $sourceRepoUrl;
                                 $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }
@@ -259,10 +281,10 @@ class CheckoutController extends Controller
 
                         // For server types, capture OS and IP count from cart item
                         if (Product::isServerType($product->type)) {
-                            if (!empty($item['operating_system'])) {
+                            if (! empty($item['operating_system'])) {
                                 $serviceMeta['operating_system'] = $item['operating_system'];
                             }
-                            if (!empty($item['ip_count'])) {
+                            if (! empty($item['ip_count'])) {
                                 $serviceMeta['ip_count'] = (int) $item['ip_count'];
                             }
                         }
@@ -278,9 +300,11 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
+                            'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
                             'name' => $product->name,
                             'status' => 'pending',
                             'billing_cycle' => $item['billing_cycle'],
+                            'custom_price' => $item['unit_price'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
                             'provisioning_driver_key' => $provisioningDriver,
                             'node_id' => $nodeId,
@@ -390,7 +414,8 @@ class CheckoutController extends Controller
                 ->with('success', 'Order placed successfully! Please pay your invoice to activate services.');
         } catch (\Exception $e) {
             \Log::error("Checkout failed: {$e->getMessage()}");
-            return back()->with('error', 'Checkout failed: ' . $e->getMessage());
+
+            return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
     }
 
@@ -406,6 +431,39 @@ class CheckoutController extends Controller
             'annual' => (float) ($product->yearly_price ?? ((float) $product->monthly_price * 12)),
             default => 0,
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function prepareResellerProductCartItem(array $item): ?array
+    {
+        $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
+        if (! $resellerProduct || ! $resellerProduct->product_id) {
+            return null;
+        }
+
+        $product = Product::find($resellerProduct->product_id);
+        if (! $product) {
+            return null;
+        }
+
+        $unitPrice = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
+        $item['type'] = 'product';
+        $item['product_id'] = $product->id;
+        $item['reseller_id'] = $resellerProduct->reseller_id;
+        $item['reseller_product_id'] = $resellerProduct->id;
+        $item['name'] = $resellerProduct->name;
+        $item['description'] = $resellerProduct->description ?? $resellerProduct->name;
+        $item['unit_price'] = $unitPrice;
+        $item['amount'] = $unitPrice + (float) ($resellerProduct->setup_fee ?? 0);
+
+        if ($product->type === 'container_hosting' && $product->containerTemplate) {
+            $item['container_template'] = $product->containerTemplate;
+        }
+
+        return $item;
     }
 
     /**
@@ -431,7 +489,7 @@ class CheckoutController extends Controller
         $date = now()->format('Ymd');
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
-        return "{$prefix}-{$date}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
+        return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -440,14 +498,14 @@ class CheckoutController extends Controller
     private function setupDirectAdminService(Product $product, User $user): array
     {
         // Find an active DirectAdmin node (prefer one with fewer services)
-        $node = \App\Models\Node::where('type', 'directadmin')
+        $node = Node::where('type', 'directadmin')
             ->where('is_active', true)
             ->where('status', 'online')
             ->withCount('services')
             ->orderBy('services_count')
             ->first();
 
-        if (!$node) {
+        if (! $node) {
             throw new \Exception('No active DirectAdmin nodes available for provisioning.');
         }
 
@@ -458,7 +516,7 @@ class CheckoutController extends Controller
         $password = $this->generateDirectAdminPassword();
 
         // Use customer's primary domain or generate one
-        $domain = $user->email ? explode('@', $user->email)[0] . '.local' : $baseUsername . '.local';
+        $domain = $user->email ? explode('@', $user->email)[0].'.local' : $baseUsername.'.local';
 
         return [
             'node_id' => $node->id,
@@ -484,7 +542,7 @@ class CheckoutController extends Controller
         // Ensure it's not already taken (shouldn't be in practice, but check anyway)
         $count = Service::where('service_meta->username', $username)->count();
         if ($count > 0) {
-            $username = $username . substr(uniqid(), -3);
+            $username = $username.substr(uniqid(), -3);
             $username = substr($username, 0, 16);
         }
 
@@ -511,7 +569,7 @@ class CheckoutController extends Controller
 
         // Fill rest with random chars
         for ($i = 4; $i < 16; $i++) {
-            $all = $chars['lower'] . $chars['upper'] . $chars['digit'] . $chars['symbol'];
+            $all = $chars['lower'].$chars['upper'].$chars['digit'].$chars['symbol'];
             $password .= $all[rand(0, strlen($all) - 1)];
         }
 
@@ -528,7 +586,7 @@ class CheckoutController extends Controller
     {
         $cartItems = $request->input('cart', []);
 
-        if (!is_array($cartItems)) {
+        if (! is_array($cartItems)) {
             return response()->json(['error' => 'Invalid cart format'], 400);
         }
 
@@ -542,30 +600,31 @@ class CheckoutController extends Controller
         // Convert domain items to proper format
         $processedCart = [];
         foreach ($cartItems as $item) {
-            if (!is_array($item)) {
+            if (! is_array($item)) {
                 continue;
             }
 
             // Validate required keys are present
-            if (!isset($item['type'])) {
+            if (! isset($item['type'])) {
                 continue;
             }
 
             // Whitelist item types
             $itemType = $item['type'];
-            if (!in_array($itemType, $allowedTypes, true)) {
+            if (! in_array($itemType, $allowedTypes, true)) {
                 \Log::warning('syncCart: rejected unknown item type', [
                     'type' => $itemType,
                     'user_id' => auth()->id(),
                     'ip' => $request->ip(),
                 ]);
+
                 continue;
             }
 
             // Validate amount when present
             if (isset($item['price']) || isset($item['amount'])) {
                 $amount = $item['price'] ?? $item['amount'];
-                if (!is_numeric($amount) || (float)$amount < 0) {
+                if (! is_numeric($amount) || (float) $amount < 0) {
                     return response()->json(['error' => 'Invalid item amount'], 422);
                 }
             }
@@ -577,7 +636,7 @@ class CheckoutController extends Controller
                 if ($fullDomain) {
                     $parts = explode('.', $fullDomain, 2);
                     $domain = $parts[0] ?? '';
-                    $extension = '.' . ($parts[1] ?? '');
+                    $extension = '.'.($parts[1] ?? '');
                 } else {
                     $domain = $item['domain'] ?? '';
                     $extension = $item['extension'] ?? '';
@@ -587,7 +646,7 @@ class CheckoutController extends Controller
                     'type' => 'domain',
                     'domain' => $domain,
                     'extension' => $extension,
-                    'full_domain' => $fullDomain ?? ($domain . $extension),
+                    'full_domain' => $fullDomain ?? ($domain.$extension),
                     'years' => $item['years'] ?? 1,
                     'price' => $item['price'] ?? 0,
                 ];
@@ -623,14 +682,18 @@ class CheckoutController extends Controller
 
             if ($item['type'] === 'product') {
                 $product = Product::find($item['product_id']);
-                if (!$product) continue;
+                if (! $product) {
+                    continue;
+                }
 
                 $item['name'] = $product->name;
                 $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
                 $item['amount'] = $item['unit_price'];
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
-                if (!$extension) continue;
+                if (! $extension) {
+                    continue;
+                }
 
                 $pricing = $extension->getRetailPricing($item['years'] ?? 1);
                 $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
@@ -685,6 +748,7 @@ class CheckoutController extends Controller
                 $request->validate([
                     'agree_terms' => 'required|accepted',
                 ]);
+
                 return $this->processCheckout(auth()->user(), $cart, $request);
             }
 
@@ -714,14 +778,15 @@ class CheckoutController extends Controller
             return $this->processCheckout($user, $cart, $request);
         } catch (\Exception $e) {
             \Log::error("Public checkout failed: {$e->getMessage()}");
-            return back()->with('error', 'Checkout failed: ' . $e->getMessage())->withInput();
+
+            return back()->with('error', 'Checkout failed: '.$e->getMessage())->withInput();
         }
     }
 
     /**
      * Helper to process checkout for both authenticated and public users
      */
-    private function processCheckout(User $user, array $cart, Request $request = null)
+    private function processCheckout(User $user, array $cart, ?Request $request = null)
     {
         try {
             if ($request) {
@@ -741,14 +806,24 @@ class CheckoutController extends Controller
 
                     if ($item['type'] === 'product') {
                         $product = Product::find($item['product_id']);
-                        if (!$product) continue;
+                        if (! $product) {
+                            continue;
+                        }
 
                         $price = $this->getProductPrice($product, $item['billing_cycle']);
                         $item['unit_price'] = $price;
                         $item['amount'] = $price;
+                    } elseif ($item['type'] === 'reseller_product') {
+                        $prepared = $this->prepareResellerProductCartItem($item);
+                        if ($prepared === null) {
+                            continue;
+                        }
+                        $item = $prepared;
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
-                        if (!$extension) continue;
+                        if (! $extension) {
+                            continue;
+                        }
 
                         $pricing = $extension->getRetailPricing($item['years'] ?? 1);
                         $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
@@ -784,7 +859,7 @@ class CheckoutController extends Controller
                 $order = Order::create([
                     'user_id' => $user->id,
                     'invoice_id' => $invoice->id,
-                    'order_number' => 'ORD-' . uniqid(),
+                    'order_number' => 'ORD-'.uniqid(),
                     'status' => 'pending',
                     'payment_status' => 'unpaid',
                     'subtotal' => $subtotal,
@@ -817,25 +892,25 @@ class CheckoutController extends Controller
                         if ($product->type === 'container_hosting' && $request) {
                             $envValuesKey = "env_values[{$item['key']}]";
                             $envValues = $request->input($envValuesKey, []);
-                            if (!empty($envValues)) {
+                            if (! empty($envValues)) {
                                 $serviceMeta['env_values'] = $envValues;
                             }
 
                             // Store selected version for templated containers
                             $selectedVersionKey = "selected_version[{$item['key']}]";
                             $selectedVersion = $request->input($selectedVersionKey);
-                            if (!empty($selectedVersion)) {
+                            if (! empty($selectedVersion)) {
                                 $serviceMeta['selected_version'] = $selectedVersion;
                             }
 
                             // Store selected database for provisioning
                             $techstack = session('selected_techstack', []);
-                            if (!empty($techstack['database_id'])) {
+                            if (! empty($techstack['database_id'])) {
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
 
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
-                            if (!empty($sourceRepoUrl)) {
+                            if (! empty($sourceRepoUrl)) {
                                 $serviceMeta['source_repo_url'] = $sourceRepoUrl;
                                 $serviceMeta['source_repo_branch'] = $request->input("source_repo_branch.{$item['key']}", 'main');
                             }
@@ -849,10 +924,10 @@ class CheckoutController extends Controller
 
                         // For server types, capture OS and IP count from cart item
                         if (Product::isServerType($product->type)) {
-                            if (!empty($item['operating_system'])) {
+                            if (! empty($item['operating_system'])) {
                                 $serviceMeta['operating_system'] = $item['operating_system'];
                             }
-                            if (!empty($item['ip_count'])) {
+                            if (! empty($item['ip_count'])) {
                                 $serviceMeta['ip_count'] = (int) $item['ip_count'];
                             }
                         }
@@ -862,9 +937,11 @@ class CheckoutController extends Controller
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
+                            'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
                             'name' => $product->name,
                             'status' => 'pending',
                             'billing_cycle' => $item['billing_cycle'],
+                            'custom_price' => $item['unit_price'],
                             'next_due_date' => now()->addMonths($this->billingCycleMonths($item['billing_cycle'])),
                             'provisioning_driver_key' => $product->provisioning_driver_key,
                             'node_id' => $nodeId,
@@ -974,7 +1051,8 @@ class CheckoutController extends Controller
                 ->with('success', 'Account created and order placed! Please pay your invoice to activate services.');
         } catch (\Exception $e) {
             \Log::error("Checkout processing failed: {$e->getMessage()}");
-            return back()->with('error', 'Checkout failed: ' . $e->getMessage());
+
+            return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
     }
 }

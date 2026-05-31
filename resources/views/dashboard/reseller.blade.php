@@ -47,7 +47,7 @@
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers Served</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $managedCustomers->count() }}</p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $customerCount ?? $managedCustomers->count() }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,7 +87,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">20% of revenue</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">{{ number_format($commissionRate, 1) }}% of revenue</p>
         </div>
     </div>
 
@@ -104,7 +104,7 @@
                 @if ($managedServices->count() > 0)
                     <div class="divide-y divide-slate-200 dark:divide-slate-800">
                         @foreach ($managedServices->take(6) as $service)
-                            <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                            <a href="{{ route('reseller.services.show', $service) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                 <div class="flex items-center justify-between">
                                     <div class="flex-1">
                                         <p class="font-medium text-slate-900 dark:text-white">{{ $service->product?->name ?? 'Service' }}</p>
@@ -116,7 +116,7 @@
                                         </span>
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                         @endforeach
                     </div>
                 @else
@@ -134,7 +134,7 @@
                 @if ($recentInvoices->count() > 0)
                     <div class="divide-y divide-slate-200 dark:divide-slate-800">
                         @foreach ($recentInvoices->take(5) as $invoice)
-                            <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
+                            <a href="{{ route('reseller.customer-invoices.show', $invoice) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
                                 <div class="flex-1">
                                     <p class="font-medium text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $invoice->user?->name ?? 'N/A' }}</p>
@@ -143,7 +143,7 @@
                                     <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                                     <x-status-badge :status="$invoice->status" type="invoice" />
                                 </div>
-                            </div>
+                            </a>
                         @endforeach
                     </div>
                 @else
@@ -185,11 +185,11 @@
                     <div>
                         <div class="flex justify-between text-xs text-slate-600 dark:text-slate-400 mb-1">
                             <span>Customers</span>
-                            <span>{{ $managedCustomers->count() }} / {{ $resellerPackage->max_users }}</span>
+                            <span>{{ $customerCount ?? $managedCustomers->count() }} / {{ $resellerPackage->max_users }}</span>
                         </div>
                         @php
                             $customerPct = $resellerPackage->max_users > 0
-                                ? min(100, round(($managedCustomers->count() / $resellerPackage->max_users) * 100))
+                                ? min(100, round((($customerCount ?? $managedCustomers->count()) / $resellerPackage->max_users) * 100))
                                 : 0;
                             $customerColor = $customerPct >= 90 ? 'bg-red-500' : ($customerPct >= 75 ? 'bg-amber-500' : 'bg-emerald-500');
                         @endphp
@@ -224,6 +224,36 @@
                         <p class="text-sm text-slate-500 dark:text-slate-400">No customers served yet</p>
                     </div>
                 @endif
+            </div>
+
+            <!-- Analytics -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                <h3 class="font-semibold text-slate-900 dark:text-white mb-4">Revenue Analytics</h3>
+                <div class="grid grid-cols-3 gap-3 mb-4 text-center">
+                    <div class="rounded-lg bg-emerald-50 dark:bg-emerald-950 p-3">
+                        <p class="text-xs text-slate-500">Paid</p>
+                        <p class="text-lg font-bold text-emerald-600">{{ $invoiceStatus['paid'] ?? 0 }}</p>
+                    </div>
+                    <div class="rounded-lg bg-amber-50 dark:bg-amber-950 p-3">
+                        <p class="text-xs text-slate-500">Unpaid</p>
+                        <p class="text-lg font-bold text-amber-600">{{ $invoiceStatus['unpaid'] ?? 0 }}</p>
+                    </div>
+                    <div class="rounded-lg bg-red-50 dark:bg-red-950 p-3">
+                        <p class="text-xs text-slate-500">Overdue</p>
+                        <p class="text-lg font-bold text-red-600">{{ $invoiceStatus['overdue'] ?? 0 }}</p>
+                    </div>
+                </div>
+                <p class="text-xs text-slate-500 mb-2">Customer payments (last 6 months)</p>
+                <div class="flex items-end gap-2 h-24">
+                    @foreach ($monthlyRevenue ?? [] as $amount)
+                        @php $height = ($amount > 0 && max($monthlyRevenue) > 0) ? max(8, ($amount / max($monthlyRevenue)) * 100) : 8; @endphp
+                        <div class="flex-1 bg-purple-500/80 rounded-t" style="height: {{ $height }}%" title="KES {{ number_format($amount, 0) }}"></div>
+                    @endforeach
+                </div>
+                <div class="mt-4 flex flex-wrap gap-3 text-sm">
+                    <a href="{{ route('reseller.services.index') }}" class="text-purple-600 hover:text-purple-700 font-medium">All services →</a>
+                    <a href="{{ route('reseller.customer-invoices.index') }}" class="text-purple-600 hover:text-purple-700 font-medium">Customer billing →</a>
+                </div>
             </div>
 
             <!-- Performance Summary -->

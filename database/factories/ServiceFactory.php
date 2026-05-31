@@ -20,7 +20,7 @@ class ServiceFactory extends Factory
             'terminate_date' => null,
             'provisioning_driver_key' => fake()->randomElement(['cpanel', 'directadmin', 'plesk', null]),
             'service_meta' => json_encode(['custom_field' => fake()->word()]),
-            'external_reference' => fake()->unique()->alphaNumeric(12),
+            'external_reference' => fake()->unique()->regexify('[A-Za-z0-9]{12}'),
             'credentials' => null,
         ];
     }

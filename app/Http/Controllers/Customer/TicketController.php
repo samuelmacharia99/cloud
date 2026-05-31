@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
 use App\Models\TicketReply;
+use App\Services\NotificationService;
+use App\Services\ResellerScopeService;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -22,20 +25,20 @@ class TicketController extends Controller
         $this->authorize('viewAny', Ticket::class);
 
         $user = auth()->user();
-        $query = $user->tickets()->with('assignee')->latest()->paginate(15);
+        $query = $user->tickets()->with('assignee')->latest();
 
-        // If reseller, also show their customers' tickets
         if ($user->isReseller()) {
-            $customerIds = \App\Models\Service::where('reseller_id', $user->id)
-                ->distinct()
-                ->pluck('user_id');
+            $customerIds = app(ResellerScopeService::class)->managedCustomerIds($user);
 
             $query = Ticket::with('user', 'assignee')
-                ->where('user_id', $user->id)
-                ->orWhereIn('user_id', $customerIds)
-                ->latest()
-                ->paginate(15);
+                ->where(function ($builder) use ($user, $customerIds) {
+                    $builder->where('user_id', $user->id)
+                        ->orWhereIn('user_id', $customerIds);
+                })
+                ->latest();
         }
+
+        $query = $query->paginate(15);
 
         return view('customer.tickets.index', compact('query'));
     }
@@ -148,7 +151,7 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+        $notificationService = new NotificationService(new SmsService);
         $notificationService->notifyTicketCreated($ticket);
     }
 
@@ -159,7 +162,7 @@ class TicketController extends Controller
     {
         $latestReply = $ticket->replies()->latest()->first();
         if ($latestReply) {
-            $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+            $notificationService = new NotificationService(new SmsService);
             $notificationService->notifyTicketReplied($ticket, $latestReply);
         }
     }

@@ -51,6 +51,7 @@ class ResellerProduct extends Model
         if ($this->isCustom()) {
             return null;
         }
+
         return (float) $this->adminProduct?->wholesale_monthly_price;
     }
 
@@ -59,6 +60,7 @@ class ResellerProduct extends Model
         if ($this->isCustom()) {
             return null;
         }
+
         return (float) $this->adminProduct?->wholesale_yearly_price;
     }
 
@@ -68,6 +70,7 @@ class ResellerProduct extends Model
         if (is_null($wholesale) || is_null($this->monthly_price)) {
             return null;
         }
+
         return (float) $this->monthly_price - $wholesale;
     }
 
@@ -77,7 +80,8 @@ class ResellerProduct extends Model
         if (is_null($wholesale) || is_null($this->monthly_price) || $wholesale == 0) {
             return null;
         }
-        return (($this->getMonthlyMargin() / $wholesale) * 100);
+
+        return ($this->getMonthlyMargin() / $wholesale) * 100;
     }
 
     public function getYearlyMargin(): ?float
@@ -86,6 +90,7 @@ class ResellerProduct extends Model
         if (is_null($wholesale) || is_null($this->yearly_price)) {
             return null;
         }
+
         return (float) $this->yearly_price - $wholesale;
     }
 
@@ -95,6 +100,18 @@ class ResellerProduct extends Model
         if (is_null($wholesale) || is_null($this->yearly_price) || $wholesale == 0) {
             return null;
         }
-        return (($this->getYearlyMargin() / $wholesale) * 100);
+
+        return ($this->getYearlyMargin() / $wholesale) * 100;
+    }
+
+    public function priceForBillingCycle(string $billingCycle): float
+    {
+        return match ($billingCycle) {
+            'monthly' => (float) ($this->monthly_price ?? 0),
+            'quarterly' => (float) (($this->monthly_price ?? 0) * 3),
+            'semi-annual' => (float) (($this->monthly_price ?? 0) * 6),
+            'annual' => (float) ($this->yearly_price ?? (($this->monthly_price ?? 0) * 12)),
+            default => 0,
+        };
     }
 }

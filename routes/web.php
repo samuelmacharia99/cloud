@@ -30,14 +30,17 @@ use App\Http\Controllers\Customer\ContainerTerminalController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
 use App\Http\Controllers\Customer\PaymentController;
+use App\Http\Controllers\Customer\ResellerCatalogController;
 use App\Http\Controllers\Customer\ServiceBrowserController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Reseller\CartController;
 use App\Http\Controllers\Reseller\CatalogController;
+use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\DomainPricingController;
 use App\Http\Controllers\Reseller\DomainPushController;
+use App\Http\Controllers\Reseller\ManagedServiceController;
 use App\Http\Controllers\Reseller\PackageController;
 use App\Http\Controllers\Reseller\ServerController;
 use App\Http\Controllers\Reseller\WalletController;
@@ -263,16 +266,22 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
     // Reseller-only routes
     Route::middleware('reseller')->group(function () {
-        Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
-        Route::post('reseller/customers/{customer}/impersonate', [App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
-        Route::post('reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
-        Route::resource('reseller/catalog', CatalogController::class)->names('reseller.catalog');
-        Route::get('reseller/domains', [App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
-        Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
-        Route::post('reseller/domains-pricing', [DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
-        Route::get('api/reseller/domains/pricing/{extension}', [App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');
+        Route::resource('reseller/tickets', App\Http\Controllers\Reseller\TicketController::class)
+            ->only(['index', 'show', 'create', 'store'])
+            ->names('reseller.tickets');
+        Route::post('reseller/tickets/{ticket}/reply', [App\Http\Controllers\Reseller\TicketController::class, 'reply'])->name('reseller.tickets.reply');
+        Route::patch('reseller/tickets/{ticket}/close', [App\Http\Controllers\Reseller\TicketController::class, 'close'])->name('reseller.tickets.close');
 
-        // Settings
+        Route::get('reseller/services', [ManagedServiceController::class, 'index'])->name('reseller.services.index');
+        Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
+
+        Route::get('reseller/customer-invoices', [CustomerInvoiceController::class, 'index'])->name('reseller.customer-invoices.index');
+        Route::get('reseller/customer-invoices/{invoice}', [CustomerInvoiceController::class, 'show'])->name('reseller.customer-invoices.show');
+        Route::get('reseller/customer-invoices/{invoice}/download', [CustomerInvoiceController::class, 'download'])->name('reseller.customer-invoices.download');
+
+        Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');
+        Route::post('my/packages/{package}/subscribe', [PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
+
         Route::get('reseller/settings', [App\Http\Controllers\Reseller\SettingController::class, 'index'])->name('reseller.settings.index');
         Route::post('reseller/settings/mpesa', [App\Http\Controllers\Reseller\SettingController::class, 'updateMpesa'])->name('reseller.settings.mpesa.update');
         Route::post('reseller/settings/mpesa/register-urls', [App\Http\Controllers\Reseller\SettingController::class, 'registerMpesaUrls'])->name('reseller.settings.mpesa.register-urls');
@@ -287,40 +296,39 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/settings/branding/ssl/issue', [App\Http\Controllers\Reseller\SettingController::class, 'issueSsl'])->name('reseller.settings.branding.ssl.issue');
         Route::post('reseller/settings/branding/ssl/renew', [App\Http\Controllers\Reseller\SettingController::class, 'renewSsl'])->name('reseller.settings.branding.ssl.renew');
 
-        Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');
-        Route::post('my/packages/{package}/subscribe', [PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
-
-        // Invoice Management
         Route::resource('reseller/invoices', App\Http\Controllers\Reseller\InvoiceController::class)->only(['index', 'show'])->names('reseller.invoices');
         Route::get('reseller/invoices/{invoice}/download', [App\Http\Controllers\Reseller\InvoiceController::class, 'download'])->name('reseller.invoices.download');
 
-        // Wallet Management
         Route::get('reseller/wallet', [WalletController::class, 'index'])->name('reseller.wallet.index');
         Route::post('reseller/wallet/topup', [WalletController::class, 'initiateTopup'])->name('reseller.wallet.topup');
         Route::get('reseller/wallet/topup/status/{invoice}', [WalletController::class, 'checkTopupStatus'])->name('reseller.wallet.topup.status');
         Route::get('reseller/wallet/transactions', [WalletController::class, 'transactions'])->name('reseller.wallet.transactions');
         Route::get('reseller/wallet/export', [WalletController::class, 'exportPdf'])->name('reseller.wallet.export');
 
-        // Domain Orders
-        Route::get('reseller/domain-orders', [DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
-        Route::post('reseller/domain-orders/{order}/push', [DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
-        Route::post('reseller/domain-orders/{order}/retry', [DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
+        Route::middleware('reseller.limits')->group(function () {
+            Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
+            Route::post('reseller/customers/{customer}/impersonate', [App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
+            Route::post('reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
+            Route::resource('reseller/catalog', CatalogController::class)
+                ->parameters(['catalog' => 'catalogItem'])
+                ->names('reseller.catalog');
+            Route::get('reseller/domains', [App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
+            Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
+            Route::post('reseller/domains-pricing', [DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
+            Route::get('api/reseller/domains/pricing/{extension}', [App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');
+            Route::get('reseller/domain-orders', [DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
+            Route::post('reseller/domain-orders/{order}/push', [DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
+            Route::post('reseller/domain-orders/{order}/retry', [DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
+            Route::get('reseller/servers', [ServerController::class, 'index'])->name('reseller.servers.index');
+            Route::post('reseller/servers/order', [ServerController::class, 'order'])->name('reseller.servers.order');
+            Route::get('reseller/cart', [CartController::class, 'index'])->name('reseller.cart.index');
+            Route::post('reseller/cart/add', [CartController::class, 'add'])->name('reseller.cart.add');
+            Route::delete('reseller/cart/{key}', [CartController::class, 'remove'])->name('reseller.cart.remove');
+            Route::post('reseller/cart/clear', [CartController::class, 'clear'])->name('reseller.cart.clear');
+            Route::get('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'show'])->name('reseller.checkout.show');
+            Route::post('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'process'])->name('reseller.checkout.process');
+        });
 
-        // Reseller Servers
-        Route::get('reseller/servers', [ServerController::class, 'index'])->name('reseller.servers.index');
-        Route::post('reseller/servers/order', [ServerController::class, 'order'])->name('reseller.servers.order');
-
-        // Reseller Cart
-        Route::get('reseller/cart', [CartController::class, 'index'])->name('reseller.cart.index');
-        Route::post('reseller/cart/add', [CartController::class, 'add'])->name('reseller.cart.add');
-        Route::delete('reseller/cart/{key}', [CartController::class, 'remove'])->name('reseller.cart.remove');
-        Route::post('reseller/cart/clear', [CartController::class, 'clear'])->name('reseller.cart.clear');
-
-        // Reseller Checkout
-        Route::get('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'show'])->name('reseller.checkout.show');
-        Route::post('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'process'])->name('reseller.checkout.process');
-
-        // Reseller Payments
         Route::get('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'selectMethod'])->name('reseller.payment.select-method');
         Route::post('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->name('reseller.payment.initiate');
         Route::get('reseller/invoices/{invoice}/pay/mpesa/verify', [App\Http\Controllers\Reseller\PaymentController::class, 'verifyMpesa'])->name('reseller.payment.verify-mpesa');
@@ -357,6 +365,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');
         Route::get('/deploy-service', [ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
+        Route::get('/my/reseller-catalog', [ResellerCatalogController::class, 'index'])->name('customer.reseller-catalog.index');
+        Route::post('/my/reseller-catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.reseller-catalog.add');
         Route::get('/my/domains', [App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
         Route::get('/my/domains/transfer', [App\Http\Controllers\Customer\DomainController::class, 'showTransferForm'])->name('customer.domains.transfer-form');
         Route::post('/my/domains/transfer', [App\Http\Controllers\Customer\DomainController::class, 'processTransfer'])->name('customer.domains.process-transfer');

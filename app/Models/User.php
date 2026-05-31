@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Mail\VerifyEmailOtpMail;
+use App\Notifications\ResetPasswordNotification;
+use Carbon\Carbon;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Mail;
 
@@ -31,6 +34,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'status',
         'email_verified_at',
         'reseller_package_id',
+        'commission_rate',
         'package_subscribed_at',
         'package_expires_at',
         'two_factor_enabled',
@@ -59,6 +63,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'two_factor_code_expires_at' => 'datetime',
             'two_factor_recovery_codes' => 'array',
             'settings' => 'array',
+            'commission_rate' => 'decimal:2',
         ];
     }
 
@@ -175,8 +180,8 @@ class User extends Authenticatable implements MustVerifyEmail
     public function getManagedActiveServicesCount(): int
     {
         return Service::where('reseller_id', $this->id)
-                      ->where('status', 'active')
-                      ->count();
+            ->where('status', 'active')
+            ->count();
     }
 
     /**
@@ -184,9 +189,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function getManagedCustomersCount(): int
     {
-        return Service::where('reseller_id', $this->id)
-                      ->distinct('user_id')
-                      ->count('user_id');
+        return $this->customers()->count();
     }
 
     /**
@@ -194,7 +197,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function hasResellerPackage(): bool
     {
-        return !is_null($this->reseller_package_id);
+        return ! is_null($this->reseller_package_id);
     }
 
     /**
@@ -202,9 +205,10 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isAtUserLimit(): bool
     {
-        if (!$this->resellerPackage) {
+        if (! $this->resellerPackage) {
             return true;
         }
+
         return $this->getManagedCustomersCount() >= $this->resellerPackage->max_users;
     }
 
@@ -213,9 +217,10 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function isAtServiceLimit(): bool
     {
-        if (!$this->resellerPackage) {
+        if (! $this->resellerPackage) {
             return true;
         }
+
         return $this->getManagedActiveServicesCount() >= $this->resellerPackage->storage_space;
     }
 
@@ -227,12 +232,12 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->isAtUserLimit() || $this->isAtServiceLimit();
     }
 
-    public function getNextInvoiceDateAttribute(): ?\Carbon\Carbon
+    public function getNextInvoiceDateAttribute(): ?Carbon
     {
         return $this->package_expires_at?->subDays(10);
     }
 
-    public function getPackageSuspendDateAttribute(): ?\Carbon\Carbon
+    public function getPackageSuspendDateAttribute(): ?Carbon
     {
         return $this->package_expires_at;
     }
@@ -249,11 +254,11 @@ class User extends Authenticatable implements MustVerifyEmail
             'expires_at' => now()->addMinutes(15),
         ]);
 
-        Mail::mailer('smtp')->to($this->email)->send(new \App\Mail\VerifyEmailOtpMail($this, $code));
+        Mail::mailer('smtp')->to($this->email)->send(new VerifyEmailOtpMail($this, $code));
     }
 
     public function sendPasswordResetNotification($token): void
     {
-        $this->notify(new \App\Notifications\ResetPasswordNotification($token));
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

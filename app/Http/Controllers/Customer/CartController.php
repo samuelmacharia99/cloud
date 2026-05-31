@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\Setting;
-use Illuminate\Http\Request;
-use Illuminate\Support\Str;
-use App\Http\Controllers\Controller;
-use App\Http\Controllers\Customer\DomainSearchController;
 use Exception;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use ReflectionClass;
 
 class CartController extends Controller
@@ -37,6 +37,17 @@ class CartController extends Controller
                     $item['amount'] = $item['unit_price'];
                 } else {
                     continue; // Skip if product not found
+                }
+            } elseif ($item['type'] === 'reseller_product') {
+                $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
+                if ($resellerProduct && $resellerProduct->product_id) {
+                    $item['name'] = $resellerProduct->name;
+                    $item['description'] = $resellerProduct->description ?? $resellerProduct->name;
+                    $item['unit_price'] = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
+                    $item['amount'] = $item['unit_price'] + (float) ($resellerProduct->setup_fee ?? 0);
+                    $item['product_id'] = $resellerProduct->product_id;
+                } else {
+                    continue;
                 }
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
@@ -102,7 +113,7 @@ class CartController extends Controller
                 ->where('enabled', true)
                 ->first();
 
-            if (!$extension) {
+            if (! $extension) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This domain extension is not available',
@@ -111,7 +122,7 @@ class CartController extends Controller
 
             // Verify pricing exists for this period
             $pricing = $extension->getRetailPricing($request->years);
-            if (!$pricing) {
+            if (! $pricing) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Pricing not available for this registration period',
@@ -140,6 +151,7 @@ class CartController extends Controller
             if ($request->expectsJson()) {
                 return response()->json($response, 400);
             }
+
             return back()->with('error', $response['message']);
         }
 
@@ -184,6 +196,7 @@ class CartController extends Controller
     public function clear()
     {
         session([self::CART_SESSION_KEY => []]);
+
         return back()->with('success', 'Cart cleared');
     }
 
@@ -198,11 +211,11 @@ class CartController extends Controller
         ]);
 
         try {
-            $domainSearch = new DomainSearchController();
-            $fullDomain = $request->domain . $request->extension;
+            $domainSearch = new DomainSearchController;
+            $fullDomain = $request->domain.$request->extension;
 
             // Use reflection to call private method for availability check
-            $reflection = new \ReflectionClass($domainSearch);
+            $reflection = new ReflectionClass($domainSearch);
             $method = $reflection->getMethod('checkAvailability');
             $method->setAccessible(true);
 
@@ -220,10 +233,10 @@ class CartController extends Controller
                 'price' => $price,
                 'message' => $available ? 'Domain is available!' : 'Domain is already taken',
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error checking domain availability: ' . $e->getMessage(),
+                'message' => 'Error checking domain availability: '.$e->getMessage(),
                 'available' => false,
             ], 500);
         }
@@ -246,11 +259,11 @@ class CartController extends Controller
     /**
      * Update nameservers for a domain in cart
      */
-    public function updateNameservers(string $key, Request $request): \Illuminate\Http\JsonResponse
+    public function updateNameservers(string $key, Request $request): JsonResponse
     {
         $cart = session(self::CART_SESSION_KEY, []);
 
-        if (!isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
+        if (! isset($cart[$key]) || $cart[$key]['type'] !== 'domain') {
             return response()->json(['success' => false, 'message' => 'Domain not found in cart'], 404);
         }
 

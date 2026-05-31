@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class CustomerController extends Controller
 {
@@ -30,7 +30,7 @@ class CustomerController extends Controller
 
         // Get package limits for display
         $resellerPackage = auth()->user()->resellerPackage;
-        $customerCount = auth()->user()->customers()->count();
+        $customerCount = auth()->user()->getManagedCustomersCount();
 
         return view('reseller.customers.index', compact('customers', 'resellerPackage', 'customerCount'));
     }
@@ -104,7 +104,7 @@ class CustomerController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'email' => 'required|email|unique:users,email,' . $customer->id,
+            'email' => 'required|email|unique:users,email,'.$customer->id,
             'password' => 'nullable|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
@@ -156,7 +156,7 @@ class CustomerController extends Controller
 
     public function exitImpersonation()
     {
-        if (!session('impersonating_reseller')) {
+        if (! session('impersonating_reseller')) {
             return redirect()->route('dashboard');
         }
 

@@ -2,9 +2,9 @@
 
 namespace App\Policies;
 
+use App\Models\Service;
 use App\Models\Ticket;
 use App\Models\User;
-use App\Models\Service;
 
 class TicketPolicy
 {
@@ -151,6 +151,10 @@ class TicketPolicy
      */
     private function resellerOwnsCustomer(User $reseller, User $customer): bool
     {
+        if ($customer->reseller_id === $reseller->id) {
+            return true;
+        }
+
         return Service::where('reseller_id', $reseller->id)
             ->where('user_id', $customer->id)
             ->exists();

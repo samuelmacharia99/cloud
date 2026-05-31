@@ -2,15 +2,16 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\User;
-use App\Models\Service;
+use App\Models\Currency;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Ticket;
 use App\Models\Product;
-use App\Models\Currency;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Models\Ticket;
+use App\Models\User;
+use App\Services\ResellerAnalyticsService;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
@@ -132,47 +133,9 @@ class DashboardController extends Controller
 
     private function resellerDashboard($user)
     {
-        // Load reseller package
-        $user->load('resellerPackage');
+        $analytics = app(ResellerAnalyticsService::class);
 
-        // Services managed by this reseller
-        $managedServices = Service::where('reseller_id', $user->id)
-            ->with('user', 'product')
-            ->get();
-
-        $customerIds = $managedServices->pluck('user_id')->unique();
-        $managedCustomers = User::whereIn('id', $customerIds)->get();
-
-        // Metrics
-        $activeServices = $managedServices->where('status', 'active')->count();
-        $suspendedServices = $managedServices->where('status', 'suspended')->count();
-        $totalServices = $managedServices->count();
-
-        // Revenue from managed services (invoices for customers managed by this reseller)
-        $managedInvoices = Invoice::whereIn('user_id', $customerIds)->get();
-        $paidInvoices = $managedInvoices->where('status', 'paid');
-        $totalRevenue = $paidInvoices->sum('total');
-        $unpaidInvoices = $managedInvoices->where('status', 'unpaid');
-        $outstandingBalance = $unpaidInvoices->sum('total');
-
-        // Commission calculation (example: 20% of paid invoices)
-        $commissionRate = 0.20;
-        $totalCommission = $totalRevenue * $commissionRate;
-
-        $data = [
-            'resellerPackage' => $user->resellerPackage,
-            'activeServices' => $activeServices,
-            'managedCustomers' => $managedCustomers,
-            'managedServices' => $managedServices->take(8),
-            'suspendedServices' => $suspendedServices,
-            'totalServices' => $totalServices,
-            'totalRevenue' => $totalRevenue,
-            'outstandingBalance' => $outstandingBalance,
-            'totalCommission' => $totalCommission,
-            'recentInvoices' => $managedInvoices->sortByDesc('created_at')->take(5),
-        ];
-
-        return view('dashboard.reseller', $data);
+        return view('dashboard.reseller', $analytics->dashboardMetrics($user));
     }
 
     private function customerDashboard($user)

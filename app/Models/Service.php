@@ -131,4 +131,18 @@ class Service extends Model
     {
         return $query->where('status', 'terminated');
     }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Service $service) {
+            if ($service->reseller_id || ! $service->user_id) {
+                return;
+            }
+
+            $user = User::query()->find($service->user_id);
+            if ($user?->reseller_id) {
+                $service->reseller_id = $user->reseller_id;
+            }
+        });
+    }
 }
