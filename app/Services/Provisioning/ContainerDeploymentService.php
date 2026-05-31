@@ -27,6 +27,8 @@ class ContainerDeploymentService
 
     private RuntimeImageProvisioner $runtimeImages;
 
+    private ContainerAppDirectoryService $appDirectory;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -37,9 +39,12 @@ class ContainerDeploymentService
 
     private const HEALTH_CHECK_DELAY = 5;
 
-    public function __construct(?RuntimeImageProvisioner $runtimeImages = null)
-    {
+    public function __construct(
+        ?RuntimeImageProvisioner $runtimeImages = null,
+        ?ContainerAppDirectoryService $appDirectory = null,
+    ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
+        $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
     }
 
     /**
@@ -217,14 +222,12 @@ class ContainerDeploymentService
                     self::DEPLOY_TIMEOUT
                 );
 
-                // Ensure runtime placeholder files also exist inside the live container.
-                // This covers cases where host/template metadata drift prevents host-side
-                // file sync from surfacing in the mounted app path.
-                if ($hostAppPath || (($template->slug ?? null) === 'laravel')) {
-                    $this->ensureDefaultLandingPageInContainer($ssh, $containerName);
+                // Host mount is the source of truth for /app; ensure placeholders after compose is up.
+                if ($hostAppPath) {
+                    $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
                 }
 
-                $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
+                $this->appDirectory->normalizePermissions($ssh, $deployment);
 
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
@@ -255,7 +258,7 @@ class ContainerDeploymentService
                     ]);
                 }
 
-                $this->fixAppDirectoryPermissions($ssh, $containerName, $hostAppPath);
+                $this->appDirectory->normalizePermissions($ssh, $deployment);
 
                 // Execute setup commands
                 if ($template->setup_commands && is_array($template->setup_commands)) {
@@ -1020,8 +1023,7 @@ class ContainerDeploymentService
 
         // If no source configured, keep folder available for uploads/file manager usage.
         if ($repoUrl === '') {
-            $ssh->exec('sh -lc '.escapeshellarg('mkdir -p '.escapeshellarg($hostAppPath).' && touch '.escapeshellarg($hostAppPath.'/.keep')), 20);
-            $this->ensureDefaultLandingPage($ssh, $hostAppPath);
+            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
 
             return;
         }
@@ -1050,162 +1052,8 @@ class ContainerDeploymentService
                 'branch' => $branch,
                 'error' => $e->getMessage(),
             ]);
-            $this->ensureDefaultLandingPage($ssh, $hostAppPath);
+            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
             // Continue deployment; user can still upload files manually.
-        }
-    }
-
-    private function ensureDefaultLandingPage(SSHService $ssh, string $hostAppPath): void
-    {
-        $placeholderHtml = <<<'HTML'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Talksasa Cloud</title>
-  <style>
-    :root { color-scheme: dark; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      text-align: center;
-      padding: 24px;
-    }
-    .card {
-      max-width: 680px;
-      padding: 32px;
-      border-radius: 16px;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-    }
-    h1 { margin: 0 0 10px; font-size: 2rem; }
-    p { margin: 0; color: #cbd5e1; font-size: 1.05rem; }
-  </style>
-</head>
-<body>
-  <main class="card">
-    <h1>Welcome to Talksasa Cloud</h1>
-    <p>Your digital infrastructure partner.</p>
-  </main>
-</body>
-</html>
-HTML;
-
-        $encodedHtml = base64_encode($placeholderHtml);
-        $pathArg = escapeshellarg($hostAppPath);
-        $indexArg = escapeshellarg($hostAppPath.'/index.html');
-        $publicDirArg = escapeshellarg($hostAppPath.'/public');
-        $publicIndexArg = escapeshellarg($hostAppPath.'/public/index.html');
-
-        $script = 'set -e; '
-            ."mkdir -p {$pathArg}; "
-            ."if [ ! -f {$indexArg} ]; then "
-            .'printf %s '.escapeshellarg($encodedHtml)." | base64 -d > {$indexArg}; "
-            .'fi; '
-            ."mkdir -p {$publicDirArg}; "
-            ."if [ ! -f {$publicIndexArg} ]; then "
-            .'printf %s '.escapeshellarg($encodedHtml)." | base64 -d > {$publicIndexArg}; "
-            .'fi';
-
-        try {
-            $ssh->exec('sh -lc '.escapeshellarg($script), 20);
-        } catch (\Exception $e) {
-            \Log::warning('Failed to write default placeholder page', [
-                'host_app_path' => $hostAppPath,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function ensureDefaultLandingPageInContainer(SSHService $ssh, string $containerName): void
-    {
-        $placeholderHtml = <<<'HTML'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Talksasa Cloud</title>
-</head>
-<body style="margin:0;min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;background:#0f172a;color:#e2e8f0;text-align:center;padding:24px;">
-  <main style="max-width:680px;padding:32px;border-radius:16px;background:rgba(15,23,42,0.85);border:1px solid rgba(148,163,184,0.35);">
-    <h1 style="margin:0 0 10px;font-size:2rem;">Welcome to Talksasa Cloud</h1>
-    <p style="margin:0;color:#cbd5e1;font-size:1.05rem;">Your digital infrastructure partner.</p>
-  </main>
-</body>
-</html>
-HTML;
-
-        $encodedHtml = base64_encode($placeholderHtml);
-        $containerArg = escapeshellarg($containerName);
-        $encodedArg = escapeshellarg($encodedHtml);
-        $script = 'set -e; '
-            .'mkdir -p /app /app/public; '
-            ."if [ ! -f /app/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/index.html; fi; "
-            ."if [ ! -f /app/public/index.html ]; then printf %s {$encodedArg} | base64 -d > /app/public/index.html; fi";
-
-        try {
-            $ssh->exec("docker exec -u 0 {$containerArg} sh -lc ".escapeshellarg($script), 20);
-        } catch (\Exception $e) {
-            \Log::warning('Failed to write default placeholder page inside container', [
-                'container_name' => $containerName,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
-     * Ensure /app is writable by the application user (www-data) for terminal and runtime installs.
-     */
-    private function appDirectoryOwnershipShell(): string
-    {
-        return 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data /app;'
-            .' else chown -R 33:33 /app; fi;'
-            .'find /app -type d -exec chmod 775 {} + 2>/dev/null;'
-            .'find /app -type f -exec chmod 664 {} + 2>/dev/null;'
-            .'chmod 775 /app/artisan 2>/dev/null || true';
-    }
-
-    private function fixAppDirectoryPermissions(SSHService $ssh, string $containerName, ?string $hostAppPath): void
-    {
-        $containerArg = escapeshellarg($containerName);
-        $ownership = $this->appDirectoryOwnershipShell();
-
-        try {
-            $ssh->exec(
-                'docker exec -u 0 '.$containerArg.' sh -lc '.escapeshellarg($ownership),
-                60
-            );
-        } catch (\Exception $e) {
-            \Log::warning('Failed to chown /app inside container', [
-                'container_name' => $containerName,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        if (! $hostAppPath) {
-            return;
-        }
-
-        try {
-            $pathArg = escapeshellarg($hostAppPath);
-            // Match container www-data uid (82 on Alpine, 33 on Debian).
-            $ssh->exec(
-                'uid=$(docker exec -u 0 '.$containerArg.' sh -lc "id -u www-data 2>/dev/null || echo 33"); '
-                ."chown -R \"\${uid}:\${uid}\" {$pathArg}",
-                60
-            );
-        } catch (\Exception $e) {
-            \Log::warning('Failed to chown host app mount path', [
-                'host_app_path' => $hostAppPath,
-                'error' => $e->getMessage(),
-            ]);
         }
     }
 

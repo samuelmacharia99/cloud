@@ -9,8 +9,8 @@
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Laravel application setup</h3>
             <p class="text-sm text-slate-600 dark:text-slate-300 mt-2">
                 <strong>Redeploy stack</strong> recreates the container runtime and keeps files in <code class="font-mono text-xs">/app</code>.
-                It does <strong>not</strong> install Laravel. Use <strong>Initialize Laravel app</strong> once to scaffold the project into the file manager,
-                or set a Git repository at checkout and redeploy to pull code.
+                It does <strong>not</strong> install Laravel. Click <strong>Initialize Laravel app</strong> to scaffold a fresh project
+                (leftover files are cleared automatically), or set a Git repository at checkout and redeploy to pull code.
             </p>
         </div>
 
@@ -49,7 +49,9 @@
     </div>
 
     <div x-show="appDirectory?.has_blocking_files" class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-        <strong>/app contains leftover files</strong> from a previous deploy or clone. Use <strong>Clear /app</strong> on this page, or run cleanup from the Terminal tab, before initializing Laravel.
+        <strong>/app contains extra files</strong> outside the default deploy placeholders.
+        <span x-show="appDirectory?.blocking_paths?.length" x-text="' (' + appDirectory.blocking_paths.join(', ') + ')'"></span>
+        Use <strong>Clear /app</strong> or click <strong>Initialize Laravel app</strong> (it prepares /app automatically).
     </div>
 
     <div class="grid lg:grid-cols-2 gap-6">

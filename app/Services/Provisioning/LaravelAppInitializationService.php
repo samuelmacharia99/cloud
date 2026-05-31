@@ -13,6 +13,10 @@ class LaravelAppInitializationService
 {
     private const COMPOSER_BIN = '/usr/local/bin/composer';
 
+    public function __construct(
+        private ContainerAppDirectoryService $appDirectory,
+    ) {}
+
     public const STEP_DEFINITIONS = [
         'validate' => 'Validate container and application directory',
         'scaffold' => 'Download Laravel application skeleton',
@@ -73,20 +77,14 @@ class LaravelAppInitializationService
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         try {
-            $this->runStep($initialization, $ssh, $deployment, 'validate', function () use ($ssh, $deployment) {
+            $this->runStep($initialization, $ssh, $deployment, 'validate', function () use ($ssh, $deployment, $initialization) {
                 if ($deployment->status !== 'running') {
                     throw new \RuntimeException('Container is not running.');
                 }
 
-                if ($this->appHasLaravelProject($ssh, $deployment)) {
-                    throw new \RuntimeException('A Laravel application already exists in /app (artisan file detected).');
-                }
-
-                if (! $this->appDirectoryIsInitializeReady($ssh, $deployment)) {
-                    throw new \RuntimeException('/app contains existing application files. Remove them or use Git deploy before initializing.');
-                }
-
+                $this->appDirectory->prepareForInitialization($ssh, $deployment);
                 $this->assertComposerAvailable($ssh, $deployment);
+                $initialization->appendLog('/app prepared with default placeholder state.');
 
                 return 'Application directory is ready for Laravel scaffold.';
             });
@@ -126,7 +124,7 @@ class LaravelAppInitializationService
             $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
 
             $this->runStep($initialization, $ssh, $deployment, 'environment', function () use ($ssh, $deployment, $service, $envValues) {
-                $hostAppPath = $this->resolveHostAppPath($deployment);
+                $hostAppPath = $this->appDirectory->hostAppPath($deployment);
                 $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues);
 
                 $ssh->upload($envContent, $hostAppPath.'/.env');
@@ -178,13 +176,7 @@ class LaravelAppInitializationService
             }, allowWarningComplete: true);
 
             $this->runStep($initialization, $ssh, $deployment, 'permissions', function () use ($ssh, $deployment) {
-                $this->dockerExec(
-                    $ssh,
-                    $deployment->container_name,
-                    'set -e; chown -R www-data:www-data /app; find /app -type d -exec chmod 775 {} +; find /app -type f -exec chmod 664 {} +; chmod 775 /app/artisan',
-                    120,
-                    asRoot: true
-                );
+                $this->appDirectory->normalizePermissions($ssh, $deployment);
 
                 return 'File permissions normalized for www-data.';
             });
@@ -225,7 +217,7 @@ class LaravelAppInitializationService
             try {
                 $ssh = SSHService::forNode($deployment->node);
                 try {
-                    $appScaffolded = $this->appHasLaravelProject($ssh, $deployment);
+                    $appScaffolded = $this->appDirectory->hasLaravelProject($ssh, $deployment);
                     $envConfigured = $this->remoteFileExists($ssh, $deployment, '/app/.env');
                     $appKeySet = $appScaffolded && $this->envValuePresent($ssh, $deployment, 'APP_KEY');
                     $migrationsOk = $appScaffolded && $this->migrationsTableExists($ssh, $deployment);
@@ -315,7 +307,7 @@ class LaravelAppInitializationService
     }
 
     /**
-     * @return array{ready: bool, has_laravel: bool, has_blocking_files: bool, can_clear: bool}
+     * @return array{ready: bool, has_laravel: bool, has_blocking_files: bool, can_clear: bool, blocking_paths?: array<int, string>}
      */
     public function getAppDirectoryStatus(Service $service): array
     {
@@ -327,6 +319,7 @@ class LaravelAppInitializationService
             'has_laravel' => false,
             'has_blocking_files' => false,
             'can_clear' => false,
+            'blocking_paths' => [],
         ];
 
         if (! $deployment || $deployment->status !== 'running' || ! $deployment->node) {
@@ -336,15 +329,7 @@ class LaravelAppInitializationService
         try {
             $ssh = SSHService::forNode($deployment->node);
             try {
-                $hasLaravel = $this->appHasLaravelProject($ssh, $deployment);
-                $ready = $this->appDirectoryIsInitializeReady($ssh, $deployment);
-
-                return [
-                    'ready' => $ready,
-                    'has_laravel' => $hasLaravel,
-                    'has_blocking_files' => ! $ready && ! $hasLaravel,
-                    'can_clear' => ! $hasLaravel,
-                ];
+                return $this->appDirectory->getDirectoryStatus($ssh, $deployment);
             } finally {
                 $ssh->disconnect();
             }
@@ -373,26 +358,11 @@ class LaravelAppInitializationService
         $ssh = SSHService::forNode($deployment->node);
 
         try {
-            if ($this->appHasLaravelProject($ssh, $deployment)) {
+            if ($this->appDirectory->hasLaravelProject($ssh, $deployment)) {
                 throw new \DomainException('A Laravel application is already installed in /app.');
             }
 
-            $script = <<<'SH'
-set -e
-cd /app
-find . -mindepth 1 -maxdepth 1 ! -name '.talksasa' -exec rm -rf {} +
-mkdir -p public
-touch .keep index.html public/index.html
-chown -R www-data:www-data /app
-find /app -type d -exec chmod 775 {} +
-find /app -type f -exec chmod 664 {} +
-SH;
-
-            $this->dockerExec($ssh, $deployment->container_name, $script, 60, asRoot: true);
-
-            if (! $this->appDirectoryIsInitializeReady($ssh, $deployment)) {
-                throw new \RuntimeException('Could not clear all application files from /app.');
-            }
+            $this->appDirectory->resetToPlaceholderState($ssh, $deployment);
 
             return ['message' => 'Application files cleared from /app. You can now initialize Laravel.'];
         } finally {
@@ -468,32 +438,6 @@ SH;
             'completed_at' => now(),
         ]);
         $initialization->appendLog('Initialization failed: '.$message);
-    }
-
-    private function resolveHostAppPath(ContainerDeployment $deployment): string
-    {
-        return ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
-    }
-
-    private function appHasLaravelProject(SSHService $ssh, ContainerDeployment $deployment): bool
-    {
-        return $this->remoteFileExists($ssh, $deployment, '/app/artisan');
-    }
-
-    private function appDirectoryIsInitializeReady(SSHService $ssh, ContainerDeployment $deployment): bool
-    {
-        if ($this->appHasLaravelProject($ssh, $deployment)) {
-            return false;
-        }
-
-        $output = trim($this->dockerExec(
-            $ssh,
-            $deployment->container_name,
-            'set -e; cd /app; find . -mindepth 1 -maxdepth 3 \( -type f -o -type d \) ! -path "./.talksasa/*" ! -path "./.talksasa" ! -name ".keep" ! -name "index.html" ! -path "./public/index.html" -print',
-            30
-        ));
-
-        return $output === '';
     }
 
     private function remoteFileExists(SSHService $ssh, ContainerDeployment $deployment, string $path): bool

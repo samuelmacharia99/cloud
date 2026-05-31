@@ -39,6 +39,7 @@ return [
         'placeholder_paths' => [
             '.keep',
             'index.html',
+            'public',
             'public/index.html',
         ],
     ],
