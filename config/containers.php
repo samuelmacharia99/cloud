@@ -42,6 +42,7 @@ return [
             'public',
             'public/index.html',
         ],
+        'welcome_template' => resource_path('container-templates/laravel/welcome.blade.php'),
     ],
 
     /*

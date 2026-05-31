@@ -15,11 +15,13 @@ class LaravelAppInitializationService
 
     public function __construct(
         private ContainerAppDirectoryService $appDirectory,
+        private LaravelWelcomePageService $welcomePage,
     ) {}
 
     public const STEP_DEFINITIONS = [
         'validate' => 'Validate container and application directory',
         'scaffold' => 'Download Laravel application skeleton',
+        'branding' => 'Install Talksasa Cloud welcome page',
         'dependencies' => 'Install Composer dependencies',
         'environment' => 'Configure environment file (.env)',
         'app_key' => 'Generate application encryption key',
@@ -108,6 +110,12 @@ class LaravelAppInitializationService
                 $output = $this->dockerExec($ssh, $deployment->container_name, $script, $timeout);
 
                 return ['message' => 'Laravel skeleton installed into /app.', 'output' => $output];
+            });
+
+            $this->runStep($initialization, $ssh, $deployment, 'branding', function () use ($ssh, $deployment) {
+                $this->welcomePage->apply($ssh, $deployment);
+
+                return 'Talksasa Cloud welcome page installed (replacing default Laravel landing page).';
             });
 
             $this->runStep($initialization, $ssh, $deployment, 'dependencies', function () use ($ssh, $deployment, $timeout) {
@@ -327,6 +335,7 @@ class LaravelAppInitializationService
 
         $this->ensureApplicationKey($ssh, $deployment, $timeout);
         $this->clearCachedConfig($ssh, $deployment);
+        $this->welcomePage->applyIfDefault($ssh, $deployment);
 
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
@@ -614,6 +623,7 @@ class LaravelAppInitializationService
             'DB_DATABASE' => $envValues['DB_DATABASE'] ?? ($envValues['MYSQL_DATABASE'] ?? 'appdb'),
             'DB_USERNAME' => $envValues['DB_USERNAME'] ?? ($envValues['MYSQL_USER'] ?? 'appuser'),
             'DB_PASSWORD' => $envValues['DB_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? ''),
+            'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
         ];
 
         $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY');

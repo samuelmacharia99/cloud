@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\LaravelAppInitializationService;
+use App\Services\Provisioning\LaravelWelcomePageService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -13,7 +14,10 @@ class LaravelAppInitializationServiceTest extends TestCase
     #[Test]
     public function it_quotes_env_values_when_special_characters_are_present(): void
     {
-        $service = new LaravelAppInitializationService(new ContainerAppDirectoryService);
+        $service = new LaravelAppInitializationService(
+            new ContainerAppDirectoryService,
+            new LaravelWelcomePageService,
+        );
         $method = new ReflectionMethod(LaravelAppInitializationService::class, 'quoteEnvValue');
         $method->setAccessible(true);
 
@@ -25,7 +29,10 @@ class LaravelAppInitializationServiceTest extends TestCase
     #[Test]
     public function it_builds_initialization_steps_for_laravel(): void
     {
-        $service = new LaravelAppInitializationService(new ContainerAppDirectoryService);
+        $service = new LaravelAppInitializationService(
+            new ContainerAppDirectoryService,
+            new LaravelWelcomePageService,
+        );
         $method = new ReflectionMethod(LaravelAppInitializationService::class, 'buildInitialSteps');
         $method->setAccessible(true);
 
