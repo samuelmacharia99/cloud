@@ -63,6 +63,7 @@ return [
     */
     'file_editor' => [
         'max_bytes' => (int) env('CONTAINER_FILE_EDITOR_MAX_BYTES', 524288),
+        'view_max_bytes' => (int) env('CONTAINER_FILE_VIEW_MAX_BYTES', 2097152),
         'editable_extensions' => [
             'php', 'env', 'example', 'blade', 'js', 'css', 'scss', 'json', 'xml', 'yml', 'yaml',
             'md', 'txt', 'html', 'htm', 'sql', 'sh', 'ini', 'conf', 'log', 'vue', 'ts', 'tsx',

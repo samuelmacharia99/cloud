@@ -16,6 +16,16 @@ class ContainerFileService
 
     private const APP_SUBDIR = '/app';
 
+    /** @var list<string> */
+    private const BLOCKED_VIEW_EXTENSIONS = [
+        'zip', 'gz', 'tar', 'tgz', 'bz2', 'xz', '7z', 'rar',
+        'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'avif',
+        'pdf', 'exe', 'dll', 'so', 'dylib', 'bin', 'dat',
+        'woff', 'woff2', 'ttf', 'eot', 'otf',
+        'mp3', 'mp4', 'avi', 'mov', 'mkv', 'webm', 'wav', 'flac',
+        'pyc', 'class', 'jar', 'war', 'deb', 'rpm',
+    ];
+
     public function __construct(private SSHService $ssh) {}
 
     /**
@@ -59,12 +69,16 @@ class ContainerFileService
         $entries = $this->ssh->listDir($absPath);
         $entries = array_map(function (array $entry) {
             if (($entry['type'] ?? '') === 'dir') {
+                $entry['viewable'] = false;
                 $entry['editable'] = false;
 
                 return $entry;
             }
 
-            $entry['editable'] = $this->isEditableRelativePath('/'.ltrim((string) ($entry['name'] ?? ''), '/'));
+            $fileRel = '/'.ltrim((string) ($entry['name'] ?? ''), '/');
+            $size = max(0, (int) ($entry['size'] ?? 0));
+            $entry['viewable'] = $this->canViewFile($fileRel, $size);
+            $entry['editable'] = $this->canEditFile($fileRel, $size);
 
             return $entry;
         }, $entries);
@@ -104,37 +118,41 @@ class ContainerFileService
     }
 
     /**
-     * @return array{path: string, content: string, size: int, editable: bool, language: string}
+     * @return array{path: string, content: string, size: int, editable: bool, read_only: bool, language: string}
      */
     public function readTextFile(Service $service, ContainerDeployment $deployment, string $relPath, User $user, string $ip): array
     {
-        if (! $this->isEditableRelativePath($relPath)) {
-            throw new \InvalidArgumentException('This file type cannot be edited in the browser.');
+        if (! $this->isViewableRelativePath($relPath)) {
+            throw new \InvalidArgumentException('This file type cannot be opened in the browser.');
         }
 
         $absPath = $this->resolveAndGuardPath($deployment, $relPath);
         $this->assertRegularFile($absPath);
 
         $size = $this->fileSizeBytes($absPath);
-        $maxBytes = (int) config('containers.file_editor.max_bytes', 524288);
-        if ($size > $maxBytes) {
-            throw new \InvalidArgumentException('File is too large to edit (max '.$this->formatBytes($maxBytes).').');
+        $maxViewBytes = $this->maxViewBytes();
+        if ($size > $maxViewBytes) {
+            throw new \InvalidArgumentException('File is too large to view (max '.$this->formatBytes($maxViewBytes).').');
         }
 
         $content = $this->ssh->downloadFile($absPath);
         if (str_contains($content, "\0")) {
-            throw new \InvalidArgumentException('Binary files cannot be edited in the browser.');
+            throw new \InvalidArgumentException('Binary files cannot be opened in the browser.');
         }
+
+        $editable = $this->canEditFile($relPath, $size);
 
         $this->auditLog($service, $deployment, $user, 'read', $relPath, $ip, [
             'size' => $size,
+            'read_only' => ! $editable,
         ]);
 
         return [
             'path' => $relPath,
             'content' => $content,
             'size' => $size,
-            'editable' => true,
+            'editable' => $editable,
+            'read_only' => ! $editable,
             'language' => $this->detectLanguage($relPath),
         ];
     }
@@ -151,7 +169,7 @@ class ContainerFileService
             throw new \InvalidArgumentException('This file type cannot be edited in the browser.');
         }
 
-        $maxBytes = (int) config('containers.file_editor.max_bytes', 524288);
+        $maxBytes = $this->maxEditBytes();
         if (strlen($content) > $maxBytes) {
             throw new \InvalidArgumentException('File content exceeds the maximum editable size.');
         }
@@ -172,28 +190,36 @@ class ContainerFileService
 
     public function isEditableRelativePath(string $relPath): bool
     {
+        return $this->matchesExtensionList($relPath, $this->editableExtensions());
+    }
+
+    public function isViewableRelativePath(string $relPath): bool
+    {
+        if ($this->isEditableRelativePath($relPath)) {
+            return true;
+        }
+
         $name = basename(trim($relPath, '/'));
         if ($name === '' || $name === '.' || $name === '..') {
             return false;
         }
 
-        $editableExtensions = config('containers.file_editor.editable_extensions', []);
-        if (! is_array($editableExtensions) || $editableExtensions === []) {
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if ($extension === '') {
             return false;
         }
 
-        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-        if ($extension !== '' && in_array($extension, $editableExtensions, true)) {
-            return true;
-        }
+        return ! in_array($extension, self::BLOCKED_VIEW_EXTENSIONS, true);
+    }
 
-        if (str_starts_with($name, '.')) {
-            $segment = strtolower(substr($name, 1));
+    public function canEditFile(string $relPath, int $size): bool
+    {
+        return $this->isEditableRelativePath($relPath) && $size <= $this->maxEditBytes();
+    }
 
-            return in_array($segment, $editableExtensions, true);
-        }
-
-        return in_array(strtolower($name), $editableExtensions, true);
+    public function canViewFile(string $relPath, int $size): bool
+    {
+        return $this->isViewableRelativePath($relPath) && $size <= $this->maxViewBytes();
     }
 
     /**
@@ -360,5 +386,55 @@ class ContainerFileService
             'env', 'example', 'ini', 'conf' => 'plaintext',
             default => 'plaintext',
         };
+    }
+
+    private function maxEditBytes(): int
+    {
+        return max(1, (int) config('containers.file_editor.max_bytes', 524288));
+    }
+
+    private function maxViewBytes(): int
+    {
+        $viewMax = (int) config('containers.file_editor.view_max_bytes', 2097152);
+
+        return max($this->maxEditBytes(), $viewMax);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function editableExtensions(): array
+    {
+        $extensions = config('containers.file_editor.editable_extensions', []);
+
+        return is_array($extensions) ? $extensions : [];
+    }
+
+    /**
+     * @param  list<string>  $extensions
+     */
+    private function matchesExtensionList(string $relPath, array $extensions): bool
+    {
+        if ($extensions === []) {
+            return false;
+        }
+
+        $name = basename(trim($relPath, '/'));
+        if ($name === '' || $name === '.' || $name === '..') {
+            return false;
+        }
+
+        $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        if ($extension !== '' && in_array($extension, $extensions, true)) {
+            return true;
+        }
+
+        if (str_starts_with($name, '.')) {
+            $segment = strtolower(substr($name, 1));
+
+            return in_array($segment, $extensions, true);
+        }
+
+        return in_array(strtolower($name), $extensions, true);
     }
 }

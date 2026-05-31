@@ -70,7 +70,7 @@
                                     </td>
                                     <td class="px-4 py-3">
                                         <button
-                                            @click="entry.type === 'dir' ? navigate(joinPath(currentPath, entry.name)) : (entry.editable ? openEditor(entry.name) : downloadFile(entry.name))"
+                                            @click="entry.type === 'dir' ? navigate(joinPath(currentPath, entry.name)) : (entry.editable ? openEditor(entry.name) : (entry.viewable ? openViewer(entry.name) : downloadFile(entry.name)))"
                                             :class="entry.type === 'dir' ? 'text-blue-600 dark:text-blue-400 hover:underline cursor-pointer' : 'text-gray-700 dark:text-slate-200 hover:underline cursor-pointer'"
                                             class="break-all text-left"
                                         >
@@ -84,6 +84,7 @@
                                         <span x-text="formatDate(entry.modified)"></span>
                                     </td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
+                                        <button x-show="entry.type !== 'dir' && entry.viewable" @click="openViewer(entry.name)" class="text-slate-600 dark:text-slate-400 hover:underline text-sm">View</button>
                                         <button x-show="entry.type !== 'dir' && entry.editable" @click="openEditor(entry.name)" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">Edit</button>
                                         <button x-show="entry.type !== 'dir'" @click="downloadFile(entry.name)" class="text-slate-600 dark:text-slate-400 hover:underline text-sm">Download</button>
                                         <button @click="deleteFile(entry.name)" class="text-red-600 dark:text-red-400 hover:underline text-sm">Delete</button>
@@ -115,7 +116,7 @@
                 <div class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-700">
                     <div class="px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
                         <div class="min-w-0">
-                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Editing</p>
+                            <p class="text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400" x-text="editorReadOnly ? 'Viewing' : 'Editing'"></p>
                             <p class="font-mono text-sm text-slate-900 dark:text-white truncate" x-text="editorPath"></p>
                         </div>
                         <button @click="closeEditor()" class="text-slate-500 hover:text-slate-800 dark:hover:text-white text-xl leading-none">✕</button>
@@ -128,16 +129,18 @@
                         <textarea
                             x-show="!editorLoading"
                             x-model="editorContent"
+                            :readonly="editorReadOnly"
                             class="w-full h-[55vh] font-mono text-sm leading-6 p-4 rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-950 text-slate-100 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            :class="editorReadOnly ? 'cursor-default opacity-90' : ''"
                             spellcheck="false"
                         ></textarea>
                     </div>
 
                     <div class="px-4 py-3 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between gap-3">
-                        <p class="text-xs text-slate-500 dark:text-slate-400" x-text="editorDirty ? 'Unsaved changes' : 'Saved'"></p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400" x-text="editorReadOnly ? 'Read-only preview' : (editorDirty ? 'Unsaved changes' : 'Saved')"></p>
                         <div class="flex items-center gap-2">
-                            <button @click="closeEditor()" type="button" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm">Cancel</button>
-                            <button @click="saveEditor()" :disabled="editorSaving || editorLoading" type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium">
+                            <button @click="closeEditor()" type="button" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-sm" x-text="editorReadOnly ? 'Close' : 'Cancel'"></button>
+                            <button x-show="!editorReadOnly" @click="saveEditor()" :disabled="editorSaving || editorLoading" type="button" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium">
                                 <span x-text="editorSaving ? 'Saving...' : 'Save'"></span>
                             </button>
                         </div>
@@ -171,6 +174,7 @@ function fileManager() {
         editorContent: '',
         editorOriginal: '',
         editorDirty: false,
+        editorReadOnly: false,
 
         init() {
             this.loadDirectory();
@@ -226,6 +230,14 @@ function fileManager() {
         },
 
         async openEditor(name) {
+            await this.openFile(name, false);
+        },
+
+        async openViewer(name) {
+            await this.openFile(name, true);
+        },
+
+        async openFile(name, readOnly) {
             const path = this.joinPath(this.currentPath, name);
             this.editorOpen = true;
             this.editorLoading = true;
@@ -233,6 +245,7 @@ function fileManager() {
             this.editorContent = '';
             this.editorOriginal = '';
             this.editorDirty = false;
+            this.editorReadOnly = readOnly;
             this.error = null;
 
             try {
@@ -248,6 +261,7 @@ function fileManager() {
                     throw new Error(data.error || 'Failed to open file');
                 }
 
+                this.editorReadOnly = readOnly || !data.editable;
                 this.editorContent = data.content || '';
                 this.editorOriginal = this.editorContent;
             } catch (err) {
@@ -296,7 +310,7 @@ function fileManager() {
         },
 
         closeEditor() {
-            if (this.editorDirty && !confirm('Discard unsaved changes?')) {
+            if (!this.editorReadOnly && this.editorDirty && !confirm('Discard unsaved changes?')) {
                 return;
             }
 
@@ -305,6 +319,7 @@ function fileManager() {
             this.editorContent = '';
             this.editorOriginal = '';
             this.editorDirty = false;
+            this.editorReadOnly = false;
         },
 
         async newFolder() {
