@@ -52,6 +52,22 @@ return [
     'redeploy' => [
         // When true, the redeploy form pre-checks "Reset database" (destructive).
         'reset_database_default' => (bool) env('CONTAINER_REDEPLOY_RESET_DATABASE_DEFAULT', false),
+        'migrate_max_attempts' => (int) env('CONTAINER_REDEPLOY_MIGRATE_MAX_ATTEMPTS', 6),
+        'migrate_retry_delay_seconds' => (int) env('CONTAINER_REDEPLOY_MIGRATE_RETRY_DELAY', 10),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Container file editor (Files tab)
+    |--------------------------------------------------------------------------
+    */
+    'file_editor' => [
+        'max_bytes' => (int) env('CONTAINER_FILE_EDITOR_MAX_BYTES', 524288),
+        'editable_extensions' => [
+            'php', 'env', 'example', 'blade', 'js', 'css', 'scss', 'json', 'xml', 'yml', 'yaml',
+            'md', 'txt', 'html', 'htm', 'sql', 'sh', 'ini', 'conf', 'log', 'vue', 'ts', 'tsx',
+            'artisan', 'keep',
+        ],
     ],
 
 ];

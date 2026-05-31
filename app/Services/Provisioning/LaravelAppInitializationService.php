@@ -325,12 +325,7 @@ class LaravelAppInitializationService
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
 
         try {
-            $this->dockerExec(
-                $ssh,
-                $deployment->container_name,
-                'set -e; cd /app; php artisan migrate --force --no-interaction',
-                $timeout
-            );
+            $this->runMigrationsWithRetry($ssh, $deployment, $timeout);
             $serviceMeta['laravel_database_synced_at'] = now()->toIso8601String();
             $service->update(['service_meta' => $serviceMeta]);
 
@@ -340,6 +335,33 @@ class LaravelAppInitializationService
 
             return 'Laravel .env updated from deployment credentials. Migrations could not run automatically: '.$e->getMessage();
         }
+    }
+
+    private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
+    {
+        $maxAttempts = (int) config('containers.redeploy.migrate_max_attempts', 6);
+        $delaySeconds = (int) config('containers.redeploy.migrate_retry_delay_seconds', 10);
+        $lastError = null;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            try {
+                $this->dockerExec(
+                    $ssh,
+                    $deployment->container_name,
+                    'set -e; cd /app; php artisan migrate --force --no-interaction',
+                    $timeout
+                );
+
+                return;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                if ($attempt < $maxAttempts) {
+                    sleep($delaySeconds);
+                }
+            }
+        }
+
+        throw new \RuntimeException($lastError?->getMessage() ?? 'Migration failed.');
     }
 
     /**

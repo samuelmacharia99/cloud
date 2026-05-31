@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers\Customer;
 
-use App\Models\Service;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Customer\UploadContainerFileRequest;
 use App\Http\Requests\Customer\CreateContainerDirectoryRequest;
 use App\Http\Requests\Customer\DeleteContainerPathRequest;
+use App\Http\Requests\Customer\SaveContainerFileContentRequest;
+use App\Http\Requests\Customer\UploadContainerFileRequest;
+use App\Models\Service;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,7 @@ class ContainerFileController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'Container not deployed yet'], 400);
         }
 
@@ -44,10 +45,94 @@ class ContainerFileController extends Controller
 
             return response()->json($result);
         } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => 'Invalid path: ' . $e->getMessage()], 403);
+            return response()->json(['error' => 'Invalid path: '.$e->getMessage()], 403);
         } catch (\Exception $e) {
-            \Log::error("Failed to list container directory for service {$service->id}: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to list directory: ' . $e->getMessage()], 500);
+            \Log::error("Failed to list container directory for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to list directory: '.$e->getMessage()], 500);
+        }
+    }
+
+    public function content(Service $service, Request $request): JsonResponse
+    {
+        $this->authorize('manageFiles', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['error' => 'Container not deployed yet'], 400);
+        }
+
+        $path = (string) $request->query('path', '');
+        if ($path === '') {
+            return response()->json(['error' => 'Path is required'], 400);
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $fileService = new ContainerFileService($ssh);
+
+            $result = $fileService->readTextFile(
+                $service,
+                $deployment,
+                $path,
+                auth()->user(),
+                $request->ip()
+            );
+
+            return response()->json($result);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            \Log::error("Failed to read container file for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to read file: '.$e->getMessage()], 500);
+        }
+    }
+
+    public function saveContent(Service $service, SaveContainerFileContentRequest $request): JsonResponse
+    {
+        $this->authorize('manageFiles', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['error' => 'Container not deployed yet'], 400);
+        }
+
+        $path = (string) $request->input('path');
+        $content = (string) $request->input('content');
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $fileService = new ContainerFileService($ssh);
+
+            $fileService->writeTextFile(
+                $service,
+                $deployment,
+                $path,
+                $content,
+                auth()->user(),
+                $request->ip()
+            );
+
+            return response()->json([
+                'success' => true,
+                'path' => $path,
+                'size' => strlen($content),
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            \Log::error("Failed to save container file for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to save file: '.$e->getMessage()], 500);
         }
     }
 
@@ -60,12 +145,12 @@ class ContainerFileController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             abort(400, 'Container not deployed yet');
         }
 
         $path = $request->query('path');
-        if (!$path) {
+        if (! $path) {
             abort(400, 'Path is required');
         }
 
@@ -90,9 +175,9 @@ class ContainerFileController extends Controller
                 $filename
             );
         } catch (\InvalidArgumentException $e) {
-            abort(403, 'Invalid path: ' . $e->getMessage());
+            abort(403, 'Invalid path: '.$e->getMessage());
         } catch (\Exception $e) {
-            \Log::error("Failed to download container file for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to download container file for service {$service->id}: ".$e->getMessage());
             abort(500, 'Failed to download file');
         }
     }
@@ -106,7 +191,7 @@ class ContainerFileController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'Container not deployed yet'], 400);
         }
 
@@ -138,10 +223,11 @@ class ContainerFileController extends Controller
                 'size' => $file->getSize(),
             ]);
         } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => 'Invalid path: ' . $e->getMessage()], 403);
+            return response()->json(['error' => 'Invalid path: '.$e->getMessage()], 403);
         } catch (\Exception $e) {
-            \Log::error("Failed to upload container file for service {$service->id}: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to upload file: ' . $e->getMessage()], 500);
+            \Log::error("Failed to upload container file for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to upload file: '.$e->getMessage()], 500);
         }
     }
 
@@ -154,7 +240,7 @@ class ContainerFileController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'Container not deployed yet'], 400);
         }
 
@@ -174,10 +260,11 @@ class ContainerFileController extends Controller
 
             return response()->json(['success' => true]);
         } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => 'Invalid path: ' . $e->getMessage()], 403);
+            return response()->json(['error' => 'Invalid path: '.$e->getMessage()], 403);
         } catch (\Exception $e) {
-            \Log::error("Failed to delete container path for service {$service->id}: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to delete: ' . $e->getMessage()], 500);
+            \Log::error("Failed to delete container path for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to delete: '.$e->getMessage()], 500);
         }
     }
 
@@ -190,7 +277,7 @@ class ContainerFileController extends Controller
         }
 
         $deployment = $service->containerDeployment;
-        if (!$deployment) {
+        if (! $deployment) {
             return response()->json(['error' => 'Container not deployed yet'], 400);
         }
 
@@ -210,10 +297,11 @@ class ContainerFileController extends Controller
 
             return response()->json(['success' => true]);
         } catch (\InvalidArgumentException $e) {
-            return response()->json(['error' => 'Invalid path: ' . $e->getMessage()], 403);
+            return response()->json(['error' => 'Invalid path: '.$e->getMessage()], 403);
         } catch (\Exception $e) {
-            \Log::error("Failed to create directory for service {$service->id}: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to create directory: ' . $e->getMessage()], 500);
+            \Log::error("Failed to create directory for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to create directory: '.$e->getMessage()], 500);
         }
     }
 }

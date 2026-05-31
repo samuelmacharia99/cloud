@@ -36,6 +36,12 @@ class LaravelDatabaseSyncService
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
 
         $this->deploymentService->waitForDatabaseSidecar($ssh, $containerPath, $databaseTemplate, $envValues);
+        $this->deploymentService->waitForApplicationDatabaseAccess(
+            $ssh,
+            $deployment->container_name,
+            $databaseTemplate,
+            $envValues
+        );
 
         return $this->initialization->syncApplicationDatabase($service, $deployment, $ssh);
     }

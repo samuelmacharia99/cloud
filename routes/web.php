@@ -427,6 +427,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Container file manager (throttled)
         Route::middleware(['throttle:60,1'])->group(function () {
             Route::get('my/services/{service}/container/files', [ContainerFileController::class, 'index'])->name('customer.services.container.files.index');
+            Route::get('my/services/{service}/container/files/content', [ContainerFileController::class, 'content'])->name('customer.services.container.files.content');
+            Route::put('my/services/{service}/container/files/content', [ContainerFileController::class, 'saveContent'])->middleware('throttle:30,1')->name('customer.services.container.files.save');
             Route::get('my/services/{service}/container/files/download', [ContainerFileController::class, 'download'])->name('customer.services.container.files.download');
             Route::post('my/services/{service}/container/files/upload', [ContainerFileController::class, 'upload'])->middleware('throttle:10,1')->name('customer.services.container.files.upload');
             Route::delete('my/services/{service}/container/files', [ContainerFileController::class, 'delete'])->name('customer.services.container.files.delete');

@@ -1026,6 +1026,39 @@ class ContainerDeploymentService
         throw new \RuntimeException('Database did not become ready within '.$timeoutSeconds.' seconds.');
     }
 
+    public function waitForApplicationDatabaseAccess(
+        SSHService $ssh,
+        string $containerName,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars,
+        int $timeoutSeconds = 180
+    ): void {
+        $delaySeconds = 5;
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
+        $containerArg = escapeshellarg($containerName);
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            try {
+                if ($this->applicationDatabaseAccessReady($ssh, $containerArg, $databaseTemplate, $envVars)) {
+                    return;
+                }
+            } catch (\Throwable $e) {
+                \Log::debug('Application database access check failed', [
+                    'attempt' => $attempt + 1,
+                    'max_attempts' => $maxAttempts,
+                    'container_name' => $containerName,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            if ($attempt < $maxAttempts - 1) {
+                sleep($delaySeconds);
+            }
+        }
+
+        throw new \RuntimeException('Application could not connect to the database within '.$timeoutSeconds.' seconds.');
+    }
+
     private function tearDownStack(SSHService $ssh, string $containerPath, bool $removeVolumes): void
     {
         $composeFile = escapeshellarg($containerPath.'/docker-compose.yml');
@@ -1081,6 +1114,69 @@ class ContainerDeploymentService
         $command = "cd {$containerPathArg} && docker compose exec -T -e PGPASSWORD={$password} db pg_isready -U {$user} -h localhost";
 
         $ssh->exec($command, 20);
+
+        return true;
+    }
+
+    private function applicationDatabaseAccessReady(
+        SSHService $ssh,
+        string $containerArg,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars
+    ): bool {
+        return match ($databaseTemplate->type) {
+            'mysql', 'mariadb' => $this->mysqlApplicationAccessReady($ssh, $containerArg, $envVars),
+            'postgresql' => $this->postgresqlApplicationAccessReady($ssh, $containerArg, $envVars),
+            default => true,
+        };
+    }
+
+    private function mysqlApplicationAccessReady(SSHService $ssh, string $containerArg, array $envVars): bool
+    {
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+
+        $script = 'try { '
+            .'$pdo = new PDO('
+            .'"mysql:host=db;port=3306;dbname='.addslashes($database).'", '
+            .'"'.addslashes($username).'", '
+            .'"'.addslashes($password).'", '
+            .'[PDO::ATTR_TIMEOUT => 5]'
+            .'); '
+            .'$pdo->query("SELECT 1"); '
+            .'exit(0); '
+            .'} catch (Throwable $e) { exit(1); }';
+
+        $ssh->exec(
+            'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
+            20
+        );
+
+        return true;
+    }
+
+    private function postgresqlApplicationAccessReady(SSHService $ssh, string $containerArg, array $envVars): bool
+    {
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
+
+        $script = 'try { '
+            .'$pdo = new PDO('
+            .'"pgsql:host=db;port=5432;dbname='.addslashes($database).'", '
+            .'"'.addslashes($username).'", '
+            .'"'.addslashes($password).'", '
+            .'[PDO::ATTR_TIMEOUT => 5]'
+            .'); '
+            .'$pdo->query("SELECT 1"); '
+            .'exit(0); '
+            .'} catch (Throwable $e) { exit(1); }';
+
+        $ssh->exec(
+            'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),
+            20
+        );
 
         return true;
     }
