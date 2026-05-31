@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ServiceStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -38,7 +39,7 @@ class Service extends Model
         'suspend_date' => 'datetime',
         'terminate_date' => 'datetime',
         'custom_price' => 'decimal:2',
-        'status' => \App\Enums\ServiceStatus::class,
+        'status' => ServiceStatus::class,
     ];
 
     // Relationships
@@ -77,6 +78,11 @@ class Service extends Model
     public function containerBackups()
     {
         return $this->hasMany(ContainerBackup::class);
+    }
+
+    public function containerAppInitializations()
+    {
+        return $this->hasMany(ContainerAppInitialization::class);
     }
 
     // Status helpers

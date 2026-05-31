@@ -1,5 +1,4 @@
 <div x-data="containerTerminal()" class="space-y-4">
-    <!-- Terminal header -->
     <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Terminal</h3>
         <div class="flex items-center gap-2">
@@ -12,40 +11,33 @@
         </div>
     </div>
 
-    <!-- Terminal container -->
     <div x-show="terminalVisible" class="bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
-        <!-- Terminal output area -->
         <div id="terminal" class="text-sm font-mono text-slate-100" style="height: 400px;"></div>
 
-        <!-- Status bar -->
         <div class="bg-slate-800 border-t border-slate-700 px-3 py-2 flex items-center justify-between text-xs text-slate-400">
             <div class="flex items-center gap-2">
                 <span x-show="connected" class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 <span x-show="!connected" class="inline-block w-2 h-2 bg-red-500 rounded-full"></span>
-                <span x-text="connected ? 'Connected' : 'Disconnected'"></span>
-                <span x-text="`CWD: ${cwd}`" class="ml-4"></span>
+                <span x-text="connected ? 'Connected (PTY)' : 'Disconnected'"></span>
             </div>
             <div class="text-right">
-                <span x-text="`Commands: ${commandCount}`"></span>
-                <span x-show="sessionExpires" x-text="`Expires: ${sessionExpires}`" class="ml-2"></span>
+                <span x-show="sessionExpires" x-text="sessionExpires" class="ml-2"></span>
             </div>
         </div>
     </div>
 
-    <!-- Info messages -->
-    <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+    <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-            Click "Open Terminal" to start an interactive terminal session inside your container. You can run commands, navigate directories, and manage your application.
+            Interactive shell inside your container. Supports full-screen programs, <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and pagers.
         </p>
-        <p class="text-xs text-blue-700 dark:text-blue-400 mt-2">
-            <strong>Blocked commands:</strong> sudo, su, docker, chroot, and other privileged/escape commands are blocked for security.
+        <p class="text-xs text-blue-700 dark:text-blue-400">
+            Requires the terminal WebSocket service: <code class="font-mono">php artisan container:terminal-ws</code> (Supervisor: <code class="font-mono">deploy/supervisor/container-terminal-ws.conf</code>).
         </p>
-        <p class="text-xs text-blue-700 dark:text-blue-400 mt-1">
-            <strong>Tip:</strong> Click the terminal, then paste with <kbd class="px-1 rounded bg-blue-100 dark:bg-blue-800">Ctrl+Shift+V</kbd> or the Paste button.
+        <p class="text-xs text-blue-700 dark:text-blue-400">
+            Dangerous commands (sudo, docker, etc.) are blocked when you press Enter.
         </p>
     </div>
 
-    <!-- Loading spinner -->
     <div x-show="sessionStarting" class="flex items-center justify-center py-8">
         <div class="inline-flex items-center gap-2">
             <div class="w-4 h-4 bg-blue-500 rounded-full animate-bounce"></div>
@@ -54,11 +46,8 @@
     </div>
 </div>
 
-<!-- xterm.js and CSS from local public folder (allowed by CSP 'self') -->
 <script src="{{ asset('js/xterm/xterm.js') }}"></script>
 <script src="{{ asset('js/xterm/xterm-addon-fit.js') }}"></script>
-
-<!-- xterm.css from local server (allowed by CSP 'self') -->
 <link rel="stylesheet" href="{{ asset('css/xterm.min.css') }}">
 <link rel="stylesheet" href="{{ asset('css/xterm-addon-fit.min.css') }}">
 
@@ -72,24 +61,18 @@ function containerTerminal() {
         sessionStarting: false,
         connected: false,
         sessionToken: null,
-        cwd: '/',
-        inputBuffer: '',
-        history: [],
-        historyIndex: 0,
-        commandCount: 0,
+        websocketUrl: null,
+        ws: null,
         sessionExpires: null,
         expiryUpdateInterval: null,
-        serviceId: {{ $service->id }},
 
-        init() {
-            // Initialize xterm only when terminal is opened
-        },
+        init() {},
 
         async toggleTerminal() {
             if (this.terminalVisible) {
-                this.closeTerminal();
+                await this.closeTerminal();
             } else {
-                this.openTerminal();
+                await this.openTerminal();
             }
         },
 
@@ -97,7 +80,6 @@ function containerTerminal() {
             this.terminalVisible = true;
             this.sessionStarting = true;
 
-            // Wait for DOM to update before initializing terminal
             await this.$nextTick();
 
             if (!this.terminal) {
@@ -113,34 +95,22 @@ function containerTerminal() {
                         'Accept': 'application/json',
                     },
                 });
-                const { data, parseError } = await this.safeJsonResponse(response);
-                if (parseError) {
-                    this.terminal.write('\r\n❌ Terminal API returned invalid response. Please refresh and try again.\r\n');
-                    this.sessionStarting = false;
-                    return;
-                }
 
-                if (!response.ok) {
-                    this.terminal.write('\r\n❌ ' + ((data && data.error) || `Failed to create terminal session (HTTP ${response.status})`) + '\r\n');
-                    this.sessionStarting = false;
+                const { data, parseError } = await this.safeJsonResponse(response);
+                if (parseError || !response.ok) {
+                    this.terminal.write('\r\n❌ ' + ((data && data.error) || 'Failed to create terminal session') + '\r\n');
                     return;
                 }
 
                 this.sessionToken = data.session_token;
-                this.cwd = data.cwd;
-                this.connected = true;
-                this.commandCount = 0;
+                this.websocketUrl = data.websocket_url;
 
-                this.terminal.write('\r\n');
-                this.terminal.write('✓ ' + data.welcome_message + '\r\n');
-                this.writePrompt();
-
-                // Re-fit terminal to ensure proper dimensions after becoming visible
-                try {
-                    this.fitAddon.fit();
-                } catch (e) {
-                    console.error('Failed to fit terminal after session creation:', e);
+                if (!this.websocketUrl) {
+                    this.terminal.write('\r\n❌ Terminal WebSocket URL is not configured. Set CONTAINER_TERMINAL_WS_PUBLIC_URL and run container:terminal-ws.\r\n');
+                    return;
                 }
+
+                await this.connectWebSocket();
 
                 if (data.expires_at) {
                     this.updateExpiryDisplay(data.expires_at);
@@ -157,6 +127,34 @@ function containerTerminal() {
             }
         },
 
+        connectWebSocket() {
+            return new Promise((resolve, reject) => {
+                const url = `${this.websocketUrl}?token=${encodeURIComponent(this.sessionToken)}`;
+                this.ws = new WebSocket(url);
+
+                this.ws.onopen = () => {
+                    this.connected = true;
+                    this.sendResize();
+                    resolve();
+                };
+
+                this.ws.onmessage = (event) => {
+                    this.terminal.write(event.data);
+                };
+
+                this.ws.onerror = () => {
+                    this.connected = false;
+                    this.terminal.write('\r\n❌ WebSocket connection failed. Is `php artisan container:terminal-ws` running?\r\n');
+                    reject(new Error('WebSocket connection failed'));
+                };
+
+                this.ws.onclose = () => {
+                    this.connected = false;
+                    this.terminal.write('\r\n\r\n✓ Terminal disconnected\r\n');
+                };
+            });
+        },
+
         initializeTerminal() {
             this.terminal = new Terminal({
                 theme: {
@@ -167,12 +165,10 @@ function containerTerminal() {
                 fontFamily: 'Monaco, Menlo, Ubuntu Mono, Courier New, monospace',
                 fontSize: 14,
                 cursorBlink: true,
-                cols: 120,
-                rows: 24,
+                convertEol: true,
                 rightClickSelectsWord: true,
             });
 
-            // xterm-addon-fit UMD build exposes the class as FitAddon.FitAddon
             const FitAddonClass = (window.FitAddon && window.FitAddon.FitAddon) ? window.FitAddon.FitAddon : window.FitAddon;
             this.fitAddon = new FitAddonClass();
             this.terminal.loadAddon(this.fitAddon);
@@ -185,303 +181,102 @@ function containerTerminal() {
             }
 
             this.terminal.onData((data) => {
-                this.handleInput(data);
+                if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(data);
+                }
             });
 
-            const terminalElement = document.getElementById('terminal');
-            if (terminalElement) {
-                terminalElement.addEventListener('click', () => {
-                    this.terminal.focus();
-                });
-
-                terminalElement.addEventListener('paste', (event) => {
-                    event.preventDefault();
-                    const text = event.clipboardData?.getData('text') ?? '';
-                    if (text) {
-                        this.insertText(text);
-                    }
+            if (typeof this.terminal.onResize === 'function') {
+                this.terminal.onResize(({ cols, rows }) => {
+                    this.sendResize(cols, rows);
                 });
             }
 
-            this.terminal.attachCustomKeyEventHandler((event) => {
-                const key = event.key?.toLowerCase();
-                if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === 'v') {
-                    event.preventDefault();
-                    this.pasteFromClipboard();
-                    return false;
-                }
-                return true;
-            });
+            const terminalElement = document.getElementById('terminal');
+            if (terminalElement) {
+                terminalElement.addEventListener('click', () => this.terminal.focus());
+            }
 
-            // Fit on window resize
             window.addEventListener('resize', () => {
                 try {
                     this.fitAddon.fit();
+                    this.sendResize();
                 } catch (e) {
                     console.error('Failed to fit terminal on resize:', e);
                 }
             });
         },
 
+        sendResize(cols, rows) {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                return;
+            }
+
+            const payload = {
+                type: 'resize',
+                cols: cols || this.terminal.cols,
+                rows: rows || this.terminal.rows,
+            };
+
+            this.ws.send(JSON.stringify(payload));
+        },
+
         async pasteFromClipboard() {
-            if (!this.connected || !this.terminal) {
+            if (!this.connected || !this.terminal || !this.ws) {
                 return;
             }
 
             try {
                 const text = await navigator.clipboard.readText();
-                if (text) {
-                    this.insertText(text);
+                if (text && this.ws.readyState === WebSocket.OPEN) {
+                    this.ws.send(text);
                     this.terminal.focus();
                 }
             } catch (error) {
-                this.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V or right-click → Paste.\r\n');
-                this.writePrompt();
+                this.terminal.write('\r\n⚠ Could not read clipboard. Use Ctrl+Shift+V.\r\n');
             }
-        },
-
-        handleInput(data) {
-            if (!this.connected) return;
-
-            if (data.startsWith('\x1b[200~')) {
-                const pasted = data.replace(/^\x1b\[200~/, '').replace(/\x1b\[201~$/, '');
-                this.insertText(pasted);
-                return;
-            }
-
-            if (data.length > 1) {
-                this.insertText(data);
-                return;
-            }
-
-            const key = data;
-
-            // Ctrl+C - clear input buffer
-            if (key === '\x03') {
-                this.inputBuffer = '';
-                this.terminal.write('^C\r\n');
-                this.writePrompt();
-                return;
-            }
-
-            // Ctrl+L - clear screen
-            if (key === '\x0c') {
-                this.terminal.clear();
-                this.writePrompt();
-                return;
-            }
-
-            // Enter - execute command
-            if (key === '\r' || key === '\n') {
-                if (this.inputBuffer.trim()) {
-                    this.sendCommand(this.inputBuffer);
-                    this.history.push(this.inputBuffer);
-                    this.historyIndex = this.history.length;
-                    this.inputBuffer = '';
-                } else {
-                    this.terminal.write('\r\n');
-                    this.writePrompt();
-                }
-                return;
-            }
-
-            // Backspace
-            if (key === '\x7f') {
-                if (this.inputBuffer.length > 0) {
-                    this.inputBuffer = this.inputBuffer.slice(0, -1);
-                    this.terminal.write('\b \b');
-                }
-                return;
-            }
-
-            // Arrow up - history back
-            if (key === '\x1b[A') {
-                if (this.historyIndex > 0) {
-                    this.historyIndex--;
-                    this.restoreHistory();
-                }
-                return;
-            }
-
-            // Arrow down - history forward
-            if (key === '\x1b[B') {
-                if (this.historyIndex < this.history.length - 1) {
-                    this.historyIndex++;
-                    this.restoreHistory();
-                } else if (this.historyIndex === this.history.length - 1) {
-                    this.historyIndex++;
-                    this.clearInput();
-                }
-                return;
-            }
-
-            // Regular character input
-            if (key.length === 1 && key.charCodeAt(0) >= 32 && key.charCodeAt(0) < 127) {
-                this.inputBuffer += key;
-                this.terminal.write(key);
-            }
-        },
-
-        insertText(text) {
-            if (!this.connected || !this.terminal) {
-                return;
-            }
-
-            const normalized = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-            for (const char of normalized) {
-                if (char === '\n') {
-                    continue;
-                }
-
-                const code = char.charCodeAt(0);
-                if (code >= 32 && code < 127) {
-                    this.inputBuffer += char;
-                    this.terminal.write(char);
-                }
-            }
-        },
-
-        restoreHistory() {
-            this.clearInput();
-            if (this.historyIndex < this.history.length) {
-                this.inputBuffer = this.history[this.historyIndex];
-                this.terminal.write(this.inputBuffer);
-            }
-        },
-
-        clearInput() {
-            for (let i = 0; i < this.inputBuffer.length; i++) {
-                this.terminal.write('\b \b');
-            }
-            this.inputBuffer = '';
-        },
-
-        normalizeCommand(command) {
-            return String(command)
-                .trim()
-                .replace(/\s*\\\s*$/g, '')
-                .replace(/\s*(&&|\|\||;|\|)\s*$/g, '');
-        },
-
-        async sendCommand(command) {
-            command = this.normalizeCommand(command);
-
-            if (!command) {
-                this.terminal.write('\r\n');
-                this.writePrompt();
-                return;
-            }
-
-            this.terminal.write('\r\n');
-
-            if (!this.sessionToken) {
-                this.terminal.write('❌ No active session\r\n');
-                this.writePrompt();
-                return;
-            }
-
-            try {
-                const response = await fetch(`/my/services/{{ $service->id }}/terminal/execute`, {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        session_token: this.sessionToken,
-                        command: command,
-                    }),
-                });
-                const { data, parseError } = await this.safeJsonResponse(response);
-                if (parseError) {
-                    this.terminal.write('❌ Terminal API returned invalid response. Please reopen terminal.\r\n');
-                    this.connected = false;
-                } else if (!response.ok) {
-                    this.terminal.write('❌ ' + ((data && data.error) || `Command failed (HTTP ${response.status})`) + '\r\n');
-                    if (response.status === 404) {
-                        this.connected = false;
-                    }
-                } else {
-                    // xterm needs CRLF; normalize bare LF so output doesn't staircase
-                    const formatOutput = (text) => (text || '').replace(/\r?\n/g, '\r\n');
-
-                    if (data.blocked) {
-                        this.terminal.write('\x1b[31m' + formatOutput(data.output) + '\x1b[0m\r\n');
-                    } else {
-                        if (data.output) {
-                            this.terminal.write(formatOutput(data.output) + '\r\n');
-                        }
-                    }
-
-                    this.cwd = data.cwd;
-                    this.commandCount++;
-                }
-            } catch (error) {
-                this.terminal.write('❌ Error: ' + error.message + '\r\n');
-            }
-
-            this.writePrompt();
-        },
-
-        writePrompt() {
-            const user = 'user';
-            const container = '{{ $deployment->container_name ?? "container" }}';
-            this.terminal.write(`\x1b[32m${user}@${container}\x1b[0m:\x1b[34m${this.cwd}\x1b[0m$ `);
         },
 
         async closeTerminal() {
-            if (!this.sessionToken) {
-                this.terminalVisible = false;
-                return;
+            if (this.ws) {
+                this.ws.close();
+                this.ws = null;
             }
 
-            try {
-                await fetch(`/my/services/{{ $service->id }}/terminal`, {
-                    method: 'DELETE',
-                    headers: {
-                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        session_token: this.sessionToken,
-                    }),
-                });
-            } catch (error) {
-                console.error('Failed to close terminal session:', error);
+            if (this.sessionToken) {
+                try {
+                    await fetch(`/my/services/{{ $service->id }}/terminal`, {
+                        method: 'DELETE',
+                        headers: {
+                            'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ session_token: this.sessionToken }),
+                    });
+                } catch (error) {
+                    console.error('Failed to close terminal session:', error);
+                }
             }
 
             this.connected = false;
             this.sessionToken = null;
-            this.inputBuffer = '';
             this.terminalVisible = false;
 
             if (this.expiryUpdateInterval) {
                 clearInterval(this.expiryUpdateInterval);
             }
-
-            if (this.terminal) {
-                this.terminal.write('\r\n\r\n✓ Terminal closed\r\n');
-            }
         },
 
         updateExpiryDisplay(expiresAt) {
             const expiryDate = new Date(expiresAt);
-            const now = new Date();
-            const diffMs = expiryDate - now;
-            const diffMins = Math.floor(diffMs / 60000);
+            const diffMins = Math.floor((expiryDate - new Date()) / 60000);
 
             if (diffMins < 0) {
                 this.sessionExpires = 'Expired';
-            } else if (diffMins < 1) {
-                this.sessionExpires = 'Expires in seconds';
             } else if (diffMins < 60) {
                 this.sessionExpires = `Expires in ${diffMins}m`;
             } else {
-                const hours = Math.floor(diffMins / 60);
-                const mins = diffMins % 60;
-                this.sessionExpires = `Expires in ${hours}h ${mins}m`;
+                this.sessionExpires = `Expires in ${Math.floor(diffMins / 60)}h ${diffMins % 60}m`;
             }
         },
 
@@ -494,11 +289,6 @@ function containerTerminal() {
             try {
                 return { data: JSON.parse(text), parseError: null };
             } catch (error) {
-                console.error('Failed to parse terminal API JSON response', {
-                    status: response.status,
-                    preview: text.slice(0, 160),
-                    error: error.message,
-                });
                 return { data: null, parseError: error };
             }
         },

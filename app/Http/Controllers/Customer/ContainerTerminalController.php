@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
 use App\Models\ContainerTerminalSession;
 use App\Models\Service;
 use App\Services\Terminal\ContainerTerminalService;
-use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -34,7 +35,7 @@ class ContainerTerminalController extends Controller
             }
 
             $deployment = $service->containerDeployment;
-            if (!$deployment) {
+            if (! $deployment) {
                 return response()->json([
                     'error' => 'Container not deployed yet',
                 ], 400);
@@ -52,13 +53,15 @@ class ContainerTerminalController extends Controller
                 'session_token' => $session->token,
                 'cwd' => $session->cwd,
                 'expires_at' => $session->expires_at->toIso8601String(),
-                'welcome_message' => "Connected to container: {$deployment->container_name}\nType 'exit' to close terminal",
+                'websocket_url' => $this->terminalService->resolveWebSocketUrl(),
+                'mode' => 'pty',
+                'welcome_message' => "Connected to container: {$deployment->container_name}\nInteractive shell (PTY). Type 'exit' to close.",
             ]);
         } catch (\Exception $e) {
-            \Log::error("Failed to create terminal session for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to create terminal session for service {$service->id}: ".$e->getMessage());
 
             return response()->json([
-                'error' => 'Failed to create terminal session: ' . $e->getMessage(),
+                'error' => 'Failed to create terminal session: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -97,15 +100,15 @@ class ContainerTerminalController extends Controller
             );
 
             return response()->json($result);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json([
                 'error' => 'Terminal session not found or expired',
             ], 404);
         } catch (\Exception $e) {
-            \Log::error("Failed to execute terminal command for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to execute terminal command for service {$service->id}: ".$e->getMessage());
 
             return response()->json([
-                'error' => 'Failed to execute command: ' . $e->getMessage(),
+                'error' => 'Failed to execute command: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -133,15 +136,15 @@ class ContainerTerminalController extends Controller
             return response()->json([
                 'message' => 'Terminal session closed',
             ]);
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        } catch (ModelNotFoundException $e) {
             return response()->json([
                 'error' => 'Terminal session not found',
             ], 404);
         } catch (\Exception $e) {
-            \Log::error("Failed to close terminal session for service {$service->id}: " . $e->getMessage());
+            \Log::error("Failed to close terminal session for service {$service->id}: ".$e->getMessage());
 
             return response()->json([
-                'error' => 'Failed to close session: ' . $e->getMessage(),
+                'error' => 'Failed to close session: '.$e->getMessage(),
             ], 500);
         }
     }

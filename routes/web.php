@@ -411,6 +411,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
         Route::post('my/services/{service}/container/restart', [App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
         Route::post('my/services/{service}/container/redeploy', [App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->middleware('throttle:10,10')->name('customer.services.container.redeploy');
+        Route::post('my/services/{service}/container/initialize-laravel', [App\Http\Controllers\Customer\ContainerController::class, 'initializeLaravel'])->middleware('throttle:5,10')->name('customer.services.container.initialize-laravel');
+        Route::get('my/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('customer.services.container.laravel-setup');
         Route::post('my/services/{service}/container/stop', [App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');

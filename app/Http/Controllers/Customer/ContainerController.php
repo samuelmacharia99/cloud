@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
+use App\Jobs\InitializeContainerAppJob;
 use App\Models\ContainerBackup;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
@@ -14,6 +15,7 @@ use App\Models\Setting;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerFileService;
+use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\JsonResponse;
@@ -53,8 +55,16 @@ class ContainerController extends Controller
 
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
+        $isLaravelTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
 
-        return view('customer.services.container', compact('service', 'deployment', 'status', 'databaseContext', 'databaseConsoleEnabled'));
+        return view('customer.services.container', compact(
+            'service',
+            'deployment',
+            'status',
+            'databaseContext',
+            'databaseConsoleEnabled',
+            'isLaravelTemplate'
+        ));
     }
 
     /**
@@ -204,6 +214,57 @@ class ContainerController extends Controller
 
             return back()->withErrors(['error' => 'Failed to redeploy container: '.$e->getMessage()]);
         }
+    }
+
+    public function initializeLaravel(Service $service, LaravelAppInitializationService $initializationService): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        try {
+            if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
+                return back()->withErrors(['error' => 'Application initialization is only available for Laravel containers.']);
+            }
+
+            $deployment = $service->containerDeployment;
+            if (! $deployment || $deployment->status !== 'running') {
+                return back()->withErrors(['error' => 'Start the container before initializing the Laravel application.']);
+            }
+
+            $initialization = $initializationService->requestInitialization($service, auth()->user());
+            InitializeContainerAppJob::dispatch($initialization->id)->afterResponse();
+
+            return back()->with('success', 'Laravel initialization started. Progress updates appear below.');
+        } catch (\DomainException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to start Laravel initialization for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to start initialization: '.$e->getMessage()]);
+        }
+    }
+
+    public function laravelSetupStatus(Service $service, LaravelAppInitializationService $initializationService): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (($service->product?->containerTemplate?->slug ?? '') !== 'laravel') {
+            return response()->json(['error' => 'Not a Laravel container service'], 400);
+        }
+
+        $latest = $initializationService->latestInitialization($service);
+
+        return response()->json([
+            'checklist' => $initializationService->getSetupChecklist($service),
+            'initialization' => $latest ? [
+                'id' => $latest->id,
+                'status' => $latest->status,
+                'steps' => $latest->steps,
+                'log' => $latest->log,
+                'error_message' => $latest->error_message,
+                'started_at' => $latest->started_at?->toIso8601String(),
+                'completed_at' => $latest->completed_at?->toIso8601String(),
+            ] : null,
+        ]);
     }
 
     private function reconcileStuckProvisioningState(Service $service, $deployment, ?array $status): void

@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 
 class ContainerTerminalService
 {
-    private const COMPOSER_BIN = '/app/.talksasa/bin/composer';
+    private const COMPOSER_BIN = '/usr/local/bin/composer';
 
     private TerminalSecurityGuard $guard;
 
@@ -70,6 +70,31 @@ class ContainerTerminalService
         return $session;
     }
 
+    public function resolveWebSocketUrl(): ?string
+    {
+        if (! config('terminal.websocket.enabled', true)) {
+            return null;
+        }
+
+        $configured = config('terminal.websocket.public_url');
+        $path = '/'.trim((string) config('terminal.websocket.path', '/container-terminal'), '/');
+
+        if (is_string($configured) && $configured !== '') {
+            return rtrim($configured, '/').$path;
+        }
+
+        $appUrl = rtrim((string) config('app.url', ''), '/');
+        if ($appUrl === '') {
+            return null;
+        }
+
+        $host = parse_url($appUrl, PHP_URL_HOST) ?: 'localhost';
+        $scheme = str_starts_with($appUrl, 'https') ? 'wss' : 'ws';
+        $port = (int) config('terminal.websocket.port', 8088);
+
+        return "{$scheme}://{$host}:{$port}{$path}";
+    }
+
     public function executeCommand(ContainerTerminalSession $session, string $rawCommand, string $ip): array
     {
         // Validate session
@@ -113,7 +138,7 @@ class ContainerTerminalService
             ];
         }
 
-        // Build docker exec command
+        // Legacy HTTP command mode (fallback when PTY WebSocket server is unavailable).
         $dockerCmd = $this->buildDockerExecCommand($session, $this->resolveComposerCommand($sanitized));
 
         try {
@@ -257,7 +282,7 @@ class ContainerTerminalService
             $targetCwd = '/app';
         }
 
-        $script = 'export PATH="/app/.talksasa/bin:/app/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"; '
+        $script = 'export PATH="/usr/local/bin:/usr/bin:/bin"; '
             .'cd '.escapeshellarg($targetCwd).' 2>/dev/null || cd /app 2>/dev/null; '
             .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
             .'printf "\n__EXIT:%d\n" "$?"; pwd';

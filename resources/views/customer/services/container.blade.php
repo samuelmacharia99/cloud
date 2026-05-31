@@ -160,12 +160,17 @@
                                 <button
                                     type="submit"
                                     class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
-                                    onclick="return confirm('Redeploy stack now? This can briefly interrupt service while containers are recreated.')"
+                                    onclick="return confirm('Redeploy stack now? This recreates the container runtime and keeps /app files. It does not reinstall Laravel.')"
+                                    title="Recreates containers; keeps /app files"
                                 >
                                     ♻️ Redeploy Stack
                                 </button>
                             </form>
                         </div>
+
+                        @if (!empty($isLaravelTemplate))
+                            @include('customer.services.partials.laravel-setup')
+                        @endif
 
                         <!-- Stats Dashboard -->
                         @include('customer.services.partials.enhanced-stats')
