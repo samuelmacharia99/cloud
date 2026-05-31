@@ -262,6 +262,7 @@
 
                     <div x-show="open.mpesa" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
                         <form @submit.prevent="saveMpesa($el)" class="space-y-4">
+                            @csrf
                             <div>
                                 <input type="hidden" name="enabled_hidden" value="0">
                                 <label class="flex items-center gap-2">
@@ -539,6 +540,7 @@
 
                     <div x-show="open.stripe" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
                         <form @submit.prevent="saveStripe($el)" class="space-y-4">
+                            @csrf
                             <div>
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="stripe_enabled" value="1" @checked(($settings['stripe_enabled'] ?? '0') == '1') class="rounded" />
@@ -597,6 +599,7 @@
 
                     <div x-show="open.paypal" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
                         <form @submit.prevent="savePayPal($el)" class="space-y-4">
+                            @csrf
                             <div>
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="paypal_enabled" value="1" @checked(($settings['paypal_enabled'] ?? '0') == '1') class="rounded" />
@@ -663,6 +666,7 @@
 
                     <div x-show="open.bank" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
                         <form @submit.prevent="saveBank($el)" class="space-y-4">
+                            @csrf
                             <div>
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="bank_transfer_enabled" value="1" @checked(($settings['bank_transfer_enabled'] ?? '0') == '1') class="rounded" />
@@ -736,13 +740,29 @@
 
                         async saveForm(form, gateway) {
                             this.saving[gateway] = true;
-                            const formData = new FormData(form);
                             const settings = {};
 
-                            formData.forEach((value, key) => {
-                                if (key !== 'enabled_hidden') {
-                                    settings[key] = value;
+                            form.querySelectorAll('input, select, textarea').forEach((field) => {
+                                const key = field.name;
+                                if (! key || key === '_token' || key === 'enabled_hidden' || key.startsWith('register_')) {
+                                    return;
                                 }
+
+                                if (field.type === 'checkbox') {
+                                    settings[key] = field.checked ? (field.value || '1') : '0';
+
+                                    return;
+                                }
+
+                                if (field.type === 'radio') {
+                                    if (field.checked) {
+                                        settings[key] = field.value;
+                                    }
+
+                                    return;
+                                }
+
+                                settings[key] = field.value;
                             });
 
                             try {
@@ -750,7 +770,8 @@
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',
-                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'Accept': 'application/json',
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}',
                                         'X-Requested-With': 'XMLHttpRequest'
                                     },
                                     body: JSON.stringify({ settings })
@@ -758,10 +779,11 @@
 
                                 const data = await response.json();
 
-                                if (response.ok) {
-                                    this.status[gateway] = { type: 'success', message: 'Settings saved successfully!' };
+                                if (response.ok && data.success) {
+                                    this.status[gateway] = { type: 'success', message: data.message || 'Settings saved successfully!' };
                                 } else {
-                                    const errorMsg = data.message || data.errors || 'Failed to save settings';
+                                    const errorMsg = data.message
+                                        || (data.errors ? Object.values(data.errors).flat().join(' ') : 'Failed to save settings');
                                     this.status[gateway] = { type: 'error', message: errorMsg };
                                     console.error('Settings save error:', { status: response.status, data });
                                 }
@@ -1479,6 +1501,7 @@
 
                         <div class="space-y-4">
                             <div>
+                                <input type="hidden" name="settings[recaptcha_enabled]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[recaptcha_enabled]" value="1" @checked(($settings['recaptcha_enabled'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Enable reCAPTCHA for registration</span>
@@ -1540,9 +1563,52 @@
 </div>
 
 <script>
-    async function submitForm(form) {
-        const statusEl = form.querySelector('.save-status');
+    function settingsCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.content
+            || document.querySelector('input[name="_token"]')?.value;
+    }
+
+    function settingsErrorMessage(data, fallback = 'Error saving') {
+        if (data?.message) {
+            return data.message;
+        }
+
+        if (data?.errors) {
+            return Object.values(data.errors).flat().join(' ');
+        }
+
+        return fallback;
+    }
+
+    function ensureSaveStatus(form) {
+        let statusEl = form.querySelector('.save-status');
+        if (statusEl) {
+            return statusEl;
+        }
+
+        statusEl = document.createElement('p');
+        statusEl.className = 'text-sm text-slate-600 dark:text-slate-400 save-status';
+        statusEl.style.display = 'none';
+
         const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn?.parentElement) {
+            submitBtn.parentElement.insertBefore(statusEl, submitBtn);
+        } else {
+            form.appendChild(statusEl);
+        }
+
+        return statusEl;
+    }
+
+    window.submitForm = async function submitForm(form) {
+        const statusEl = ensureSaveStatus(form);
+        const submitBtn = form.querySelector('button[type="submit"]');
+
+        if (! submitBtn) {
+            alert('Unable to save: submit button not found.');
+            return;
+        }
+
         const originalHTML = submitBtn.innerHTML;
 
         submitBtn.disabled = true;
@@ -1551,7 +1617,6 @@
         try {
             const formData = new FormData(form);
 
-            // Fix checkbox handling: ensure all checkboxes are sent as "1" or "0", not as arrays
             form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
                 const name = checkbox.name;
                 if (name && name.startsWith('settings[')) {
@@ -1569,15 +1634,20 @@
                 }
             });
 
+            const contentType = response.headers.get('content-type') || '';
+            if (! contentType.includes('application/json')) {
+                throw new Error('Unexpected response from server.');
+            }
+
             const data = await response.json();
 
             if (response.ok && data.success) {
-                statusEl.textContent = '✅ ' + data.message;
+                statusEl.textContent = '✅ ' + (data.message || 'Settings saved successfully.');
                 statusEl.className = 'text-sm text-green-600 dark:text-green-400 save-status';
                 statusEl.style.display = 'block';
                 setTimeout(() => { statusEl.style.display = 'none'; }, 3000);
             } else {
-                statusEl.textContent = '❌ ' + (data.message || 'Error saving');
+                statusEl.textContent = '❌ ' + settingsErrorMessage(data);
                 statusEl.className = 'text-sm text-red-600 dark:text-red-400 save-status';
                 statusEl.style.display = 'block';
             }
@@ -1604,8 +1674,9 @@
                 body: JSON.stringify({ email }),
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': settingsCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             });
 
@@ -1635,8 +1706,9 @@
                 body: JSON.stringify({ phone }),
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': settingsCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             });
 
@@ -1668,8 +1740,9 @@
                 method: 'POST',
                 body: formData,
                 headers: {
-                    'X-CSRF-Token': document.querySelector('input[name="_token"]').value,
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': settingsCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
             });
 

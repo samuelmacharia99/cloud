@@ -49,7 +49,8 @@
                 </div>
             @endforeach
 
-            <div class="flex justify-end pt-2">
+            <div class="flex justify-end items-center gap-4 pt-2">
+                <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                 <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
                     Save Nameservers
                 </button>
