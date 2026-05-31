@@ -331,6 +331,16 @@
 
     <!-- DirectAdmin Packages (DA nodes only) -->
     @if($node->type === 'directadmin')
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Nameservers</h2>
+            <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                <div><dt class="text-slate-500 dark:text-slate-400">NS1</dt><dd class="font-medium text-slate-900 dark:text-white">{{ $node->nameserver_1 ?: '—' }}</dd></div>
+                <div><dt class="text-slate-500 dark:text-slate-400">NS2</dt><dd class="font-medium text-slate-900 dark:text-white">{{ $node->nameserver_2 ?: '—' }}</dd></div>
+                <div><dt class="text-slate-500 dark:text-slate-400">NS3</dt><dd class="font-medium text-slate-900 dark:text-white">{{ $node->nameserver_3 ?: '—' }}</dd></div>
+                <div><dt class="text-slate-500 dark:text-slate-400">NS4</dt><dd class="font-medium text-slate-900 dark:text-white">{{ $node->nameserver_4 ?: '—' }}</dd></div>
+            </dl>
+        </div>
+
         @if(!$node->da_login_key)
             <div class="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-xl p-4 mb-6">
                 <p class="text-sm font-semibold text-red-800 dark:text-red-200 mb-2">⚠ DirectAdmin Login Key Not Set</p>

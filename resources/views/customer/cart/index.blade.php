@@ -4,12 +4,7 @@
 
 @php
     $domainExtensions = \App\Models\DomainExtension::where('enabled', true)->orderBy('extension')->get();
-    $defaultNs = [
-        'ns1' => \App\Models\Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-        'ns2' => \App\Models\Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-        'ns3' => \App\Models\Setting::getValue('domain_ns3') ?: '',
-        'ns4' => \App\Models\Setting::getValue('domain_ns4') ?: '',
-    ];
+    $defaultNs = $defaultNameservers ?? app(\App\Services\NodeNameserverService::class)->platformDefaults();
 @endphp
 
 @section('content')

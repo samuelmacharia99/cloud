@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\NodeNameserverService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -33,6 +34,10 @@ class Node extends Model
         'region',
         'datacenter',
         'description',
+        'nameserver_1',
+        'nameserver_2',
+        'nameserver_3',
+        'nameserver_4',
         'container_count',
         'last_heartbeat_at',
         'last_health_check_at',
@@ -195,5 +200,13 @@ class Node extends Model
         $this->update([
             'last_heartbeat_at' => now(),
         ]);
+    }
+
+    /**
+     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function nameservers(): array
+    {
+        return app(NodeNameserverService::class)->forNode($this);
     }
 }

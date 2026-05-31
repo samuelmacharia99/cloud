@@ -9,7 +9,7 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Settings</h1>
         </div>
 
-        <div x-data="{ activeTab: 'general' }" class="space-y-6">
+        <div x-data="{ activeTab: @js($activeTab) }" class="space-y-6">
             <!-- Tab Navigation -->
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
                 <div class="flex gap-1 px-6 overflow-x-auto">
@@ -955,64 +955,6 @@
                         </div>
                     </fieldset>
 
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin API</legend>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API URL</label>
-                                <input type="url" name="settings[directadmin_api_url]" value="{{ $settings['directadmin_api_url'] ?? '' }}" placeholder="https://host.com:2222/api" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API User</label>
-                                <input type="text" name="settings[directadmin_api_user]" value="{{ $settings['directadmin_api_user'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Password</label>
-                                @if($settings['directadmin_api_password'] ?? false)
-                                    <p class="text-sm text-green-600 dark:text-green-400 mb-2">✓ Configured</p>
-                                @endif
-                                <input type="password" name="settings[directadmin_api_password]" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                    @if($settings['directadmin_api_password'] ?? false)
-                                        A password is configured. Leave blank to keep it.
-                                    @else
-                                        Enter your DirectAdmin API password
-                                    @endif
-                                </p>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Default Package</label>
-                                <input type="text" name="settings[directadmin_default_package]" value="{{ $settings['directadmin_default_package'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Default Domain Nameservers</legend>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Used as defaults during domain registration checkout.</p>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS1</label>
-                                <input type="text" name="settings[domain_ns1]" value="{{ $settings['domain_ns1'] ?? 'ns1.talksasa.cloud' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS2</label>
-                                <input type="text" name="settings[domain_ns2]" value="{{ $settings['domain_ns2'] ?? 'ns2.talksasa.cloud' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS3 <span class="text-slate-400 font-normal">(optional)</span></label>
-                                <input type="text" name="settings[domain_ns3]" value="{{ $settings['domain_ns3'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NS4 <span class="text-slate-400 font-normal">(optional)</span></label>
-                                <input type="text" name="settings[domain_ns4]" value="{{ $settings['domain_ns4'] ?? '' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                            </div>
-                        </div>
-                    </fieldset>
-
                     <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                         <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                         <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
@@ -1023,6 +965,8 @@
                         </button>
                     </div>
                 </form>
+
+                @include('admin.settings.partials.directadmin-nameservers-card')
             </div>
 
             <!-- Tab: Branding -->

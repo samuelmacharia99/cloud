@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\Email;
 use App\Models\EmailTemplate;
+use App\Models\Node;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Services\PaymentGateway\MpesaService;
@@ -46,8 +47,6 @@ class SettingController extends Controller
         ],
         'provisioning' => [
             'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
-            'domain_ns1', 'domain_ns2', 'domain_ns3', 'domain_ns4',
-            'directadmin_api_url', 'directadmin_api_user', 'directadmin_api_password', 'directadmin_default_package',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
@@ -102,6 +101,10 @@ class SettingController extends Controller
         // Load SMS templates for the notifications tab
         $smsTemplatesList = SmsTemplate::orderBy('recipient_type')->orderBy('name')->get();
         $emailTemplatesList = EmailTemplate::orderBy('recipient_type')->orderBy('name')->get();
+        $directAdminNodes = Node::where('type', 'directadmin')->orderBy('name')->get();
+
+        $allowedTabs = ['general', 'billing', 'tax', 'payment_methods', 'provisioning', 'branding', 'email', 'notifications', 'cron', 'sms', 'security'];
+        $activeTab = in_array(request('tab'), $allowedTabs, true) ? request('tab') : 'general';
 
         // Get cron helper data for the cron tab
         try {
@@ -125,7 +128,7 @@ class SettingController extends Controller
         ];
 
         return view('admin.settings.index', compact(
-            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList',
+            'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList', 'directAdminNodes', 'activeTab',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
             'gatewayStatus'
         ));
@@ -203,6 +206,48 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'Settings saved successfully.');
+    }
+
+    public function updateDirectAdminNameservers(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $validated = $request->validate([
+            'nodes' => 'required|array',
+            'nodes.*.nameserver_1' => 'required|string|max:255',
+            'nodes.*.nameserver_2' => 'nullable|string|max:255',
+            'nodes.*.nameserver_3' => 'nullable|string|max:255',
+            'nodes.*.nameserver_4' => 'nullable|string|max:255',
+        ]);
+
+        foreach ($validated['nodes'] as $nodeId => $data) {
+            $node = Node::query()
+                ->where('id', $nodeId)
+                ->where('type', 'directadmin')
+                ->first();
+
+            if (! $node) {
+                continue;
+            }
+
+            $node->update([
+                'nameserver_1' => trim($data['nameserver_1']),
+                'nameserver_2' => ! empty($data['nameserver_2']) ? trim($data['nameserver_2']) : null,
+                'nameserver_3' => ! empty($data['nameserver_3']) ? trim($data['nameserver_3']) : null,
+                'nameserver_4' => ! empty($data['nameserver_4']) ? trim($data['nameserver_4']) : null,
+            ]);
+        }
+
+        if ($request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return response()->json([
+                'success' => true,
+                'message' => 'DirectAdmin nameservers saved successfully.',
+            ]);
+        }
+
+        return redirect()
+            ->route('admin.settings.index', ['tab' => 'provisioning'])
+            ->with('success', 'DirectAdmin nameservers saved successfully.');
     }
 
     public function uploadFile(Request $request)

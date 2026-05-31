@@ -9,9 +9,9 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\Product;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainTransferService;
+use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\DirectAdminSetupService;
 use Illuminate\Http\Request;
@@ -22,6 +22,7 @@ class SharedHostingCheckoutService
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
         private DirectAdminDomainValidator $domainValidator,
+        private NodeNameserverService $nameserverService,
     ) {}
 
     /**
@@ -200,6 +201,8 @@ class SharedHostingCheckoutService
         $setup = $this->directAdminSetup->prepareForOrder($product, $user, $fqdn);
         $serviceMeta = $setup['meta'];
         $serviceMeta['hosting_domain_mode'] = $mode->value;
+        $nameservers = $this->nameserverService->forNodeId($setup['node_id']);
+        $domainNameservers = $this->nameserverService->toDomainColumns($nameservers);
 
         if ($mode === SharedHostingDomainMode::Register) {
             $years = (int) $request->input("hosting_domain_years.{$cartKey}", 1);
@@ -213,10 +216,7 @@ class SharedHostingCheckoutService
                 'name' => $parts['name'],
                 'extension' => $parts['extension'],
                 'status' => 'pending',
-                'nameserver_1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                'nameserver_2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                'nameserver_3' => Setting::getValue('domain_ns3') ?: null,
-                'nameserver_4' => Setting::getValue('domain_ns4') ?: null,
+                ...$domainNameservers,
             ]);
 
             $serviceMeta['domain_id'] = $domain->id;
@@ -234,12 +234,7 @@ class SharedHostingCheckoutService
                 ];
             }
         } elseif ($mode === SharedHostingDomainMode::Existing) {
-            $serviceMeta['nameservers'] = [
-                'ns1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                'ns2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                'ns3' => Setting::getValue('domain_ns3') ?: null,
-                'ns4' => Setting::getValue('domain_ns4') ?: null,
-            ];
+            $serviceMeta['nameservers'] = $nameservers;
             $serviceMeta['nameserver_instructions'] = 'Update your domain nameservers at your current registrar to point to our hosting nameservers before your site goes live.';
         } elseif ($mode === SharedHostingDomainMode::Transfer) {
             $parts = $this->domainValidator->splitFqdn($fqdn);

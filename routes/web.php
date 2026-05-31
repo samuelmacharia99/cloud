@@ -177,6 +177,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/add-service', [ResellerController::class, 'addService'])->name('admin.resellers.add-service');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
+        Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');
         Route::post('admin/settings/upload-file', [SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [SettingController::class, 'testSms'])->name('admin.settings.test-sms');

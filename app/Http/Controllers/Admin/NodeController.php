@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Node;
-use App\Models\Service;
-use App\Models\NodeMonitoring;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Node;
+use App\Models\NodeMonitoring;
+use App\Models\Service;
+use App\Services\Provisioning\DirectAdminService;
+use App\Services\SSH\SSHService;
+use Illuminate\Http\Request;
 
 class NodeController extends Controller
 {
@@ -18,8 +20,8 @@ class NodeController extends Controller
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('hostname', 'like', "%{$request->search}%")
-                  ->orWhere('ip_address', 'like', "%{$request->search}%");
+                    ->orWhere('hostname', 'like', "%{$request->search}%")
+                    ->orWhere('ip_address', 'like', "%{$request->search}%");
             });
         }
 
@@ -48,9 +50,9 @@ class NodeController extends Controller
         }
 
         $nodes = $query->withCount('services')
-                      ->latest()
-                      ->paginate(15)
-                      ->withQueryString();
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
 
         // Get distinct regions for filter
         $regions = Node::distinct()->pluck('region')->filter()->sort();
@@ -89,19 +91,23 @@ class NodeController extends Controller
 
         if ($type === 'directadmin') {
             $validated = $request->validate([
-                'name'               => 'required|string|max:255',
-                'hostname'           => 'required|string|unique:nodes,hostname',
-                'ip_address'         => 'required|ip|unique:nodes,ip_address',
-                'type'               => 'required|in:directadmin',
-                'da_port'            => 'required|string|max:10',
-                'ssh_username'       => 'nullable|string|max:100',
-                'ssh_password'       => 'nullable|string',
-                'da_admin_username'  => 'required|string|max:255',
-                'da_login_key'       => 'required|string',
-                'region'             => 'nullable|string|max:50',
-                'datacenter'         => 'nullable|string|max:255',
-                'description'        => 'nullable|string',
-                'is_active'          => 'nullable|boolean',
+                'name' => 'required|string|max:255',
+                'hostname' => 'required|string|unique:nodes,hostname',
+                'ip_address' => 'required|ip|unique:nodes,ip_address',
+                'type' => 'required|in:directadmin',
+                'da_port' => 'required|string|max:10',
+                'ssh_username' => 'nullable|string|max:100',
+                'ssh_password' => 'nullable|string',
+                'da_admin_username' => 'required|string|max:255',
+                'da_login_key' => 'required|string',
+                'nameserver_1' => 'required|string|max:255',
+                'nameserver_2' => 'nullable|string|max:255',
+                'nameserver_3' => 'nullable|string|max:255',
+                'nameserver_4' => 'nullable|string|max:255',
+                'region' => 'nullable|string|max:50',
+                'datacenter' => 'nullable|string|max:255',
+                'description' => 'nullable|string',
+                'is_active' => 'nullable|boolean',
             ]);
             $validated['status'] = 'offline';
             $validated['cpu_cores'] = 0;
@@ -113,20 +119,20 @@ class NodeController extends Controller
             $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}";
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
-                'name'           => 'required|string|max:255',
-                'hostname'       => 'required|string|unique:nodes,hostname',
-                'ip_address'     => 'required|ip|unique:nodes,ip_address',
-                'type'           => 'required|in:container_host',
-                'ssh_port'       => 'required|string|max:10',
-                'ssh_username'   => 'required|string|max:100',
-                'ssh_password'   => 'nullable|string',
-                'cpu_cores'      => 'required|integer|min:1',
-                'ram_gb'         => 'required|integer|min:1',
-                'storage_gb'     => 'required|integer|min:1',
-                'region'         => 'nullable|string|max:50',
-                'datacenter'     => 'nullable|string|max:255',
-                'description'    => 'nullable|string',
-                'is_active'      => 'nullable|boolean',
+                'name' => 'required|string|max:255',
+                'hostname' => 'required|string|unique:nodes,hostname',
+                'ip_address' => 'required|ip|unique:nodes,ip_address',
+                'type' => 'required|in:container_host',
+                'ssh_port' => 'required|string|max:10',
+                'ssh_username' => 'required|string|max:100',
+                'ssh_password' => 'nullable|string',
+                'cpu_cores' => 'required|integer|min:1',
+                'ram_gb' => 'required|integer|min:1',
+                'storage_gb' => 'required|integer|min:1',
+                'region' => 'nullable|string|max:50',
+                'datacenter' => 'nullable|string|max:255',
+                'description' => 'nullable|string',
+                'is_active' => 'nullable|boolean',
             ]);
             $validated['status'] = 'offline';
         } else {
@@ -157,7 +163,7 @@ class NodeController extends Controller
         Node::create($validated);
 
         return redirect()->route('admin.nodes.index')
-                       ->with('success', 'Node created successfully.');
+            ->with('success', 'Node created successfully.');
     }
 
     public function show(Node $node)
@@ -211,8 +217,8 @@ class NodeController extends Controller
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'hostname' => 'required|string|unique:nodes,hostname,' . $node->id,
-            'ip_address' => 'required|ip|unique:nodes,ip_address,' . $node->id,
+            'hostname' => 'required|string|unique:nodes,hostname,'.$node->id,
+            'ip_address' => 'required|ip|unique:nodes,ip_address,'.$node->id,
             'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
             'status' => 'required|in:online,offline,degraded,maintenance',
             'cpu_cores' => 'required|integer|min:1',
@@ -227,6 +233,10 @@ class NodeController extends Controller
             'api_token' => 'nullable|string',
             'da_admin_username' => 'nullable|string|max:255',
             'da_login_key' => 'nullable|string',
+            'nameserver_1' => 'nullable|string|max:255',
+            'nameserver_2' => 'nullable|string|max:255',
+            'nameserver_3' => 'nullable|string|max:255',
+            'nameserver_4' => 'nullable|string|max:255',
             'verify_ssl' => 'nullable|boolean',
             'description' => 'nullable|string',
             'is_active' => 'nullable|boolean',
@@ -235,10 +245,23 @@ class NodeController extends Controller
         $validated['verify_ssl'] = $request->has('verify_ssl');
         $validated['is_active'] = $request->has('is_active');
 
+        if (($validated['type'] ?? $node->type) === 'directadmin') {
+            $request->validate([
+                'nameserver_1' => 'required|string|max:255',
+                'nameserver_2' => 'nullable|string|max:255',
+                'nameserver_3' => 'nullable|string|max:255',
+                'nameserver_4' => 'nullable|string|max:255',
+            ]);
+            $validated['nameserver_1'] = trim((string) $request->input('nameserver_1'));
+            $validated['nameserver_2'] = $request->filled('nameserver_2') ? trim((string) $request->input('nameserver_2')) : null;
+            $validated['nameserver_3'] = $request->filled('nameserver_3') ? trim((string) $request->input('nameserver_3')) : null;
+            $validated['nameserver_4'] = $request->filled('nameserver_4') ? trim((string) $request->input('nameserver_4')) : null;
+        }
+
         $node->update($validated);
 
         return redirect()->route('admin.nodes.show', $node)
-                       ->with('success', 'Node updated successfully.');
+            ->with('success', 'Node updated successfully.');
     }
 
     public function delete(Node $node)
@@ -252,7 +275,7 @@ class NodeController extends Controller
         $node->delete();
 
         return redirect()->route('admin.nodes.index')
-                       ->with('success', "Node \"$name\" deleted successfully.");
+            ->with('success', "Node \"$name\" deleted successfully.");
     }
 
     public function updateStatus(Request $request, Node $node)
@@ -379,11 +402,12 @@ class NodeController extends Controller
 
         foreach ($nodes as $node) {
             try {
-                $service = new \App\Services\Provisioning\DirectAdminService($node);
+                $service = new DirectAdminService($node);
 
-                if (!$service->isConfigured()) {
+                if (! $service->isConfigured()) {
                     $errors[$node->id] = 'DirectAdmin API is not configured for this node.';
                     $packagesByNode[$node->id] = null;
+
                     continue;
                 }
 
@@ -427,13 +451,15 @@ class NodeController extends Controller
 
                 if ($pkgs === null) {
                     $row['cells'][$node->id] = ['status' => 'unknown'];
+
                     continue;
                 }
 
                 $found = $pkgs[$key] ?? null;
 
-                if (!$found) {
+                if (! $found) {
                     $row['cells'][$node->id] = ['status' => 'missing'];
+
                     continue;
                 }
 
@@ -442,6 +468,7 @@ class NodeController extends Controller
                 if ($reference === null) {
                     $reference = $found;
                     $row['cells'][$node->id] = ['status' => 'ok', 'pkg' => $found];
+
                     continue;
                 }
 
@@ -482,9 +509,9 @@ class NodeController extends Controller
         }
 
         try {
-            $service = new \App\Services\Provisioning\DirectAdminService($node);
+            $service = new DirectAdminService($node);
 
-            if (!$service->isConfigured()) {
+            if (! $service->isConfigured()) {
                 return back()->with('error', 'DirectAdmin API credentials are not configured for this node. Check hostname, API URL, SSH username, and login key/password.');
             }
 
@@ -496,34 +523,34 @@ class NodeController extends Controller
 
             $node->update(['status' => 'online']);
 
-            $message = "Connection successful! Node is now online.";
-            if (!empty($packages)) {
-                $message .= " Found " . count($packages) . " packages.";
+            $message = 'Connection successful! Node is now online.';
+            if (! empty($packages)) {
+                $message .= ' Found '.count($packages).' packages.';
             }
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
-            return back()->with('error', 'Connection test failed: ' . $e->getMessage());
+            return back()->with('error', 'Connection test failed: '.$e->getMessage());
         }
     }
 
     public function testHealth(Node $node)
     {
-        if (!in_array($node->type, ['container_host', 'database_server', 'directadmin'])) {
+        if (! in_array($node->type, ['container_host', 'database_server', 'directadmin'])) {
             return back()->with('error', 'Node health tests are only available for container hosts, database servers, and DirectAdmin nodes.');
         }
 
         // Validate SSH credentials are configured
-        if (!$node->ssh_username) {
+        if (! $node->ssh_username) {
             return back()->with('error', 'SSH username is not configured. Please edit the node and set the SSH username.');
         }
 
-        if (!$node->ssh_password && !$node->da_login_key) {
+        if (! $node->ssh_password && ! $node->da_login_key) {
             return back()->with('error', 'SSH credentials are not configured. Please edit the node and set either an SSH password or login key.');
         }
 
         try {
-            $ssh = \App\Services\SSH\SSHService::forNode($node);
+            $ssh = SSHService::forNode($node);
 
             // Test 1: SSH connectivity
             $ssh->exec('echo "SSH connection OK"', 5);
@@ -607,7 +634,7 @@ class NodeController extends Controller
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
-            return back()->with('error', 'Node health test failed: ' . $e->getMessage());
+            return back()->with('error', 'Node health test failed: '.$e->getMessage());
         }
     }
 
@@ -618,9 +645,9 @@ class NodeController extends Controller
         }
 
         try {
-            $service = new \App\Services\Provisioning\DirectAdminService($node);
+            $service = new DirectAdminService($node);
 
-            if (!$service->isConfigured()) {
+            if (! $service->isConfigured()) {
                 return back()->with('error', 'DirectAdmin API is not configured for this node.');
             }
 
@@ -630,8 +657,9 @@ class NodeController extends Controller
             \Cache::forget('directadmin:package-consistency');
 
             // Check for errors first
-            if (!empty($result['errors'])) {
+            if (! empty($result['errors'])) {
                 $errorMsg = implode('; ', $result['errors']);
+
                 return back()->with('error', $errorMsg);
             }
 
@@ -639,6 +667,7 @@ class NodeController extends Controller
 
             if ($result['failed'] > 0) {
                 $message .= ", Failed: {$result['failed']}";
+
                 return back()->with('warning', $message);
             }
 
@@ -648,7 +677,7 @@ class NodeController extends Controller
 
             return back()->with('success', $message);
         } catch (\Exception $e) {
-            return back()->with('error', 'Failed to sync packages: ' . $e->getMessage());
+            return back()->with('error', 'Failed to sync packages: '.$e->getMessage());
         }
     }
 
@@ -704,8 +733,8 @@ class NodeController extends Controller
         if ($request->filled('search')) {
             $query->where(function ($q) use ($request) {
                 $q->where('name', 'like', "%{$request->search}%")
-                  ->orWhere('hostname', 'like', "%{$request->search}%")
-                  ->orWhere('ip_address', 'like', "%{$request->search}%");
+                    ->orWhere('hostname', 'like', "%{$request->search}%")
+                    ->orWhere('ip_address', 'like', "%{$request->search}%");
             });
         }
 

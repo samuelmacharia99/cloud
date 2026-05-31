@@ -16,6 +16,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\NodeNameserverService;
 use App\Services\ResellerDomainOrderService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -124,17 +125,13 @@ class CheckoutController extends Controller
         ));
 
         $domainExtensions = DomainExtension::where('enabled', true)->orderBy('extension')->get();
+        $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
 
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
             'sharedHostingItems' => $sharedHostingItems,
             'domainExtensions' => $domainExtensions,
-            'defaultNameservers' => [
-                'ns1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                'ns2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                'ns3' => Setting::getValue('domain_ns3') ?: '',
-                'ns4' => Setting::getValue('domain_ns4') ?: '',
-            ],
+            'defaultNameservers' => $defaultNameservers,
             'subtotal' => $subtotal,
             'tax' => $tax,
             'taxEnabled' => $taxEnabled,
@@ -357,6 +354,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $ns = $item['nameservers'] ?? [];
+                        $platformNs = app(NodeNameserverService::class)->platformDefaults();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -364,10 +362,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
-                            'nameserver_1' => $ns['ns1'] ?? Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                            'nameserver_2' => $ns['ns2'] ?? Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                            'nameserver_3' => $ns['ns3'] ?? null,
-                            'nameserver_4' => $ns['ns4'] ?? null,
+                            'nameserver_1' => $ns['ns1'] ?? $platformNs['ns1'],
+                            'nameserver_2' => $ns['ns2'] ?? $platformNs['ns2'],
+                            'nameserver_3' => $ns['ns3'] ?? $platformNs['ns3'],
+                            'nameserver_4' => $ns['ns4'] ?? $platformNs['ns4'],
                         ]);
 
                         // Get or create domain product
@@ -928,6 +926,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $ns = $item['nameservers'] ?? [];
+                        $platformNs = app(NodeNameserverService::class)->platformDefaults();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -935,10 +934,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
-                            'nameserver_1' => $ns['ns1'] ?? Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                            'nameserver_2' => $ns['ns2'] ?? Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                            'nameserver_3' => $ns['ns3'] ?? null,
-                            'nameserver_4' => $ns['ns4'] ?? null,
+                            'nameserver_1' => $ns['ns1'] ?? $platformNs['ns1'],
+                            'nameserver_2' => $ns['ns2'] ?? $platformNs['ns2'],
+                            'nameserver_3' => $ns['ns3'] ?? $platformNs['ns3'],
+                            'nameserver_4' => $ns['ns4'] ?? $platformNs['ns4'],
                         ]);
 
                         // Get or create domain product

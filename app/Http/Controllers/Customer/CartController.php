@@ -7,6 +7,7 @@ use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Setting;
+use App\Services\NodeNameserverService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -72,6 +73,8 @@ class CartController extends Controller
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
+        $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
+
         return view('customer.cart.index', [
             'cartItems' => $cartItems,
             'subtotal' => $subtotal,
@@ -80,6 +83,7 @@ class CartController extends Controller
             'taxRate' => $taxRate,
             'total' => $total,
             'itemCount' => count($cartItems),
+            'defaultNameservers' => $defaultNameservers,
         ]);
     }
 
@@ -129,16 +133,15 @@ class CartController extends Controller
                 ], 422);
             }
 
+            $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
+
             $item = [
                 'type' => 'domain',
                 'domain' => strtolower($request->domain),
                 'extension' => $request->extension,
                 'years' => $request->years,
                 'nameservers' => [
-                    'ns1' => Setting::getValue('domain_ns1', 'ns1.talksasa.cloud'),
-                    'ns2' => Setting::getValue('domain_ns2', 'ns2.talksasa.cloud'),
-                    'ns3' => Setting::getValue('domain_ns3') ?: null,
-                    'ns4' => Setting::getValue('domain_ns4') ?: null,
+                    ...$defaultNameservers,
                     'use_default' => true,
                 ],
             ];
