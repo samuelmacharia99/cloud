@@ -30,10 +30,16 @@
 
             <!-- Status & Actions -->
             <div class="text-right space-y-2">
-                <div>
-                    <span class="inline-block px-3 py-1 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-sm font-medium">
-                        Active Reseller
-                    </span>
+                <div class="flex flex-wrap justify-end gap-2">
+                    @if ($user->isResellerSuspended())
+                        <span class="inline-block px-3 py-1 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 rounded-full text-sm font-medium">
+                            Suspended (billing)
+                        </span>
+                    @else
+                        <span class="inline-block px-3 py-1 bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 rounded-full text-sm font-medium">
+                            Active Reseller
+                        </span>
+                    @endif
                 </div>
                 <form action="{{ route('admin.resellers.demote', $user) }}" method="POST" class="inline">
                     @csrf
@@ -143,7 +149,7 @@
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
                                         Subscribed {{ $user->package_subscribed_at?->diffForHumans() }}
                                         &bull;
-                                        {{ $user->getManagedActiveServicesCount() }} / {{ $user->resellerPackage->storage_space }} service slots
+                                        {{ $user->getManagedActiveServicesCount() }} / {{ $user->resellerPackage->max_services }} service slots
                                         &bull;
                                         {{ $customerIds->count() }} / {{ $user->resellerPackage->max_users }} customers
                                     </p>

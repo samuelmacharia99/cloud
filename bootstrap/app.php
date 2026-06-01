@@ -4,6 +4,7 @@ use App\Http\Middleware\CheckAdminRole;
 use App\Http\Middleware\CheckCustomerRole;
 use App\Http\Middleware\CheckResellerRole;
 use App\Http\Middleware\EnforceResellerLimits;
+use App\Http\Middleware\EnsureResellerBillingCurrent;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\ResolveResellerTenant;
 use App\Http\Middleware\SecurityHeaders;
@@ -51,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'customer' => CheckCustomerRole::class,
             'reseller' => CheckResellerRole::class,
             'reseller.limits' => EnforceResellerLimits::class,
+            'reseller.billing' => EnsureResellerBillingCurrent::class,
             'skip.verification.if.impersonating' => SkipVerificationIfImpersonating::class,
             'registration.throttle' => ThrottleRegistration::class,
         ]);

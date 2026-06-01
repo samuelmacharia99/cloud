@@ -7,11 +7,13 @@ use App\Models\Domain;
 use App\Models\Service;
 use App\Services\DomainTransferService;
 use App\Services\NotificationService;
+use App\Services\ResellerEnforcementService;
 
 class ProvisioningService
 {
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
+        private ResellerEnforcementService $resellerEnforcement,
     ) {}
 
     /**
@@ -20,6 +22,8 @@ class ProvisioningService
     public function provision(Service $service): void
     {
         try {
+            $this->resellerEnforcement->assertCanProvision($service);
+
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin') {

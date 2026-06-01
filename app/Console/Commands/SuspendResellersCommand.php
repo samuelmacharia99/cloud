@@ -2,29 +2,40 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
+use App\Services\ResellerEnforcementService;
+use Illuminate\Support\Facades\Log;
 
-class SuspendResellersCommand extends Command
+class SuspendResellersCommand extends BaseCronCommand
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'app:suspend-resellers-command';
+    protected $signature = 'cron:suspend-resellers';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Command description';
+    protected $description = 'Suspends resellers with overdue or expired package subscriptions';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    protected function handleCron(): string
     {
-        //
+        $enforcement = app(ResellerEnforcementService::class);
+
+        if (! $enforcement->isSuspensionEnabled()) {
+            return 'Reseller suspension skipped: reseller_suspend_on_overdue is disabled.';
+        }
+
+        $resellers = $enforcement->resellersEligibleForSuspensionQuery()->get();
+        $suspended = 0;
+        $cascadeCount = 0;
+
+        foreach ($resellers as $reseller) {
+            if (! $enforcement->shouldSuspendReseller($reseller)) {
+                continue;
+            }
+
+            try {
+                $cascadeCount += $enforcement->suspendReseller($reseller);
+                $suspended++;
+            } catch (\Throwable $e) {
+                Log::error("Failed to suspend reseller {$reseller->id}: {$e->getMessage()}");
+            }
+        }
+
+        return "Suspended {$suspended} reseller account(s); {$cascadeCount} managed service(s) suspended on DirectAdmin.";
     }
 }

@@ -292,7 +292,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     });
 
     // Reseller-only routes
-    Route::middleware('reseller')->group(function () {
+    Route::middleware(['reseller', 'reseller.billing'])->group(function () {
         Route::resource('reseller/tickets', App\Http\Controllers\Reseller\TicketController::class)
             ->only(['index', 'show', 'create', 'store'])
             ->names('reseller.tickets');

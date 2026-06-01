@@ -123,6 +123,27 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Suspend Resellers',
+                'description' => 'Suspends resellers with overdue or expired package subscriptions; optionally cascades to DirectAdmin.',
+                'command' => 'cron:suspend-resellers',
+                'schedule' => '30 4 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Unsuspend Resellers',
+                'description' => 'Restores resellers with current package billing and unsuspends cascade-suspended services.',
+                'command' => 'cron:unsuspend-resellers',
+                'schedule' => '*/15 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Enforce Reseller Package Limits',
+                'description' => 'Suspends excess active services when resellers exceed package service slot limits on DirectAdmin.',
+                'command' => 'cron:enforce-reseller-package-limits',
+                'schedule' => '0 6 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Renew SSL Certificates',
                 'description' => 'Renews expiring SSL certificates for container domains using certbot.',
                 'command' => 'cron:renew-ssl-certificates',

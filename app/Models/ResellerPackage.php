@@ -26,12 +26,20 @@ class ResellerPackage extends Model
 
     public function getFormattedPriceAttribute(): string
     {
-        return number_format($this->price, 2) . ' KES';
+        return number_format($this->price, 2).' KES';
     }
 
     public function getStorageFormattedAttribute(): string
     {
-        return number_format($this->storage_space) . ' GB';
+        return number_format($this->storage_space).' GB';
+    }
+
+    /**
+     * Maximum concurrent active hosting services (stored in storage_space column historically).
+     */
+    public function getMaxServicesAttribute(): int
+    {
+        return (int) $this->storage_space;
     }
 
     public function subscribers(): HasMany
@@ -46,10 +54,10 @@ class ResellerPackage extends Model
     public function nextPackage(): ?self
     {
         return self::where('active', true)
-                   ->where('billing_cycle', $this->billing_cycle)
-                   ->where('price', '>', $this->price)
-                   ->orderBy('price', 'asc')
-                   ->first();
+            ->where('billing_cycle', $this->billing_cycle)
+            ->where('price', '>', $this->price)
+            ->orderBy('price', 'asc')
+            ->first();
     }
 
     /**
@@ -58,9 +66,9 @@ class ResellerPackage extends Model
     public function higherTierPackages()
     {
         return self::where('active', true)
-                   ->where('billing_cycle', $this->billing_cycle)
-                   ->where('price', '>', $this->price)
-                   ->orderBy('price', 'asc')
-                   ->get();
+            ->where('billing_cycle', $this->billing_cycle)
+            ->where('price', '>', $this->price)
+            ->orderBy('price', 'asc')
+            ->get();
     }
 }

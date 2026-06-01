@@ -977,6 +977,41 @@
                         </div>
                     </fieldset>
 
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Reseller Package Enforcement</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Controls suspension of reseller accounts and their managed hosting on DirectAdmin when package billing lapses or limits are exceeded.</p>
+                        <div class="space-y-3">
+                            <div>
+                                <input type="hidden" name="settings[reseller_suspend_on_overdue]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[reseller_suspend_on_overdue]" value="1" @checked(in_array($settings['reseller_suspend_on_overdue'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Suspend reseller when package subscription is overdue or expired (after grace period)</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[reseller_cascade_suspend_on_overdue]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[reseller_cascade_suspend_on_overdue]" value="1" @checked(in_array($settings['reseller_cascade_suspend_on_overdue'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Cascade suspend managed hosting on DirectAdmin when reseller is suspended</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[reseller_suspend_excess_services]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[reseller_suspend_excess_services]" value="1" @checked(in_array($settings['reseller_suspend_excess_services'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Daily cron: suspend services beyond package service slot limit</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[reseller_enforce_limits_on_provision]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[reseller_enforce_limits_on_provision]" value="1" @checked(in_array($settings['reseller_enforce_limits_on_provision'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Block provisioning when reseller is suspended or at service limit</span>
+                                </label>
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                         <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                         <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">

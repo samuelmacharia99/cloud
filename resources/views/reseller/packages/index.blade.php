@@ -4,6 +4,22 @@
 
 @section('content')
 <div class="space-y-6">
+    @if ($user->isResellerSuspended())
+        <div class="p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h3 class="font-semibold text-red-900 dark:text-red-100">Account suspended</h3>
+                <p class="text-sm text-red-700 dark:text-red-300 mt-1">
+                    Your reseller package subscription is overdue or expired. Pay your renewal invoice to restore portal and hosting access.
+                </p>
+            </div>
+            @if ($pendingInvoice ?? null)
+                <a href="{{ route('reseller.payment.select-method', $pendingInvoice) }}" class="inline-flex justify-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors">
+                    Pay renewal
+                </a>
+            @endif
+        </div>
+    @endif
+
     <!-- Limit Exceeded Warning Banner -->
     @if (session('limit_exceeded'))
         <div class="p-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg">

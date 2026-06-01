@@ -37,6 +37,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'commission_rate',
         'package_subscribed_at',
         'package_expires_at',
+        'reseller_suspended_at',
+        'reseller_suspension_reason',
         'two_factor_enabled',
         'two_factor_code',
         'two_factor_code_expires_at',
@@ -234,7 +236,7 @@ class User extends Authenticatable implements MustVerifyEmail
             return true;
         }
 
-        return $this->getManagedActiveServicesCount() >= $this->resellerPackage->storage_space;
+        return $this->getManagedActiveServicesCount() >= $this->resellerPackage->max_services;
     }
 
     /**
@@ -243,6 +245,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isOverPackageLimits(): bool
     {
         return $this->isAtUserLimit() || $this->isAtServiceLimit();
+    }
+
+    public function isResellerSuspended(): bool
+    {
+        return $this->is_reseller && $this->reseller_suspended_at !== null;
     }
 
     public function getNextInvoiceDateAttribute(): ?Carbon

@@ -5,6 +5,7 @@ namespace App\Services\Provisioning;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
+use App\Services\ResellerEnforcementService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
@@ -12,6 +13,7 @@ class InvoiceProvisioningService
 {
     public function __construct(
         private ProvisioningService $provisioningService,
+        private ResellerEnforcementService $resellerEnforcement,
     ) {}
 
     public function shouldAutoProvision(): bool
@@ -50,6 +52,8 @@ class InvoiceProvisioningService
                 if ($service->status !== 'pending') {
                     continue;
                 }
+
+                $this->resellerEnforcement->assertCanProvision($service);
 
                 $service->update(['status' => 'provisioning']);
                 $this->provisioningService->provision($service->fresh());

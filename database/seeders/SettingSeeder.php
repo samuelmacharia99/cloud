@@ -66,6 +66,10 @@ class SettingSeeder extends Seeder
             ['key' => 'auto_provision', 'value' => 'true', 'description' => 'Auto-provision services'],
             ['key' => 'suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend services when overdue'],
             ['key' => 'terminate_after_unpaid_months', 'value' => '4', 'description' => 'Months an invoice can remain unpaid before service termination'],
+            ['key' => 'reseller_suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend resellers when package subscription is overdue or expired'],
+            ['key' => 'reseller_cascade_suspend_on_overdue', 'value' => 'true', 'description' => 'Cascade suspend managed services when reseller is suspended'],
+            ['key' => 'reseller_suspend_excess_services', 'value' => 'true', 'description' => 'Suspend services beyond reseller package service slot limit'],
+            ['key' => 'reseller_enforce_limits_on_provision', 'value' => 'true', 'description' => 'Block provisioning when reseller is at limit or suspended'],
 
             // Cron settings
             ['key' => 'cron_timezone', 'value' => 'Africa/Nairobi', 'description' => 'Timezone for cron job scheduling'],

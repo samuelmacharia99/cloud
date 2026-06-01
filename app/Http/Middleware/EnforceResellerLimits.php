@@ -15,12 +15,18 @@ class EnforceResellerLimits
         $user = auth()->user();
 
         // Only applies to resellers
-        if (!$user || !$user->isReseller()) {
+        if (! $user || ! $user->isReseller()) {
             return $next($request);
         }
 
+        if ($user->isResellerSuspended()) {
+            return redirect()
+                ->route('reseller.packages.index')
+                ->with('error', 'Your reseller account is suspended. Pay your package subscription invoice to continue.');
+        }
+
         // No package at all: redirect to package selection
-        if (!$user->hasResellerPackage()) {
+        if (! $user->hasResellerPackage()) {
             return redirect()
                 ->route('reseller.packages.index')
                 ->with('warning', 'You must subscribe to a reseller package before managing services or customers.');

@@ -109,6 +109,8 @@ class ResellerPackageSubscriptionService
         $invoice->update([
             'notes' => trim(($invoice->notes ?? '').' '.self::ACTIVATED_META),
         ]);
+
+        app(ResellerEnforcementService::class)->handleSubscriptionPaid($user->fresh());
     }
 
     public function activateSubscription(User $user, ResellerPackage $package): void
