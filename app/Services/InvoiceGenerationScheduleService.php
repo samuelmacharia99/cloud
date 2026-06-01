@@ -7,6 +7,7 @@ use App\Models\Domain;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Builder;
  * - Monthly services: invoice N days before next_due_date (default 10).
  * - Non-monthly services (quarterly, semi-annual, annual): invoice N days before (default 30).
  * - Domains: invoice N days before expires_at (default 30, setting domain_renewal_advance_days).
+ * - Reseller packages: invoice N days before package_expires_at (default 10); due on package_expires_at;
+ *   suspension after due date plus grace_period_days (same as monthly services).
  */
 class InvoiceGenerationScheduleService
 {
@@ -33,6 +36,64 @@ class InvoiceGenerationScheduleService
     public function domainAdvanceDays(): int
     {
         return max(1, (int) Setting::getValue('domain_renewal_advance_days', 30));
+    }
+
+    public function resellerPackageAdvanceDays(): int
+    {
+        return max(1, (int) Setting::getValue('reseller_package_invoice_advance_days', 10));
+    }
+
+    public function gracePeriodDays(): int
+    {
+        return max(0, (int) Setting::getValue('grace_period_days', 5));
+    }
+
+    /**
+     * Reseller package renewal payment due date (aligned with service next_due_date).
+     */
+    public function resellerPackageRenewalDueDate(User $user): ?Carbon
+    {
+        return $user->package_expires_at?->copy()->startOfDay();
+    }
+
+    /**
+     * Date the reseller package renewal invoice should be generated.
+     */
+    public function resellerPackageNextInvoiceDate(User $user): ?Carbon
+    {
+        $due = $this->resellerPackageRenewalDueDate($user);
+
+        return $due?->copy()->subDays($this->resellerPackageAdvanceDays());
+    }
+
+    /**
+     * Earliest date enforcement may suspend for non-payment (due date + grace).
+     */
+    public function resellerPackageSuspensionDate(User $user): ?Carbon
+    {
+        $due = $this->resellerPackageRenewalDueDate($user);
+
+        return $due?->copy()->addDays($this->gracePeriodDays());
+    }
+
+    public function isResellerPackageDueForRenewalInvoice(User $user, ?Carbon $reference = null): bool
+    {
+        if (! $user->is_reseller || ! $user->reseller_package_id || ! $user->package_expires_at) {
+            return false;
+        }
+
+        $reference = ($reference ?? now())->copy()->startOfDay();
+        $generateOnOrBefore = $this->resellerPackageNextInvoiceDate($user);
+
+        if (! $generateOnOrBefore) {
+            return false;
+        }
+
+        $expiresAt = $this->resellerPackageRenewalDueDate($user);
+
+        return $expiresAt
+            && $expiresAt->greaterThan($reference)
+            && $reference->greaterThanOrEqualTo($generateOnOrBefore);
     }
 
     public function serviceAdvanceDays(Service $service): int

@@ -3,7 +3,9 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Domain;
+use App\Models\ResellerPackage;
 use App\Models\Service;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\InvoiceGenerationScheduleService;
 use Carbon\Carbon;
@@ -97,6 +99,46 @@ class InvoiceGenerationScheduleServiceTest extends TestCase
             '2026-03-01',
             $this->schedule->domainNextInvoiceDate($domain)->toDateString()
         );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_reseller_package_invoice_and_suspension_dates_follow_ten_day_and_grace_rules(): void
+    {
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+        Setting::setValue('grace_period_days', '5');
+
+        $reseller = User::factory()->reseller()->create([
+            'package_expires_at' => Carbon::parse('2026-07-04'),
+        ]);
+
+        $this->assertSame('2026-06-24', $this->schedule->resellerPackageNextInvoiceDate($reseller)->toDateString());
+        $this->assertSame('2026-07-04', $this->schedule->resellerPackageRenewalDueDate($reseller)->toDateString());
+        $this->assertSame('2026-07-09', $this->schedule->resellerPackageSuspensionDate($reseller)->toDateString());
+    }
+
+    public function test_reseller_package_due_for_invoice_on_tenth_day_before_expiry(): void
+    {
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+
+        Carbon::setTestNow(Carbon::parse('2026-06-24'));
+
+        $package = ResellerPackage::create([
+            'name' => 'Test',
+            'description' => 'Test',
+            'billing_cycle' => 'monthly',
+            'storage_space' => 10,
+            'max_users' => 5,
+            'price' => 1000,
+            'active' => true,
+        ]);
+
+        $reseller = User::factory()->reseller()->create([
+            'reseller_package_id' => $package->id,
+            'package_expires_at' => Carbon::parse('2026-07-04'),
+        ]);
+
+        $this->assertTrue($this->schedule->isResellerPackageDueForRenewalInvoice($reseller));
 
         Carbon::setTestNow();
     }

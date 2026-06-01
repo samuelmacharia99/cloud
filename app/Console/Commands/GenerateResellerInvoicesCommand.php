@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerPackageSubscriptionService;
 
 class GenerateResellerInvoicesCommand extends BaseCronCommand
@@ -14,23 +14,22 @@ class GenerateResellerInvoicesCommand extends BaseCronCommand
 
     public function __construct(
         private ResellerPackageSubscriptionService $subscriptions,
+        private InvoiceGenerationScheduleService $schedule,
     ) {
         parent::__construct();
     }
 
     protected function handleCron(): string
     {
-        $advanceDays = max(1, (int) Setting::getValue('reseller_package_invoice_advance_days', 10));
+        $advanceDays = $this->schedule->resellerPackageAdvanceDays();
         $today = now()->startOfDay();
-        $windowEnd = $today->copy()->addDays($advanceDays);
 
         $resellers = User::query()
             ->where('is_reseller', true)
             ->whereNotNull('reseller_package_id')
             ->whereNotNull('package_expires_at')
-            ->whereDate('package_expires_at', '>', $today)
-            ->whereDate('package_expires_at', '<=', $windowEnd)
-            ->get();
+            ->get()
+            ->filter(fn (User $reseller) => $this->schedule->isResellerPackageDueForRenewalInvoice($reseller, $today));
 
         $createdCount = 0;
         $skippedCount = 0;

@@ -7,16 +7,17 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\Service;
 use App\Models\Setting;
-use App\Models\Node;
 use App\Models\User;
-use App\Services\ResellerDirectAdminService;
 use App\Services\InvoiceGenerationScheduleService;
+use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerPackageSubscriptionService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -111,7 +112,7 @@ class ResellerController extends Controller
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Collection<int, Node>
+     * @return Collection<int, Node>
      */
     private function directAdminNodes()
     {
@@ -273,8 +274,10 @@ class ResellerController extends Controller
             'next_invoice_date' => 'required|date',
         ]);
 
+        $schedule = app(InvoiceGenerationScheduleService::class);
         $user->update([
-            'package_expires_at' => Carbon::parse($validated['next_invoice_date'])->addDays(5),
+            'package_expires_at' => Carbon::parse($validated['next_invoice_date'])
+                ->addDays($schedule->resellerPackageAdvanceDays()),
         ]);
 
         return redirect()->route('admin.resellers.show', $user)

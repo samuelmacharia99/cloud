@@ -3,8 +3,9 @@
 namespace App\Models;
 
 use App\Mail\VerifyEmailOtpMail;
-use App\Services\ResellerDirectAdminService;
 use App\Notifications\ResetPasswordNotification;
+use App\Services\InvoiceGenerationScheduleService;
+use App\Services\ResellerDirectAdminService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -281,12 +282,46 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function getNextInvoiceDateAttribute(): ?Carbon
     {
-        return $this->package_expires_at?->subDays(5);
+        if (! $this->is_reseller || ! $this->package_expires_at) {
+            return null;
+        }
+
+        return app(InvoiceGenerationScheduleService::class)->resellerPackageNextInvoiceDate($this);
+    }
+
+    /**
+     * Package renewal payment due date (same role as service next_due_date).
+     */
+    public function getPackageRenewalDueDateAttribute(): ?Carbon
+    {
+        if (! $this->is_reseller || ! $this->package_expires_at) {
+            return null;
+        }
+
+        return app(InvoiceGenerationScheduleService::class)->resellerPackageRenewalDueDate($this);
+    }
+
+    /**
+     * Days until next invoice (positive = future, negative = overdue).
+     */
+    public function daysUntilNextInvoice(): ?int
+    {
+        $date = $this->next_invoice_date;
+
+        if (! $date) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($date->copy()->startOfDay(), false);
     }
 
     public function getPackageSuspendDateAttribute(): ?Carbon
     {
-        return $this->package_expires_at;
+        if (! $this->is_reseller || ! $this->package_expires_at) {
+            return null;
+        }
+
+        return app(InvoiceGenerationScheduleService::class)->resellerPackageSuspensionDate($this);
     }
 
     public function sendEmailVerificationNotification(): void

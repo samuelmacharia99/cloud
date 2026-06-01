@@ -114,6 +114,26 @@ class ResellerPackageSubscriptionTest extends TestCase
         $this->assertSame(5300.0, (float) $invoice->total);
     }
 
+    public function test_renewal_invoice_due_date_matches_package_expiry(): void
+    {
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+
+        $reseller = $this->createReseller();
+        $package = $this->createPackage();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $package);
+        $reseller->update(['package_expires_at' => now()->addDays(10)->startOfDay()]);
+        $reseller->refresh();
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $package, renewal: true);
+
+        $this->assertSame(
+            $reseller->package_expires_at->toDateString(),
+            $invoice->due_date->toDateString()
+        );
+    }
+
     public function test_generate_reseller_invoices_targets_packages_expiring_in_ten_days(): void
     {
         CronJob::create([

@@ -36,13 +36,18 @@ class ResellerPackageSubscriptionService
             : "Reseller Package: {$package->name} ({$package->billing_cycle})";
 
         $amounts = $this->calculateAmounts((float) $package->price);
+        $schedule = app(InvoiceGenerationScheduleService::class);
+
+        $dueDate = $renewal && $user->package_expires_at
+            ? $schedule->resellerPackageRenewalDueDate($user)
+            : now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
 
         return Invoice::create([
             'user_id' => $user->id,
             'type' => 'reseller_subscription',
             'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
             'status' => 'unpaid',
-            'due_date' => now()->addDays(7),
+            'due_date' => $dueDate,
             'subtotal' => $amounts['subtotal'],
             'tax' => $amounts['tax'],
             'total' => $amounts['total'],

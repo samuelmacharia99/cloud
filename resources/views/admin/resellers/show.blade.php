@@ -239,33 +239,43 @@
                                 <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Next Invoice</p>
                                 @php
                                     $nextInvoiceDate = $user->next_invoice_date;
-                                    $daysUntilInvoice = $nextInvoiceDate ? (int) $nextInvoiceDate->diffInDays(now()) : null;
+                                    $daysUntilInvoice = $user->daysUntilNextInvoice();
                                 @endphp
                                 @if ($nextInvoiceDate && $daysUntilInvoice !== null)
-                                    <p class="text-sm font-semibold {{ $daysUntilInvoice <= 3 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white' }}">
+                                    <p class="text-sm font-semibold {{ $daysUntilInvoice >= 0 && $daysUntilInvoice <= 3 ? 'text-amber-600 dark:text-amber-400' : ($daysUntilInvoice < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white') }}">
                                         {{ $nextInvoiceDate->format('M d, Y') }}
                                     </p>
-                                    @if ($daysUntilInvoice > 0 && $daysUntilInvoice <= 3)
-                                        <p class="text-xs text-amber-600 dark:text-amber-400">in {{ $daysUntilInvoice }} days</p>
-                                    @elseif ($daysUntilInvoice <= 0)
+                                    @if ($daysUntilInvoice < 0)
                                         <p class="text-xs text-red-600 dark:text-red-400">{{ abs($daysUntilInvoice) }} days overdue</p>
+                                    @elseif ($daysUntilInvoice === 0)
+                                        <p class="text-xs text-amber-600 dark:text-amber-400">Due today</p>
+                                    @elseif ($daysUntilInvoice <= 3)
+                                        <p class="text-xs text-amber-600 dark:text-amber-400">in {{ $daysUntilInvoice }} days</p>
+                                    @else
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">in {{ $daysUntilInvoice }} days</p>
                                     @endif
                                 @else
                                     <p class="text-sm text-slate-500">—</p>
                                 @endif
                             </div>
                             <div>
-                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Suspension Date</p>
+                                <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase mb-1">Payment Due</p>
                                 @php
+                                    $paymentDueDate = $user->package_renewal_due_date;
                                     $suspendDate = $user->package_suspend_date;
-                                    $isPast = $suspendDate && $suspendDate->isPast();
+                                    $daysUntilDue = $paymentDueDate ? (int) now()->startOfDay()->diffInDays($paymentDueDate->copy()->startOfDay(), false) : null;
                                 @endphp
-                                @if ($suspendDate)
-                                    <p class="text-sm font-semibold {{ $isPast ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }}">
-                                        {{ $suspendDate->format('M d, Y') }}
+                                @if ($paymentDueDate)
+                                    <p class="text-sm font-semibold {{ $daysUntilDue !== null && $daysUntilDue < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white' }}">
+                                        {{ $paymentDueDate->format('M d, Y') }}
                                     </p>
-                                    @if ($isPast)
-                                        <p class="text-xs text-red-600 dark:text-red-400">OVERDUE</p>
+                                    @if ($daysUntilDue !== null && $daysUntilDue < 0)
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ abs($daysUntilDue) }} days past due</p>
+                                    @endif
+                                    @if ($suspendDate)
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                            Suspends {{ $suspendDate->format('M d, Y') }} if unpaid
+                                        </p>
                                     @endif
                                 @else
                                     <p class="text-sm text-slate-500">—</p>
@@ -939,25 +949,23 @@
                                    value="{{ $user->next_invoice_date?->format('Y-m-d') }}"
                                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                    required>
+                            @php
+                                $resellerAdvanceDays = max(1, (int) \App\Models\Setting::getValue('reseller_package_invoice_advance_days', 10));
+                                $resellerGraceDays = max(0, (int) \App\Models\Setting::getValue('grace_period_days', 5));
+                            @endphp
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                                The date when the next invoice should be generated (suspension date will be automatically set to 10 days after)
+                                Invoice is generated {{ $resellerAdvanceDays }} days before payment is due. Payment due is set to {{ $resellerAdvanceDays }} days after this date. If unpaid, suspension runs after the due date plus {{ $resellerGraceDays }} day(s) grace (same as monthly services).
                             </p>
                         </div>
 
-                        <!-- Suspension Date (Read-only Display) -->
+                        <!-- Payment due & suspension preview -->
                         <div>
-                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Suspension Date (Auto-calculated)</label>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Payment due (auto-calculated)</label>
                             <div class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white">
-                                <p id="suspension-date-display">
-                                    @if ($user->package_suspend_date)
-                                        {{ $user->package_suspend_date->format('M d, Y') }}
-                                    @else
-                                        —
-                                    @endif
-                                </p>
+                                <p id="payment-due-preview">{{ $user->package_renewal_due_date?->format('M d, Y') ?? '—' }}</p>
                             </div>
                             <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">
-                                Will be set to: <span id="suspension-date-preview">{{ $user->package_suspend_date?->format('M d, Y') ?? '—' }}</span>
+                                Suspension if unpaid: <span id="suspension-date-preview">{{ $user->package_suspend_date?->format('M d, Y') ?? '—' }}</span>
                             </p>
                         </div>
                     </div>
@@ -975,17 +983,24 @@
 
                 <!-- JavaScript to update suspension date preview -->
                 <script>
-                    document.getElementById('next_invoice_date').addEventListener('change', function(e) {
-                        if (e.target.value) {
-                            const date = new Date(e.target.value);
-                            const suspensionDate = new Date(date);
-                            suspensionDate.setDate(suspensionDate.getDate() + 10);
-
-                            const options = { year: 'numeric', month: 'short', day: 'numeric' };
-                            const formatted = suspensionDate.toLocaleDateString('en-US', options);
-                            document.getElementById('suspension-date-preview').textContent = formatted;
-                        }
-                    });
+                    (function () {
+                        const advanceDays = {{ $resellerAdvanceDays ?? 10 }};
+                        const graceDays = {{ $resellerGraceDays ?? 5 }};
+                        const input = document.getElementById('next_invoice_date');
+                        if (!input) return;
+                        const options = { year: 'numeric', month: 'short', day: 'numeric' };
+                        const format = (d) => d.toLocaleDateString('en-US', options);
+                        input.addEventListener('change', function (e) {
+                            if (!e.target.value) return;
+                            const invoiceDate = new Date(e.target.value + 'T12:00:00');
+                            const paymentDue = new Date(invoiceDate);
+                            paymentDue.setDate(paymentDue.getDate() + advanceDays);
+                            const suspension = new Date(paymentDue);
+                            suspension.setDate(suspension.getDate() + graceDays);
+                            document.getElementById('payment-due-preview').textContent = format(paymentDue);
+                            document.getElementById('suspension-date-preview').textContent = format(suspension);
+                        });
+                    })();
                 </script>
             </div>
         </div>
