@@ -175,6 +175,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/impersonate', [ResellerController::class, 'impersonate'])->name('admin.resellers.impersonate');
         Route::post('admin/resellers/{user}/add-domain', [ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
         Route::post('admin/resellers/{user}/add-service', [ResellerController::class, 'addService'])->name('admin.resellers.add-service');
+        Route::post('admin/resellers/{user}/wallet-adjust', [ResellerController::class, 'adjustWallet'])->name('admin.resellers.wallet-adjust');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');

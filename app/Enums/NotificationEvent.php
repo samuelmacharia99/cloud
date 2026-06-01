@@ -27,6 +27,7 @@ enum NotificationEvent: string
     case ResellerNewCustomerOrder = 'reseller_new_customer_order';
     case ResellerWalletLow = 'reseller_wallet_low';
     case ResellerWalletTopup = 'reseller_wallet_topup';
+    case ResellerWalletAdjustment = 'reseller_wallet_adjustment';
     case AdminNewOrder = 'admin_new_order';
     case AdminResellerDomainPush = 'admin_reseller_domain_push';
     case AdminNodeOffline = 'admin_node_offline';
@@ -61,6 +62,7 @@ enum NotificationEvent: string
             self::ResellerNewCustomerOrder => 'notify_reseller_new_customer_order',
             self::ResellerWalletLow => 'notify_reseller_wallet_low',
             self::ResellerWalletTopup => 'notify_reseller_wallet_topup',
+            self::ResellerWalletAdjustment => 'notify_reseller_wallet_adjustment',
             self::AdminNewOrder => 'notify_admin_new_order',
             self::AdminResellerDomainPush => 'notify_admin_reseller_domain_push',
             self::AdminNodeOffline => 'notify_admin_node_offline',
@@ -86,7 +88,8 @@ enum NotificationEvent: string
             self::ResellerDomainPushed,
             self::ResellerNewCustomerOrder,
             self::ResellerWalletLow,
-            self::ResellerWalletTopup => 'reseller',
+            self::ResellerWalletTopup,
+            self::ResellerWalletAdjustment => 'reseller',
             default => 'customer',
         };
     }

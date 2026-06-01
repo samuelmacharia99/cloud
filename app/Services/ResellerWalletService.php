@@ -63,7 +63,7 @@ class ResellerWalletService
 
             $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();
 
-            if (!$wallet->hasSufficientFunds($amount)) {
+            if (! $wallet->hasSufficientFunds($amount)) {
                 throw new InsufficientFundsException($amount, $wallet->balance);
             }
 
@@ -119,21 +119,29 @@ class ResellerWalletService
 
             $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();
 
-            $balanceBefore = $wallet->balance;
+            $balanceBefore = (float) $wallet->balance;
             $balanceAfter = $balanceBefore + $amount;
+
+            if ($balanceAfter < 0) {
+                throw new InsufficientFundsException(abs($amount), $balanceBefore);
+            }
 
             $wallet->update(['balance' => $balanceAfter]);
 
-            return WalletTransaction::create([
+            $transaction = WalletTransaction::create([
                 'wallet_id' => $wallet->id,
                 'type' => 'adjustment',
-                'amount' => $amount,
+                'amount' => abs($amount),
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
                 'description' => $description,
                 'status' => 'completed',
                 'performed_by' => $admin->id,
             ]);
+
+            app(WalletNotificationService::class)->sendManualAdjustmentNotification($transaction, $amount);
+
+            return $transaction;
         });
     }
 
@@ -171,7 +179,7 @@ class ResellerWalletService
             $transaction = $this->credit(
                 $reseller,
                 $payment->amount,
-                "M-Pesa wallet top-up",
+                'M-Pesa wallet top-up',
                 $payment->id
             );
 

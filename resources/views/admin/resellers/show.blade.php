@@ -77,14 +77,15 @@
             @endif
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-            <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Member Since</p>
-            <p class="text-lg font-bold text-slate-900 dark:text-white mt-2">{{ $user->created_at->format('M d, Y') }}</p>
+            <p class="text-sm font-medium text-slate-600 dark:text-slate-400 uppercase">Wallet Balance</p>
+            <p class="text-lg font-bold text-purple-700 dark:text-purple-300 mt-2">{{ $wallet->getFormattedBalance() }}</p>
+            <button type="button" @click="activeTab = 'wallet'" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1">Manage wallet</button>
         </div>
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: 'overview', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
-         x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
+    <div x-data="{ activeTab: '{{ request('tab', 'overview') }}', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
+         x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any() && (old('amount') !== null || old('reason') !== null)) activeTab = 'wallet' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
         <div class="border-b border-slate-200 dark:border-slate-800">
@@ -104,11 +105,24 @@
                 <button @click="activeTab = 'invoices'" :class="activeTab === 'invoices' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
                     Invoices ({{ $resellerInvoices->count() }})
                 </button>
+                <button @click="activeTab = 'wallet'" :class="activeTab === 'wallet' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
+                    Wallet
+                </button>
             </div>
         </div>
 
         <!-- Tab Content -->
         <div class="p-6">
+            @if (session('success'))
+                <div class="mb-6 p-4 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg text-green-800 dark:text-green-200 text-sm">
+                    {{ session('success') }}
+                </div>
+            @endif
+            @if (session('error'))
+                <div class="mb-6 p-4 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg text-red-800 dark:text-red-200 text-sm">
+                    {{ session('error') }}
+                </div>
+            @endif
             <!-- Overview Tab -->
             <div x-show="activeTab === 'overview'" class="space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -459,7 +473,7 @@
             </div>
 
             <!-- Invoices Tab -->
-            <div x-show="activeTab === 'invoices'">
+            <div x-show="activeTab === 'invoices'" x-cloak>
                 @if ($resellerInvoices->count() > 0)
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
@@ -522,6 +536,11 @@
                         <p class="text-slate-600 dark:text-slate-400">No subscription invoices yet</p>
                     </div>
                 @endif
+            </div>
+
+            <!-- Wallet Tab -->
+            <div x-show="activeTab === 'wallet'" x-cloak>
+                @include('admin.resellers.partials.wallet-tab', ['user' => $user])
             </div>
         </div>
 

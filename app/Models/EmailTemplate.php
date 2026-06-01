@@ -148,6 +148,14 @@ class EmailTemplate extends Model
                 'available_variables' => ['reseller_name', 'amount', 'balance', 'site_name'],
             ],
             [
+                'event_key' => 'reseller_wallet_adjustment',
+                'name' => 'Reseller: Wallet Manual Adjustment',
+                'subject' => 'Wallet balance updated — {adjustment_type}',
+                'body' => "Hi {reseller_name},\n\nYour wallet was updated by an administrator.\n\nType: {adjustment_type}\nAmount: {amount}\nPrevious balance: {previous_balance}\nNew balance: {new_balance}\nReason: {reason}\n\n— {site_name}",
+                'recipient_type' => 'reseller',
+                'available_variables' => ['reseller_name', 'amount', 'previous_balance', 'new_balance', 'adjustment_type', 'reason', 'site_name'],
+            ],
+            [
                 'event_key' => 'admin_new_order',
                 'name' => 'Admin: New Order',
                 'subject' => 'New order #{order_number}',

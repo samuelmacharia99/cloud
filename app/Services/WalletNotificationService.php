@@ -48,6 +48,39 @@ class WalletNotificationService
         $wallet->update(['last_low_balance_alert_at' => now()]);
     }
 
+    public function sendManualAdjustmentNotification(WalletTransaction $transaction, float $signedAmount): void
+    {
+        $transaction->loadMissing('wallet.reseller');
+        $reseller = $transaction->wallet->reseller;
+        $event = NotificationEvent::ResellerWalletAdjustment;
+        $currency = $transaction->wallet->currency ?? 'KES';
+        $previous = number_format((float) $transaction->balance_before, 2);
+        $newBalance = number_format((float) $transaction->balance_after, 2);
+        $amountFormatted = number_format(abs($signedAmount), 2);
+        $action = $signedAmount >= 0 ? 'credited' : 'debited';
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+
+        $smsMessage = "{$company}: Wallet {$action} {$currency} {$amountFormatted}. Previous: {$currency} {$previous}. New balance: {$currency} {$newBalance}.";
+
+        try {
+            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send wallet adjustment SMS to reseller {$reseller->id}: {$e->getMessage()}");
+        }
+
+        if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
+            $this->emailDelivery->sendTemplated($reseller, $event, [
+                'reseller_name' => $reseller->name,
+                'amount' => "{$currency} {$amountFormatted}",
+                'previous_balance' => "{$currency} {$previous}",
+                'new_balance' => "{$currency} {$newBalance}",
+                'adjustment_type' => $signedAmount >= 0 ? 'Credit (top-up)' : 'Debit (deduction)',
+                'reason' => $transaction->description,
+                'site_name' => $company,
+            ]);
+        }
+    }
+
     public function sendTopupConfirmation(WalletTransaction $transaction): void
     {
         $reseller = $transaction->wallet->reseller;

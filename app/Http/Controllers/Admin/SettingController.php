@@ -64,7 +64,7 @@ class SettingController extends Controller
             'notify_domain_expiry', 'notify_container_backup', 'notify_container_backup_failure',
             'notify_container_failure', 'notify_container_restart',
             'notify_reseller_domain_queued', 'notify_reseller_domain_pushed', 'notify_reseller_new_customer_order',
-            'notify_reseller_wallet_low', 'notify_reseller_wallet_topup',
+            'notify_reseller_wallet_low', 'notify_reseller_wallet_topup', 'notify_reseller_wallet_adjustment',
             'notify_admin_new_order', 'notify_admin_reseller_domain_push', 'notify_admin_manual_payment',
             'notify_admin_node_offline',
         ],

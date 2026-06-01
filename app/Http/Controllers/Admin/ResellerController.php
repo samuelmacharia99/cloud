@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AdjustWalletBalanceRequest;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
@@ -16,6 +17,7 @@ use App\Models\User;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerPackageSubscriptionService;
+use App\Services\ResellerWalletService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -95,6 +97,10 @@ class ResellerController extends Controller
             ->orderBy('name')
             ->get();
 
+        $walletService = app(ResellerWalletService::class);
+        $wallet = $walletService->getOrCreate($user);
+        $walletTransactions = $wallet->transactions()->with('performer')->latest()->limit(25)->get();
+
         return view('admin.resellers.show', compact(
             'user',
             'services',
@@ -108,7 +114,35 @@ class ResellerController extends Controller
             'serverProducts',
             'directAdminUserCount',
             'directAdminNodes',
+            'wallet',
+            'walletTransactions',
         ));
+    }
+
+    public function adjustWallet(AdjustWalletBalanceRequest $request, User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        $validated = $request->validated();
+
+        try {
+            app(ResellerWalletService::class)->adjust(
+                $user,
+                (float) $validated['amount'],
+                $validated['reason'],
+                $request->user(),
+            );
+
+            $direction = (float) $validated['amount'] >= 0 ? 'credited' : 'debited';
+
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
+                ->with('success', 'Wallet '.$direction.' successfully. The reseller has been notified by email and SMS.');
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
+                ->with('error', 'Wallet adjustment failed: '.$e->getMessage());
+        }
     }
 
     /**

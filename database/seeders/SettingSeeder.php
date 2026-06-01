@@ -113,6 +113,7 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_reseller_new_customer_order', 'value' => 'true', 'description' => 'Notify reseller on new customer domain order'],
             ['key' => 'notify_reseller_wallet_low', 'value' => 'true', 'description' => 'Notify reseller on low wallet balance'],
             ['key' => 'notify_reseller_wallet_topup', 'value' => 'true', 'description' => 'Notify reseller on wallet top-up'],
+            ['key' => 'notify_reseller_wallet_adjustment', 'value' => 'true', 'description' => 'Notify reseller on admin manual wallet adjustment'],
             ['key' => 'notify_admin_new_order', 'value' => 'true', 'description' => 'Email admins on new orders'],
             ['key' => 'notify_admin_reseller_domain_push', 'value' => 'true', 'description' => 'Email admins on reseller domain push'],
             ['key' => 'notify_admin_manual_payment', 'value' => 'true', 'description' => 'Email admins on manual payment submission'],
