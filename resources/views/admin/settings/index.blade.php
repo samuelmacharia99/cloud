@@ -161,6 +161,15 @@
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reseller packages — days before expiry</label>
                                 <input type="number" min="1" name="settings[reseller_package_invoice_advance_days]" value="{{ $settings['reseller_package_invoice_advance_days'] ?? '10' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Renewal invoice is generated this many days before package expiry.</p>
+                            </div>
+                            <div class="md:col-span-2">
+                                <input type="hidden" name="settings[reseller_auto_pay_subscription_from_wallet]" value="0">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" name="settings[reseller_auto_pay_subscription_from_wallet]" value="1" @checked(in_array($settings['reseller_auto_pay_subscription_from_wallet'] ?? 'true', ['1', 'true', true], true)) class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Auto-pay package renewal from wallet when balance is sufficient</span>
+                                </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 ml-6">When a renewal invoice is created, pay it in full from the reseller wallet if funds cover the total. Otherwise the invoice stays unpaid for manual payment.</p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain renewal — payment window (days)</label>

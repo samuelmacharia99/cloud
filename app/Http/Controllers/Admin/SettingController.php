@@ -28,6 +28,7 @@ class SettingController extends Controller
             'service_monthly_invoice_advance_days', 'service_renewal_invoice_advance_days',
             'domain_renewal_advance_days', 'domain_renewal_payment_days', 'domain_renewal_years',
             'reseller_package_invoice_advance_days',
+            'reseller_auto_pay_subscription_from_wallet',
         ],
         'tax' => [
             'tax_enabled', 'tax_rate', 'tax_name', 'tax_inclusive', 'tax_number',

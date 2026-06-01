@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\NotificationEvent;
 use App\Mail\AdminResellerDomainPushMail;
 use App\Mail\ResellerDomainOrderMail;
+use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
 use App\Models\WalletTransaction;
@@ -76,6 +77,40 @@ class WalletNotificationService
                 'new_balance' => "{$currency} {$newBalance}",
                 'adjustment_type' => $signedAmount >= 0 ? 'Credit (top-up)' : 'Debit (deduction)',
                 'reason' => $transaction->description,
+                'site_name' => $company,
+            ]);
+        }
+    }
+
+    public function sendSubscriptionAutoPayNotification(Invoice $invoice): void
+    {
+        $invoice->loadMissing('user');
+        $reseller = $invoice->user;
+
+        if (! $reseller) {
+            return;
+        }
+
+        $wallet = $reseller->wallet ?? app(ResellerWalletService::class)->getOrCreate($reseller);
+        $currency = $wallet->currency ?? 'KES';
+        $amount = number_format((float) $invoice->total, 2);
+        $balance = number_format((float) $wallet->balance, 2);
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+
+        $smsMessage = "{$company}: Package invoice {$invoice->invoice_number} ({$currency} {$amount}) was paid automatically from your wallet. New balance: {$currency} {$balance}.";
+
+        try {
+            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+        } catch (\Exception $e) {
+            \Log::error("Failed to send subscription auto-pay SMS to reseller {$reseller->id}: {$e->getMessage()}");
+        }
+
+        $event = NotificationEvent::ResellerWalletTopup;
+        if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
+            $this->emailDelivery->sendTemplated($reseller, $event, [
+                'reseller_name' => $reseller->name,
+                'amount' => "{$currency} {$amount} (auto-debit)",
+                'balance' => "{$currency} {$balance}",
                 'site_name' => $company,
             ]);
         }

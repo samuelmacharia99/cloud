@@ -42,7 +42,7 @@ class ResellerPackageSubscriptionService
             ? $schedule->resellerPackageRenewalDueDate($user)
             : now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
 
-        return Invoice::create([
+        $invoice = Invoice::create([
             'user_id' => $user->id,
             'type' => 'reseller_subscription',
             'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
@@ -53,6 +53,10 @@ class ResellerPackageSubscriptionService
             'total' => $amounts['total'],
             'notes' => $label.' '.self::PACKAGE_META_PREFIX.$package->id.']',
         ]);
+
+        app(ResellerSubscriptionAutoPayService::class)->attempt($invoice);
+
+        return $invoice->fresh();
     }
 
     /**

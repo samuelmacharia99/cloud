@@ -32,6 +32,7 @@ class GenerateResellerInvoicesCommand extends BaseCronCommand
             ->filter(fn (User $reseller) => $this->schedule->isResellerPackageDueForRenewalInvoice($reseller, $today));
 
         $createdCount = 0;
+        $autoPaidCount = 0;
         $skippedCount = 0;
 
         foreach ($resellers as $reseller) {
@@ -46,10 +47,14 @@ class GenerateResellerInvoicesCommand extends BaseCronCommand
                 continue;
             }
 
-            $this->subscriptions->createSubscriptionInvoice($reseller, $package, renewal: true);
+            $invoice = $this->subscriptions->createSubscriptionInvoice($reseller, $package, renewal: true);
             $createdCount++;
+
+            if ($invoice->isPaid()) {
+                $autoPaidCount++;
+            }
         }
 
-        return "Created {$createdCount} reseller package renewal invoice(s), skipped {$skippedCount} with existing unpaid invoice(s) ({$advanceDays} days before expiry).";
+        return "Created {$createdCount} reseller package renewal invoice(s), {$autoPaidCount} auto-paid from wallet, skipped {$skippedCount} with existing unpaid invoice(s) ({$advanceDays} days before expiry).";
     }
 }

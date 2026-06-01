@@ -52,9 +52,11 @@ class ResellerInvoicePaymentService
         $this->walletService->debit(
             $reseller,
             $toApply,
-            "Applied to invoice {$invoice->invoice_number}",
+            $invoice->type === 'reseller_subscription'
+                ? "Package subscription invoice {$invoice->invoice_number}"
+                : "Applied to invoice {$invoice->invoice_number}",
             $invoice->id,
-            'Invoice'
+            'Invoice',
         );
 
         $invoice->update([
