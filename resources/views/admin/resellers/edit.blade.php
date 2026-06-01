@@ -140,6 +140,8 @@
                         @enderror
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">You can change the package anytime.</p>
                     </div>
+
+                    @include('admin.resellers.partials.directadmin-fields', ['user' => $user])
                 </div>
             </div>
 

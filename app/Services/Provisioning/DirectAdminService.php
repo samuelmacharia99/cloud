@@ -315,7 +315,9 @@ class DirectAdminService
      */
     public function suspendAccount(Service $service): bool
     {
-        return $this->selectUserAction($service, 'Suspend', 'SUSPEND');
+        $username = $this->resolveDirectAdminUsername($service);
+
+        return $username ? $this->suspendUserByUsername($username, $service->id) : false;
     }
 
     /**
@@ -323,7 +325,65 @@ class DirectAdminService
      */
     public function unsuspendAccount(Service $service): bool
     {
-        return $this->selectUserAction($service, 'Unsuspend', 'UNSUSPEND');
+        $username = $this->resolveDirectAdminUsername($service);
+
+        return $username ? $this->unsuspendUserByUsername($username, $service->id) : false;
+    }
+
+    public function suspendUserByUsername(string $username, ?int $contextId = null): bool
+    {
+        return $this->selectUserActionByUsername($username, 'Suspend', 'SUSPEND', $contextId);
+    }
+
+    public function unsuspendUserByUsername(string $username, ?int $contextId = null): bool
+    {
+        return $this->selectUserActionByUsername($username, 'Unsuspend', 'UNSUSPEND', $contextId);
+    }
+
+    /**
+     * Count end-user accounts created under a DirectAdmin reseller account.
+     */
+    public function countUsersOwnedByReseller(string $resellerUsername): ?int
+    {
+        $users = $this->listUsersOwnedByReseller($resellerUsername);
+
+        return $users === null ? null : count($users);
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    public function listUsersOwnedByReseller(string $resellerUsername): ?array
+    {
+        if (! $this->isConfigured()) {
+            return null;
+        }
+
+        try {
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_SHOW_USERS', [
+                    'reseller' => $resellerUsername,
+                    'json' => 'yes',
+                ]);
+
+            if ($response->status() >= 400) {
+                Log::warning('DirectAdmin SHOW_USERS failed', [
+                    'reseller' => $resellerUsername,
+                    'status' => $response->status(),
+                ]);
+
+                return null;
+            }
+
+            return $this->parseUserListResponse($response->body());
+        } catch (\Exception $e) {
+            Log::error('DirectAdmin SHOW_USERS exception', [
+                'reseller' => $resellerUsername,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
@@ -385,20 +445,12 @@ class DirectAdminService
         }
     }
 
-    private function selectUserAction(Service $service, string $action, string $logPrefix): bool
+    private function selectUserActionByUsername(string $username, string $action, string $logPrefix, ?int $contextId = null): bool
     {
-        $username = $this->resolveDirectAdminUsername($service);
-
-        if (! $username) {
-            Log::error("{$logPrefix}_FAILED: No username for service {$service->id}");
-
-            return false;
-        }
-
         $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_SELECT_USERS';
 
         Log::info("{$logPrefix}_API_CALL", [
-            'service_id' => $service->id,
+            'context_id' => $contextId,
             'username' => $username,
             'endpoint' => $endpoint,
         ]);
@@ -415,7 +467,7 @@ class DirectAdminService
             $parsed = $this->parseApiResponse($response->body(), $response->status());
 
             Log::info("{$logPrefix}_API_RESPONSE", [
-                'service_id' => $service->id,
+                'context_id' => $contextId,
                 'status' => $response->status(),
                 'success' => $parsed['success'],
                 'message' => $parsed['message'],
@@ -423,7 +475,8 @@ class DirectAdminService
 
             if (! $parsed['success']) {
                 Log::error("{$logPrefix}_API_ERROR", [
-                    'service_id' => $service->id,
+                    'context_id' => $contextId,
+                    'username' => $username,
                     'message' => $parsed['message'],
                 ]);
             }
@@ -431,12 +484,74 @@ class DirectAdminService
             return $parsed['success'];
         } catch (\Exception $e) {
             Log::error("{$logPrefix}_EXCEPTION", [
-                'service_id' => $service->id,
+                'context_id' => $contextId,
+                'username' => $username,
                 'error' => $e->getMessage(),
             ]);
 
             return false;
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parseUserListResponse(string $body): array
+    {
+        $trimmed = trim($body);
+
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $json = json_decode($trimmed, true);
+        if (is_array($json)) {
+            if (isset($json['error']) && (string) $json['error'] !== '0') {
+                return [];
+            }
+
+            if (isset($json['list']) && is_array($json['list'])) {
+                return array_values(array_filter(array_map('strval', $json['list'])));
+            }
+
+            if ($this->isListOfUsernames($json)) {
+                return array_values(array_filter(array_map('strval', $json)));
+            }
+        }
+
+        parse_str($trimmed, $parsed);
+
+        if (isset($parsed['list']) && is_array($parsed['list'])) {
+            return array_values(array_filter(array_map('strval', $parsed['list'])));
+        }
+
+        if (preg_match_all('/list\[\]=(\w+)/', $trimmed, $matches)) {
+            return $matches[1];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param  array<mixed>  $data
+     */
+    private function isListOfUsernames(array $data): bool
+    {
+        if ($data === []) {
+            return true;
+        }
+
+        foreach ($data as $key => $value) {
+            if (! is_int($key) && ! is_numeric((string) $key)) {
+                return false;
+            }
+
+            if (! is_string($value) && ! is_numeric($value)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function resolveDirectAdminUsername(Service $service): ?string

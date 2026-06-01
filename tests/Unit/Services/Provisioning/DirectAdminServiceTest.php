@@ -98,6 +98,43 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_suspend_user_by_username_uses_select_users_endpoint(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Suspended', 200),
+        ]);
+
+        $node = $this->createDirectAdminNode();
+
+        $this->assertTrue((new DirectAdminService($node))->suspendUserByUsername('reseller1'));
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_SELECT_USERS')
+                && $request['suspend'] === 'Suspend'
+                && $request['select0'] === 'reseller1';
+        });
+    }
+
+    public function test_count_users_owned_by_reseller_parses_json_list(): void
+    {
+        Http::fake([
+            '*' => Http::response(json_encode([
+                'error' => '0',
+                'list' => ['user_a', 'user_b'],
+            ]), 200),
+        ]);
+
+        $count = (new DirectAdminService($this->createDirectAdminNode()))
+            ->countUsersOwnedByReseller('reseller1');
+
+        $this->assertSame(2, $count);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_SHOW_USERS')
+                && $request['reseller'] === 'reseller1';
+        });
+    }
+
     public function test_empty_api_body_is_treated_as_failure_for_create(): void
     {
         Http::fake([

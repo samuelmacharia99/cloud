@@ -1,0 +1,126 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Node;
+use App\Models\Service;
+use App\Models\User;
+use App\Services\Provisioning\DirectAdminService;
+use Illuminate\Support\Facades\Log;
+
+class ResellerDirectAdminService
+{
+    public function hasDirectAdminBinding(User $reseller): bool
+    {
+        return $reseller->is_reseller
+            && filled($reseller->directadmin_username)
+            && $this->resolveNode($reseller) !== null;
+    }
+
+    public function resolveNode(User $reseller): ?Node
+    {
+        if ($reseller->reseller_node_id) {
+            $node = Node::query()
+                ->where('id', $reseller->reseller_node_id)
+                ->where('type', 'directadmin')
+                ->where('is_active', true)
+                ->first();
+
+            if ($node) {
+                return $node;
+            }
+        }
+
+        $nodeId = Service::query()
+            ->where('reseller_id', $reseller->id)
+            ->whereNotNull('node_id')
+            ->selectRaw('node_id, COUNT(*) as usage_count')
+            ->groupBy('node_id')
+            ->orderByDesc('usage_count')
+            ->value('node_id');
+
+        if (! $nodeId) {
+            return null;
+        }
+
+        return Node::query()
+            ->where('id', $nodeId)
+            ->where('type', 'directadmin')
+            ->where('is_active', true)
+            ->first();
+    }
+
+    public function directAdmin(User $reseller): ?DirectAdminService
+    {
+        $node = $this->resolveNode($reseller);
+
+        if (! $node) {
+            return null;
+        }
+
+        $service = new DirectAdminService($node);
+
+        return $service->isConfigured() ? $service : null;
+    }
+
+    public function fetchHostedUserCount(User $reseller): ?int
+    {
+        if (! filled($reseller->directadmin_username)) {
+            return null;
+        }
+
+        $da = $this->directAdmin($reseller);
+
+        if (! $da) {
+            return null;
+        }
+
+        return $da->countUsersOwnedByReseller($reseller->directadmin_username);
+    }
+
+    public function suspendResellerAccount(User $reseller): bool
+    {
+        if (! $this->hasDirectAdminBinding($reseller)) {
+            return false;
+        }
+
+        $da = $this->directAdmin($reseller);
+        if (! $da) {
+            return false;
+        }
+
+        $ok = $da->suspendUserByUsername($reseller->directadmin_username);
+
+        if ($ok) {
+            Log::info('DirectAdmin reseller account suspended', [
+                'reseller_id' => $reseller->id,
+                'username' => $reseller->directadmin_username,
+            ]);
+        }
+
+        return $ok;
+    }
+
+    public function unsuspendResellerAccount(User $reseller): bool
+    {
+        if (! $this->hasDirectAdminBinding($reseller)) {
+            return false;
+        }
+
+        $da = $this->directAdmin($reseller);
+        if (! $da) {
+            return false;
+        }
+
+        $ok = $da->unsuspendUserByUsername($reseller->directadmin_username);
+
+        if ($ok) {
+            Log::info('DirectAdmin reseller account unsuspended', [
+                'reseller_id' => $reseller->id,
+                'username' => $reseller->directadmin_username,
+            ]);
+        }
+
+        return $ok;
+    }
+}

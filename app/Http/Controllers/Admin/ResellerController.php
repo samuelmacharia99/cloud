@@ -11,7 +11,9 @@ use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Models\Node;
 use App\Models\User;
+use App\Services\ResellerDirectAdminService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerPackageSubscriptionService;
 use Carbon\Carbon;
@@ -51,7 +53,10 @@ class ResellerController extends Controller
     {
         abort_if(! $user->is_reseller, 404);
 
-        $user->load('resellerPackage');
+        $user->load('resellerPackage', 'resellerNode');
+
+        $directAdminUserCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($user);
+        $directAdminNodes = $this->directAdminNodes();
 
         $services = Service::where('reseller_id', $user->id)
             ->with('user', 'product')
@@ -89,7 +94,32 @@ class ResellerController extends Controller
             ->orderBy('name')
             ->get();
 
-        return view('admin.resellers.show', compact('user', 'services', 'customerIds', 'customers', 'packages', 'domains', 'extensions', 'ownerOptions', 'resellerInvoices', 'serverProducts'));
+        return view('admin.resellers.show', compact(
+            'user',
+            'services',
+            'customerIds',
+            'customers',
+            'packages',
+            'domains',
+            'extensions',
+            'ownerOptions',
+            'resellerInvoices',
+            'serverProducts',
+            'directAdminUserCount',
+            'directAdminNodes',
+        ));
+    }
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Collection<int, Node>
+     */
+    private function directAdminNodes()
+    {
+        return Node::query()
+            ->where('type', 'directadmin')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
     }
 
     public function promote(User $user)
@@ -117,8 +147,9 @@ class ResellerController extends Controller
     public function create()
     {
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+        $directAdminNodes = $this->directAdminNodes();
 
-        return view('admin.resellers.create', compact('packages'));
+        return view('admin.resellers.create', compact('packages', 'directAdminNodes'));
     }
 
     public function store(Request $request)
@@ -132,7 +163,14 @@ class ResellerController extends Controller
             'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
             'notes' => 'nullable|string|max:1000',
+            'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+            'reseller_node_id' => 'nullable|exists:nodes,id',
         ]);
+
+        if (blank($validated['directadmin_username'] ?? null)) {
+            $validated['directadmin_username'] = null;
+            $validated['reseller_node_id'] = null;
+        }
 
         $user = User::create(array_merge($validated, [
             'status' => 'active',
@@ -152,8 +190,9 @@ class ResellerController extends Controller
         abort_if(! $user->is_reseller, 404);
 
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
+        $directAdminNodes = $this->directAdminNodes();
 
-        return view('admin.resellers.edit', compact('user', 'packages'));
+        return view('admin.resellers.edit', compact('user', 'packages', 'directAdminNodes'));
     }
 
     public function update(Request $request, User $user)
@@ -169,11 +208,18 @@ class ResellerController extends Controller
             'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
             'notes' => 'nullable|string|max:1000',
+            'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+            'reseller_node_id' => 'nullable|exists:nodes,id',
         ]);
 
         // Only update password if provided
         if (empty($validated['password'])) {
             unset($validated['password']);
+        }
+
+        if (blank($validated['directadmin_username'] ?? null)) {
+            $validated['directadmin_username'] = null;
+            $validated['reseller_node_id'] = null;
         }
 
         $user->update($validated);

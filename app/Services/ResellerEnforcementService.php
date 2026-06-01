@@ -25,6 +25,7 @@ class ResellerEnforcementService
         private ResellerScopeService $scope,
         private ProvisioningService $provisioning,
         private ServiceOverdueEnforcementService $overdueEnforcement,
+        private ResellerDirectAdminService $resellerDirectAdmin,
     ) {}
 
     public function isSuspensionEnabled(): bool
@@ -173,6 +174,13 @@ class ResellerEnforcementService
             'reason' => $reason,
         ]);
 
+        if (! $this->resellerDirectAdmin->suspendResellerAccount($reseller)) {
+            Log::warning('DirectAdmin reseller suspend skipped or failed', [
+                'reseller_id' => $reseller->id,
+                'directadmin_username' => $reseller->directadmin_username,
+            ]);
+        }
+
         if (! $this->isCascadeEnabled()) {
             return 0;
         }
@@ -192,6 +200,13 @@ class ResellerEnforcementService
         ]);
 
         Log::info('Reseller account unsuspended', ['reseller_id' => $reseller->id]);
+
+        if (! $this->resellerDirectAdmin->unsuspendResellerAccount($reseller)) {
+            Log::info('DirectAdmin reseller unsuspend skipped or failed', [
+                'reseller_id' => $reseller->id,
+                'directadmin_username' => $reseller->directadmin_username,
+            ]);
+        }
 
         if (! $this->isCascadeEnabled()) {
             return 0;

@@ -124,6 +124,8 @@
                         @enderror
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">You can change or assign a package later.</p>
                     </div>
+
+                    @include('admin.resellers.partials.directadmin-fields', ['user' => new \App\Models\User()])
                 </div>
             </div>
 

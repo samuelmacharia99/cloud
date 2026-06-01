@@ -146,12 +146,16 @@
                                             {{ ucfirst($user->resellerPackage->billing_cycle) }}
                                         </span>
                                     </div>
+                                    @php
+                                        $limitUserCount = $directAdminUserCount ?? $customerIds->count();
+                                        $userCountLabel = $directAdminUserCount !== null ? 'hosted users (DA)' : 'customers (portal)';
+                                    @endphp
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
                                         Subscribed {{ $user->package_subscribed_at?->diffForHumans() }}
                                         &bull;
                                         {{ $user->getManagedActiveServicesCount() }} / {{ $user->resellerPackage->max_services }} service slots
                                         &bull;
-                                        {{ $customerIds->count() }} / {{ $user->resellerPackage->max_users }} customers
+                                        {{ $limitUserCount }} / {{ $user->resellerPackage->max_users }} {{ $userCountLabel }}
                                     </p>
                                 @else
                                     <span class="inline-block px-2 py-1 bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 rounded text-xs font-medium mb-3">No package assigned</span>
@@ -182,6 +186,24 @@
                                     <p class="text-slate-900 dark:text-white font-medium">{{ $user->company }}</p>
                                 </div>
                             @endif
+                            <div class="pt-3 border-t border-slate-200 dark:border-slate-700">
+                                <p class="text-slate-600 dark:text-slate-400 mb-1">DirectAdmin</p>
+                                @if ($user->directadmin_username)
+                                    <p class="text-slate-900 dark:text-white font-mono font-medium">{{ $user->directadmin_username }}</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        Node:
+                                        {{ $user->resellerNode?->name ?? 'Auto-detect from services' }}
+                                        @if ($directAdminUserCount !== null)
+                                            &bull; {{ $directAdminUserCount }} hosted user(s) on server
+                                        @elseif ($user->directadmin_username)
+                                            &bull; <span class="text-amber-600 dark:text-amber-400">Could not reach DirectAdmin API</span>
+                                        @endif
+                                    </p>
+                                @else
+                                    <p class="text-amber-700 dark:text-amber-300 text-xs">Not linked — suspension only affects portal and cascaded customer accounts.</p>
+                                    <a href="{{ route('admin.resellers.edit', $user) }}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">Add DirectAdmin username</a>
+                                @endif
+                            </div>
                         </div>
                     </div>
                 </div>

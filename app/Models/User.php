@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Mail\VerifyEmailOtpMail;
+use App\Services\ResellerDirectAdminService;
 use App\Notifications\ResetPasswordNotification;
 use Carbon\Carbon;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -39,6 +40,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'package_expires_at',
         'reseller_suspended_at',
         'reseller_suspension_reason',
+        'directadmin_username',
+        'reseller_node_id',
         'two_factor_enabled',
         'two_factor_code',
         'two_factor_code_expires_at',
@@ -64,6 +67,8 @@ class User extends Authenticatable implements MustVerifyEmail
             'notification_phones' => 'array',
             'package_subscribed_at' => 'datetime',
             'package_expires_at' => 'datetime',
+            'reseller_suspended_at' => 'datetime',
+            'reseller_node_id' => 'integer',
             'two_factor_enabled' => 'boolean',
             'two_factor_code_expires_at' => 'datetime',
             'two_factor_recovery_codes' => 'array',
@@ -105,6 +110,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function resellerPackage()
     {
         return $this->belongsTo(ResellerPackage::class, 'reseller_package_id');
+    }
+
+    public function resellerNode()
+    {
+        return $this->belongsTo(Node::class, 'reseller_node_id');
     }
 
     public function reseller()
@@ -224,7 +234,24 @@ class User extends Authenticatable implements MustVerifyEmail
             return true;
         }
 
-        return $this->getManagedCustomersCount() >= $this->resellerPackage->max_users;
+        $count = $this->getResellerUserCountForLimits();
+
+        return $count >= $this->resellerPackage->max_users;
+    }
+
+    /**
+     * User count for package limits: DirectAdmin hosted users when configured, else portal customers.
+     */
+    public function getResellerUserCountForLimits(): int
+    {
+        if ($this->is_reseller && filled($this->directadmin_username)) {
+            $daCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($this);
+            if ($daCount !== null) {
+                return $daCount;
+            }
+        }
+
+        return $this->getManagedCustomersCount();
     }
 
     /**
