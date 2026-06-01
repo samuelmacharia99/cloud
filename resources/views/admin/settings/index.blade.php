@@ -1661,12 +1661,11 @@
         try {
             const formData = new FormData(form);
 
-            form.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-                const name = checkbox.name;
-                if (name && name.startsWith('settings[')) {
-                    formData.delete(name);
-                    formData.append(name, checkbox.checked ? '1' : '0');
+            form.querySelectorAll('input[type="checkbox"][name^="settings["]').forEach(checkbox => {
+                while (formData.has(checkbox.name)) {
+                    formData.delete(checkbox.name);
                 }
+                formData.append(checkbox.name, checkbox.checked ? '1' : '0');
             });
 
             const response = await fetch(form.action, {

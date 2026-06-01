@@ -38,6 +38,34 @@ class SettingsFormSubmissionTest extends TestCase
         $this->assertSame('automatic', Setting::getValue('provisioning_mode'));
     }
 
+    public function test_settings_update_normalizes_duplicate_checkbox_values(): void
+    {
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'tax_enabled' => ['0', '1'],
+                'tax_inclusive' => ['0'],
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('1', Setting::getValue('tax_enabled'));
+        $this->assertSame('0', Setting::getValue('tax_inclusive'));
+    }
+
+    public function test_billing_reseller_auto_pay_setting_persists(): void
+    {
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'reseller_auto_pay_subscription_from_wallet' => '0',
+                'reseller_package_invoice_advance_days' => '10',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('0', Setting::getValue('reseller_auto_pay_subscription_from_wallet'));
+        $this->assertSame('10', Setting::getValue('reseller_package_invoice_advance_days'));
+    }
+
     public function test_payment_gateway_save_can_disable_mpesa(): void
     {
         Setting::setValue('mpesa_enabled', '1');

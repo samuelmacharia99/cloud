@@ -149,11 +149,16 @@ class SettingController extends Controller
         'primary_', 'company_', 'footer_', 'notify_', 'email_', 'cron_',
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
+        'reseller_', 'service_', 'currency',
     ];
 
     public function update(Request $request)
     {
         $this->authorize('batchUpdate', Setting::class);
+
+        $request->merge([
+            'settings' => $this->normalizeSettingsInput($request->input('settings', [])),
+        ]);
 
         $request->validate([
             'settings' => 'required|array',
@@ -209,6 +214,35 @@ class SettingController extends Controller
         }
 
         return back()->with('success', 'Settings saved successfully.');
+    }
+
+    /**
+     * Flatten checkbox + hidden pairs (same name) that arrive as arrays from multipart forms.
+     *
+     * @param  array<string, mixed>  $settings
+     * @return array<string, string>
+     */
+    private function normalizeSettingsInput(array $settings): array
+    {
+        $normalized = [];
+
+        foreach ($settings as $key => $value) {
+            if (is_array($value)) {
+                $value = end($value);
+            }
+
+            if ($value === null || is_bool($value)) {
+                $value = $value ? '1' : '0';
+            }
+
+            if (! is_scalar($value)) {
+                continue;
+            }
+
+            $normalized[$key] = (string) $value;
+        }
+
+        return $normalized;
     }
 
     public function updateDirectAdminNameservers(Request $request)
