@@ -16,6 +16,7 @@ class WalletNotificationService
         private ResellerBrandingResolver $brandingResolver,
         private EmailDeliveryService $emailDelivery,
         private NotificationPreferenceService $preferences,
+        private SmsService $smsService,
     ) {}
 
     public function sendLowBalanceAlert(ResellerWallet $wallet): void
@@ -32,7 +33,7 @@ class WalletNotificationService
         $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: {$walletUrl}";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
+            $this->smsService->send($reseller->phone, $message);
         } catch (\Exception $e) {
             \Log::error("Failed to send low balance SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -64,7 +65,7 @@ class WalletNotificationService
         $smsMessage = "{$company}: Wallet {$action} {$currency} {$amountFormatted}. Previous: {$currency} {$previous}. New balance: {$currency} {$newBalance}.";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+            $this->smsService->send($reseller->phone, $smsMessage);
         } catch (\Exception $e) {
             \Log::error("Failed to send wallet adjustment SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -100,7 +101,7 @@ class WalletNotificationService
         $smsMessage = "{$company}: Package invoice {$invoice->invoice_number} ({$currency} {$amount}) was paid automatically from your wallet. New balance: {$currency} {$balance}.";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+            $this->smsService->send($reseller->phone, $smsMessage);
         } catch (\Exception $e) {
             \Log::error("Failed to send subscription auto-pay SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -123,7 +124,7 @@ class WalletNotificationService
         $message = "Wallet top-up confirmed! Amount: {$transaction->amount} KES. New balance: {$transaction->balance_after} KES";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
+            $this->smsService->send($reseller->phone, $message);
         } catch (\Exception $e) {
             \Log::error("Failed to send topup SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -169,7 +170,7 @@ class WalletNotificationService
         $customerMessage = "{$company}: Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $resellerMessage);
+            $this->smsService->send($reseller->phone, $resellerMessage);
         } catch (\Exception $e) {
             \Log::error("Failed to send completed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -200,7 +201,7 @@ class WalletNotificationService
         $message = "Domain {$order->domain_name}.{$order->extension} registration failed: {$order->failure_reason}";
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $message);
+            $this->smsService->send($reseller->phone, $message);
         } catch (\Exception $e) {
             \Log::error("Failed to send failed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
@@ -233,7 +234,7 @@ class WalletNotificationService
         };
 
         try {
-            app('talksasa-sms-service')->sendSms($reseller, $reseller->phone, $smsMessage);
+            $this->smsService->send($reseller->phone, $smsMessage);
         } catch (\Exception $e) {
             \Log::error("Failed to send domain order SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }

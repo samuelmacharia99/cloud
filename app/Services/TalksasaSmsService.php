@@ -38,13 +38,22 @@ class TalksasaSmsService
         Log::info('SMS Send: Building payload', $logContext);
 
         try {
+            if (! $reseller->is_reseller) {
+                Log::warning('SMS Send: Non-reseller context rejected', array_merge($logContext, [
+                    'is_reseller' => (bool) $reseller->is_reseller,
+                ]));
+
+                return $this->createFailureResponse('SMS sender must be a reseller account', $logContext, $phoneNumber);
+            }
+
             // Validate reseller SMS settings
-            if (!$this->validateResellerSmsSettings($reseller, $logContext)) {
+            $resellerSms = app(ResellerSettingsService::class)->getSmsSettings($reseller);
+            if (! $this->validateResellerSmsSettings($reseller, $resellerSms, $logContext)) {
                 return $this->createFailureResponse('SMS settings not configured', $logContext, $phoneNumber);
             }
 
             // Build Talksasa API payload
-            $payload = $this->buildTalksasaPayload($reseller, $phoneNumber, $message);
+            $payload = $this->buildTalksasaPayload($phoneNumber, $message, trim((string) $resellerSms['sender_id']));
             Log::info('SMS Send: Payload built', array_merge($logContext, [
                 'recipient' => $payload['recipient'],
                 'sender_id' => $payload['sender_id'],
@@ -53,7 +62,7 @@ class TalksasaSmsService
             ]));
 
             // Send SMS
-            $response = $this->makeApiRequest($payload, $logContext);
+            $response = $this->makeApiRequest($payload, trim((string) $resellerSms['api_key']), $logContext);
 
             // Process response
             return $this->processSmsResponse($response, $reseller, $phoneNumber, $message, $payload, $logContext);
@@ -84,13 +93,22 @@ class TalksasaSmsService
         Log::info('SMS Bulk: Building payload', $logContext);
 
         try {
+            if (! $reseller->is_reseller) {
+                Log::warning('SMS Bulk: Non-reseller context rejected', array_merge($logContext, [
+                    'is_reseller' => (bool) $reseller->is_reseller,
+                ]));
+
+                return $this->createFailureResponse('SMS sender must be a reseller account', $logContext, implode(', ', $phoneNumbers));
+            }
+
             // Validate reseller SMS settings
-            if (!$this->validateResellerSmsSettings($reseller, $logContext)) {
+            $resellerSms = app(ResellerSettingsService::class)->getSmsSettings($reseller);
+            if (! $this->validateResellerSmsSettings($reseller, $resellerSms, $logContext)) {
                 return $this->createFailureResponse('SMS settings not configured', $logContext, implode(', ', $phoneNumbers));
             }
 
             // Build Talksasa API payload
-            $payload = $this->buildTalksasaBulkPayload($reseller, $phoneNumbers, $message);
+            $payload = $this->buildTalksasaBulkPayload($phoneNumbers, $message, trim((string) $resellerSms['sender_id']));
             Log::info('SMS Bulk: Payload built', array_merge($logContext, [
                 'recipient_count' => count($phoneNumbers),
                 'sender_id' => $payload['sender_id'],
@@ -99,7 +117,7 @@ class TalksasaSmsService
             ]));
 
             // Send SMS
-            $response = $this->makeApiRequest($payload, $logContext);
+            $response = $this->makeApiRequest($payload, trim((string) $resellerSms['api_key']), $logContext);
 
             // Process response
             return $this->processBulkSmsResponse($response, $reseller, $phoneNumbers, $message, $payload, $logContext);
@@ -117,25 +135,28 @@ class TalksasaSmsService
     /**
      * Validate reseller SMS settings are configured
      */
-    private function validateResellerSmsSettings(User $reseller, array &$logContext): bool
+    private function validateResellerSmsSettings(User $reseller, array $smsSettings, array &$logContext): bool
     {
-        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings($reseller);
+        $enabled = (bool) ($smsSettings['enabled'] ?? false);
+        $apiKey = trim((string) ($smsSettings['api_key'] ?? ''));
+        $senderId = trim((string) ($smsSettings['sender_id'] ?? ''));
 
-        $logContext['sms_enabled'] = $smsSettings['enabled'];
-        $logContext['has_api_key'] = !empty($smsSettings['api_key']);
-        $logContext['has_sender_id'] = !empty($smsSettings['sender_id']);
+        $logContext['sms_enabled'] = $enabled;
+        $logContext['has_api_key'] = $apiKey !== '';
+        $logContext['has_sender_id'] = $senderId !== '';
+        $logContext['sms_source'] = 'reseller';
 
-        if (empty($smsSettings['api_key'])) {
+        if ($apiKey === '') {
             Log::warning('SMS Send: Missing API key', $logContext);
             return false;
         }
 
-        if (empty($smsSettings['sender_id'])) {
+        if ($senderId === '') {
             Log::warning('SMS Send: Missing sender ID', $logContext);
             return false;
         }
 
-        if (!$smsSettings['enabled']) {
+        if (! $enabled) {
             Log::warning('SMS Send: SMS not enabled for reseller', $logContext);
             return false;
         }
@@ -146,13 +167,11 @@ class TalksasaSmsService
     /**
      * Build Talksasa API payload for single SMS
      */
-    private function buildTalksasaPayload(User $reseller, string $phoneNumber, string $message): array
+    private function buildTalksasaPayload(string $phoneNumber, string $message, string $senderId): array
     {
-        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings($reseller);
-
         return [
             'recipient' => $phoneNumber,
-            'sender_id' => $smsSettings['sender_id'],
+            'sender_id' => $senderId,
             'type' => self::SMS_TYPE,
             'message' => $message,
         ];
@@ -161,13 +180,11 @@ class TalksasaSmsService
     /**
      * Build Talksasa API payload for bulk SMS
      */
-    private function buildTalksasaBulkPayload(User $reseller, array $phoneNumbers, string $message): array
+    private function buildTalksasaBulkPayload(array $phoneNumbers, string $message, string $senderId): array
     {
-        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings($reseller);
-
         return [
             'recipient' => implode(',', $phoneNumbers),
-            'sender_id' => $smsSettings['sender_id'],
+            'sender_id' => $senderId,
             'type' => self::SMS_TYPE,
             'message' => $message,
         ];
@@ -176,9 +193,8 @@ class TalksasaSmsService
     /**
      * Make HTTP request to Talksasa API with retry logic
      */
-    private function makeApiRequest(array $payload, array $logContext): Response
+    private function makeApiRequest(array $payload, string $apiKey, array $logContext): Response
     {
-        $smsSettings = app(ResellerSettingsService::class)->getSmsSettings(User::find($logContext['reseller_id']));
         $attempt = 1;
         $lastError = null;
 
@@ -195,7 +211,7 @@ class TalksasaSmsService
                     ->withHeaders([
                         'Content-Type' => 'application/json',
                         'Accept' => 'application/json',
-                        'Authorization' => 'Bearer ' . $smsSettings['api_key'],
+                        'Authorization' => 'Bearer ' . $apiKey,
                         'User-Agent' => 'TalksasaCloud/1.0',
                     ])
                     ->post(self::API_ENDPOINT, $payload);
@@ -385,4 +401,5 @@ class TalksasaSmsService
             'response' => [],
         ];
     }
+
 }

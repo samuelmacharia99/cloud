@@ -74,14 +74,25 @@ class NotificationService
             return;
         }
 
-        $reseller = $this->brandingResolver->resellerForCustomer($customer);
-        if ($reseller) {
-            $sms = $reseller->settings['sms'] ?? [];
-            if (! empty($sms['enabled']) && ! empty($sms['api_key'])) {
-                $this->talksasaSms->sendSms($reseller, $customer->phone, $message);
-
-                return;
+        // Ownership boundary:
+        // - Reseller-owned customers are messaged only through their reseller SMS config.
+        // - Admin-owned customers are messaged through admin/global SMS config.
+        if ($customer->reseller_id !== null) {
+            $reseller = $this->brandingResolver->resellerForCustomer($customer);
+            if ($reseller) {
+                $sms = $reseller->settings['sms'] ?? [];
+                if (! empty($sms['enabled']) && ! empty($sms['api_key'])) {
+                    $this->talksasaSms->sendSms($reseller, $customer->phone, $message);
+                } else {
+                    Log::warning('Skipped SMS to reseller-owned customer due to missing reseller SMS config', [
+                        'customer_id' => $customer->id,
+                        'reseller_id' => $reseller->id,
+                        'event' => $event->value,
+                    ]);
+                }
             }
+
+            return;
         }
 
         if ($this->smsService->isConfigured()) {

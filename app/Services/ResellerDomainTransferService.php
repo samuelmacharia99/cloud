@@ -27,7 +27,7 @@ class ResellerDomainTransferService
             $message = "Domain transfer requested: {$domain->name}. Click to approve: " . route('domains.transfer.approval', $token);
 
             try {
-                app('talksasa-sms-service')->sendSms($toCustomer, $toCustomer->phone, $message);
+                app('talksasa-sms-service')->sendSms($reseller, $toCustomer->phone, $message);
             } catch (\Exception $e) {
                 \Log::error("Failed to send domain transfer SMS to customer {$toCustomer->id}: {$e->getMessage()}");
             }
@@ -100,7 +100,10 @@ class ResellerDomainTransferService
             $message = "Domain {$domain->name} transfer has been rejected.";
 
             try {
-                app('talksasa-sms-service')->sendSms($fromCustomer, $fromCustomer->phone, $message);
+                $reseller = $fromCustomer->reseller;
+                if ($reseller?->is_reseller) {
+                    app('talksasa-sms-service')->sendSms($reseller, $fromCustomer->phone, $message);
+                }
             } catch (\Exception $e) {
                 \Log::error("Failed to send rejection SMS to customer: {$e->getMessage()}");
             }
