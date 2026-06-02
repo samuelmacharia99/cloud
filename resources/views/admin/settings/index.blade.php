@@ -1156,10 +1156,24 @@
 
                     <fieldset>
                         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">SMTP Configuration</legend>
+                        <div class="mb-4 p-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
+                            <p class="text-sm font-medium text-blue-900 dark:text-blue-200">Zoho Mail quick setup</p>
+                            <p class="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                                Use your full Zoho mailbox as SMTP username. If 2FA is enabled, use an app password.
+                            </p>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <button type="button" onclick="window.applyZohoPreset('paid')" class="px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-700">
+                                    Use Zoho Paid (smtppro.zoho.com)
+                                </button>
+                                <button type="button" onclick="window.applyZohoPreset('personal')" class="px-3 py-1.5 text-xs rounded bg-slate-600 text-white hover:bg-slate-700">
+                                    Use Zoho Personal/Free (smtp.zoho.com)
+                                </button>
+                            </div>
+                        </div>
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SMTP Host</label>
-                                <input type="text" name="settings[smtp_host]" value="{{ $settings['smtp_host'] ?? '' }}" placeholder="smtp.gmail.com" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <input type="text" name="settings[smtp_host]" value="{{ $settings['smtp_host'] ?? '' }}" placeholder="smtppro.zoho.com" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
 
                             <div>
@@ -1210,6 +1224,22 @@
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Address</label>
                                 <input type="email" name="settings[mail_from_address]" value="{{ $settings['mail_from_address'] ?? 'noreply@talksasa.cloud' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                    For Zoho, this should match your authenticated mailbox or an allowed alias to avoid relay errors.
+                                </p>
+                            </div>
+
+                            <div class="pt-3 border-t border-slate-200 dark:border-slate-700">
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reply-To Address (for customer replies)</label>
+                                <input type="email" name="settings[mail_reply_to_address]" value="{{ $settings['mail_reply_to_address'] ?? ($settings['support_email'] ?? '') }}" placeholder="support@yourdomain.com" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                                    Users replying to system emails will reply to this address.
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reply-To Name</label>
+                                <input type="text" name="settings[mail_reply_to_name]" value="{{ $settings['mail_reply_to_name'] ?? ($settings['mail_from_name'] ?? 'Support Team') }}" placeholder="Support Team" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
                             </div>
                         </div>
                     </fieldset>
@@ -1693,6 +1723,25 @@
         }
 
         return statusEl;
+    }
+
+    window.applyZohoPreset = function applyZohoPreset(type) {
+        const form = document.querySelector('div[x-show="activeTab === \'email\'"] form');
+        if (! form) {
+            return;
+        }
+
+        const hostInput = form.querySelector('input[name="settings[smtp_host]"]');
+        const portInput = form.querySelector('input[name="settings[smtp_port]"]');
+        const encryptionSelect = form.querySelector('select[name="settings[smtp_encryption]"]');
+
+        if (! hostInput || ! portInput || ! encryptionSelect) {
+            return;
+        }
+
+        hostInput.value = type === 'paid' ? 'smtppro.zoho.com' : 'smtp.zoho.com';
+        portInput.value = '587';
+        encryptionSelect.value = 'tls';
     }
 
     window.submitForm = async function submitForm(form) {

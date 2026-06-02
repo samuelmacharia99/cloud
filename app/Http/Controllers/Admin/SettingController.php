@@ -57,7 +57,7 @@ class SettingController extends Controller
         ],
         'email' => [
             'smtp_host', 'smtp_port', 'smtp_encryption', 'smtp_user', 'smtp_password',
-            'mail_from_name', 'mail_from_address', 'email_queue_enabled',
+            'mail_from_name', 'mail_from_address', 'mail_reply_to_name', 'mail_reply_to_address', 'email_queue_enabled',
         ],
         'notifications' => [
             'notify_new_order', 'notify_payment', 'notify_service_suspend', 'notify_ticket',

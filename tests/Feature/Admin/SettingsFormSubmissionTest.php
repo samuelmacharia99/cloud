@@ -95,6 +95,24 @@ class SettingsFormSubmissionTest extends TestCase
         $this->assertSame('Cancelled', Setting::getValue('mpesa_register_response_type'));
     }
 
+    public function test_email_reply_to_settings_persist(): void
+    {
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'smtp_host' => 'smtppro.zoho.com',
+                'smtp_port' => '587',
+                'smtp_encryption' => 'tls',
+                'mail_reply_to_address' => 'support@example.com',
+                'mail_reply_to_name' => 'Support Team',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('smtppro.zoho.com', Setting::getValue('smtp_host'));
+        $this->assertSame('support@example.com', Setting::getValue('mail_reply_to_address'));
+        $this->assertSame('Support Team', Setting::getValue('mail_reply_to_name'));
+    }
+
     public function test_node_nameservers_update_accepts_ajax_payload(): void
     {
         $node = Node::factory()->create([

@@ -38,6 +38,10 @@ class ResellerMailService
         $branding = $this->brandingResolver->forCustomer($customer);
         $reseller = $this->brandingResolver->resellerForCustomer($customer);
 
+        if ($customer->reseller_id !== null && ($reseller === null || ! $this->resellerSmtpEnabled($reseller))) {
+            throw new \RuntimeException('Reseller SMTP must be enabled for reseller-owned customer email delivery.');
+        }
+
         View::share('emailBranding', $branding);
 
         $mailer = $this->configureMailer($reseller);

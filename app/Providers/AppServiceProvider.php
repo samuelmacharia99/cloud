@@ -19,6 +19,7 @@ use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -123,6 +124,8 @@ class AppServiceProvider extends ServiceProvider
             $smtpEncryption = Setting::getValue('smtp_encryption', 'tls');
             $mailFromName = Setting::getValue('mail_from_name');
             $mailFromAddress = Setting::getValue('mail_from_address');
+            $mailReplyToName = Setting::getValue('mail_reply_to_name');
+            $mailReplyToAddress = Setting::getValue('mail_reply_to_address', Setting::getValue('support_email'));
 
             // Override mail config if database values exist
             if ($smtpHost) {
@@ -141,6 +144,10 @@ class AppServiceProvider extends ServiceProvider
                     'mail.from.name' => $mailFromName ?: config('mail.from.name'),
                     'mail.from.address' => $mailFromAddress ?: config('mail.from.address'),
                 ]);
+            }
+
+            if ($mailReplyToAddress) {
+                Mail::alwaysReplyTo($mailReplyToAddress, $mailReplyToName ?: ($mailFromName ?: config('mail.from.name')));
             }
         } catch (\Exception $e) {
             // Database may not be ready yet, skip

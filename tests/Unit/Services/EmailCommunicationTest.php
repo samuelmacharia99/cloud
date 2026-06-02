@@ -4,7 +4,9 @@ namespace Tests\Unit\Services;
 
 use App\Enums\NotificationEvent;
 use App\Models\EmailTemplate;
+use App\Models\Setting;
 use App\Models\User;
+use App\Services\EmailDeliveryService;
 use App\Services\NotificationPreferenceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -49,5 +51,42 @@ class EmailCommunicationTest extends TestCase
 
         $this->assertStringContainsString('Jane', $rendered);
         $this->assertStringContainsString('INV-1', $rendered);
+    }
+
+    public function test_mail_config_for_reseller_owned_customer_requires_reseller_smtp(): void
+    {
+        Setting::setValue('smtp_host', 'smtp.admin.test');
+
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'settings' => [
+                'smtp' => [
+                    'enabled' => false,
+                    'host' => '',
+                    'from_address' => '',
+                ],
+            ],
+        ]);
+
+        $customer = User::factory()->create([
+            'reseller_id' => $reseller->id,
+        ]);
+
+        $service = app(EmailDeliveryService::class);
+
+        $this->assertFalse($service->mailConfiguredFor($customer));
+    }
+
+    public function test_mail_config_for_admin_owned_customer_uses_platform_smtp(): void
+    {
+        Setting::setValue('smtp_host', 'smtp.admin.test');
+
+        $customer = User::factory()->create([
+            'reseller_id' => null,
+        ]);
+
+        $service = app(EmailDeliveryService::class);
+
+        $this->assertTrue($service->mailConfiguredFor($customer));
     }
 }

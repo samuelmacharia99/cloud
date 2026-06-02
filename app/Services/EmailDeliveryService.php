@@ -26,9 +26,13 @@ class EmailDeliveryService
     public function mailConfiguredFor(?User $customer = null): bool
     {
         if ($customer) {
-            $reseller = $this->brandingResolver->resellerForCustomer($customer);
-            if ($reseller && $this->resellerMail->resellerSmtpEnabled($reseller)) {
-                return true;
+            // Ownership boundary:
+            // - Reseller-owned customers must use reseller SMTP only (no admin fallback).
+            // - Admin-owned customers use platform/admin SMTP.
+            if ($customer->reseller_id !== null) {
+                $reseller = $this->brandingResolver->resellerForCustomer($customer);
+
+                return $reseller !== null && $this->resellerMail->resellerSmtpEnabled($reseller);
             }
         }
 
