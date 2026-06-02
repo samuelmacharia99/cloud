@@ -323,7 +323,11 @@
 
                                 @php
                                     $mpesaCallbackToken = $settings['mpesa_callback_token'] ?? '';
-                                    $mpesaCallbackUrl = route('payment.mpesa.callback').($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
+                                    $callbackBase = rtrim($settings['site_url'] ?? config('app.url'), '/');
+                                    if (($settings['mpesa_environment'] ?? 'sandbox') === 'production' && str_starts_with($callbackBase, 'http://')) {
+                                        $callbackBase = 'https://'.substr($callbackBase, 7);
+                                    }
+                                    $mpesaCallbackUrl = $callbackBase.'/webhooks/c2b'.($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
                                 @endphp
                                 <!-- Callback URL Display -->
                                 <div>

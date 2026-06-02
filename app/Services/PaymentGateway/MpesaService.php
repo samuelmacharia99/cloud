@@ -32,6 +32,14 @@ class MpesaService implements PaymentGatewayInterface
 
     protected bool $usesResellerConfig = false;
 
+    protected ?string $platformConsumerKey = null;
+
+    protected ?string $platformConsumerSecret = null;
+
+    protected ?string $platformBusinessShortCode = null;
+
+    protected ?string $platformPasskey = null;
+
     public function __construct(?User $reseller = null)
     {
         $mpesa = [];
@@ -60,6 +68,11 @@ class MpesaService implements PaymentGatewayInterface
             $this->passkey = Setting::getValue('mpesa_passkey', '');
             $this->siteUrl = Setting::getValue('site_url', config('app.url'));
         }
+
+        $this->platformConsumerKey = Setting::getValue('mpesa_consumer_key', '');
+        $this->platformConsumerSecret = Setting::getValue('mpesa_consumer_secret', '');
+        $this->platformBusinessShortCode = (string) Setting::getValue('mpesa_shortcode', '');
+        $this->platformPasskey = Setting::getValue('mpesa_passkey', '');
 
         $this->isProduction = Setting::getValue('mpesa_environment', 'sandbox') === 'production';
         $this->baseUrl = $this->isProduction
@@ -557,32 +570,50 @@ class MpesaService implements PaymentGatewayInterface
     private function getAccessToken(): ?string
     {
         $cacheKey = $this->tokenCacheKey();
+        $token = Cache::get($cacheKey);
+        if (is_string($token) && $token !== '') {
+            return $token;
+        }
 
-        return Cache::remember($cacheKey, 55 * 60, function () {
-            try {
-                $response = Http::withBasicAuth($this->consumerKey, $this->consumerSecret)
-                    ->get("{$this->baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+        $token = $this->requestAccessToken($this->consumerKey, $this->consumerSecret);
+        if (is_string($token) && $token !== '') {
+            Cache::put($cacheKey, $token, 55 * 60);
 
-                if ($response->successful()) {
-                    Log::info('M-Pesa token generated successfully', [
-                        'environment' => $this->isProduction ? 'production' : 'sandbox',
-                    ]);
+            return $token;
+        }
 
-                    return $response->json()['access_token'] ?? null;
+        // If reseller credentials fail, fallback to platform credentials for continuity.
+        if ($this->usesResellerConfig && $this->canFallbackToPlatformCredentials()) {
+            Log::warning('M-Pesa reseller credentials failed, falling back to platform credentials', [
+                'environment' => $this->isProduction ? 'production' : 'sandbox',
+            ]);
+
+            $fallbackKey = $this->tokenCacheKeyFor(
+                $this->platformBusinessShortCode,
+                $this->platformConsumerKey,
+                $this->platformConsumerSecret,
+                false
+            );
+            $fallbackToken = Cache::get($fallbackKey);
+            if (! is_string($fallbackToken) || $fallbackToken === '') {
+                $fallbackToken = $this->requestAccessToken($this->platformConsumerKey, $this->platformConsumerSecret);
+                if (is_string($fallbackToken) && $fallbackToken !== '') {
+                    Cache::put($fallbackKey, $fallbackToken, 55 * 60);
                 }
-
-                Log::error('Failed to get M-Pesa access token', [
-                    'status_code' => $response->status(),
-                    'response' => $response->json(),
-                ]);
-
-                return null;
-            } catch (\Exception $e) {
-                Log::error('M-Pesa token generation failed', ['error' => $e->getMessage()]);
-
-                return null;
             }
-        });
+
+            if (is_string($fallbackToken) && $fallbackToken !== '') {
+                $this->consumerKey = $this->platformConsumerKey;
+                $this->consumerSecret = $this->platformConsumerSecret;
+                $this->businessShortCode = (string) $this->platformBusinessShortCode;
+                $this->passkey = $this->platformPasskey;
+                $this->usesResellerConfig = false;
+
+                return $fallbackToken;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -811,15 +842,64 @@ class MpesaService implements PaymentGatewayInterface
 
     private function tokenCacheKey(): string
     {
+        return $this->tokenCacheKeyFor(
+            $this->businessShortCode,
+            $this->consumerKey,
+            $this->consumerSecret,
+            $this->usesResellerConfig
+        );
+    }
+
+    private function tokenCacheKeyFor(?string $shortcode, ?string $key, ?string $secret, bool $reseller): string
+    {
         $seed = implode('|', [
             $this->isProduction ? 'prod' : 'sandbox',
-            (string) $this->businessShortCode,
-            (string) $this->consumerKey,
-            (string) $this->consumerSecret,
-            $this->usesResellerConfig ? 'reseller' : 'platform',
+            (string) $shortcode,
+            (string) $key,
+            (string) $secret,
+            $reseller ? 'reseller' : 'platform',
         ]);
 
         return 'mpesa_access_token:'.sha1($seed);
+    }
+
+    private function requestAccessToken(?string $key, ?string $secret): ?string
+    {
+        if (empty($key) || empty($secret)) {
+            return null;
+        }
+
+        try {
+            $response = Http::withBasicAuth($key, $secret)
+                ->get("{$this->baseUrl}/oauth/v1/generate?grant_type=client_credentials");
+
+            if ($response->successful()) {
+                Log::info('M-Pesa token generated successfully', [
+                    'environment' => $this->isProduction ? 'production' : 'sandbox',
+                ]);
+
+                return $response->json()['access_token'] ?? null;
+            }
+
+            Log::error('Failed to get M-Pesa access token', [
+                'status_code' => $response->status(),
+                'response' => $response->json(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::error('M-Pesa token generation failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function canFallbackToPlatformCredentials(): bool
+    {
+        return ! empty($this->platformConsumerKey)
+            && ! empty($this->platformConsumerSecret)
+            && ! empty($this->platformBusinessShortCode)
+            && ! empty($this->platformPasskey);
     }
 
     public function getMethod(): string

@@ -7,17 +7,16 @@ use App\Enums\PaymentStatus;
 use App\Http\Requests\InitiateWalletTopupRequest;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Services\ResellerWalletService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Services\ResellerWalletService;
+use Illuminate\Http\Request;
 
 class WalletController extends Controller
 {
     public function __construct(
         protected ResellerWalletService $walletService,
-        protected MpesaService $mpesaService,
     ) {}
 
     public function index()
@@ -70,7 +69,8 @@ class WalletController extends Controller
 
             // Initiate payment based on method
             if ($validated['payment_method'] === 'mpesa') {
-                $result = $this->mpesaService->initiateTopup(
+                $mpesa = new MpesaService($reseller);
+                $result = $mpesa->initiateTopup(
                     $reseller,
                     $validated['amount'],
                     $validated['phone'],
@@ -146,7 +146,8 @@ class WalletController extends Controller
         }
 
         // Check payment status via M-Pesa
-        $result = $this->mpesaService->verify($payment->transaction_reference);
+        $mpesa = new MpesaService(auth()->user());
+        $result = $mpesa->verify($payment->transaction_reference);
 
         // If M-Pesa says payment succeeded, update our records and credit the wallet
         if ($result['status'] === 'completed' && $payment->status !== PaymentStatus::Completed) {

@@ -177,7 +177,7 @@ class PaymentController extends Controller
         }
 
         try {
-            $gateway = $this->gatewayFactory->make('mpesa');
+            $gateway = $this->gatewayFactory->make('mpesa', auth()->user());
             $result = $gateway->verify($payment->transaction_reference);
 
             if ($result['status'] === 'completed') {
