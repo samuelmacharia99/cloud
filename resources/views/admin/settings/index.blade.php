@@ -328,6 +328,9 @@
                                         $callbackBase = 'https://'.substr($callbackBase, 7);
                                     }
                                     $mpesaCallbackUrl = $callbackBase.'/webhooks/c2b'.($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
+                                    $callbackHost = parse_url($callbackBase, PHP_URL_HOST);
+                                    $currentHost = request()->getHost();
+                                    $hasHostMismatch = !empty($callbackHost) && $callbackHost !== $currentHost;
                                 @endphp
                                 <!-- Callback URL Display -->
                                 <div>
@@ -340,6 +343,14 @@
                                             </svg>
                                         </button>
                                     </div>
+                                    <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                                        Uses <code>site_url</code> from General settings: <strong>{{ $callbackBase }}</strong>
+                                    </p>
+                                    @if($hasHostMismatch)
+                                        <p class="text-xs text-red-700 dark:text-red-300 mt-2">
+                                            Warning: You are browsing from <strong>{{ $currentHost }}</strong> but callbacks are configured for <strong>{{ $callbackHost }}</strong>. This mismatch can break M-Pesa callbacks.
+                                        </p>
+                                    @endif
                                 </div>
 
                                 <!-- Environment Selection -->
@@ -403,7 +414,7 @@
                                         </div>
                                         <div>
                                             <p class="font-medium">Testing Callback URL Accessibility</p>
-                                            <code class="block text-xs bg-white dark:bg-slate-900 p-2 rounded mt-1 overflow-auto">curl -v {{ route('payment.mpesa.callback') }}</code>
+                                            <code class="block text-xs bg-white dark:bg-slate-900 p-2 rounded mt-1 overflow-auto">curl -v "{{ $mpesaCallbackUrl }}"</code>
                                         </div>
                                     </div>
                                 </div>
