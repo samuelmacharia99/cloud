@@ -621,16 +621,7 @@ class MpesaService implements PaymentGatewayInterface
      */
     private function buildCallbackUrl(): string
     {
-        $base = trim((string) $this->siteUrl);
-        if ($base === '') {
-            $base = config('app.url');
-        }
-
-        $base = rtrim($base, '/');
-        if ($this->isProduction && str_starts_with($base, 'http://')) {
-            $base = 'https://'.substr($base, 7);
-        }
-
+        $base = $this->resolveCallbackBaseUrl();
         $url = $base.'/webhooks/c2b';
         $token = Setting::getValue('mpesa_callback_token', '');
 
@@ -639,6 +630,45 @@ class MpesaService implements PaymentGatewayInterface
         }
 
         return $url;
+    }
+
+    private function resolveCallbackBaseUrl(): string
+    {
+        $configured = trim((string) $this->siteUrl);
+        if ($configured === '') {
+            $configured = (string) config('app.url');
+        }
+
+        $configured = rtrim($configured, '/');
+        $effective = $configured;
+
+        // In HTTP context, trust the current host to avoid stale site_url misrouting callbacks.
+        if (! app()->runningInConsole()) {
+            try {
+                $request = request();
+                if ($request) {
+                    $runtimeBase = rtrim($request->getSchemeAndHttpHost(), '/');
+                    $configuredHost = parse_url($configured, PHP_URL_HOST);
+                    $runtimeHost = parse_url($runtimeBase, PHP_URL_HOST);
+
+                    if ($runtimeHost && $configuredHost && $runtimeHost !== $configuredHost) {
+                        Log::warning('M-Pesa callback host mismatch detected; using runtime host', [
+                            'configured_base' => $configured,
+                            'runtime_base' => $runtimeBase,
+                        ]);
+                        $effective = $runtimeBase;
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Keep configured fallback if request context is unavailable.
+            }
+        }
+
+        if ($this->isProduction && str_starts_with($effective, 'http://')) {
+            $effective = 'https://'.substr($effective, 7);
+        }
+
+        return rtrim($effective, '/');
     }
 
     /**

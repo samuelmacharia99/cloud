@@ -323,14 +323,18 @@
 
                                 @php
                                     $mpesaCallbackToken = $settings['mpesa_callback_token'] ?? '';
-                                    $callbackBase = rtrim($settings['site_url'] ?? config('app.url'), '/');
+                                    $configuredCallbackBase = rtrim($settings['site_url'] ?? config('app.url'), '/');
+                                    $runtimeCallbackBase = rtrim(request()->getSchemeAndHttpHost(), '/');
+                                    $configuredHost = parse_url($configuredCallbackBase, PHP_URL_HOST);
+                                    $runtimeHost = parse_url($runtimeCallbackBase, PHP_URL_HOST);
+                                    $hasHostMismatch = !empty($configuredHost) && !empty($runtimeHost) && $configuredHost !== $runtimeHost;
+                                    $callbackBase = $hasHostMismatch ? $runtimeCallbackBase : $configuredCallbackBase;
                                     if (($settings['mpesa_environment'] ?? 'sandbox') === 'production' && str_starts_with($callbackBase, 'http://')) {
                                         $callbackBase = 'https://'.substr($callbackBase, 7);
                                     }
                                     $mpesaCallbackUrl = $callbackBase.'/webhooks/c2b'.($mpesaCallbackToken !== '' ? '?token='.urlencode($mpesaCallbackToken) : '');
                                     $callbackHost = parse_url($callbackBase, PHP_URL_HOST);
                                     $currentHost = request()->getHost();
-                                    $hasHostMismatch = !empty($callbackHost) && $callbackHost !== $currentHost;
                                 @endphp
                                 <!-- Callback URL Display -->
                                 <div>
@@ -344,11 +348,11 @@
                                         </button>
                                     </div>
                                     <p class="text-xs text-amber-700 dark:text-amber-300 mt-2">
-                                        Uses <code>site_url</code> from General settings: <strong>{{ $callbackBase }}</strong>
+                                        Configured <code>site_url</code>: <strong>{{ $configuredCallbackBase }}</strong>
                                     </p>
                                     @if($hasHostMismatch)
                                         <p class="text-xs text-red-700 dark:text-red-300 mt-2">
-                                            Warning: You are browsing from <strong>{{ $currentHost }}</strong> but callbacks are configured for <strong>{{ $callbackHost }}</strong>. This mismatch can break M-Pesa callbacks.
+                                            Host mismatch detected. Effective callback host is now forced to current domain <strong>{{ $runtimeCallbackBase }}</strong> for registration and runtime safety.
                                         </p>
                                     @endif
                                 </div>
@@ -887,6 +891,7 @@
                                     },
                                     body: JSON.stringify({
                                         settings: {
+                                            site_url: window.location.origin,
                                             mpesa_environment: environment,
                                             mpesa_register_response_type: responseType
                                         }
