@@ -81,6 +81,20 @@ class SettingsFormSubmissionTest extends TestCase
         $this->assertSame('0', Setting::getValue('mpesa_enabled'));
     }
 
+    public function test_mpesa_registration_response_type_setting_persists(): void
+    {
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'mpesa_environment' => 'production',
+                'mpesa_register_response_type' => 'Cancelled',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+        $this->assertSame('production', Setting::getValue('mpesa_environment'));
+        $this->assertSame('Cancelled', Setting::getValue('mpesa_register_response_type'));
+    }
+
     public function test_node_nameservers_update_accepts_ajax_payload(): void
     {
         $node = Node::factory()->create([

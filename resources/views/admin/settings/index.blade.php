@@ -347,11 +347,11 @@
                                     <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">📍 Target Environment</label>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
-                                            <input type="radio" name="register_environment" value="sandbox" checked class="rounded" />
+                                            <input type="radio" name="register_environment" value="sandbox" @checked(($settings['mpesa_environment'] ?? 'sandbox') === 'sandbox') class="rounded" />
                                             <span class="text-xs text-amber-900 dark:text-amber-100">🧪 Sandbox (Test)</span>
                                         </label>
                                         <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
-                                            <input type="radio" name="register_environment" value="production" class="rounded" />
+                                            <input type="radio" name="register_environment" value="production" @checked(($settings['mpesa_environment'] ?? 'sandbox') === 'production') class="rounded" />
                                             <span class="text-xs text-amber-900 dark:text-amber-100">🚀 Production (Live)</span>
                                         </label>
                                     </div>
@@ -362,11 +362,11 @@
                                     <label class="block text-xs font-medium text-amber-900 dark:text-amber-100 mb-2">⚡ Response Type (if URL unreachable)</label>
                                     <div class="grid grid-cols-2 gap-2">
                                         <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
-                                            <input type="radio" name="register_response_type" value="Completed" checked class="rounded" />
+                                            <input type="radio" name="register_response_type" value="Completed" @checked(($settings['mpesa_register_response_type'] ?? 'Completed') === 'Completed') class="rounded" />
                                             <span class="text-xs text-amber-900 dark:text-amber-100">✅ Auto-Complete</span>
                                         </label>
                                         <label class="flex items-center gap-2 p-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-800 cursor-pointer hover:bg-amber-50 dark:hover:bg-slate-700">
-                                            <input type="radio" name="register_response_type" value="Cancelled" class="rounded" />
+                                            <input type="radio" name="register_response_type" value="Cancelled" @checked(($settings['mpesa_register_response_type'] ?? 'Completed') === 'Cancelled') class="rounded" />
                                             <span class="text-xs text-amber-900 dark:text-amber-100">❌ Auto-Cancel</span>
                                         </label>
                                     </div>
@@ -865,6 +865,32 @@
                             }
 
                             try {
+                                // Keep runtime environment aligned with selected registration target.
+                                const envSave = await fetch('{{ route("admin.settings.update") }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'Accept': 'application/json',
+                                        'X-CSRF-Token': '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest'
+                                    },
+                                    body: JSON.stringify({
+                                        settings: {
+                                            mpesa_environment: environment,
+                                            mpesa_register_response_type: responseType
+                                        }
+                                    })
+                                });
+                                const envData = await envSave.json();
+                                if (!envSave.ok || !envData.success) {
+                                    this.status.registration = {
+                                        type: 'error',
+                                        message: envData.message || 'Failed to save M-Pesa environment before URL registration.'
+                                    };
+                                    this.registering.mpesa = false;
+                                    return;
+                                }
+
                                 const response = await fetch('{{ route("admin.settings.register-mpesa-urls") }}', {
                                     method: 'POST',
                                     headers: {
@@ -886,6 +912,11 @@
                                 };
 
                                 if (data.success) {
+                                    // Reflect saved values in page state immediately.
+                                    const envSelect = document.querySelector('select[name="mpesa_environment"]');
+                                    if (envSelect) {
+                                        envSelect.value = environment;
+                                    }
                                     // Keep success message visible longer
                                     setTimeout(() => { this.status.registration = null; }, 5000);
                                 } else {

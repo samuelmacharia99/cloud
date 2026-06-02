@@ -37,6 +37,7 @@ class SettingController extends Controller
             // M-Pesa
             'mpesa_enabled', 'mpesa_shortcode', 'mpesa_passkey',
             'mpesa_consumer_key', 'mpesa_consumer_secret', 'mpesa_environment', 'mpesa_callback_token',
+            'mpesa_register_response_type',
             // Stripe
             'stripe_enabled', 'stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret',
             // PayPal
