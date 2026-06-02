@@ -166,13 +166,51 @@
                         </div>
 
                         <!-- Card Footer -->
-                        <div class="border-t border-slate-200 dark:border-slate-800 px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex gap-2">
-                            <a href="#" class="flex-1 text-center px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-lg transition">
-                                View
+                        <div class="border-t border-slate-200 dark:border-slate-800 px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex gap-2"
+                             x-data="{ renewing: false, renewYears: '1' }">
+                            <a href="{{ route('reseller.cart.index') }}" class="flex-1 text-center px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-lg transition">
+                                Cart
                             </a>
-                            <a href="#" class="flex-1 text-center px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition">
-                                Renew
-                            </a>
+                            <button type="button"
+                                    @click="async () => {
+                                        renewing = true;
+                                        try {
+                                            const res = await fetch('{{ route('reseller.domains.renew', $domain) }}', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'Content-Type': 'application/json',
+                                                    'Accept': 'application/json',
+                                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                                                },
+                                                body: JSON.stringify({ years: parseInt(renewYears, 10) })
+                                            });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                const badge = document.getElementById('cart-count-badge');
+                                                if (badge) {
+                                                    badge.textContent = data.item_count;
+                                                    badge.classList.remove('hidden');
+                                                }
+                                                window.location.href = data.redirect || '{{ route('reseller.cart.index') }}';
+                                            } else {
+                                                alert(data.message || 'Could not add renewal to cart');
+                                            }
+                                        } catch (e) {
+                                            alert('Error: ' + e.message);
+                                        } finally {
+                                            renewing = false;
+                                        }
+                                    }"
+                                    :disabled="renewing"
+                                    class="flex-1 text-center px-3 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50">
+                                <span x-show="!renewing">Renew</span>
+                                <span x-show="renewing">Adding...</span>
+                            </button>
+                            <select x-model="renewYears" class="w-20 px-2 py-2 text-xs border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+                                @foreach($periods as $period)
+                                    <option value="{{ $period }}">{{ $period }}y</option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
                 @endforeach

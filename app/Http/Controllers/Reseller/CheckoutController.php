@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
 use App\Services\DomainPushService;
+use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerWalletService;
@@ -17,9 +20,12 @@ use Illuminate\Http\Request;
 
 class CheckoutController extends Controller
 {
+    use ResellerDomainAccess;
+
     public function __construct(
         protected ResellerWalletService $walletService,
         protected ResellerInvoicePaymentService $invoicePaymentService,
+        protected DomainRenewalService $renewalService,
     ) {}
 
     public function show()
@@ -35,8 +41,8 @@ class CheckoutController extends Controller
         $subtotal = 0;
 
         foreach ($cart as $key => $item) {
-            if ($item['type'] === 'domain') {
-                $total = $item['price'] * $item['years'];
+            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_renewal'], true)) {
+                $total = CartController::cartItemTotal($item);
                 $subtotal += $total;
                 $items[$key] = array_merge($item, ['total' => $total]);
             }
@@ -80,12 +86,36 @@ class CheckoutController extends Controller
         $subtotal = 0;
         $invoiceItems = [];
         $domainOrders = [];
+        $hasRegistration = false;
+        $hasRenewal = false;
 
         try {
             \DB::beginTransaction();
 
             foreach ($cart as $item) {
+                if (($item['type'] ?? 'domain') === 'domain_renewal') {
+                    $domain = Domain::findOrFail($item['domain_id']);
+                    $this->assertResellerCanManageDomain($domain);
+
+                    $wholesaleAmount = $this->renewalService->wholesaleRenewalAmount($domain, (int) $item['years']);
+                    $subtotal += $wholesaleAmount;
+                    $hasRenewal = true;
+
+                    $renewalOrder = $this->renewalService->initiateResellerRenewal($domain, $reseller, (int) $item['years']);
+
+                    $invoiceItems[] = [
+                        'description' => 'Renew '.$domain->name.$domain->extension.' ('.$item['years'].' year'.($item['years'] > 1 ? 's' : '').')',
+                        'quantity' => 1,
+                        'unit_price' => $wholesaleAmount,
+                        'domain_id' => $domain->id,
+                        'custom_options' => ['renewal_order_id' => $renewalOrder->id],
+                    ];
+
+                    continue;
+                }
+
                 if ($item['type'] === 'domain') {
+                    $hasRegistration = true;
                     $extension = DomainExtension::where('extension', $item['extension'])->first();
 
                     if (! $extension) {
@@ -144,6 +174,12 @@ class CheckoutController extends Controller
             $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
             $total = $subtotal + $tax;
 
+            $invoiceNotes = match (true) {
+                $hasRegistration && $hasRenewal => 'Domain registration and renewal order',
+                $hasRenewal => 'Domain renewal order',
+                default => 'Domain registration order',
+            };
+
             // Create invoice
             $invoice = Invoice::create([
                 'user_id' => $reseller->id,
@@ -153,7 +189,7 @@ class CheckoutController extends Controller
                 'subtotal' => $subtotal,
                 'tax' => $taxEnabled ? $tax : 0,
                 'total' => $total,
-                'notes' => 'Domain registration order',
+                'notes' => $invoiceNotes,
             ]);
 
             // Create invoice items
@@ -162,12 +198,20 @@ class CheckoutController extends Controller
                     'invoice_id' => $invoice->id,
                     'product_id' => null,
                     'product_type' => 'Domain',
+                    'domain_id' => $itemData['domain_id'] ?? null,
                     'description' => $itemData['description'],
                     'quantity' => $itemData['quantity'],
                     'unit_price' => $itemData['unit_price'],
                     'amount' => $itemData['quantity'] * $itemData['unit_price'],
                     'custom_options' => $itemData['custom_options'],
                 ]);
+
+                if (isset($itemData['custom_options']['renewal_order_id'])) {
+                    $renewalOrder = DomainRenewalOrder::find($itemData['custom_options']['renewal_order_id']);
+                    if ($renewalOrder) {
+                        $this->renewalService->linkRenewalToInvoice($renewalOrder, $invoice);
+                    }
+                }
             }
 
             \DB::commit();
@@ -187,6 +231,7 @@ class CheckoutController extends Controller
                     $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice);
                     app(NotificationService::class)->notifyPaymentReceived($invoice);
                     app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+                    $this->processDomainRenewals($invoice);
 
                     return redirect()->route('reseller.invoices.show', $invoice)
                         ->with('success', 'Order placed and paid using your wallet balance.');
@@ -215,5 +260,17 @@ class CheckoutController extends Controller
         $count = Invoice::whereDate('created_at', now())->count() + 1;
 
         return "{$prefix}-{$date}-".str_pad($count, 5, '0', STR_PAD_LEFT);
+    }
+
+    private function processDomainRenewals(Invoice $invoice): void
+    {
+        $renewalOrders = DomainRenewalOrder::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('status', 'invoiced')
+            ->get();
+
+        foreach ($renewalOrders as $order) {
+            app(DomainRenewalService::class)->pushRenewalToAdmin($order);
+        }
     }
 }

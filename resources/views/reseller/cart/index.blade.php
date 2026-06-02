@@ -34,7 +34,12 @@
                             <div class="px-6 py-4 flex justify-between items-center hover:bg-slate-50 dark:hover:bg-slate-800/50 transition">
                                 <div>
                                     <p class="font-semibold text-slate-900 dark:text-white">{{ $item['domain'] }}{{ $item['extension'] }}</p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 flex flex-wrap gap-2">
+                                        @if(($item['type'] ?? 'domain') === 'domain_renewal')
+                                            <span class="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 rounded text-xs font-medium">Renewal</span>
+                                        @else
+                                            <span class="px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300 rounded text-xs font-medium">Registration</span>
+                                        @endif
                                         <span class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                                             {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
                                         </span>

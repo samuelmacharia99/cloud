@@ -7,20 +7,61 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
 class DomainRenewalService
 {
+    public function wholesaleRenewalAmount(Domain $domain, int $years): float
+    {
+        $extension = $domain->domainExtension;
+
+        if (! $extension) {
+            throw new \Exception('Domain extension not configured.');
+        }
+
+        $pricing = $extension->getWholesalePricing($years);
+
+        if (! $pricing) {
+            throw new \Exception("No wholesale renewal pricing for {$domain->extension} ({$years} year(s)).");
+        }
+
+        return (float) ($pricing->renewal_price ?? $pricing->price);
+    }
+
+    public function initiateResellerRenewal(Domain $domain, User $reseller, int $years = 1): DomainRenewalOrder
+    {
+        $amount = $this->wholesaleRenewalAmount($domain, $years);
+
+        return DomainRenewalOrder::create([
+            'domain_id' => $domain->id,
+            'user_id' => $reseller->id,
+            'years' => $years,
+            'amount' => $amount,
+            'status' => 'pending',
+            'expires_at' => now()->addDays(10),
+        ]);
+    }
+
+    public function linkRenewalToInvoice(DomainRenewalOrder $renewalOrder, Invoice $invoice): void
+    {
+        $renewalOrder->update([
+            'invoice_id' => $invoice->id,
+            'status' => 'invoiced',
+            'invoiced_at' => now(),
+        ]);
+    }
+
     public function initiateRenewal(Domain $domain, User $customer, int $years = 1): DomainRenewalOrder
     {
         $extension = $domain->domainExtension;
-        if (!$extension) {
+        if (! $extension) {
             throw new \Exception('Domain extension not found');
         }
 
         $pricing = $extension->getPricingForUser($customer, $years);
-        if (!$pricing) {
+        if (! $pricing) {
             throw new \Exception('No pricing available for this domain extension');
         }
 
@@ -42,26 +83,26 @@ class DomainRenewalService
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
-            $taxEnabled = \App\Models\Setting::getValue('tax_enabled', 'false') === 'true';
+            $taxRate = (float) Setting::getValue('tax_rate', 0);
+            $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
             $tax = $taxEnabled ? round($renewalOrder->amount * $taxRate / 100, 2) : 0;
             $total = $renewalOrder->amount + $tax;
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
-                'invoice_number' => 'INV-' . strtoupper(uniqid()),
+                'invoice_number' => 'INV-'.strtoupper(uniqid()),
                 'status' => 'unpaid',
                 'due_date' => now()->addDays(7),
                 'subtotal' => $renewalOrder->amount,
                 'tax' => $tax,
                 'total' => $total,
-                'notes' => "Domain renewal for {$domain->name}{$domain->extension} ({$renewalOrder->years} year" . ($renewalOrder->years > 1 ? 's' : '') . ")",
+                'notes' => "Domain renewal for {$domain->name}{$domain->extension} ({$renewalOrder->years} year".($renewalOrder->years > 1 ? 's' : '').')',
             ]);
 
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
                 'domain_id' => $domain->id,
-                'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year" . ($renewalOrder->years > 1 ? 's' : ''),
+                'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year".($renewalOrder->years > 1 ? 's' : ''),
                 'quantity' => 1,
                 'unit_price' => $renewalOrder->amount,
                 'amount' => $renewalOrder->amount,
@@ -79,18 +120,22 @@ class DomainRenewalService
 
     public function pushRenewalToAdmin(DomainRenewalOrder $renewalOrder): void
     {
+        if (in_array($renewalOrder->status, ['pushed', 'completed'], true)) {
+            return;
+        }
+
         DB::transaction(function () use ($renewalOrder) {
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $taxRate = (float) \App\Models\Setting::getValue('tax_rate', 0);
-            $taxEnabled = \App\Models\Setting::getValue('tax_enabled', 'false') === 'true';
+            $taxRate = (float) Setting::getValue('tax_rate', 0);
+            $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
             $tax = $taxEnabled ? round($renewalOrder->amount * $taxRate / 100, 2) : 0;
             $total = $renewalOrder->amount + $tax;
 
             $adminOrder = Order::create([
                 'user_id' => $customer->id,
-                'order_number' => 'ORD-' . strtoupper(uniqid()),
+                'order_number' => 'ORD-'.strtoupper(uniqid()),
                 'status' => 'pending',
                 'total' => $total,
                 'notes' => "Domain renewal for {$domain->name}{$domain->extension}",
@@ -98,8 +143,9 @@ class DomainRenewalService
 
             $adminInvoice = Invoice::create([
                 'user_id' => $customer->id,
-                'invoice_number' => 'ADM-INV-' . strtoupper(uniqid()),
+                'invoice_number' => 'ADM-INV-'.strtoupper(uniqid()),
                 'status' => 'unpaid',
+                'due_date' => now()->addDays(7),
                 'subtotal' => $renewalOrder->amount,
                 'tax' => $tax,
                 'total' => $total,
@@ -109,7 +155,7 @@ class DomainRenewalService
             InvoiceItem::create([
                 'invoice_id' => $adminInvoice->id,
                 'domain_id' => $domain->id,
-                'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year" . ($renewalOrder->years > 1 ? 's' : ''),
+                'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year".($renewalOrder->years > 1 ? 's' : ''),
                 'quantity' => 1,
                 'unit_price' => $renewalOrder->amount,
                 'amount' => $renewalOrder->amount,
@@ -135,7 +181,7 @@ class DomainRenewalService
 
             if ($adminNotes) {
                 $notes = $domain->notes ?? [];
-                if (!is_array($notes)) {
+                if (! is_array($notes)) {
                     $notes = [];
                 }
                 $notes[] = [

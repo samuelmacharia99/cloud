@@ -44,13 +44,20 @@
 
             <!-- Order Items -->
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domains to Register</h2>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Orders</h2>
                 <div class="space-y-4">
                     @foreach($items as $item)
                         <div class="flex justify-between items-start p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                             <div>
                                 <p class="font-semibold text-slate-900 dark:text-white">{{ $item['domain'] }}{{ $item['extension'] }}</p>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">{{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                    @if(($item['type'] ?? 'domain') === 'domain_renewal')
+                                        <span class="text-amber-700 dark:text-amber-300 font-medium">Renewal</span> ·
+                                    @else
+                                        <span class="text-emerald-700 dark:text-emerald-300 font-medium">Registration</span> ·
+                                    @endif
+                                    {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
+                                </p>
                             </div>
                             <div class="text-right">
                                 <p class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($item['total'], 2) }}</p>

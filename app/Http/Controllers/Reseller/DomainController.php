@@ -2,16 +2,22 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
+use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
 use App\Models\DomainExtension;
-use App\Models\DomainPricing;
-use App\Models\ResellerDomainPricing;
 use App\Models\Service;
+use App\Services\DomainRenewalService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class DomainController extends Controller
 {
+    use ResellerDomainAccess;
+
+    public function __construct(
+        protected DomainRenewalService $renewalService,
+    ) {}
+
     /**
      * List all domains owned by the reseller
      */
@@ -28,29 +34,21 @@ class DomainController extends Controller
         // Also include domains where reseller_id = $resellerId (manually added domains)
         $domains = Domain::where(function ($q) use ($resellerId, $customerIds) {
             $q->where('user_id', $resellerId)
-              ->orWhereIn('user_id', $customerIds)
-              ->orWhere('reseller_id', $resellerId);
+                ->orWhereIn('user_id', $customerIds)
+                ->orWhere('reseller_id', $resellerId);
         })
             ->with('domainExtension', 'user')
             ->orderByDesc('created_at')
             ->paginate(12);
 
-        // Debug info
-        \Log::info('Reseller domains page', [
-            'reseller_id' => $resellerId,
-            'customer_ids' => $customerIds->toArray(),
-            'domains_count' => $domains->total(),
-            'domains' => $domains->map(fn($d) => $d->name . $d->extension)->toArray(),
-        ]);
-
         // Get enabled domain extensions with wholesale and reseller pricing
         $extensions = DomainExtension::with([
-            'pricing' => fn($q) => $q->where('tier', 'wholesale'),
-            'resellerPricing' => fn($q) => $q->where('reseller_id', $resellerId),
+            'pricing' => fn ($q) => $q->where('tier', 'wholesale'),
+            'resellerPricing' => fn ($q) => $q->where('reseller_id', $resellerId),
         ])
-        ->where('enabled', true)
-        ->orderBy('extension')
-        ->get();
+            ->where('enabled', true)
+            ->orderBy('extension')
+            ->get();
 
         // Default period for pricing display
         $selectedPeriod = $request->get('period', 1);
@@ -78,10 +76,69 @@ class DomainController extends Controller
 
         $price = $wholesalePricing?->price ?? 0;
 
+        $renewalPricing = $extension->pricing()
+            ->where('tier', 'wholesale')
+            ->where('period_years', $period)
+            ->first();
+
+        $renewalPrice = $renewalPricing
+            ? (float) ($renewalPricing->renewal_price ?? $renewalPricing->price)
+            : 0;
+
         return response()->json([
             'price' => $price,
+            'renewal_price' => $renewalPrice,
             'currency' => 'KES',
             'available' => $price > 0,
         ]);
+    }
+
+    public function addRenewalToCart(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $validated = $request->validate([
+            'years' => 'required|integer|min:1|max:10',
+        ]);
+
+        try {
+            $years = (int) $validated['years'];
+            $amount = $this->renewalService->wholesaleRenewalAmount($domain, $years);
+            $cart = session()->get(CartController::CART_KEY, []);
+
+            foreach ($cart as $item) {
+                if (($item['type'] ?? 'domain') === 'domain_renewal' && (int) ($item['domain_id'] ?? 0) === $domain->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This domain is already in your cart for renewal.',
+                    ], 422);
+                }
+            }
+
+            $key = uniqid('renew_', true);
+            $cart[$key] = [
+                'type' => 'domain_renewal',
+                'domain_id' => $domain->id,
+                'domain' => $domain->name,
+                'extension' => $domain->extension,
+                'years' => $years,
+                'price' => $amount,
+                'added_at' => now()->toIso8601String(),
+            ];
+
+            session()->put(CartController::CART_KEY, $cart);
+
+            return response()->json([
+                'success' => true,
+                'item_count' => count($cart),
+                'message' => 'Domain renewal added to cart',
+                'redirect' => route('reseller.cart.index'),
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
     }
 }

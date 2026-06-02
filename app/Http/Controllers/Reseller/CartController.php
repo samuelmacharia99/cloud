@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Reseller;
 
-use App\Models\DomainExtension;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Setting;
+use Illuminate\Http\Request;
 
 class CartController extends Controller
 {
@@ -17,15 +17,15 @@ class CartController extends Controller
         $subtotal = 0;
 
         foreach ($cart as $key => $item) {
-            if ($item['type'] === 'domain') {
-                $total = $item['price'] * $item['years'];
+            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_renewal'], true)) {
+                $total = $this->cartItemTotal($item);
                 $subtotal += $total;
                 $items[$key] = array_merge($item, ['total' => $total]);
             }
         }
 
-        $taxEnabled = \App\Models\Setting::getValue('tax_enabled') === 'true';
-        $taxRate = $taxEnabled ? (float) \App\Models\Setting::getValue('tax_rate', 0) : 0;
+        $taxEnabled = Setting::getValue('tax_enabled') === 'true';
+        $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
         $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
         $total = $subtotal + $tax;
 
@@ -78,5 +78,14 @@ class CartController extends Controller
 
         return redirect()->route('reseller.cart.index')
             ->with('success', 'Cart cleared');
+    }
+
+    public static function cartItemTotal(array $item): float
+    {
+        if (($item['type'] ?? 'domain') === 'domain_renewal') {
+            return (float) $item['price'];
+        }
+
+        return (float) $item['price'] * (int) $item['years'];
     }
 }

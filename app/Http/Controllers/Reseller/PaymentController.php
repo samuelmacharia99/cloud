@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Reseller;
 use App\Enums\PaymentStatus;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Service;
 use App\Services\DomainPushService;
+use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerInvoicePaymentService;
@@ -350,6 +352,7 @@ class PaymentController extends Controller
             app(NotificationService::class)->notifyPaymentReceived($invoice);
 
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+            $this->processDomainRenewals($invoice);
 
             foreach ($invoice->items as $item) {
                 if ($item->service_id) {
@@ -376,6 +379,27 @@ class PaymentController extends Controller
                 'error' => $e->getMessage(),
             ]);
             throw $e;
+        }
+    }
+
+    private function processDomainRenewals(Invoice $invoice): void
+    {
+        try {
+            $renewalOrders = DomainRenewalOrder::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('status', 'invoiced')
+                ->get();
+
+            $renewalService = app(DomainRenewalService::class);
+
+            foreach ($renewalOrders as $order) {
+                $renewalService->pushRenewalToAdmin($order);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to process domain renewals after reseller payment', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }

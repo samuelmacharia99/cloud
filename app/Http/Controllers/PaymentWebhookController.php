@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DomainRenewalOrder;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Services\DomainPushService;
+use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\Provisioning\InvoiceProvisioningService;
@@ -88,6 +90,7 @@ class PaymentWebhookController extends Controller
             $invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
             app(NotificationService::class)->notifyPaymentReceived($payment);
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+            $this->processResellerDomainRenewals($invoice);
 
             Log::info('Reseller invoice payment handled via M-Pesa callback', [
                 'payment_id' => $payment->id,
@@ -107,6 +110,27 @@ class PaymentWebhookController extends Controller
             app('domain-push-service')->handlePaidDomainInvoice($invoice);
         } catch (\Exception $e) {
             Log::error('Reseller customer domain order processing failed from webhook', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function processResellerDomainRenewals($invoice): void
+    {
+        try {
+            $renewalOrders = DomainRenewalOrder::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('status', 'invoiced')
+                ->get();
+
+            $renewalService = app(DomainRenewalService::class);
+
+            foreach ($renewalOrders as $order) {
+                $renewalService->pushRenewalToAdmin($order);
+            }
+        } catch (\Exception $e) {
+            Log::error('Reseller domain renewal push failed from webhook', [
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
             ]);
