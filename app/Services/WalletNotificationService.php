@@ -130,12 +130,16 @@ class WalletNotificationService
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {
             $company = $this->brandingResolver->forReseller($reseller)['company_name'];
-            $this->emailDelivery->sendTemplated($reseller, $event, [
-                'reseller_name' => $reseller->name,
-                'amount' => number_format((float) $transaction->amount, 2).' KES',
-                'balance' => number_format((float) $transaction->balance_after, 2).' KES',
-                'site_name' => $company,
-            ]);
+            try {
+                $this->emailDelivery->sendTemplated($reseller, $event, [
+                    'reseller_name' => $reseller->name,
+                    'amount' => number_format((float) $transaction->amount, 2).' KES',
+                    'balance' => number_format((float) $transaction->balance_after, 2).' KES',
+                    'site_name' => $company,
+                ]);
+            } catch (\Throwable $e) {
+                \Log::warning("Failed to send topup email to reseller {$reseller->id}: {$e->getMessage()}");
+            }
         }
     }
 

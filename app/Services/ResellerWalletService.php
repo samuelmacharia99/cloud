@@ -197,7 +197,7 @@ class ResellerWalletService
         try {
             app(WalletNotificationService::class)->sendTopupConfirmation($transaction);
         } catch (\Throwable $e) {
-            Log::error('Wallet top-up notification failed after successful credit', [
+            Log::warning('Wallet top-up notification failed after successful credit', [
                 'payment_id' => $payment->id,
                 'wallet_id' => $transaction->wallet_id ?? null,
                 'error' => $e->getMessage(),
