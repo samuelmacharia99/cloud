@@ -384,6 +384,7 @@ class SettingController extends Controller
             return back()->with('success', $message);
         } catch (\Swift_TransportException $e) {
             $errorMsg = 'SMTP Connection Error: '.$e->getMessage();
+            $errorMsg .= $this->smtpTroubleshootingHint($e->getMessage(), $smtpHost, $smtpPort, $smtpUser);
             \Log::error('SMTP Test Failed - Connection Error', [
                 'host' => $smtpHost,
                 'port' => $smtpPort,
@@ -408,6 +409,7 @@ class SettingController extends Controller
             return back()->with('error', $errorMsg);
         } catch (\Exception $e) {
             $errorMsg = 'Failed to send test email: '.$e->getMessage();
+            $errorMsg .= $this->smtpTroubleshootingHint($e->getMessage(), $smtpHost, $smtpPort, $smtpUser);
             \Log::error('SMTP Test Failed', [
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
@@ -430,6 +432,46 @@ class SettingController extends Controller
 
             return back()->with('error', $errorMsg);
         }
+    }
+
+    private function smtpTroubleshootingHint(string $rawMessage, ?string $host, ?string $port, ?string $username): string
+    {
+        $message = strtolower($rawMessage);
+        $hostLower = strtolower((string) $host);
+        $username = (string) $username;
+        $hints = [];
+
+        if (str_contains($message, '535') || str_contains($message, 'authentication failed') || str_contains($message, 'failed to authenticate')) {
+            $hints[] = 'Authentication failed (535): verify SMTP username and password.';
+            $hints[] = 'For Zoho with 2FA enabled, use an app-specific password (not your login password).';
+            $hints[] = 'Use full mailbox email as SMTP username (example: sales@talksasa.com).';
+        }
+
+        if ($hostLower === 'smtp.zoho.com' || $hostLower === 'smtppro.zoho.com') {
+            if ((string) $port === '587') {
+                $hints[] = 'Zoho on port 587 should use TLS.';
+            } elseif ((string) $port === '465') {
+                $hints[] = 'Zoho on port 465 should use SSL.';
+            } else {
+                $hints[] = 'For Zoho, recommended ports are 587 (TLS) or 465 (SSL).';
+            }
+
+            if ($hostLower === 'smtppro.zoho.com') {
+                $hints[] = 'smtppro.zoho.com is for paid/domain mailboxes.';
+            } else {
+                $hints[] = 'smtp.zoho.com is for personal/free mailboxes.';
+            }
+        }
+
+        if ($username !== '' && ! filter_var($username, FILTER_VALIDATE_EMAIL)) {
+            $hints[] = 'SMTP username should be a full email address.';
+        }
+
+        if (empty($hints)) {
+            return '';
+        }
+
+        return ' | Quick checks: '.implode(' ', array_unique($hints));
     }
 
     public function testSms(Request $request)
