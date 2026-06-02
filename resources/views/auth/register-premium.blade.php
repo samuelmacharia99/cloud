@@ -152,6 +152,12 @@
                 I agree to the <a href="{{ route('terms') }}" target="_blank" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Terms of Service</a> and <a href="{{ route('privacy') }}" target="_blank" class="text-purple-600 dark:text-purple-400 hover:underline transition font-semibold">Privacy Policy</a>
             </label>
         </div>
+        @error('agree')
+            <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+        @enderror
+        @error('registration_token')
+            <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+        @enderror
 
         <!-- Sign Up Button -->
         <button type="submit" class="auth-btn-primary mt-2">

@@ -48,4 +48,25 @@ class RegistrationTest extends TestCase
         $this->assertNull($user->email_verified_at);
         $this->assertSame('inactive', $user->status);
     }
+
+    public function test_signup_requires_all_critical_fields(): void
+    {
+        $response = $this->from('/register')->post('/register', [
+            'name' => '',
+            'email' => '',
+            'password' => '',
+            'password_confirmation' => '',
+            'agree' => '',
+            'registration_token' => '',
+        ]);
+
+        $response->assertRedirect('/register');
+        $response->assertSessionHasErrors([
+            'name',
+            'email',
+            'password',
+            'agree',
+            'registration_token',
+        ]);
+    }
 }
