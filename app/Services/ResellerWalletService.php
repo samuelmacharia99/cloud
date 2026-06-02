@@ -36,7 +36,7 @@ class ResellerWalletService
         return $this->db->transaction(function () use ($reseller, $amount, $description, $paymentId) {
             $wallet = $this->getOrCreate($reseller);
 
-            $wallet = $wallet->lockForUpdate()->first() ?? $wallet;
+            $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();
 
             $balanceBefore = $wallet->balance;
             $balanceAfter = $balanceBefore + $amount;

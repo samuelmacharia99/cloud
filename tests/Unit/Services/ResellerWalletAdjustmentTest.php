@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Exceptions\InsufficientFundsException;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
@@ -29,7 +30,7 @@ class ResellerWalletAdjustmentTest extends TestCase
 
         app(ResellerWalletService::class)->adjust($reseller, 1000, 'Initial test credit from admin', $admin);
 
-        $this->expectException(\App\Exceptions\InsufficientFundsException::class);
+        $this->expectException(InsufficientFundsException::class);
 
         app(ResellerWalletService::class)->adjust($reseller, -2000, 'Attempt overdraft deduction', $admin);
     }
@@ -89,5 +90,56 @@ class ResellerWalletAdjustmentTest extends TestCase
             'reference_type' => 'Payment',
         ]);
         $this->assertSame('paid', $invoice->fresh()->status->value);
+    }
+
+    public function test_process_topup_payment_credits_the_paying_reseller_wallet_not_the_first_wallet_row(): void
+    {
+        $firstReseller = User::factory()->reseller()->create();
+        $payingReseller = User::factory()->reseller()->create();
+
+        app(ResellerWalletService::class)->getOrCreate($firstReseller);
+        app(ResellerWalletService::class)->getOrCreate($payingReseller);
+
+        $invoice = Invoice::create([
+            'user_id' => $payingReseller->id,
+            'invoice_number' => 'TOPUP-'.strtoupper(uniqid()),
+            'status' => 'unpaid',
+            'due_date' => now()->addDays(7),
+            'subtotal' => 250,
+            'tax' => 0,
+            'total' => 250,
+        ]);
+
+        $payment = Payment::create([
+            'user_id' => $payingReseller->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 250,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'payment_purpose' => 'wallet_topup',
+            'transaction_reference' => 'TEST-TOPUP-MULTI-'.uniqid(),
+            'status' => 'completed',
+            'paid_at' => now(),
+        ]);
+
+        $mock = Mockery::mock(WalletNotificationService::class);
+        $mock->shouldReceive('sendTopupConfirmation')->once();
+        $this->app->instance(WalletNotificationService::class, $mock);
+
+        app(ResellerWalletService::class)->processTopupPayment($payment);
+
+        $firstWallet = $firstReseller->fresh()->wallet;
+        $payingWallet = $payingReseller->fresh()->wallet;
+
+        $this->assertNotNull($firstWallet);
+        $this->assertNotNull($payingWallet);
+        $this->assertSame(0.0, (float) $firstWallet->balance);
+        $this->assertSame(250.0, (float) $payingWallet->balance);
+        $this->assertDatabaseHas('wallet_transactions', [
+            'wallet_id' => $payingWallet->id,
+            'type' => 'deposit',
+            'reference_id' => $payment->id,
+            'reference_type' => 'Payment',
+        ]);
     }
 }
