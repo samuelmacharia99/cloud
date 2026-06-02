@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Services\ResellerAnalyticsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class DashboardController extends Controller
 {
@@ -34,13 +35,34 @@ class DashboardController extends Controller
     {
         // Key Metrics
         $totalCustomers = User::where('is_admin', false)->count();
-        $activeServices = Service::where('status', 'active')->count();
-        $totalServices = Service::count();
-        $suspendedServices = Service::where('status', 'suspended')->count();
-        $unpaidInvoiceTotal = Invoice::where('status', 'unpaid')->sum('total');
-        $overdueInvoiceTotal = Invoice::where('status', 'overdue')->sum('total');
-        $totalRevenue = Payment::where('status', 'completed')->sum('amount');
-        $pendingPayments = Payment::where('status', 'pending')->sum('amount');
+        $serviceStatusCounts = Service::query()
+            ->select('status', DB::raw('COUNT(*) as count'))
+            ->whereIn('status', ['active', 'suspended', 'terminated', 'cancelled'])
+            ->groupBy('status')
+            ->pluck('count', 'status');
+        $invoiceStatusCounts = Invoice::query()
+            ->select('status', DB::raw('COUNT(*) as count'))
+            ->whereIn('status', ['unpaid', 'paid', 'overdue', 'cancelled'])
+            ->groupBy('status')
+            ->pluck('count', 'status');
+        $invoiceStatusSums = Invoice::query()
+            ->select('status', DB::raw('SUM(total) as total'))
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->groupBy('status')
+            ->pluck('total', 'status');
+        $paymentStatusSums = Payment::query()
+            ->select('status', DB::raw('SUM(amount) as total'))
+            ->whereIn('status', ['completed', 'pending'])
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $activeServices = (int) ($serviceStatusCounts['active'] ?? 0);
+        $totalServices = (int) $serviceStatusCounts->sum();
+        $suspendedServices = (int) ($serviceStatusCounts['suspended'] ?? 0);
+        $unpaidInvoiceTotal = (float) ($invoiceStatusSums['unpaid'] ?? 0);
+        $overdueInvoiceTotal = (float) ($invoiceStatusSums['overdue'] ?? 0);
+        $totalRevenue = (float) ($paymentStatusSums['completed'] ?? 0);
+        $pendingPayments = (float) ($paymentStatusSums['pending'] ?? 0);
         $openTickets = Ticket::where('status', '!=', 'closed')->count();
         $urgentTickets = Ticket::where('status', '!=', 'closed')->where('priority', 'urgent')->count();
 
@@ -53,27 +75,31 @@ class DashboardController extends Controller
 
         // Status Breakdown
         $serviceStatus = [
-            'active' => Service::where('status', 'active')->count(),
-            'suspended' => Service::where('status', 'suspended')->count(),
-            'terminated' => Service::where('status', 'terminated')->count(),
-            'cancelled' => Service::where('status', 'cancelled')->count(),
+            'active' => (int) ($serviceStatusCounts['active'] ?? 0),
+            'suspended' => (int) ($serviceStatusCounts['suspended'] ?? 0),
+            'terminated' => (int) ($serviceStatusCounts['terminated'] ?? 0),
+            'cancelled' => (int) ($serviceStatusCounts['cancelled'] ?? 0),
         ];
 
         $invoiceStatus = [
-            'unpaid' => Invoice::where('status', 'unpaid')->count(),
-            'paid' => Invoice::where('status', 'paid')->count(),
-            'overdue' => Invoice::where('status', 'overdue')->count(),
-            'cancelled' => Invoice::where('status', 'cancelled')->count(),
+            'unpaid' => (int) ($invoiceStatusCounts['unpaid'] ?? 0),
+            'paid' => (int) ($invoiceStatusCounts['paid'] ?? 0),
+            'overdue' => (int) ($invoiceStatusCounts['overdue'] ?? 0),
+            'cancelled' => (int) ($invoiceStatusCounts['cancelled'] ?? 0),
         ];
 
         // Revenue Data (last 30 days)
         $revenueData = [];
+        $thirtyDayStart = now()->subDays(29)->startOfDay();
+        $dailyRevenue = Payment::query()
+            ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
+            ->where('status', 'completed')
+            ->where('created_at', '>=', $thirtyDayStart)
+            ->groupBy('day')
+            ->pluck('total', 'day');
         for ($i = 29; $i >= 0; $i--) {
-            $date = now()->subDays($i);
-            $revenue = Payment::where('status', 'completed')
-                ->whereDate('created_at', $date->toDateString())
-                ->sum('amount');
-            $revenueData[] = $revenue;
+            $day = now()->subDays($i)->toDateString();
+            $revenueData[] = (float) ($dailyRevenue[$day] ?? 0);
         }
 
         // Top Products
@@ -88,12 +114,16 @@ class DashboardController extends Controller
 
         // Recent Signups (last 7 days)
         $signupData = [];
+        $signupStart = now()->subDays(6)->startOfDay();
+        $dailySignups = User::query()
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as total')
+            ->where('is_admin', false)
+            ->where('created_at', '>=', $signupStart)
+            ->groupBy('day')
+            ->pluck('total', 'day');
         for ($i = 6; $i >= 0; $i--) {
-            $date = now()->subDays($i);
-            $signups = User::where('is_admin', false)
-                ->whereDate('created_at', $date->toDateString())
-                ->count();
-            $signupData[] = $signups;
+            $day = now()->subDays($i)->toDateString();
+            $signupData[] = (int) ($dailySignups[$day] ?? 0);
         }
 
         return view('dashboard.admin', [

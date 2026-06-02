@@ -3,14 +3,17 @@
 @php
     use App\Models\Currency;
     use App\Models\Setting;
+    use Illuminate\Support\Facades\Cache;
 
     // Use provided currency or get the selected currency from settings
     if ($currency === null) {
         $currency = Setting::getValue('currency', 'KES');
     }
 
-    // Get the currency model to get the symbol
-    $currencyModel = Currency::where('code', $currency)->first();
+    // Cache currency lookup to avoid repeated DB queries in tables/lists.
+    $currencyModel = Cache::remember("currency:formatter:{$currency}", 300, function () use ($currency) {
+        return Currency::where('code', $currency)->first();
+    });
     $symbol = $currencyModel?->symbol ?? $currency;
 
     $displayAmount = (float) $amount;

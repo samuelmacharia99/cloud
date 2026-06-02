@@ -62,7 +62,7 @@ class ProductController extends Controller
 
     public function show(Product $product)
     {
-        $product->load('services');
+        $product->load('services.user');
 
         // Get currency info
         $currencyCode = Setting::getValue('currency', 'KES');
