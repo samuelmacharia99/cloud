@@ -330,7 +330,9 @@
                 </div>
             @endif
 
-            @php($hostingCredentials = $service->getHostingCredentials())
+            @php
+                $hostingCredentials = $service->getHostingCredentials();
+            @endphp
             @if ($service->isSharedHosting() && $hostingCredentials)
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                     <div class="flex items-center justify-between mb-4">
