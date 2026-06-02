@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\WalletTransaction;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Log;
 
 class ResellerWalletService
 {
@@ -173,7 +174,7 @@ class ResellerWalletService
 
     public function processTopupPayment(Payment $payment): void
     {
-        $this->db->transaction(function () use ($payment) {
+        $transaction = $this->db->transaction(function () use ($payment) {
             $reseller = $payment->user;
 
             $transaction = $this->credit(
@@ -187,9 +188,30 @@ class ResellerWalletService
                 $payment->invoice->update(['status' => 'paid']);
             }
 
-            app(WalletNotificationService::class)->sendTopupConfirmation($transaction);
-
-            $this->processQueuedOrdersAfterTopup($reseller);
+            return $transaction;
         });
+
+        $reseller = $payment->user;
+
+        // Non-critical follow-up actions should not rollback wallet crediting.
+        try {
+            app(WalletNotificationService::class)->sendTopupConfirmation($transaction);
+        } catch (\Throwable $e) {
+            Log::error('Wallet top-up notification failed after successful credit', [
+                'payment_id' => $payment->id,
+                'wallet_id' => $transaction->wallet_id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $this->processQueuedOrdersAfterTopup($reseller);
+        } catch (\Throwable $e) {
+            Log::error('Queued order processing failed after wallet top-up credit', [
+                'payment_id' => $payment->id,
+                'reseller_id' => $reseller->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
