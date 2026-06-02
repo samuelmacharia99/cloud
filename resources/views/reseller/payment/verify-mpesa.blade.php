@@ -26,13 +26,15 @@
                 </p>
             </div>
 
-            <div x-data="{ checking: true, message: 'Waiting for payment confirmation...', completed: false, failed: false }"
+            <div x-data="{ checking: true, message: 'Waiting for payment confirmation...', completed: false, failed: false, checkoutRequestId: '{{ $checkoutRequestId }}' }"
                  x-init="async function() {
                      let attempts = 0;
                      const maxAttempts = 120; // 2 minutes
                      while (this.checking && attempts < maxAttempts) {
                          try {
-                             const res = await fetch('{{ route('reseller.payment.mpesa-status', $invoice) }}');
+                             const statusUrl = new URL('{{ route('reseller.payment.mpesa-status', $invoice) }}', window.location.origin);
+                             statusUrl.searchParams.set('checkout_request_id', this.checkoutRequestId);
+                             const res = await fetch(statusUrl.toString());
                              const data = await res.json();
 
                              if (data.status === 'completed') {

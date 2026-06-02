@@ -73,6 +73,10 @@ class MpesaService implements PaymentGatewayInterface
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
         try {
+            if (! $this->isConfigured()) {
+                throw new \Exception('M-Pesa is not configured');
+            }
+
             $phone = $this->sanitizePhone($customerData['phone'] ?? '');
             $chargeAmount = (float) ($customerData['charge_amount'] ?? $invoice->amountDue());
             $token = $this->getAccessToken();
@@ -118,6 +122,23 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $data = $response->json();
+            $responseCode = (string) ($data['ResponseCode'] ?? '');
+            $checkoutRequestId = $data['CheckoutRequestID'] ?? null;
+
+            if ($responseCode !== '0' || empty($checkoutRequestId)) {
+                Log::warning('M-Pesa STK Push rejected', [
+                    'invoice_id' => $invoice->id,
+                    'response_code' => $responseCode,
+                    'checkout_request_id' => $checkoutRequestId,
+                    'response' => $data,
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => $data['ResponseDescription'] ?? $data['errorMessage'] ?? 'M-Pesa request was not accepted.',
+                    'response_code' => $responseCode,
+                ];
+            }
 
             Payment::create([
                 'user_id' => $invoice->user_id,
@@ -125,19 +146,19 @@ class MpesaService implements PaymentGatewayInterface
                 'amount' => $chargeAmount,
                 'currency' => 'KES',
                 'payment_method' => 'mpesa',
-                'transaction_reference' => $data['CheckoutRequestID'] ?? null,
+                'transaction_reference' => $checkoutRequestId,
                 'status' => 'pending',
                 'notes' => json_encode([
-                    'response_code' => $data['ResponseCode'] ?? null,
-                    'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
+                    'response_code' => $responseCode,
+                    'checkout_request_id' => $checkoutRequestId,
                 ]),
             ]);
 
             return [
                 'success' => true,
                 'message' => 'Please check your phone for M-Pesa prompt',
-                'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
-                'response_code' => $data['ResponseCode'] ?? null,
+                'checkout_request_id' => $checkoutRequestId,
+                'response_code' => $responseCode,
             ];
         } catch (\Exception $e) {
             Log::error('M-Pesa initiate failed', [
@@ -158,6 +179,10 @@ class MpesaService implements PaymentGatewayInterface
     public function verify(string $transactionReference): array
     {
         try {
+            if (! $this->isConfigured()) {
+                throw new \Exception('M-Pesa is not configured');
+            }
+
             $token = $this->getAccessToken();
             if (! $token) {
                 throw new \Exception('Failed to get access token');
@@ -216,9 +241,18 @@ class MpesaService implements PaymentGatewayInterface
             $resultCode = $data['ResultCode'] ?? null;
             $isSuccessful = $resultCode === '0';
 
+            if ($isSuccessful) {
+                return [
+                    'success' => true,
+                    'status' => 'completed',
+                    'response_code' => $resultCode,
+                    'message' => $data['ResultDesc'] ?? 'Payment completed',
+                ];
+            }
+
             return [
-                'success' => $isSuccessful,
-                'status' => $isSuccessful ? 'completed' : 'pending',
+                'success' => false,
+                'status' => 'failed',
                 'response_code' => $resultCode,
                 'message' => $data['ResultDesc'] ?? 'No message',
             ];
@@ -417,6 +451,10 @@ class MpesaService implements PaymentGatewayInterface
     public function initiateTopup(User $reseller, float $amount, string $phone, Invoice $topupInvoice): array
     {
         try {
+            if (! $this->isConfigured()) {
+                throw new \Exception('M-Pesa is not configured');
+            }
+
             $phone = $this->sanitizePhone($phone);
             $token = $this->getAccessToken();
 
@@ -461,6 +499,23 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $data = $response->json();
+            $responseCode = (string) ($data['ResponseCode'] ?? '');
+            $checkoutRequestId = $data['CheckoutRequestID'] ?? null;
+
+            if ($responseCode !== '0' || empty($checkoutRequestId)) {
+                Log::warning('M-Pesa wallet topup STK Push rejected', [
+                    'reseller_id' => $reseller->id,
+                    'response_code' => $responseCode,
+                    'checkout_request_id' => $checkoutRequestId,
+                    'response' => $data,
+                ]);
+
+                return [
+                    'success' => false,
+                    'message' => $data['ResponseDescription'] ?? $data['errorMessage'] ?? 'M-Pesa request was not accepted.',
+                    'response_code' => $responseCode,
+                ];
+            }
 
             Payment::create([
                 'user_id' => $reseller->id,
@@ -469,19 +524,19 @@ class MpesaService implements PaymentGatewayInterface
                 'currency' => 'KES',
                 'payment_method' => 'mpesa',
                 'payment_purpose' => 'wallet_topup',
-                'transaction_reference' => $data['CheckoutRequestID'] ?? null,
+                'transaction_reference' => $checkoutRequestId,
                 'status' => 'pending',
                 'notes' => json_encode([
-                    'response_code' => $data['ResponseCode'] ?? null,
-                    'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
+                    'response_code' => $responseCode,
+                    'checkout_request_id' => $checkoutRequestId,
                 ]),
             ]);
 
             return [
                 'success' => true,
                 'message' => 'Please check your phone for M-Pesa prompt',
-                'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
-                'response_code' => $data['ResponseCode'] ?? null,
+                'checkout_request_id' => $checkoutRequestId,
+                'response_code' => $responseCode,
             ];
         } catch (\Exception $e) {
             Log::error('M-Pesa wallet topup initiate failed', [
@@ -501,7 +556,9 @@ class MpesaService implements PaymentGatewayInterface
      */
     private function getAccessToken(): ?string
     {
-        return Cache::remember('mpesa_access_token', 55 * 60, function () {
+        $cacheKey = $this->tokenCacheKey();
+
+        return Cache::remember($cacheKey, 55 * 60, function () {
             try {
                 $response = Http::withBasicAuth($this->consumerKey, $this->consumerSecret)
                     ->get("{$this->baseUrl}/oauth/v1/generate?grant_type=client_credentials");
@@ -533,7 +590,17 @@ class MpesaService implements PaymentGatewayInterface
      */
     private function buildCallbackUrl(): string
     {
-        $url = rtrim($this->siteUrl, '/').'/webhooks/c2b';
+        $base = trim((string) $this->siteUrl);
+        if ($base === '') {
+            $base = config('app.url');
+        }
+
+        $base = rtrim($base, '/');
+        if ($this->isProduction && str_starts_with($base, 'http://')) {
+            $base = 'https://'.substr($base, 7);
+        }
+
+        $url = $base.'/webhooks/c2b';
         $token = Setting::getValue('mpesa_callback_token', '');
 
         if ($token !== '') {
@@ -740,6 +807,19 @@ class MpesaService implements PaymentGatewayInterface
         }
 
         return '254'.$phone;
+    }
+
+    private function tokenCacheKey(): string
+    {
+        $seed = implode('|', [
+            $this->isProduction ? 'prod' : 'sandbox',
+            (string) $this->businessShortCode,
+            (string) $this->consumerKey,
+            (string) $this->consumerSecret,
+            $this->usesResellerConfig ? 'reseller' : 'platform',
+        ]);
+
+        return 'mpesa_access_token:'.sha1($seed);
     }
 
     public function getMethod(): string

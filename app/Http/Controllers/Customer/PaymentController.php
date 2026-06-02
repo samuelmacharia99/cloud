@@ -193,6 +193,22 @@ class PaymentController extends Controller
                     ->with('success', 'Payment received successfully!');
             }
 
+            if (($result['status'] ?? null) === 'failed') {
+                $payment = Payment::where('transaction_reference', $checkoutRequestId)->first();
+                if ($payment && $payment->status->value !== 'failed') {
+                    $payment->update([
+                        'status' => 'failed',
+                        'notes' => json_encode([
+                            'result_desc' => $result['message'] ?? 'Payment failed',
+                            'result_code' => $result['response_code'] ?? null,
+                        ]),
+                    ]);
+                }
+
+                return redirect()->route('customer.payment.select-method', $invoice)
+                    ->with('error', $result['message'] ?? 'Payment was cancelled or failed.');
+            }
+
             // Still pending, show checking page
             return view('customer.payment.mpesa-verify', [
                 'invoice' => $invoice,
@@ -828,6 +844,24 @@ class PaymentController extends Controller
                         'error' => $e->getMessage(),
                     ]);
                 }
+            }
+
+            if (($result['status'] ?? null) === 'failed') {
+                if ($payment->status->value !== 'failed') {
+                    $payment->update([
+                        'status' => 'failed',
+                        'notes' => json_encode([
+                            'result_desc' => $result['message'] ?? 'Payment failed',
+                            'result_code' => $result['response_code'] ?? null,
+                        ]),
+                    ]);
+                }
+
+                return response()->json([
+                    'status' => 'failed',
+                    'success' => false,
+                    'message' => $result['message'] ?? 'Payment was cancelled or failed',
+                ]);
             }
 
             return response()->json([

@@ -98,7 +98,10 @@ class PaymentController extends Controller
             }
 
             if ($method === 'mpesa') {
-                return redirect()->route('reseller.payment.verify-mpesa', $invoice);
+                return redirect()->route('reseller.payment.verify-mpesa', [
+                    'invoice' => $invoice,
+                    'checkout_request_id' => $initiateData['checkout_request_id'] ?? null,
+                ])->with('success', $initiateData['message'] ?? 'Please complete payment on your phone.');
             }
 
             if (isset($initiateData['checkout_url'])) {
@@ -117,12 +120,21 @@ class PaymentController extends Controller
         }
     }
 
-    public function verifyMpesa(Invoice $invoice)
+    public function verifyMpesa(Request $request, Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
+        $checkoutRequestId = (string) $request->query('checkout_request_id', '');
+        if ($checkoutRequestId === '') {
+            return redirect()->route('reseller.payment.select-method', $invoice)
+                ->with('error', 'Missing checkout request reference. Please retry M-Pesa payment.');
+        }
+
         try {
-            return view('reseller.payment.verify-mpesa', compact('invoice'));
+            return view('reseller.payment.verify-mpesa', [
+                'invoice' => $invoice,
+                'checkoutRequestId' => $checkoutRequestId,
+            ]);
         } catch (\Exception $e) {
             \Log::error('verifyMpesa error', [
                 'invoice_id' => $invoice->id,
@@ -137,9 +149,14 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
+        $checkoutRequestId = (string) request()->query('checkout_request_id', '');
+        if ($checkoutRequestId === '') {
+            return response()->json(['status' => 'error', 'message' => 'Missing checkout request ID'], 422);
+        }
+
         $payment = Payment::where('invoice_id', $invoice->id)
             ->where('payment_method', 'mpesa')
-            ->latest()
+            ->where('transaction_reference', $checkoutRequestId)
             ->first();
 
         if (! $payment) {
@@ -167,6 +184,21 @@ class PaymentController extends Controller
                 $this->processPaymentCompletion($payment, $invoice);
 
                 return response()->json(['status' => 'completed']);
+            }
+
+            if ($result['status'] === 'failed') {
+                $payment->update([
+                    'status' => PaymentStatus::Failed->value,
+                    'notes' => json_encode([
+                        'result_desc' => $result['message'] ?? 'Payment failed',
+                        'result_code' => $result['response_code'] ?? null,
+                    ]),
+                ]);
+
+                return response()->json([
+                    'status' => 'failed',
+                    'message' => $result['message'] ?? 'Payment was cancelled or failed',
+                ]);
             }
 
             return response()->json(['status' => $result['status']]);
