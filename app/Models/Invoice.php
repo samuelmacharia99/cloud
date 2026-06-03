@@ -98,7 +98,12 @@ class Invoice extends Model
 
     public function getAmountRemaining(): float
     {
-        return max(0, $this->total - $this->getAmountPaid() - $this->getAppliedCredits());
+        $walletApplied = (float) ($this->wallet_amount_applied ?? 0);
+
+        return max(0, round(
+            (float) $this->total - $walletApplied - $this->getAmountPaid() - $this->getAppliedCredits(),
+            2
+        ));
     }
 
     /**

@@ -39,7 +39,11 @@ class InvoiceProvisioningService
             return ['provisioned' => 0, 'failed' => [], 'skipped' => true];
         }
 
-        if (! in_array($invoice->status, ['paid', 'active'], true)) {
+        $status = $invoice->status instanceof \BackedEnum
+            ? $invoice->status->value
+            : (string) $invoice->status;
+
+        if (! in_array($status, ['paid', 'active'], true)) {
             return ['provisioned' => 0, 'failed' => [], 'skipped' => true];
         }
 

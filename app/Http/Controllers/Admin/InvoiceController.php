@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
@@ -222,10 +223,10 @@ class InvoiceController extends Controller
                 'amount' => $validated['amount'],
                 'currency' => 'KES',
                 'payment_method' => $validated['payment_method'],
-                'transaction_reference' => $validated['transaction_reference'],
+                'transaction_reference' => $validated['transaction_reference'] ?? null,
                 'status' => PaymentStatus::Completed->value,
                 'paid_at' => $validated['paid_at'] ?? now(),
-                'notes' => $validated['notes'],
+                'notes' => $validated['notes'] ?? null,
             ]);
 
             \Log::info('Payment record created', [
@@ -234,41 +235,45 @@ class InvoiceController extends Controller
                 'amount' => $payment->amount,
             ]);
 
-            // Reconcile invoice status
-            $amountPaid = $invoice->payments()
-                ->where('status', PaymentStatus::Completed->value)
-                ->sum('amount');
+            $invoice->refresh();
+            $wasUnpaid = ! $invoice->isPaid();
+            $remaining = $invoice->getAmountRemaining();
 
-            $wasUnpaid = $invoice->status !== 'paid';
-
-            if ($amountPaid >= $invoice->total) {
+            if ($remaining <= 0) {
                 $invoice->update([
-                    'status' => 'paid',
-                    'paid_date' => now(),
+                    'status' => InvoiceStatus::Paid->value,
+                    'paid_date' => $invoice->paid_date ?? now(),
                 ]);
 
                 \Log::info('Invoice marked as paid', [
                     'invoice_id' => $invoice->id,
-                    'total_paid' => $amountPaid,
+                    'amount_paid' => $invoice->getAmountPaid(),
+                    'wallet_applied' => $invoice->wallet_amount_applied,
                     'invoice_total' => $invoice->total,
                 ]);
 
-                // Provision pending services if invoice just became paid
                 if ($wasUnpaid) {
-                    $this->provisionServices($invoice);
+                    try {
+                        $this->provisionServices($invoice->fresh());
+                    } catch (\Throwable $e) {
+                        \Log::error('Provisioning after admin payment failed', [
+                            'invoice_id' => $invoice->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
-            } else {
-                $invoice->update(['status' => 'unpaid']);
+            } elseif ($remaining > 0 && in_array($invoice->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)) {
+                $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
 
-                \Log::info('Invoice status set to unpaid', [
+                \Log::info('Invoice partially paid', [
                     'invoice_id' => $invoice->id,
-                    'total_paid' => $amountPaid,
+                    'remaining' => $remaining,
                     'invoice_total' => $invoice->total,
                 ]);
             }
 
             return redirect()->route('admin.invoices.show', $invoice)
-                ->with('success', "Payment of \${$validated['amount']} recorded successfully.");
+                ->with('success', 'Payment of KES '.number_format((float) $validated['amount'], 2).' recorded successfully.');
 
         } catch (\Exception $e) {
             \Log::error('Failed to record payment', [
@@ -277,7 +282,7 @@ class InvoiceController extends Controller
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return redirect()->back()
+            return redirect()->route('admin.invoices.show', $invoice)
                 ->with('error', 'Failed to record payment. '.$e->getMessage());
         }
     }
