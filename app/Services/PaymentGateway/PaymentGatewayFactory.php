@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\ResellerBrandingResolver;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 class PaymentGatewayFactory
@@ -77,14 +78,18 @@ class PaymentGatewayFactory
             ];
         }
 
-        $stripe = new StripeService;
-        if ($stripe->isConfigured()) {
-            $gateways['stripe'] = [
-                'label' => 'Stripe',
-                'icon' => 'credit-card',
-                'color' => 'purple',
-                'description' => 'Pay with your credit or debit card',
-            ];
+        try {
+            $stripe = new StripeService;
+            if ($stripe->isConfigured()) {
+                $gateways['stripe'] = [
+                    'label' => 'Stripe',
+                    'icon' => 'credit-card',
+                    'color' => 'purple',
+                    'description' => 'Pay with your credit or debit card',
+                ];
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Stripe payment gateway unavailable', ['error' => $e->getMessage()]);
         }
 
         $paypal = new PayPalService;

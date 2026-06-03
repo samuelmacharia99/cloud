@@ -5,17 +5,16 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
-use Stripe\Stripe;
-use Stripe\Checkout\Session;
-use Stripe\PaymentIntent;
-use Stripe\Webhook;
-use Stripe\Exception\SignatureVerificationException;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Stripe\Checkout\Session;
+use Stripe\Exception\SignatureVerificationException;
+use Stripe\Stripe;
+use Stripe\Webhook;
 
 class StripeService implements PaymentGatewayInterface
 {
     protected ?string $apiKey;
+
     protected ?string $publishableKey;
 
     public function __construct()
@@ -23,8 +22,22 @@ class StripeService implements PaymentGatewayInterface
         $this->apiKey = Setting::getValue('stripe_secret_key', '');
         $this->publishableKey = Setting::getValue('stripe_publishable_key', '');
 
-        if ($this->apiKey) {
+        if ($this->apiKey && $this->sdkAvailable()) {
             Stripe::setApiKey($this->apiKey);
+        }
+    }
+
+    protected function sdkAvailable(): bool
+    {
+        return class_exists(Stripe::class);
+    }
+
+    protected function ensureSdkAvailable(): void
+    {
+        if (! $this->sdkAvailable()) {
+            throw new \RuntimeException(
+                'Stripe PHP SDK is not installed. Run composer require stripe/stripe-php on the server.'
+            );
         }
     }
 
@@ -34,7 +47,9 @@ class StripeService implements PaymentGatewayInterface
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
         try {
-            if (!$this->isConfigured()) {
+            $this->ensureSdkAvailable();
+
+            if (! $this->isConfigured()) {
                 throw new \Exception('Stripe is not configured');
             }
 
@@ -69,7 +84,7 @@ class StripeService implements PaymentGatewayInterface
                 'payment_method_types' => ['card'],
                 'line_items' => $lineItems,
                 'mode' => 'payment',
-                'success_url' => route('payment.stripe.success', ['invoice_id' => $invoice->id]) . '?session_id={CHECKOUT_SESSION_ID}',
+                'success_url' => route('payment.stripe.success', ['invoice_id' => $invoice->id]).'?session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url' => route('payment.stripe.cancel', ['invoice_id' => $invoice->id]),
                 'customer_email' => $user->email,
                 'client_reference_id' => $invoice->invoice_number,
@@ -110,7 +125,7 @@ class StripeService implements PaymentGatewayInterface
 
             return [
                 'success' => false,
-                'message' => 'Payment initiation failed: ' . $e->getMessage(),
+                'message' => 'Payment initiation failed: '.$e->getMessage(),
             ];
         }
     }
@@ -121,7 +136,7 @@ class StripeService implements PaymentGatewayInterface
     public function verify(string $transactionReference): array
     {
         try {
-            if (!$this->isConfigured()) {
+            if (! $this->isConfigured()) {
                 throw new \Exception('Stripe is not configured');
             }
 
@@ -165,7 +180,7 @@ class StripeService implements PaymentGatewayInterface
      * Verify the Stripe-Signature header and construct the Stripe event.
      * Returns the verified event array or throws on failure.
      *
-     * @throws \UnexpectedValueException|\Stripe\Exception\SignatureVerificationException
+     * @throws \UnexpectedValueException|SignatureVerificationException
      */
     public function verifyWebhookSignature(string $rawPayload, string $signature): array
     {
@@ -194,16 +209,16 @@ class StripeService implements PaymentGatewayInterface
                 $paymentStatus = $eventData['payment_status'] ?? null;
                 $invoiceId = $eventData['metadata']['invoice_id'] ?? null;
 
-                if (!$invoiceId || $paymentStatus !== 'paid') {
+                if (! $invoiceId || $paymentStatus !== 'paid') {
                     return ['success' => false, 'message' => 'Invalid payment data'];
                 }
 
                 // Find and update payment
                 $payment = Payment::where('transaction_reference', $sessionId)->first();
-                if (!$payment) {
+                if (! $payment) {
                     // Create new payment record
                     $invoice = Invoice::find($invoiceId);
-                    if (!$invoice) {
+                    if (! $invoice) {
                         return ['success' => false, 'message' => 'Invoice not found'];
                     }
 
@@ -267,8 +282,9 @@ class StripeService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return Setting::getValue('stripe_enabled') == '1'
-            && !empty($this->apiKey)
-            && !empty($this->publishableKey);
+        return $this->sdkAvailable()
+            && Setting::getValue('stripe_enabled') == '1'
+            && ! empty($this->apiKey)
+            && ! empty($this->publishableKey);
     }
 }
