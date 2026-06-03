@@ -340,45 +340,64 @@ class PaymentController extends Controller
 
     private function processPaymentCompletion(?Payment $payment, Invoice $invoice): void
     {
+        if ($payment) {
+            $payment->update(['status' => PaymentStatus::Completed, 'paid_at' => now()]);
+        }
+
+        $invoice = $invoice->fresh();
+
+        if (! $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment)) {
+            return;
+        }
+
+        $this->runPostPaymentSideEffects($invoice->fresh(['items', 'user']), $payment);
+    }
+
+    /**
+     * Non-critical hooks after the invoice is marked paid (must not roll back payment state).
+     */
+    private function runPostPaymentSideEffects(Invoice $invoice, ?Payment $payment): void
+    {
         try {
-            \DB::beginTransaction();
-
-            if ($payment) {
-                $payment->update(['status' => PaymentStatus::Completed, 'paid_at' => now()]);
-            }
-
-            $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
-
-            app(NotificationService::class)->notifyPaymentReceived($invoice);
-
-            app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
-            $this->processDomainRenewals($invoice);
-
-            foreach ($invoice->items as $item) {
-                if ($item->service_id) {
-                    $service = Service::find($item->service_id);
-                    if ($service && $service->status->value === 'pending') {
-                        $service->update(['status' => ServiceStatus::Provisioning]);
-                        try {
-                            Artisan::call('service:provision', ['service_id' => $service->id]);
-                        } catch (\Exception $e) {
-                            Log::error('Reseller service provisioning failed after payment', [
-                                'service_id' => $service->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
-                    }
-                }
-            }
-
-            \DB::commit();
-        } catch (\Exception $e) {
-            \DB::rollBack();
-            \Log::error('Payment completion failed', [
+            app(NotificationService::class)->notifyPaymentReceived($payment ?? $invoice);
+        } catch (\Throwable $e) {
+            Log::error('Payment notification failed after reseller invoice paid', [
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
             ]);
-            throw $e;
+        }
+
+        try {
+            app(DomainPushService::class)->handlePaidResellerInvoice($invoice);
+        } catch (\Throwable $e) {
+            Log::error('Domain push failed after reseller invoice paid', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $this->processDomainRenewals($invoice);
+
+        foreach ($invoice->items as $item) {
+            if (! $item->service_id) {
+                continue;
+            }
+
+            $service = Service::find($item->service_id);
+            if (! $service || $service->status->value !== 'pending') {
+                continue;
+            }
+
+            $service->update(['status' => ServiceStatus::Provisioning]);
+
+            try {
+                Artisan::call('service:provision', ['service_id' => $service->id]);
+            } catch (\Throwable $e) {
+                Log::error('Reseller service provisioning failed after payment', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 

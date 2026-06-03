@@ -21,20 +21,20 @@
         @endif
     </div>
 
-    @if($wallet->balance > 0)
-    <div class="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-xl p-4">
-        <label class="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" name="apply_wallet" value="1" class="mt-1 rounded border-slate-300 text-purple-600" {{ old('apply_wallet') ? 'checked' : '' }}>
-            <span>
-                <span class="font-medium text-slate-900 dark:text-white">Apply wallet balance</span>
-                <span class="block text-sm text-slate-600 dark:text-slate-400 mt-1">Available: KES {{ number_format($wallet->balance, 2) }}. We will use up to KES {{ number_format(min($wallet->balance, $amountDue), 2) }} toward this invoice and charge any remainder via your selected payment method.</span>
-            </span>
-        </label>
-    </div>
-    @endif
-
     <form method="POST" action="{{ route('reseller.payment.initiate', $invoice) }}" class="space-y-6">
         @csrf
+
+        @if($wallet->balance > 0)
+        <div class="bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-xl p-4">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" name="apply_wallet" value="1" class="mt-1 rounded border-slate-300 text-purple-600" {{ old('apply_wallet') ? 'checked' : '' }}>
+                <span>
+                    <span class="font-medium text-slate-900 dark:text-white">Apply wallet balance</span>
+                    <span class="block text-sm text-slate-600 dark:text-slate-400 mt-1">Available: KES {{ number_format($wallet->balance, 2) }}. We will use up to KES {{ number_format(min($wallet->balance, $amountDue), 2) }} toward this invoice and charge any remainder via your selected payment method.</span>
+                </span>
+            </label>
+        </div>
+        @endif
 
         <div class="space-y-4">
             @forelse($gateways as $key => $gateway)
