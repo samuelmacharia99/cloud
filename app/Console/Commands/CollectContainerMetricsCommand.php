@@ -5,7 +5,9 @@ namespace App\Console\Commands;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\DockerStatsParser;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class CollectContainerMetricsCommand extends BaseCronCommand
@@ -43,9 +45,9 @@ class CollectContainerMetricsCommand extends BaseCronCommand
                     try {
                         $this->collectMetric($ssh, $deployment);
                         $collected++;
-                    } catch (\Exception $e) {
+                    } catch (\Throwable $e) {
                         $failed++;
-                        Log::warning("Failed to collect metrics for deployment {$deployment->id}: ".$e->getMessage());
+                        $this->logMetricFailure($deployment, $e);
                     }
                 }
             } catch (\Exception $e) {
@@ -76,45 +78,54 @@ class CollectContainerMetricsCommand extends BaseCronCommand
     private function collectMetric(SSHService $ssh, ContainerDeployment $deployment): void
     {
         $containerName = $deployment->container_name;
+        $nameArg = escapeshellarg($containerName);
 
-        // Run docker stats and capture output
-        $output = $ssh->exec(
-            "docker stats {$containerName} --no-stream --format '{\"cpu\":\"{{.CPUPerc}}\",\"mem\":\"{{.MemUsage}}\",\"net\":\"{{.NetIO}}\",\"block\":\"{{.BlockIO}}\"}' 2>/dev/null || echo '{}'",
+        $state = trim($ssh->exec(
+            "docker inspect -f '{{.State.Running}}' {$nameArg} 2>/dev/null || echo missing",
             10
-        );
+        ));
 
-        $data = json_decode(trim($output), true);
-        if (! $data || empty($data['cpu'])) {
-            throw new \Exception("Failed to parse docker stats for {$containerName}");
+        if ($state !== 'true') {
+            $deployment->update([
+                'last_status_check_at' => now(),
+                'last_status_check_output' => $state === 'missing'
+                    ? 'Container not found on node during metrics collection'
+                    : 'Container not running on node during metrics collection',
+            ]);
+
+            return;
         }
 
-        // Parse CPU percentage (e.g., "12.34%")
-        $cpuPercent = (float) str_replace('%', '', $data['cpu'] ?? '0');
+        $output = trim($ssh->exec(
+            "docker stats {$nameArg} --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null || true",
+            15
+        ));
 
-        // Parse memory usage (e.g., "256MiB / 512MiB")
-        $memParts = explode('/', $data['mem'] ?? '0 / 0');
+        $data = DockerStatsParser::parseLine($output, $containerName);
+
+        $cpuPercent = (float) str_replace('%', '', $data['cpu']);
+
+        $memParts = explode('/', $data['mem']);
         $memUsedStr = trim($memParts[0] ?? '0');
         $memLimitStr = trim($memParts[1] ?? '0');
 
-        $memUsedMb = $this->parseMemoryToMb($memUsedStr);
-        $memLimitMb = $this->parseMemoryToMb($memLimitStr);
+        $memUsedMb = DockerStatsParser::parseMemoryToMb($memUsedStr);
+        $memLimitMb = DockerStatsParser::parseMemoryToMb($memLimitStr);
         $memPercent = $memLimitMb > 0 ? ($memUsedMb / $memLimitMb) * 100 : 0;
 
-        // Parse network I/O (e.g., "1.2MB / 3.4MB")
-        $netParts = explode('/', $data['net'] ?? '0 / 0');
+        $netParts = explode('/', $data['net']);
         $netRxStr = trim($netParts[0] ?? '0');
         $netTxStr = trim($netParts[1] ?? '0');
 
-        $netRxBytes = $this->parseDataToBytes($netRxStr);
-        $netTxBytes = $this->parseDataToBytes($netTxStr);
+        $netRxBytes = DockerStatsParser::parseDataToBytes($netRxStr);
+        $netTxBytes = DockerStatsParser::parseDataToBytes($netTxStr);
 
-        // Parse block I/O (e.g., "1.2MB / 3.4MB")
-        $blockParts = explode('/', $data['block'] ?? '0 / 0');
+        $blockParts = explode('/', $data['block']);
         $blockReadStr = trim($blockParts[0] ?? '0');
         $blockWriteStr = trim($blockParts[1] ?? '0');
 
-        $blockReadBytes = $this->parseDataToBytes($blockReadStr);
-        $blockWriteBytes = $this->parseDataToBytes($blockWriteStr);
+        $blockReadBytes = DockerStatsParser::parseDataToBytes($blockReadStr);
+        $blockWriteBytes = DockerStatsParser::parseDataToBytes($blockWriteStr);
 
         $diskUsedGb = $this->collectDiskUsedGb($ssh, $deployment);
 
@@ -147,43 +158,21 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         return round(((float) $output) / (1024 * 1024 * 1024), 4);
     }
 
-    /**
-     * Convert memory string (e.g., "256MiB", "1.2GiB") to MB
-     */
-    private function parseMemoryToMb(string $value): int
+    private function logMetricFailure(ContainerDeployment $deployment, \Throwable $e): void
     {
-        $value = strtoupper(trim($value));
+        $cacheKey = 'container-metrics-warn:'.$deployment->id;
+        $context = [
+            'deployment_id' => $deployment->id,
+            'container_name' => $deployment->container_name,
+            'node_id' => $deployment->node_id,
+            'error' => $e->getMessage(),
+        ];
 
-        if (strpos($value, 'GIB') !== false) {
-            return (int) (floatval($value) * 1024);
-        } elseif (strpos($value, 'MIB') !== false) {
-            return (int) floatval($value);
-        } elseif (strpos($value, 'KIB') !== false) {
-            return (int) (floatval($value) / 1024);
-        } elseif (strpos($value, 'B') !== false) {
-            return (int) (floatval($value) / 1024 / 1024);
+        if (! Cache::has($cacheKey)) {
+            Cache::put($cacheKey, true, now()->addHours(6));
+            Log::warning("Failed to collect metrics for deployment {$deployment->id}: {$e->getMessage()}", $context);
+        } else {
+            Log::debug("Failed to collect metrics for deployment {$deployment->id}: {$e->getMessage()}", $context);
         }
-
-        return (int) floatval($value);
-    }
-
-    /**
-     * Convert data size string (e.g., "1.2MB", "256KB") to bytes
-     */
-    private function parseDataToBytes(string $value): int
-    {
-        $value = strtoupper(trim($value));
-
-        if (strpos($value, 'GB') !== false) {
-            return (int) (floatval($value) * 1024 * 1024 * 1024);
-        } elseif (strpos($value, 'MB') !== false) {
-            return (int) (floatval($value) * 1024 * 1024);
-        } elseif (strpos($value, 'KB') !== false) {
-            return (int) (floatval($value) * 1024);
-        } elseif (strpos($value, 'B') !== false) {
-            return (int) floatval($value);
-        }
-
-        return (int) floatval($value);
     }
 }
