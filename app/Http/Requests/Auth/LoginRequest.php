@@ -3,10 +3,12 @@
 namespace App\Http\Requests\Auth;
 
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -56,9 +58,23 @@ class LoginRequest extends FormRequest
         if (! $user->hasVerifiedEmail()) {
             Auth::logout();
 
+            $message = 'Please verify your email before signing in. Enter the 6-digit code we sent to your inbox.';
+
+            try {
+                app(EmailVerificationService::class)->sendVerificationCode($user);
+                $message .= ' A new verification code has been sent to your email.';
+            } catch (\Throwable $e) {
+                Log::warning('Could not send verification code during login', [
+                    'user_id' => $user->id,
+                    'email' => $user->email,
+                    'error' => $e->getMessage(),
+                ]);
+                $message .= ' '.$e->getMessage();
+            }
+
             throw ValidationException::withMessages([
-                'email' => 'Please verify your email before signing in. Check your inbox for the verification code, or register again if you did not receive one.',
-            ]);
+                'email' => $message,
+            ])->redirectTo(route('verification.code.show', ['email' => $user->email]));
         }
 
         if ($user->status === 'suspended') {

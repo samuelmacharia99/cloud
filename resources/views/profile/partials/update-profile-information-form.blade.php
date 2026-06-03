@@ -36,13 +36,16 @@
                         <form id="send-verification" method="post" action="{{ route('verification.send') }}" style="display: inline;">
                             @csrf
                             <button type="submit" class="text-amber-700 dark:text-amber-300 font-medium hover:underline">
-                                Click here to re-send the verification email.
+                                Click here to re-send the verification code.
                             </button>
                         </form>
                     </p>
+                    @error('email')
+                        <p class="mt-2 text-sm text-red-700 dark:text-red-300">{{ $message }}</p>
+                    @enderror
                     @if (session('status') === 'verification-link-sent')
                         <p class="mt-2 text-sm font-medium text-emerald-700 dark:text-emerald-300">
-                            A new verification link has been sent to your email address.
+                            A new 6-digit verification code has been sent to your email address.
                         </p>
                     @endif
                 </div>

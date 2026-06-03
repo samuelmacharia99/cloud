@@ -2,21 +2,21 @@
 
 namespace App\Mail;
 
+use App\Models\User;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
-use App\Models\User;
 
-class VerifyEmailOtpMail extends Mailable implements ShouldQueue
+/**
+ * @deprecated Use VerificationCodeMail via EmailVerificationService instead.
+ */
+class VerifyEmailOtpMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public function __construct(public User $user, public string $code)
-    {
-    }
+    public function __construct(public User $user, public string $code) {}
 
     public function envelope(): Envelope
     {

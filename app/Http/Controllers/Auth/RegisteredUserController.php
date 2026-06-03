@@ -4,14 +4,12 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterUserRequest;
-use App\Mail\VerificationCodeMail;
-use App\Models\EmailVerificationCode;
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use App\Services\RegistrationGuardService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class RegisteredUserController extends Controller
@@ -48,15 +46,13 @@ class RegisteredUserController extends Controller
 
         session()->forget('registration_reseller_id');
 
-        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-
-        EmailVerificationCode::create([
-            'user_id' => $user->id,
-            'code' => $code,
-            'expires_at' => now()->addMinutes(30),
-        ]);
-
-        Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
+        try {
+            app(EmailVerificationService::class)->sendVerificationCode($user);
+        } catch (\Throwable $e) {
+            return back()
+                ->withInput($request->except('password', 'password_confirmation'))
+                ->withErrors(['email' => $e->getMessage()]);
+        }
 
         return redirect()->route('verification.code.show')
             ->with('email', $user->email)

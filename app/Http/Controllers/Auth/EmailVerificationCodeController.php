@@ -3,12 +3,11 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Mail\VerificationCodeMail;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class EmailVerificationCodeController extends Controller
@@ -86,19 +85,11 @@ class EmailVerificationCodeController extends Controller
             return back()->withErrors(['email' => 'Email is already verified.']);
         }
 
-        // Delete old codes and create new one
-        EmailVerificationCode::where('user_id', $user->id)->delete();
-
-        $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-
-        EmailVerificationCode::create([
-            'user_id' => $user->id,
-            'code' => $code,
-            'expires_at' => now()->addMinutes(30),
-        ]);
-
-        // Send verification email
-        Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
+        try {
+            app(EmailVerificationService::class)->sendVerificationCode($user);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['email' => $e->getMessage()]);
+        }
 
         return back()->with('success', 'New verification code sent to your email.');
     }

@@ -216,8 +216,19 @@ class ResellerController extends Controller
         $user->is_reseller = true;
         $user->save();
 
+        $flash = "Reseller '{$user->name}' created successfully.";
+
+        if (! $user->hasVerifiedEmail()) {
+            try {
+                $user->sendEmailVerificationNotification();
+                $flash .= ' A verification code was sent to their email.';
+            } catch (\Throwable $e) {
+                $flash .= ' Verification email could not be sent: '.$e->getMessage();
+            }
+        }
+
         return redirect()->route('admin.resellers.show', $user)
-            ->with('success', "Reseller '{$user->name}' created successfully.");
+            ->with('success', $flash);
     }
 
     public function edit(User $user)
