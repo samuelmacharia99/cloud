@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\User;
 use App\Services\ResellerSslService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -50,9 +51,12 @@ TXT;
             'status' => 'failed',
             'error' => 'The following error was encountered:',
             'last_output' => null,
+            'last_command' => 'sudo -n /usr/bin/certbot certonly',
+            'last_exit_code' => 1,
         ]);
 
-        $this->assertStringNotContainsString('following error was encountered', strtolower($display['error']));
+        $this->assertNotSame('', $display['error']);
+        $this->assertTrue($display['show_output']);
     }
 
     public function test_resolve_display_reparses_stored_boilerplate_when_output_exists(): void
@@ -132,5 +136,33 @@ TXT;
 
         $this->assertNotNull($message);
         $this->assertStringContainsString('install-host.sh', $message);
+    }
+
+    public function test_record_ssl_failure_includes_diagnostics_when_output_empty(): void
+    {
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'settings' => ['branding' => ['custom_domain' => 'ssl.test']],
+        ]);
+
+        $service = app(ResellerSslService::class);
+        $service->recordSslFailure(
+            $reseller,
+            'ssl.test',
+            'The following error was encountered:',
+            '',
+            [
+                'exit_code' => 1,
+                'command' => 'sudo -n /tmp/provision.sh --domain ssl.test',
+                'logs_dir' => storage_path('app/ssl-test-empty'),
+            ],
+        );
+
+        $reseller->refresh();
+        $ssl = $reseller->settings['branding']['ssl'];
+
+        $this->assertSame('failed', $ssl['status']);
+        $this->assertNotEmpty($ssl['last_output'] ?? null);
+        $this->assertStringContainsString('exit code 1', $ssl['error'] ?? '');
     }
 }

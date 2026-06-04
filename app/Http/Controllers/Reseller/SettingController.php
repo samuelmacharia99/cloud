@@ -406,12 +406,13 @@ class SettingController extends Controller
                 ? $failure['error']
                 : 'SSL provisioning failed. Check server logs or try again in a few minutes.';
 
-            if ($failure['show_output']) {
+            if ($failure['show_output'] && $failure['output'] !== '') {
                 $errorMessage .= "\n\n".$failure['output'];
             }
 
             return $this->redirectToSettingsTab('branding', [
                 'error' => $errorMessage,
+                'ssl_provision_output' => $failure['output'],
             ]);
         } catch (\InvalidArgumentException $e) {
             return $this->redirectToSettingsTab('branding', [

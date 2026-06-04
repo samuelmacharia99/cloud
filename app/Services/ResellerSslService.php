@@ -9,6 +9,8 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 class ResellerSslService
 {
@@ -249,8 +251,10 @@ class ResellerSslService
         }
 
         $disabledFunctions = array_filter(array_map('trim', explode(',', (string) ini_get('disable_functions'))));
-        if (in_array('exec', $disabledFunctions, true)) {
-            return 'PHP exec() is disabled on this server. Enable it for PHP-FPM so Provision SSL can run certbot.';
+        foreach (['exec', 'shell_exec', 'proc_open'] as $required) {
+            if (in_array($required, $disabledFunctions, true)) {
+                return "PHP {$required}() is disabled on this server. Enable it for PHP-FPM so Provision SSL can run.";
+            }
         }
 
         if ($this->resolveProvisionScriptPath() === null) {
@@ -316,6 +320,11 @@ class ResellerSslService
                 );
             }
 
+            $existing = $this->syncExistingCertificate($reseller, $customDomain);
+            if ($existing !== null) {
+                return $existing;
+            }
+
             // Create challenge directory
             $challengePath = public_path('.well-known/acme-challenge');
             if (! is_dir($challengePath)) {
@@ -345,11 +354,7 @@ class ResellerSslService
                     $customDomain,
                     $message,
                     $outputText,
-                    [
-                        'exit_code' => $exitCode,
-                        'command' => $command,
-                        'logs_dir' => $run['logs_dir'],
-                    ],
+                    $this->provisionFailureContext($run, $exitCode, $command),
                 );
             }
 
@@ -367,11 +372,7 @@ class ResellerSslService
                     $customDomain,
                     'Certificate was issued but the app could not verify cert files (www-data needs sudo for /etc/letsencrypt). Re-run: sudo bash scripts/reseller-ssl/install-host.sh',
                     $outputText,
-                    [
-                        'exit_code' => $exitCode,
-                        'command' => $command,
-                        'logs_dir' => $run['logs_dir'],
-                    ],
+                    $this->provisionFailureContext($run, $exitCode, $command),
                 );
             }
 
@@ -435,20 +436,28 @@ class ResellerSslService
 
         if ($rawOutput !== null && trim($rawOutput) !== '') {
             $rawOutput = $this->enrichCertbotOutput(trim($rawOutput), $logsDir);
-        } elseif ($context !== []) {
-            $rawOutput = $this->buildFailureDiagnostics($context);
         } else {
             $rawOutput = '';
         }
 
+        if ($rawOutput === '' && $context !== []) {
+            $rawOutput = $this->buildFailureDiagnostics($context);
+        }
+
         $message = trim($message) !== '' ? trim($message) : 'SSL provisioning failed.';
 
-        if ($this->isBoilerplateSslMessage($message) && $rawOutput !== '') {
-            $message = $this->summarizeCertbotFailure($rawOutput);
+        if (isset($context['exit_code']) && $this->isBoilerplateSslMessage($message)) {
+            $message = 'SSL provision failed (exit code '.$context['exit_code'].'). '
+                .'See details below. Re-run install-host.sh and php artisan config:clear if this persists.';
+        } elseif ($this->isBoilerplateSslMessage($message) && $rawOutput !== '') {
+            $summary = $this->summarizeCertbotFailure($rawOutput);
+            if (! $this->isBoilerplateSslMessage($summary)) {
+                $message = $summary;
+            }
         }
 
         if ($this->isBoilerplateSslMessage($message)) {
-            $message = 'Certificate issuance failed. See the certbot output below for details.';
+            $message = 'SSL provisioning failed. See details below or run install-host.sh on the server.';
         }
 
         $this->updateSslStatus($reseller, [
@@ -470,12 +479,56 @@ class ResellerSslService
     /**
      * @return array{exit_code: int, output: string, command: string, logs_dir: string}
      */
+    /**
+     * If a cert already exists on the host (e.g. manual certbot), mark SSL active in the app.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function syncExistingCertificate(User $reseller, string $customDomain): ?array
+    {
+        $paths = $this->resolveCertificatePaths('', $customDomain);
+
+        if ($paths === null) {
+            return null;
+        }
+
+        $certPath = $paths['cert_path'];
+        $expiryDate = $this->getCertificateExpiry($certPath);
+
+        $this->updateSslStatus($reseller, [
+            'status' => 'active',
+            'domain' => $customDomain,
+            'cert_path' => $certPath,
+            'key_path' => $paths['key_path'],
+            'issued_at' => now()->toIso8601String(),
+            'expires_at' => $expiryDate?->toIso8601String(),
+            'error' => null,
+            'last_output' => 'Detected existing Let\'s Encrypt certificate on the server.',
+        ]);
+
+        Log::info('Synced existing SSL certificate for reseller', [
+            'reseller_id' => $reseller->id,
+            'domain' => $customDomain,
+            'cert_path' => $certPath,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'SSL certificate is already installed on this server. Valid until '
+                .($expiryDate?->format('M d, Y') ?? 'unknown'),
+            'expires_at' => $expiryDate?->toIso8601String(),
+        ];
+    }
+
     public function runCertbotIssue(User $reseller, string $customDomain): array
     {
         $logsDir = storage_path('app/ssl-provisioning/reseller-'.$reseller->id.'/logs');
         if (! is_dir($logsDir)) {
             mkdir($logsDir, 0755, true);
         }
+
+        $logFile = $logsDir.'/last-run.log';
+        @file_put_contents($logFile, '--- SSL provision started at '.now()->toIso8601String()." ---\n");
 
         $command = $this->wrapProvisionShellCommand(
             $this->buildSslProvisionCommand($customDomain, $logsDir)
@@ -486,29 +539,97 @@ class ResellerSslService
             'domain' => $customDomain,
             'command' => $command,
             'logs_dir' => $logsDir,
-            'php_user' => get_current_user(),
+            'log_file' => $logFile,
+            'php_user' => $this->currentPhpUser(),
         ]);
 
-        $output = [];
-        $exitCode = 1;
-        exec($command.' 2>&1', $output, $exitCode);
-        $outputText = implode("\n", $output);
-
-        if (trim($outputText) === '') {
-            $shellOutput = shell_exec($command.' 2>&1');
-            if (is_string($shellOutput) && trim($shellOutput) !== '') {
-                $outputText = $shellOutput;
-            }
-        }
+        $run = $this->executeProvisionShellCommand($command, $logFile);
+        $exitCode = $run['exit_code'];
+        $outputText = $run['output'];
 
         $outputText = $this->enrichCertbotOutput($outputText, $logsDir);
         $outputText = $this->appendLogsFromDirectory($outputText, $logsDir);
+
+        if (trim($outputText) === '' && is_readable($logFile)) {
+            $outputText = trim((string) file_get_contents($logFile));
+        }
+
+        if (trim($outputText) === '') {
+            $outputText = $this->buildFailureDiagnostics([
+                'exit_code' => $exitCode,
+                'command' => $command,
+                'logs_dir' => $logsDir,
+                'log_file' => $logFile,
+            ]);
+        }
 
         return [
             'exit_code' => $exitCode,
             'output' => $outputText,
             'command' => $command,
             'logs_dir' => $logsDir,
+            'log_file' => $logFile,
+        ];
+    }
+
+    /**
+     * @return array{exit_code: int, output: string}
+     */
+    public function executeProvisionShellCommand(string $command, string $logFile): array
+    {
+        $shellCommand = $command.' >> '.escapeshellarg($logFile).' 2>&1';
+
+        try {
+            $process = Process::fromShellCommandline($shellCommand, base_path());
+            $process->setTimeout(300);
+            $process->run();
+
+            $output = trim($process->getOutput()."\n".$process->getErrorOutput());
+
+            return [
+                'exit_code' => $process->getExitCode() ?? 1,
+                'output' => $output,
+            ];
+        } catch (ProcessTimedOutException $e) {
+            Log::error('SSL provision timed out', ['command' => $command, 'error' => $e->getMessage()]);
+
+            return [
+                'exit_code' => 124,
+                'output' => "SSL provision timed out after 300 seconds. Increase PHP-FPM request_terminate_timeout. Partial log:\n"
+                    .$this->readFileTail($logFile, 4000),
+            ];
+        } catch (Exception $e) {
+            Log::error('SSL provision process failed', ['command' => $command, 'error' => $e->getMessage()]);
+
+            return [
+                'exit_code' => 1,
+                'output' => 'Failed to run provision command: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    public function currentPhpUser(): string
+    {
+        if (function_exists('posix_getpwuid') && function_exists('posix_geteuid')) {
+            $info = posix_getpwuid(posix_geteuid());
+
+            return is_array($info) ? (string) ($info['name'] ?? 'unknown') : 'unknown';
+        }
+
+        return get_current_user();
+    }
+
+    /**
+     * @param  array<string, mixed>  $run
+     * @return array<string, mixed>
+     */
+    public function provisionFailureContext(array $run, int $exitCode, string $command): array
+    {
+        return [
+            'exit_code' => $exitCode,
+            'command' => $command,
+            'logs_dir' => $run['logs_dir'] ?? null,
+            'log_file' => $run['log_file'] ?? null,
         ];
     }
 
@@ -674,6 +795,12 @@ class ResellerSslService
             $lines[] = $this->appendLogsFromDirectory('', (string) $context['logs_dir']);
         }
 
+        if (! empty($context['log_file']) && is_readable((string) $context['log_file'])) {
+            $lines[] = '--- last-run.log ---';
+            $lines[] = $this->readFileTail((string) $context['log_file'], 6000)
+                ?: $this->tailLogViaShell((string) $context['log_file'], 6000);
+        }
+
         if (! config('app.reseller_ssl_certbot_sudo', false)) {
             $lines[] = 'Tip: run once on the server: sudo bash scripts/reseller-ssl/install-host.sh — then set RESELLER_SSL_CERTBOT_SUDO=true.';
         }
@@ -721,8 +848,10 @@ class ResellerSslService
         }
 
         return (bool) preg_match('/^the following error was encountered:?$/i', $message)
-            || str_contains($normalized, 'following error was encountered')
-                && ! preg_match('/(detail:|invalid|unauthorized|404|403|challenge|could not)/i', $message);
+            || str_contains($normalized, 'see the certbot output below')
+            || str_contains($normalized, 'see details below or run install-host')
+            || (str_contains($normalized, 'following error was encountered')
+                && ! preg_match('/(detail:|invalid|unauthorized|404|403|challenge|could not)/i', $message));
     }
 
     /**
@@ -734,17 +863,19 @@ class ResellerSslService
         $output = trim((string) ($ssl['last_output'] ?? ''));
 
         if ($this->isBoilerplateSslMessage($error) && $output !== '') {
-            $error = $this->summarizeCertbotFailure($output);
-        } elseif ($this->isBoilerplateSslMessage($error)) {
-            $error = '';
+            $summary = $this->summarizeCertbotFailure($output);
+            if (! $this->isBoilerplateSslMessage($summary)) {
+                $error = $summary;
+            }
         }
 
         if ($error === '' && $output !== '') {
-            $error = $this->summarizeCertbotFailure($output);
+            $summary = $this->summarizeCertbotFailure($output);
+            $error = $this->isBoilerplateSslMessage($summary) ? '' : $summary;
         }
 
-        if ($this->isBoilerplateSslMessage($error)) {
-            $error = 'Certificate issuance failed. See the certbot output below for details.';
+        if ($error === '' && $this->isBoilerplateSslMessage((string) ($ssl['error'] ?? ''))) {
+            $error = trim((string) ($ssl['error'] ?? ''));
         }
 
         if ($output === '' && ! empty($ssl['last_command'])) {
@@ -754,8 +885,7 @@ class ResellerSslService
             }
         }
 
-        $showOutput = $output !== ''
-            && ! Str::startsWith(strtolower($output), strtolower($error));
+        $showOutput = $output !== '';
 
         return [
             'error' => $error,
