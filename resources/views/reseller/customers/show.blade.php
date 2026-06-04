@@ -15,7 +15,7 @@
                 @csrf
                 <button type="submit" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">View as customer</button>
             </form>
-            <a href="{{ route('reseller.customer-orders.hosting.create', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Order hosting</a>
+            <a href="{{ route('reseller.customer-orders.hosting.create', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Add hosting</a>
             <a href="{{ route('reseller.customer-orders.domain.create', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Add domain</a>
             <a href="{{ route('reseller.customer-invoices.create', ['customer' => $customer->id]) }}" class="px-4 py-2 border border-purple-300 text-purple-700 font-medium rounded-lg transition text-sm">New invoice</a>
             <a href="{{ route('reseller.customers.edit', $customer) }}" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition text-sm">Edit</a>

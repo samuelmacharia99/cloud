@@ -13,7 +13,10 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Provisioning\InvoiceProvisioningService;
+use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ResellerCustomerOrderService
 {
@@ -22,6 +25,7 @@ class ResellerCustomerOrderService
         private ResellerCustomerBillingService $billing,
         private ResellerEnforcementService $enforcement,
         private DomainPushService $domainPush,
+        private ResellerHostingSetupService $hostingSetup,
     ) {}
 
     /**
@@ -62,18 +66,15 @@ class ResellerCustomerOrderService
             $status,
             $options,
         ) {
-            $service = Service::create([
-                'user_id' => $customer->id,
-                'reseller_id' => $reseller->id,
-                'product_id' => $adminProduct->id,
-                'name' => $options['service_name'] ?? $catalogProduct->name,
-                'status' => 'pending',
-                'billing_cycle' => $billingCycle,
-                'custom_price' => $retailPrice,
-                'next_due_date' => now()->addMonths($this->billingCycleMonths($billingCycle)),
-                'provisioning_driver_key' => $adminProduct->provisioning_driver_key,
-                'notes' => $options['notes'] ?? null,
-            ]);
+            $service = $this->createPendingHostingService(
+                $reseller,
+                $customer,
+                $catalogProduct,
+                $adminProduct,
+                $billingCycle,
+                $retailPrice,
+                $options,
+            );
 
             $invoice = $this->billing->createCustomerInvoice($reseller, $customer, [
                 'status' => $status,
@@ -98,6 +99,131 @@ class ResellerCustomerOrderService
 
             return ['service' => $service->fresh(), 'invoice' => $invoice->fresh(['items'])];
         });
+    }
+
+    /**
+     * Create and provision hosting for a customer with no invoice (complimentary / internal).
+     *
+     * @return array{service: Service, provisioned: bool, skipped: bool}
+     */
+    public function provisionHostingForCustomerWithoutBilling(
+        User $reseller,
+        User $customer,
+        ResellerProduct $catalogProduct,
+        string $billingCycle,
+        array $options = [],
+    ): array {
+        $this->billing->ensureManagedCustomer($reseller, $customer);
+
+        if ($reseller->isAtServiceLimit()) {
+            throw new \InvalidArgumentException('You have reached your package service limit. Upgrade to add more services.');
+        }
+
+        $adminProduct = $catalogProduct->adminProduct;
+        if (! $adminProduct instanceof Product) {
+            throw new \InvalidArgumentException('This catalog item cannot be auto-provisioned. Bill the customer or choose a linked platform product.');
+        }
+
+        return DB::transaction(function () use (
+            $reseller,
+            $customer,
+            $catalogProduct,
+            $adminProduct,
+            $billingCycle,
+            $options,
+        ) {
+            $service = $this->createPendingHostingService(
+                $reseller,
+                $customer,
+                $catalogProduct,
+                $adminProduct,
+                $billingCycle,
+                0.0,
+                $options,
+            );
+
+            $provisioning = app(InvoiceProvisioningService::class);
+
+            if (! $provisioning->shouldAutoProvision()) {
+                return [
+                    'service' => $service->fresh(),
+                    'provisioned' => false,
+                    'skipped' => true,
+                ];
+            }
+
+            try {
+                $this->enforcement->assertCanProvision($service);
+                $service->update(['status' => 'provisioning']);
+                app(ProvisioningService::class)->provision($service->fresh());
+
+                return [
+                    'service' => $service->fresh(),
+                    'provisioned' => true,
+                    'skipped' => false,
+                ];
+            } catch (\Throwable $e) {
+                Log::error('Complimentary hosting provision failed', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                throw new \InvalidArgumentException('Service was created but provisioning failed: '.$e->getMessage());
+            }
+        });
+    }
+
+    private function createPendingHostingService(
+        User $reseller,
+        User $customer,
+        ResellerProduct $catalogProduct,
+        Product $adminProduct,
+        string $billingCycle,
+        float $retailPrice,
+        array $options = [],
+    ): Service {
+        $attributes = [
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'name' => $options['service_name'] ?? $catalogProduct->name,
+            'status' => 'pending',
+            'billing_cycle' => $billingCycle,
+            'custom_price' => $retailPrice,
+            'next_due_date' => now()->addMonths($this->billingCycleMonths($billingCycle)),
+            'provisioning_driver_key' => $adminProduct->provisioning_driver_key,
+            'notes' => $options['notes'] ?? null,
+        ];
+
+        if ($this->isProvisionableHostingProduct($adminProduct)) {
+            $context = $this->hostingSetup->buildProvisioningContext(
+                $reseller,
+                $customer,
+                $adminProduct,
+                $options['primary_domain'] ?? null,
+            );
+
+            $attributes['provisioning_driver_key'] = $context['provisioning_driver_key']
+                ?? $attributes['provisioning_driver_key'];
+
+            if (! empty($context['node_id'])) {
+                $attributes['node_id'] = $context['node_id'];
+            }
+
+            if (! empty($context['service_meta'])) {
+                $attributes['service_meta'] = $context['service_meta'];
+            }
+        }
+
+        return Service::create($attributes);
+    }
+
+    private function isProvisionableHostingProduct(Product $adminProduct): bool
+    {
+        $driver = $adminProduct->provisioning_driver_key;
+
+        return in_array($driver, ['directadmin', 'container'], true)
+            || ($adminProduct->type === 'shared_hosting' && $adminProduct->direct_admin_package_id);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Services\ResellerCustomerBillingService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerScopeService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +21,7 @@ class CustomerOrderController extends Controller
         private ResellerScopeService $scope,
         private ResellerCustomerBillingService $billing,
         private ResellerCustomerOrderService $orders,
+        private ResellerHostingSetupService $hostingSetup,
     ) {}
 
     public function createHosting(Request $request): View
@@ -51,6 +53,8 @@ class CustomerOrderController extends Controller
             'order_type' => 'required|in:provision,invoice_only',
             'due_date' => 'nullable|date',
             'notes' => 'nullable|string|max:2000',
+            'bill_customer' => 'sometimes|boolean',
+            'primary_domain' => 'nullable|string|max:253|regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i',
         ]);
 
         $customer = User::findOrFail($validated['customer_id']);
@@ -59,9 +63,46 @@ class CustomerOrderController extends Controller
         $product = ResellerProduct::query()
             ->where('reseller_id', $reseller->id)
             ->where('id', $validated['reseller_product_id'])
+            ->with('adminProduct')
             ->firstOrFail();
 
+        $adminProduct = $product->adminProduct;
+        if ($adminProduct && $this->hostingSetup->requiresPrimaryDomain($adminProduct) && blank($validated['primary_domain'] ?? null)) {
+            return back()
+                ->withErrors(['primary_domain' => 'Primary domain is required for shared hosting (PHP / WordPress) plans.'])
+                ->withInput();
+        }
+
+        $billCustomer = $request->boolean('bill_customer', true);
+
         try {
+            if (! $billCustomer) {
+                if ($validated['order_type'] === 'invoice_only') {
+                    return back()->with('error', 'Invoice-only orders require billing the customer.')->withInput();
+                }
+
+                $result = $this->orders->provisionHostingForCustomerWithoutBilling(
+                    $reseller,
+                    $customer,
+                    $product,
+                    $validated['billing_cycle'],
+                    [
+                        'notes' => $validated['notes'] ?? null,
+                        'primary_domain' => $validated['primary_domain'] ?? null,
+                    ],
+                );
+
+                $service = $result['service'];
+                $message = match (true) {
+                    $result['skipped'] => "Hosting service {$service->name} created for {$customer->name} without billing. Auto-provision is disabled in settings — activate manually when ready.",
+                    $result['provisioned'] => "Hosting {$service->name} provisioned for {$customer->name} at no charge to the customer.",
+                    default => "Hosting order created for {$customer->name}.",
+                };
+
+                return redirect()->route('reseller.services.show', $service)
+                    ->with($result['provisioned'] ? 'success' : 'warning', $message);
+            }
+
             if ($validated['order_type'] === 'invoice_only') {
                 $unitPrice = $product->priceForBillingCycle($validated['billing_cycle']);
                 $invoice = $this->billing->createCustomerInvoice($reseller, $customer, [
@@ -89,6 +130,7 @@ class CustomerOrderController extends Controller
                 [
                     'due_date' => $validated['due_date'] ?? null,
                     'invoice_notes' => $validated['notes'] ?? null,
+                    'primary_domain' => $validated['primary_domain'] ?? null,
                 ],
             );
 

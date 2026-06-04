@@ -148,22 +148,34 @@ class DirectAdminService
      * @param  string  $package  DirectAdmin package name
      * @return array ['success' => bool, 'message' => string, 'credentials' => array]
      */
-    public function createHostingAccount(Service $service, string $username, string $password, string $domain, string $package): array
-    {
+    public function createHostingAccount(
+        Service $service,
+        string $username,
+        string $password,
+        string $domain,
+        string $package,
+        ?string $ownerResellerUsername = null,
+    ): array {
         try {
             $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_ACCOUNT_USER';
 
+            $payload = [
+                'action' => 'create',
+                'username' => $username,
+                'email' => $service->user->email,
+                'passwd' => $password,
+                'passwd2' => $password,
+                'domain' => $domain,
+                'package' => $package,
+            ];
+
+            if (filled($ownerResellerUsername)) {
+                $payload['reseller'] = $ownerResellerUsername;
+            }
+
             $response = $this->httpClient()
                 ->asForm()
-                ->post($endpoint, [
-                    'action' => 'create',
-                    'username' => $username,
-                    'email' => $service->user->email,
-                    'passwd' => $password,
-                    'passwd2' => $password,
-                    'domain' => $domain,
-                    'package' => $package,
-                ]);
+                ->post($endpoint, $payload);
 
             $parsed = $this->parseApiResponse($response->body(), $response->status());
 

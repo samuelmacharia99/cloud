@@ -3,15 +3,21 @@
 namespace Tests\Feature\Reseller;
 
 use App\Http\Controllers\Reseller\CartController;
+use App\Models\ContainerTemplate;
+use App\Models\DirectAdminPackage;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\Invoice;
+use App\Models\Node;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerDomainPricing;
 use App\Models\ResellerMarginEntry;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
+use App\Models\Service;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerCustomerBillingService;
@@ -309,6 +315,135 @@ class ResellerCustomerBillingTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertGreaterThan(0, ResellerMarginEntry::where('reseller_id', $reseller->id)->count());
+    }
+
+    public function test_hosting_can_be_provisioned_without_customer_invoice(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        Setting::setValue('auto_provision', 'false');
+        Setting::setValue('provisioning_mode', 'automatic');
+
+        $template = ContainerTemplate::factory()->create();
+
+        $adminProduct = Product::create([
+            'name' => 'Platform Container',
+            'slug' => 'platform-container-'.uniqid(),
+            'type' => 'container_hosting',
+            'monthly_price' => 400,
+            'yearly_price' => 4000,
+            'wholesale_monthly_price' => 200,
+            'wholesale_yearly_price' => 2000,
+            'provisioning_driver_key' => 'container',
+            'container_template_id' => $template->id,
+            'is_active' => true,
+        ]);
+
+        $catalogProduct = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'name' => 'Retail Basic',
+            'type' => 'shared_hosting',
+            'monthly_price' => 500,
+            'yearly_price' => 5000,
+            'is_active' => true,
+        ]);
+
+        $invoiceCountBefore = Invoice::where('user_id', $customer->id)->count();
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-orders.hosting.store'), [
+                'customer_id' => $customer->id,
+                'reseller_product_id' => $catalogProduct->id,
+                'billing_cycle' => 'monthly',
+                'order_type' => 'provision',
+                'bill_customer' => '0',
+                'notes' => 'Complimentary setup',
+            ])
+            ->assertRedirect();
+
+        $this->assertSame($invoiceCountBefore, Invoice::where('user_id', $customer->id)->count());
+
+        $service = Service::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($service);
+        $this->assertEquals(0, (float) $service->custom_price);
+        $this->assertNull($service->invoice_id);
+        $this->assertEquals('pending', $service->status->value ?? $service->status);
+        $this->assertSame('container', $service->provisioning_driver_key);
+    }
+
+    public function test_reseller_shared_hosting_order_stores_directadmin_context(): void
+    {
+        $reseller = $this->reseller();
+        $reseller->update([
+            'directadmin_username' => 'reseller_acme',
+        ]);
+
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $node = Node::create([
+            'name' => 'DA Node',
+            'hostname' => 'da.example.com',
+            'ip_address' => '10.0.0.1',
+            'type' => 'directadmin',
+            'status' => 'online',
+            'api_url' => 'https://da.example.com:2222',
+            'da_admin_username' => 'admin',
+            'da_login_key' => 'secret',
+            'is_active' => true,
+        ]);
+
+        $reseller->update(['reseller_node_id' => $node->id]);
+
+        $daPackage = DirectAdminPackage::create([
+            'name' => 'Bronze',
+            'package_key' => 'bronze',
+            'node_id' => $node->id,
+            'disk_quota' => 1000,
+            'bandwidth_quota' => 10000,
+            'is_active' => true,
+        ]);
+
+        $adminProduct = Product::create([
+            'name' => 'PHP Basic',
+            'slug' => 'php-basic-'.uniqid(),
+            'type' => 'shared_hosting',
+            'monthly_price' => 400,
+            'yearly_price' => 4000,
+            'provisioning_driver_key' => 'directadmin',
+            'direct_admin_package_id' => $daPackage->id,
+            'is_active' => true,
+        ]);
+
+        $catalogProduct = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'name' => 'Retail PHP',
+            'type' => 'shared_hosting',
+            'monthly_price' => 500,
+            'is_active' => true,
+        ]);
+
+        Setting::setValue('auto_provision', 'false');
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-orders.hosting.store'), [
+                'customer_id' => $customer->id,
+                'reseller_product_id' => $catalogProduct->id,
+                'billing_cycle' => 'monthly',
+                'order_type' => 'provision',
+                'bill_customer' => '1',
+                'primary_domain' => 'client.example.com',
+            ])
+            ->assertRedirect();
+
+        $service = Service::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($service);
+        $this->assertSame($node->id, $service->node_id);
+        $this->assertSame('client.example.com', $service->service_meta['domain'] ?? null);
+        $this->assertSame('reseller_acme', $service->service_meta['directadmin_reseller'] ?? null);
+        $this->assertSame('directadmin', $service->provisioning_driver_key);
     }
 
     public function test_domain_can_be_provisioned_without_customer_invoice(): void

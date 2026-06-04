@@ -5,8 +5,10 @@ namespace App\Services\Provisioning;
 use App\Enums\ServiceStatus;
 use App\Models\Domain;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\DomainTransferService;
 use App\Services\NotificationService;
+use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerEnforcementService;
 
 class ProvisioningService
@@ -194,6 +196,18 @@ class ProvisioningService
     private function provisionDirectAdmin(Service $service): void
     {
         $node = $service->node;
+
+        if (! $node && $service->reseller_id) {
+            $reseller = User::query()->find($service->reseller_id);
+            if ($reseller) {
+                $node = app(ResellerDirectAdminService::class)->resolveNode($reseller);
+                if ($node) {
+                    $service->update(['node_id' => $node->id]);
+                    $service->setRelation('node', $node);
+                }
+            }
+        }
+
         if (! $node) {
             throw new \Exception('Service is not assigned to a DirectAdmin node — cannot provision.');
         }
@@ -227,7 +241,21 @@ class ProvisioningService
             throw new \Exception("DirectAdmin account \"{$username}\" already exists on {$node->name}.");
         }
 
-        $result = $daService->createHostingAccount($service, $username, $password, $domain, $packageName);
+        $ownerReseller = $meta['directadmin_reseller'] ?? null;
+        if (! $ownerReseller && $service->reseller_id) {
+            $ownerReseller = User::query()
+                ->whereKey($service->reseller_id)
+                ->value('directadmin_username');
+        }
+
+        $result = $daService->createHostingAccount(
+            $service,
+            $username,
+            $password,
+            $domain,
+            $packageName,
+            filled($ownerReseller) ? (string) $ownerReseller : null,
+        );
 
         if ($result['success']) {
             $service->update([

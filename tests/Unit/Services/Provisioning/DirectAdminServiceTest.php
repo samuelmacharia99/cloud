@@ -135,6 +135,30 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_create_hosting_account_passes_reseller_when_provided(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Created', 200),
+        ]);
+
+        $result = (new DirectAdminService($this->createDirectAdminNode()))->createHostingAccount(
+            $this->createService('cust003'),
+            'cust003',
+            'Str0ngPass!',
+            'example.com',
+            'Bronze',
+            'reseller_acme',
+        );
+
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+                && $request['action'] === 'create'
+                && $request['reseller'] === 'reseller_acme';
+        });
+    }
+
     public function test_empty_api_body_is_treated_as_failure_for_create(): void
     {
         Http::fake([
