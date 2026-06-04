@@ -259,26 +259,10 @@ class ResellerSslService
                 Log::info('Created ACME challenge directory', ['path' => $challengePath]);
             }
 
-            // Get admin email
-            $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
-
-            // Run certbot — escape all user-supplied and system-derived values
-            $webroot = public_path();
-            $command = 'certbot certonly --webroot'
-                .' -d '.escapeshellarg($customDomain)
-                .' --webroot-path '.escapeshellarg($webroot)
-                .' --non-interactive --agree-tos'
-                .' --email '.escapeshellarg($adminEmail)
-                .' 2>&1';
-
-            Log::info('Running certbot for reseller', [
-                'reseller_id' => $reseller->id,
-                'domain' => $customDomain,
-                'command' => $command,
-            ]);
-
-            exec($command, $output, $exitCode);
-            $outputText = $this->enrichCertbotOutput(implode("\n", $output));
+            $run = $this->runCertbotIssue($reseller, $customDomain);
+            $exitCode = $run['exit_code'];
+            $outputText = $run['output'];
+            $command = $run['command'];
 
             if ($exitCode !== 0) {
                 Log::error('certbot failed for reseller', [
@@ -286,6 +270,7 @@ class ResellerSslService
                     'domain' => $customDomain,
                     'exit_code' => $exitCode,
                     'output' => $outputText,
+                    'logs_dir' => $run['logs_dir'],
                 ]);
 
                 return $this->recordSslFailure(
@@ -293,6 +278,11 @@ class ResellerSslService
                     $customDomain,
                     $this->summarizeCertbotFailure($outputText),
                     $outputText,
+                    [
+                        'exit_code' => $exitCode,
+                        'command' => $command,
+                        'logs_dir' => $run['logs_dir'],
+                    ],
                 );
             }
 
@@ -313,6 +303,11 @@ class ResellerSslService
                     $customDomain,
                     'Certificate files were not found after certbot finished. Expected: '.$certPath,
                     $outputText,
+                    [
+                        'exit_code' => $exitCode,
+                        'command' => $command,
+                        'logs_dir' => $run['logs_dir'],
+                    ],
                 );
             }
 
@@ -359,6 +354,7 @@ class ResellerSslService
     }
 
     /**
+     * @param  array<string, mixed>  $context
      * @return array{success: false, message: string}
      */
     public function recordSslFailure(
@@ -366,14 +362,21 @@ class ResellerSslService
         ?string $domain,
         string $message,
         ?string $rawOutput = null,
+        array $context = [],
     ): array {
+        $logsDir = isset($context['logs_dir']) ? (string) $context['logs_dir'] : null;
+
         if ($rawOutput !== null && trim($rawOutput) !== '') {
-            $rawOutput = $this->enrichCertbotOutput(trim($rawOutput));
+            $rawOutput = $this->enrichCertbotOutput(trim($rawOutput), $logsDir);
+        } elseif ($context !== []) {
+            $rawOutput = $this->buildFailureDiagnostics($context);
+        } else {
+            $rawOutput = '';
         }
 
         $message = trim($message) !== '' ? trim($message) : 'SSL provisioning failed.';
 
-        if ($this->isBoilerplateSslMessage($message) && $rawOutput) {
+        if ($this->isBoilerplateSslMessage($message) && $rawOutput !== '') {
             $message = $this->summarizeCertbotFailure($rawOutput);
         }
 
@@ -385,7 +388,9 @@ class ResellerSslService
             'status' => 'failed',
             'domain' => $domain,
             'error' => Str::limit($message, 1000),
-            'last_output' => $rawOutput ? Str::limit($rawOutput, 8000) : null,
+            'last_output' => $rawOutput !== '' ? Str::limit($rawOutput, 8000) : null,
+            'last_exit_code' => $context['exit_code'] ?? null,
+            'last_command' => isset($context['command']) ? Str::limit((string) $context['command'], 500) : null,
             'last_attempt_at' => now()->toIso8601String(),
         ]);
 
@@ -393,6 +398,129 @@ class ResellerSslService
             'success' => false,
             'message' => $message,
         ];
+    }
+
+    /**
+     * @return array{exit_code: int, output: string, command: string, logs_dir: string}
+     */
+    public function runCertbotIssue(User $reseller, string $customDomain): array
+    {
+        $logsDir = storage_path('app/ssl-provisioning/reseller-'.$reseller->id.'/logs');
+        if (! is_dir($logsDir)) {
+            mkdir($logsDir, 0755, true);
+        }
+
+        $command = $this->buildCertbotIssueCommand($customDomain, $logsDir);
+
+        Log::info('Running certbot for reseller', [
+            'reseller_id' => $reseller->id,
+            'domain' => $customDomain,
+            'command' => $command,
+            'logs_dir' => $logsDir,
+            'php_user' => get_current_user(),
+        ]);
+
+        $output = [];
+        $exitCode = 1;
+        exec($command.' 2>&1', $output, $exitCode);
+        $outputText = implode("\n", $output);
+
+        if (trim($outputText) === '') {
+            $shellOutput = shell_exec($command.' 2>&1');
+            if (is_string($shellOutput) && trim($shellOutput) !== '') {
+                $outputText = $shellOutput;
+            }
+        }
+
+        $outputText = $this->enrichCertbotOutput($outputText, $logsDir);
+        $outputText = $this->appendLogsFromDirectory($outputText, $logsDir);
+
+        return [
+            'exit_code' => $exitCode,
+            'output' => $outputText,
+            'command' => $command,
+            'logs_dir' => $logsDir,
+        ];
+    }
+
+    public function buildCertbotIssueCommand(string $customDomain, string $logsDir): string
+    {
+        $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
+        $webroot = public_path();
+        $certbot = (string) config('app.reseller_ssl_certbot_path', 'certbot');
+        $prefix = config('app.reseller_ssl_certbot_sudo', false) ? 'sudo -n ' : '';
+
+        return $prefix
+            .escapeshellcmd($certbot).' certonly --webroot'
+            .' -d '.escapeshellarg($customDomain)
+            .' --webroot-path '.escapeshellarg($webroot)
+            .' --non-interactive --agree-tos'
+            .' --email '.escapeshellarg($adminEmail)
+            .' --logs-dir '.escapeshellarg($logsDir);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function buildFailureDiagnostics(array $context): string
+    {
+        $lines = [
+            '--- SSL provisioning diagnostics ---',
+            'Time: '.now()->toIso8601String(),
+            'PHP user: '.(function_exists('posix_getpwuid') && function_exists('posix_geteuid')
+                ? (posix_getpwuid(posix_geteuid())['name'] ?? get_current_user())
+                : get_current_user()),
+        ];
+
+        if (isset($context['exit_code'])) {
+            $lines[] = 'Certbot exit code: '.$context['exit_code'];
+        }
+
+        if (! empty($context['command'])) {
+            $lines[] = 'Command: '.$context['command'];
+        }
+
+        if (! empty($context['logs_dir'])) {
+            $lines[] = 'Logs directory: '.$context['logs_dir'];
+            $lines[] = $this->appendLogsFromDirectory('', (string) $context['logs_dir']);
+        }
+
+        if (! config('app.reseller_ssl_certbot_sudo', false)) {
+            $lines[] = 'Tip: certbot usually needs root. Set RESELLER_SSL_CERTBOT_SUDO=true and allow passwordless sudo for certbot in sudoers.';
+        }
+
+        $lines[] = 'Also check storage/logs/laravel.log on this server for "certbot failed for reseller".';
+
+        return trim(implode("\n", array_filter($lines)));
+    }
+
+    private function appendLogsFromDirectory(string $output, string $logsDir): string
+    {
+        if (! is_dir($logsDir)) {
+            return $output;
+        }
+
+        $files = glob($logsDir.'/*') ?: [];
+        usort($files, fn ($a, $b) => filemtime($b) <=> filemtime($a));
+
+        foreach (array_slice($files, 0, 3) as $file) {
+            if (! is_file($file)) {
+                continue;
+            }
+
+            $tail = $this->readFileTail($file, 4000)
+                ?: $this->tailLogViaShell($file, 4000);
+
+            if ($tail === '') {
+                continue;
+            }
+
+            $output .= ($output !== '' ? "\n\n" : '')
+                .'--- Log file: '.basename($file)." ---\n"
+                .$tail;
+        }
+
+        return $output;
     }
 
     public function isBoilerplateSslMessage(string $message): bool
@@ -428,6 +556,13 @@ class ResellerSslService
 
         if ($this->isBoilerplateSslMessage($error)) {
             $error = 'Certificate issuance failed. See the certbot output below for details.';
+        }
+
+        if ($output === '' && ! empty($ssl['last_command'])) {
+            $output = 'Command: '.$ssl['last_command'];
+            if (isset($ssl['last_exit_code'])) {
+                $output .= "\nExit code: ".$ssl['last_exit_code'];
+            }
         }
 
         $showOutput = $output !== ''
@@ -507,9 +642,13 @@ class ResellerSslService
         return 'Certificate issuance failed. See certbot output below or check /var/log/letsencrypt/letsencrypt.log on the server.';
     }
 
-    public function enrichCertbotOutput(string $output): string
+    public function enrichCertbotOutput(string $output, ?string $writableLogsDir = null): string
     {
         $output = trim($output);
+
+        if ($writableLogsDir) {
+            $output = $this->appendLogsFromDirectory($output, $writableLogsDir);
+        }
 
         if ($this->hasActionableCertbotDetail($output)) {
             return $output;
@@ -523,11 +662,9 @@ class ResellerSslService
         $logPaths[] = '/var/log/letsencrypt/letsencrypt.log';
 
         foreach (array_unique($logPaths) as $path) {
-            if (! is_readable($path)) {
-                continue;
-            }
+            $tail = $this->readFileTail($path, 8000)
+                ?: $this->tailLogViaShell($path, 8000);
 
-            $tail = $this->readFileTail($path, 8000);
             if ($tail === '') {
                 continue;
             }
@@ -538,6 +675,18 @@ class ResellerSslService
         }
 
         return $output;
+    }
+
+    private function tailLogViaShell(string $path, int $maxBytes = 8000): string
+    {
+        if (! file_exists($path)) {
+            return '';
+        }
+
+        $escaped = escapeshellarg($path);
+        $tail = shell_exec("tail -c {$maxBytes} {$escaped} 2>&1");
+
+        return is_string($tail) ? trim($tail) : '';
     }
 
     private function hasActionableCertbotDetail(string $output): bool
@@ -664,6 +813,8 @@ class ResellerSslService
             'queued_at' => null,
             'last_attempt_at' => null,
             'last_output' => null,
+            'last_exit_code' => null,
+            'last_command' => null,
         ];
 
         $ssl = $reseller->settings['branding']['ssl'] ?? [];

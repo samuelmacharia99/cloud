@@ -20,4 +20,11 @@ return [
             explode(',', env('APP_PREVIOUS_KEYS', ''))
         ),
     ],
+
+    /*
+    | Reseller custom-domain SSL (Let's Encrypt via certbot)
+    | RESELLER_SSL_CERTBOT_SUDO=true when www-data may run: sudo -n /usr/bin/certbot ...
+    */
+    'reseller_ssl_certbot_path' => env('RESELLER_SSL_CERTBOT_PATH', 'certbot'),
+    'reseller_ssl_certbot_sudo' => (bool) env('RESELLER_SSL_CERTBOT_SUDO', false),
 ];

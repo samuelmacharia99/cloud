@@ -619,7 +619,10 @@
                                                     <p class="text-xs font-medium text-red-800 dark:text-red-300 pt-1">Certbot output</p>
                                                     <pre class="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap break-words max-h-64 overflow-y-auto rounded-md bg-red-100/80 dark:bg-red-950/50 p-2 border border-red-200 dark:border-red-900">{{ $sslFailure['output'] }}</pre>
                                                 @elseif($sslFailure['output'] === '')
-                                                    <p class="text-xs text-red-700 dark:text-red-400">No certbot log was saved with this failure. Click <strong>Provision SSL</strong> again to capture the full error (including the Let’s Encrypt log file).</p>
+                                                    <p class="text-xs text-red-700 dark:text-red-400">No certbot log was captured. Click <strong>Provision SSL</strong> again. If this persists, your host may need <code class="text-xs">RESELLER_SSL_CERTBOT_SUDO=true</code> and passwordless sudo for certbot.</p>
+                                                @endif
+                                                @if(!empty($sslStatus['last_command']))
+                                                    <p class="text-xs text-slate-500 dark:text-slate-400 font-mono break-all">Ran: {{ $sslStatus['last_command'] }}</p>
                                                 @endif
                                                 <p class="text-xs text-red-700 dark:text-red-400 pt-1">Fix DNS if needed, then use Provision SSL above.</p>
                                             </div>

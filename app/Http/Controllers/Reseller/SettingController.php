@@ -384,12 +384,12 @@ class SettingController extends Controller
             @set_time_limit(300);
 
             $this->sslService->prepareManualProvision($user, 'manual');
-            ProvisionResellerSslJob::dispatchSync($user->id, 'issue');
+            $result = $this->sslService->issueCertificate($user->fresh());
 
             $user->refresh();
             $ssl = $this->sslService->getSslStatus($user);
 
-            if (($ssl['status'] ?? '') === 'active') {
+            if ($result['success'] ?? false) {
                 $expires = ! empty($ssl['expires_at'])
                     ? ' Valid until '.\Carbon\Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
                     : '';
