@@ -23,10 +23,17 @@ class ResellerEnforcementService
 
     public function __construct(
         private ResellerScopeService $scope,
-        private ProvisioningService $provisioning,
         private ServiceOverdueEnforcementService $overdueEnforcement,
         private ResellerDirectAdminService $resellerDirectAdmin,
     ) {}
+
+    /**
+     * Resolved lazily to avoid a circular dependency with ProvisioningService.
+     */
+    private function provisioning(): ProvisioningService
+    {
+        return app(ProvisioningService::class);
+    }
 
     public function isSuspensionEnabled(): bool
     {
@@ -327,7 +334,7 @@ class ResellerEnforcementService
         foreach ($services as $service) {
             try {
                 $this->clearEnforcementMeta($service);
-                $this->provisioning->unsuspend($service->fresh());
+                $this->provisioning()->unsuspend($service->fresh());
                 $count++;
             } catch (\Throwable $e) {
                 Log::error('Failed cascade unsuspend for reseller service', [
@@ -351,7 +358,7 @@ class ResellerEnforcementService
         $meta[self::META_SUSPENSION_REASON] = $reason;
         $service->update(['service_meta' => $meta]);
 
-        $this->provisioning->suspend($service->fresh());
+        $this->provisioning()->suspend($service->fresh());
     }
 
     protected function wasSuspendedByResellerEnforcement(Service $service): bool

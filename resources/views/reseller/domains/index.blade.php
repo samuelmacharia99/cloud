@@ -14,12 +14,31 @@
 <div class="space-y-8">
     <!-- Header -->
     <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Domains</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your domain portfolio and register new domains at wholesale rates.</p>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domains</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Register for your account (wholesale) or bill a managed customer at your retail prices.</p>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+        <form method="POST" action="{{ route('reseller.cart.context') }}" class="flex flex-wrap gap-3 items-end">
+            @csrf
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs font-medium text-slate-500 mb-1">Cart billing mode</label>
+                <select name="customer_id" class="w-full px-3 py-2 border rounded-lg bg-white dark:bg-slate-800 text-sm">
+                    <option value="">My account (wholesale)</option>
+                    @foreach ($cartCustomers as $c)
+                        <option value="{{ $c->id }}" @selected(($cartContext['customer_id'] ?? null) == $c->id)>{{ $c->name }} (customer retail)</option>
+                    @endforeach
+                </select>
+            </div>
+            <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium">Apply</button>
+        </form>
+        @if (($cartContext['mode'] ?? 'self') === 'customer')
+            <p class="text-xs text-purple-600 mt-2">Cart checkout will create a customer invoice at retail for {{ $cartContext['customer_name'] ?? 'selected customer' }}.</p>
+        @endif
     </div>
 
     <!-- Domain Search Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager()">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager({{ ($cartContext['mode'] ?? 'self') === 'customer' ? 'true' : 'false' }})">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-6">Register a New Domain</h2>
 
         <div class="space-y-6">
@@ -234,8 +253,9 @@
 </div>
 
 <script>
-function domainSearchManager() {
+function domainSearchManager(customerMode = false) {
     return {
+        customerMode: Boolean(customerMode),
         domainName: '',
         selectedPeriod: '1',
         searching: false,
@@ -274,8 +294,10 @@ function domainSearchManager() {
 
             try {
                 // Get pricing for this extension (pass with dot, e.g., .com)
+                const retailParam = this.customerMode ? '&retail=1' : '';
                 const pricingRes = await fetch(
-                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension),
+                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension)
+                        + '?period=' + this.selectedPeriod + retailParam,
                     {
                         headers: {
                             'Accept': 'application/json',
@@ -286,14 +308,16 @@ function domainSearchManager() {
                 if (pricingRes.ok) {
                     const pricingData = await pricingRes.json();
                     if (pricingData.available) {
-                        // Wholesale pricing for resellers
-                        const price = pricingData.price;
+                        const lineTotal = pricingData.line_total ?? (pricingData.price * this.selectedPeriod);
+                        const unitPrice = lineTotal / this.selectedPeriod;
                         this.searchResults.push({
                             domain: input,
                             extension: extension,
-                            price: price * this.selectedPeriod,
+                            price: unitPrice,
+                            lineTotal: lineTotal,
                             currency: pricingData.currency || 'KES',
-                            available: true
+                            available: true,
+                            retail: pricingData.retail || this.customerMode,
                         });
                     }
                 } else {

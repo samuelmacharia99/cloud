@@ -11,7 +11,7 @@ class SecurityHeaders
     /**
      * Handle an incoming request.
      *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -19,37 +19,39 @@ class SecurityHeaders
 
         // Apply CSP in both development and production
         // Allow external resources: fonts.bunny.net, Google reCAPTCHA, CDN
-        $csp = "default-src 'self'; " .
-               "style-src 'self' 'unsafe-inline' https://fonts.bunny.net https://cdn.jsdelivr.net; " .
-               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; " .
-               "font-src 'self' https://fonts.bunny.net https://fonts.gstatic.com data:; " .
-               "frame-src https://www.google.com; " .
-               "img-src 'self' data: https:; " .
+        $csp = "default-src 'self'; ".
+               "style-src 'self' 'unsafe-inline' https://fonts.bunny.net https://cdn.jsdelivr.net; ".
+               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://www.google.com https://www.gstatic.com; ".
+               "font-src 'self' https://fonts.bunny.net https://fonts.gstatic.com data:; ".
+               'frame-src https://www.google.com; '.
+               "img-src 'self' data: https:; ".
                "connect-src 'self' https: wss:; ";
 
         // Add stricter CSP rules for production
-        if (!app()->environment('local', 'development')) {
-            $csp .= "frame-ancestors 'none'; " .
-                   "base-uri 'self'; " .
+        if (! app()->environment('local', 'development')) {
+            $csp .= "frame-ancestors 'none'; ".
+                   "base-uri 'self'; ".
                    "form-action 'self';";
         }
 
-        $response->header('Content-Security-Policy', $csp);
+        $headers = [
+            'Content-Security-Policy' => $csp,
+            'X-Frame-Options' => 'DENY',
+            'X-Content-Type-Options' => 'nosniff',
+            'X-XSS-Protection' => '1; mode=block',
+            'Referrer-Policy' => 'strict-origin-when-cross-origin',
+            'Permissions-Policy' => 'geolocation=(), microphone=(), camera=()',
+            'X-Robots-Tag' => 'noai, noimageai',
+            'X-Permitted-Cross-Domain-Policies' => 'none',
+        ];
 
-        // Other security headers (always apply, safe in both dev and production)
-        $response->header('X-Frame-Options', 'DENY');
-        $response->header('X-Content-Type-Options', 'nosniff');
-        $response->header('X-XSS-Protection', '1; mode=block');
-        $response->header('Referrer-Policy', 'strict-origin-when-cross-origin');
-        $response->header('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
-        $response->header('X-Robots-Tag', 'noai, noimageai');
-
-        // Only enforce HSTS in production (avoid mixed content issues in dev)
-        if (!app()->environment('local', 'development')) {
-            $response->header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+        if (! app()->environment('local', 'development')) {
+            $headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
         }
 
-        $response->header('X-Permitted-Cross-Domain-Policies', 'none');
+        foreach ($headers as $name => $value) {
+            $response->headers->set($name, $value);
+        }
 
         return $response;
     }

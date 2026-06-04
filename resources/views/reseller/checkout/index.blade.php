@@ -15,7 +15,11 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Order Review</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Review your order details before placing it.</p>
+        @if ($isCustomerCheckout ?? false)
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Creates a customer invoice for <strong>{{ $checkoutCustomer->name }}</strong> at your retail prices.</p>
+        @else
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Review your wholesale order before placing it.</p>
+        @endif
     </div>
 
     <div class="grid lg:grid-cols-3 gap-6" x-data="{
@@ -67,36 +71,44 @@
                 </div>
             </div>
 
-            <!-- Your Information -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Your Information</h2>
-                <div class="space-y-4">
-                    <div>
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Full Name</p>
-                        <p class="font-semibold text-slate-900 dark:text-white">{{ $user->name }}</p>
-                    </div>
-                    <div>
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Email</p>
-                        <p class="font-semibold text-slate-900 dark:text-white">{{ $user->email }}</p>
-                    </div>
-                    <div>
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Phone</p>
-                        <p class="font-semibold text-slate-900 dark:text-white">{{ $user->phone ?? 'N/A' }}</p>
+            @if ($isCustomerCheckout ?? false)
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Bill to customer</h2>
+                    <p class="font-semibold">{{ $checkoutCustomer->name }}</p>
+                    <p class="text-sm text-slate-500">{{ $checkoutCustomer->email }}</p>
+                </div>
+                <div class="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                    <p class="text-sm text-amber-900 dark:text-amber-200">No wallet charge at checkout. Record payment on the customer invoice after they pay you (M-Pesa, cash, etc.). Domains push when the invoice is fully paid.</p>
+                </div>
+            @else
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Your Information</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Full Name</p>
+                            <p class="font-semibold text-slate-900 dark:text-white">{{ $user->name }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Email</p>
+                            <p class="font-semibold text-slate-900 dark:text-white">{{ $user->email }}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Phone</p>
+                            <p class="font-semibold text-slate-900 dark:text-white">{{ $user->phone ?? 'N/A' }}</p>
+                        </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Payment Info -->
-            <div class="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
-                <h3 class="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">Payment</h3>
-                <p class="text-sm text-purple-800 dark:text-purple-300">You can apply your wallet balance at checkout. Any remaining amount can be paid via M-Pesa, card, PayPal, or manual proof.</p>
-            </div>
+                <div class="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-purple-900 dark:text-purple-200 mb-2">Payment</h3>
+                    <p class="text-sm text-purple-800 dark:text-purple-300">You can apply your wallet balance at checkout. Any remaining amount can be paid via M-Pesa, card, PayPal, or manual proof.</p>
+                </div>
+            @endif
 
             <!-- Place Order Form -->
             <form method="POST" action="{{ route('reseller.checkout.process') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                 @csrf
 
-                @if($wallet->balance > 0)
+                @if(!($isCustomerCheckout ?? false) && $wallet->balance > 0)
                 <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
@@ -112,7 +124,7 @@
                         </span>
                     </label>
                 </div>
-                @else
+                @elseif(!($isCustomerCheckout ?? false))
                 <div class="mb-6 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
                     <p class="text-sm text-slate-600 dark:text-slate-400">Wallet balance: <strong class="text-slate-900 dark:text-white">KES 0.00</strong>. <a href="{{ route('reseller.wallet.index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Top up your wallet</a> to pay from balance.</p>
                 </div>
@@ -135,7 +147,7 @@
                         Back to Cart
                     </a>
                     <button type="submit" class="flex-1 px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
-                        Place Order
+                        {{ ($isCustomerCheckout ?? false) ? 'Create customer invoice' : 'Place Order' }}
                     </button>
                 </div>
             </form>

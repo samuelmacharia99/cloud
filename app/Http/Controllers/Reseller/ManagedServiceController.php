@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Service;
+use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerScopeService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
 class ManagedServiceController extends Controller
@@ -43,7 +46,82 @@ class ManagedServiceController extends Controller
         $this->ensureManaged($service);
         $service->load(['user', 'product', 'containerDeployment', 'invoice']);
 
-        return view('reseller.services.show', compact('service'));
+        $canSuspend = $service->status === ServiceStatus::Active;
+        $canUnsuspend = $service->status === ServiceStatus::Suspended;
+        $canTerminate = ! in_array($service->status->value ?? $service->status, ['terminated', 'cancelled'], true);
+
+        $managementLinks = $this->managementLinks($service);
+
+        return view('reseller.services.show', compact(
+            'service',
+            'canSuspend',
+            'canUnsuspend',
+            'canTerminate',
+            'managementLinks',
+        ));
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function managementLinks(Service $service): array
+    {
+        $meta = $service->service_meta ?? [];
+        $driver = $service->provisioning_driver_key ?? $service->product?->provisioning_driver_key;
+
+        return [
+            'driver' => $driver,
+            'username' => $meta['username'] ?? $service->credentials['username'] ?? null,
+            'domain' => $meta['domain'] ?? null,
+            'ip_address' => $meta['ip_address'] ?? null,
+            'panel_url' => $driver === 'directadmin' && ! empty($meta['domain'])
+                ? 'https://'.$meta['domain'].':2222'
+                : null,
+            'container_deployment' => $service->containerDeployment?->id,
+        ];
+    }
+
+    public function suspend(Service $service, ProvisioningService $provisioning): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        try {
+            $provisioning->suspend($service);
+
+            return back()->with('success', 'Service suspended successfully.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Suspension failed: '.$e->getMessage());
+        }
+    }
+
+    public function unsuspend(Service $service, ProvisioningService $provisioning): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        try {
+            $provisioning->unsuspend($service);
+
+            return back()->with('success', 'Service unsuspended successfully.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Unsuspension failed: '.$e->getMessage());
+        }
+    }
+
+    public function terminate(Service $service, ProvisioningService $provisioning): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        if (in_array($service->status->value ?? $service->status, ['terminated', 'cancelled'], true)) {
+            return back()->with('error', 'Service is already terminated or cancelled.');
+        }
+
+        try {
+            $provisioning->terminate($service);
+
+            return back()->with('success', 'Service terminated successfully.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Termination failed: '.$e->getMessage());
+        }
     }
 
     private function ensureManaged(Service $service): void

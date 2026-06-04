@@ -41,10 +41,12 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Reseller\CartController;
 use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
+use App\Http\Controllers\Reseller\CustomerOrderController;
 use App\Http\Controllers\Reseller\DomainPricingController;
 use App\Http\Controllers\Reseller\DomainPushController;
 use App\Http\Controllers\Reseller\ManagedServiceController;
 use App\Http\Controllers\Reseller\PackageController;
+use App\Http\Controllers\Reseller\ReportsController;
 use App\Http\Controllers\Reseller\ServerController;
 use App\Http\Controllers\Reseller\WalletController;
 use App\Models\DomainExtension;
@@ -302,10 +304,35 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         Route::get('reseller/services', [ManagedServiceController::class, 'index'])->name('reseller.services.index');
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
+        Route::post('reseller/services/{service}/suspend', [ManagedServiceController::class, 'suspend'])->name('reseller.services.suspend');
+        Route::post('reseller/services/{service}/unsuspend', [ManagedServiceController::class, 'unsuspend'])->name('reseller.services.unsuspend');
+        Route::post('reseller/services/{service}/terminate', [ManagedServiceController::class, 'terminate'])->name('reseller.services.terminate');
+
+        Route::get('reseller/reports', [ReportsController::class, 'index'])->name('reseller.reports.index');
+        Route::get('reseller/reports/export/customers', [ReportsController::class, 'exportCustomers'])->name('reseller.reports.export.customers');
+        Route::get('reseller/reports/export/invoices', [ReportsController::class, 'exportInvoices'])->name('reseller.reports.export.invoices');
+        Route::get('reseller/reports/export/revenue', [ReportsController::class, 'exportRevenue'])->name('reseller.reports.export.revenue');
+        Route::get('reseller/reports/export/services', [ReportsController::class, 'exportServices'])->name('reseller.reports.export.services');
+        Route::get('reseller/reports/export/margins', [ReportsController::class, 'exportMargins'])->name('reseller.reports.export.margins');
 
         Route::get('reseller/customer-invoices', [CustomerInvoiceController::class, 'index'])->name('reseller.customer-invoices.index');
+        Route::get('reseller/customer-invoices/create', [CustomerInvoiceController::class, 'create'])->name('reseller.customer-invoices.create');
+        Route::post('reseller/customer-invoices', [CustomerInvoiceController::class, 'store'])->name('reseller.customer-invoices.store');
+        Route::get('reseller/customer-invoices/{invoice}/edit', [CustomerInvoiceController::class, 'edit'])->name('reseller.customer-invoices.edit');
+        Route::put('reseller/customer-invoices/{invoice}', [CustomerInvoiceController::class, 'update'])->name('reseller.customer-invoices.update');
         Route::get('reseller/customer-invoices/{invoice}', [CustomerInvoiceController::class, 'show'])->name('reseller.customer-invoices.show');
+        Route::post('reseller/customer-invoices/{invoice}/payments', [CustomerInvoiceController::class, 'addPayment'])->name('reseller.customer-invoices.add-payment');
+        Route::post('reseller/customer-invoices/{invoice}/mark-paid', [CustomerInvoiceController::class, 'markPaid'])->name('reseller.customer-invoices.mark-paid');
+        Route::post('reseller/customer-invoices/{invoice}/cancel', [CustomerInvoiceController::class, 'cancel'])->name('reseller.customer-invoices.cancel');
+        Route::post('reseller/customer-invoices/{invoice}/resend', [CustomerInvoiceController::class, 'resend'])->name('reseller.customer-invoices.resend');
         Route::get('reseller/customer-invoices/{invoice}/download', [CustomerInvoiceController::class, 'download'])->name('reseller.customer-invoices.download');
+
+        Route::get('reseller/customer-orders/hosting', [CustomerOrderController::class, 'createHosting'])->name('reseller.customer-orders.hosting.create');
+        Route::post('reseller/customer-orders/hosting', [CustomerOrderController::class, 'storeHosting'])->name('reseller.customer-orders.hosting.store');
+        Route::get('reseller/customer-orders/domain', [CustomerOrderController::class, 'createDomain'])->name('reseller.customer-orders.domain.create');
+        Route::post('reseller/customer-orders/domain', [CustomerOrderController::class, 'storeDomain'])->name('reseller.customer-orders.domain.store');
+        Route::get('reseller/customer-orders/create', [CustomerOrderController::class, 'create'])->name('reseller.customer-orders.create');
+        Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
 
         Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/{package}/subscribe', [PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
@@ -351,6 +378,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('reseller/servers', [ServerController::class, 'index'])->name('reseller.servers.index');
             Route::post('reseller/servers/order', [ServerController::class, 'order'])->name('reseller.servers.order');
             Route::get('reseller/cart', [CartController::class, 'index'])->name('reseller.cart.index');
+            Route::post('reseller/cart/context', [CartController::class, 'setContext'])->name('reseller.cart.context');
             Route::post('reseller/cart/add', [CartController::class, 'add'])->name('reseller.cart.add');
             Route::delete('reseller/cart/{key}', [CartController::class, 'remove'])->name('reseller.cart.remove');
             Route::post('reseller/cart/clear', [CartController::class, 'clear'])->name('reseller.cart.clear');

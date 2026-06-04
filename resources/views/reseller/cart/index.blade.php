@@ -15,7 +15,11 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Your Cart</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Review your domain orders before checkout.</p>
+        @if (($cartContext['mode'] ?? 'self') === 'customer' && $checkoutCustomer)
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Whitelabel checkout for <strong>{{ $checkoutCustomer->name }}</strong> at your retail prices.</p>
+        @else
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Review domain orders before checkout (wholesale to your account).</p>
+        @endif
     </div>
 
     @if(count($items) > 0)

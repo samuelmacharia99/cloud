@@ -11,12 +11,18 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
+use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
+use App\Support\ResellerCartContext;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class CheckoutController extends Controller
 {
@@ -26,9 +32,11 @@ class CheckoutController extends Controller
         protected ResellerWalletService $walletService,
         protected ResellerInvoicePaymentService $invoicePaymentService,
         protected DomainRenewalService $renewalService,
+        protected ResellerCustomerOrderService $customerOrders,
+        protected ResellerScopeService $scope,
     ) {}
 
-    public function show()
+    public function show(): View|RedirectResponse
     {
         $cart = session(CartController::CART_KEY, []);
 
@@ -54,8 +62,11 @@ class CheckoutController extends Controller
         $total = $subtotal + $tax;
 
         $user = auth()->user();
+        $checkoutCustomer = $this->resolveCheckoutCustomer();
+        $isCustomerCheckout = $checkoutCustomer !== null;
+
         $wallet = $this->walletService->getOrCreate($user);
-        $walletApplicable = min((float) $wallet->balance, $total);
+        $walletApplicable = $isCustomerCheckout ? 0 : min((float) $wallet->balance, $total);
 
         return view('reseller.checkout.index', compact(
             'items',
@@ -67,6 +78,8 @@ class CheckoutController extends Controller
             'user',
             'wallet',
             'walletApplicable',
+            'checkoutCustomer',
+            'isCustomerCheckout',
         ));
     }
 
@@ -83,6 +96,11 @@ class CheckoutController extends Controller
         }
 
         $reseller = auth()->user();
+
+        $checkoutCustomer = $this->resolveCheckoutCustomer();
+        if ($checkoutCustomer) {
+            return $this->processCustomerCheckout($cart, $reseller, $checkoutCustomer);
+        }
         $subtotal = 0;
         $invoiceItems = [];
         $domainOrders = [];
@@ -272,5 +290,61 @@ class CheckoutController extends Controller
         foreach ($renewalOrders as $order) {
             app(DomainRenewalService::class)->pushRenewalToAdmin($order);
         }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $cart
+     */
+    private function processCustomerCheckout(array $cart, $reseller, $checkoutCustomer): RedirectResponse
+    {
+        if (collect($cart)->contains(fn ($item) => ($item['type'] ?? 'domain') === 'domain_renewal')) {
+            return redirect()->route('reseller.cart.index')
+                ->with('error', 'Renewals cannot be billed to customers via cart. Use your account cart for renewals.');
+        }
+
+        try {
+            $invoice = $this->customerOrders->checkoutDomainCartForCustomer(
+                $reseller,
+                $checkoutCustomer,
+                array_values($cart),
+            );
+
+            session()->forget(CartController::CART_KEY);
+            ResellerCartContext::setSelf();
+
+            return redirect()->route('reseller.customer-invoices.show', $invoice)
+                ->with('success', 'Customer invoice created at your retail prices. Collect payment from your customer to complete registration.');
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->route('reseller.checkout.show')
+                ->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            report($e);
+
+            return redirect()->route('reseller.checkout.show')
+                ->with('error', 'Failed to create customer invoice.');
+        }
+    }
+
+    private function resolveCheckoutCustomer(): ?User
+    {
+        if (! ResellerCartContext::isCustomerMode()) {
+            return null;
+        }
+
+        $customerId = ResellerCartContext::customerId();
+        if (! $customerId) {
+            return null;
+        }
+
+        $customer = User::find($customerId);
+        $reseller = auth()->user();
+
+        if (! $customer || ! $this->scope->ownsCustomer($reseller, $customer)) {
+            ResellerCartContext::setSelf();
+
+            return null;
+        }
+
+        return $customer;
     }
 }

@@ -7,7 +7,10 @@ use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\DomainRenewalService;
+use App\Services\ResellerCustomerOrderService;
+use App\Support\ResellerCartContext;
 use Illuminate\Http\Request;
 
 class DomainController extends Controller
@@ -16,6 +19,7 @@ class DomainController extends Controller
 
     public function __construct(
         protected DomainRenewalService $renewalService,
+        protected ResellerCustomerOrderService $customerOrders,
     ) {}
 
     /**
@@ -53,11 +57,26 @@ class DomainController extends Controller
         // Default period for pricing display
         $selectedPeriod = $request->get('period', 1);
 
+        $cartCustomers = User::query()
+            ->where('reseller_id', $resellerId)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        if ($request->filled('customer')) {
+            $customer = $cartCustomers->firstWhere('id', (int) $request->customer);
+            if ($customer) {
+                ResellerCartContext::setCustomer($customer->id);
+                ResellerCartContext::setCustomerName($customer->name);
+            }
+        }
+
         return view('reseller.domains.index', [
             'domains' => $domains,
             'extensions' => $extensions,
             'selectedPeriod' => $selectedPeriod,
             'periods' => [1, 2, 3, 5, 10],
+            'cartContext' => ResellerCartContext::summary(),
+            'cartCustomers' => $cartCustomers,
         ]);
     }
 
@@ -74,7 +93,14 @@ class DomainController extends Controller
             ->where('period_years', $period)
             ->first();
 
-        $price = $wholesalePricing?->price ?? 0;
+        $wholesalePrice = $wholesalePricing?->price ?? 0;
+        $reseller = auth()->user();
+        $useRetail = $request->boolean('retail') || ResellerCartContext::isCustomerMode();
+
+        $price = $wholesalePrice;
+        if ($useRetail && $reseller) {
+            $price = $this->customerOrders->retailAmountForExtension($reseller, $extension, (int) $period, (float) $wholesalePrice * (int) $period) / max(1, (int) $period);
+        }
 
         $renewalPricing = $extension->pricing()
             ->where('tier', 'wholesale')
@@ -87,6 +113,11 @@ class DomainController extends Controller
 
         return response()->json([
             'price' => $price,
+            'line_total' => $useRetail
+                ? $this->customerOrders->retailAmountForExtension($reseller, $extension, (int) $period, (float) $wholesalePrice * (int) $period)
+                : (float) $wholesalePrice * (int) $period,
+            'wholesale_price' => $wholesalePrice,
+            'retail' => $useRetail,
             'renewal_price' => $renewalPrice,
             'currency' => 'KES',
             'available' => $price > 0,

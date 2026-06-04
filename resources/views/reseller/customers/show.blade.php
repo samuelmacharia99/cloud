@@ -11,12 +11,14 @@
             <p class="text-slate-600 dark:text-slate-400 mt-1">{{ $customer->email }}</p>
         </div>
         <div class="flex gap-2">
-            <a href="{{ route('reseller.customers.edit', $customer) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
-                Edit
-            </a>
-            <a href="{{ route('reseller.customers.index') }}" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition">
-                Back
-            </a>
+            <form method="POST" action="{{ route('reseller.customers.impersonate', $customer) }}" class="inline">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">View as customer</button>
+            </form>
+            <a href="{{ route('reseller.customer-orders.hosting.create', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Order hosting</a>
+            <a href="{{ route('reseller.customer-orders.domain.create', ['customer' => $customer->id]) }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Register domain</a>
+            <a href="{{ route('reseller.customer-invoices.create', ['customer' => $customer->id]) }}" class="px-4 py-2 border border-purple-300 text-purple-700 font-medium rounded-lg transition text-sm">New invoice</a>
+            <a href="{{ route('reseller.customers.edit', $customer) }}" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition text-sm">Edit</a>
         </div>
     </div>
 
@@ -125,7 +127,7 @@
                 @if ($customer->services->count() > 0)
                     <div class="divide-y divide-slate-200 dark:divide-slate-800">
                         @foreach ($customer->services as $service)
-                            <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                            <a href="{{ route('reseller.services.show', $service) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                 <div class="flex items-center justify-between">
                                     <div class="flex-1">
                                         <p class="font-medium text-slate-900 dark:text-white">{{ $service->name }}</p>
@@ -137,7 +139,7 @@
                                         </span>
                                     </div>
                                 </div>
-                            </div>
+                            </a>
                         @endforeach
                     </div>
                 @else
@@ -155,7 +157,7 @@
                 @if ($customer->invoices->count() > 0)
                     <div class="divide-y divide-slate-200 dark:divide-slate-800">
                         @foreach ($customer->invoices->take(5) as $invoice)
-                            <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
+                            <a href="{{ route('reseller.customer-invoices.show', $invoice) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center justify-between">
                                 <div class="flex-1">
                                     <p class="font-medium text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">{{ $invoice->created_at->format('M d, Y') }}</p>
@@ -166,7 +168,7 @@
                                         {{ ucfirst($invoice->status->value) }}
                                     </span>
                                 </div>
-                            </div>
+                            </a>
                         @endforeach
                     </div>
                 @else

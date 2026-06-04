@@ -81,9 +81,9 @@ class ResellerDashboardTest extends TestCase
         $response = $this->actingAs($reseller)->get(route('dashboard'));
 
         $response->assertOk();
-        $response->assertSee('Revenue Analytics');
-        $response->assertSee('Est. Commission');
-        $response->assertSee('25.0% of revenue');
+        $response->assertSee('Invoice breakdown');
+        $response->assertSee('Margins (30d)');
+        $response->assertSee('Whitelabel dashboard');
     }
 
     public function test_reseller_can_view_managed_service_but_not_unrelated_service(): void

@@ -2,7 +2,8 @@
 
 namespace App\Helpers;
 
-use Illuminate\Support\Facades\Log;
+use App\Models\CronJob;
+use App\Models\CronJobLog;
 
 class CronHelper
 {
@@ -10,7 +11,7 @@ class CronHelper
      * Generate the cron command for scheduling Laravel tasks
      * Dynamically adapts to the current environment and server setup
      *
-     * @param string|null $outputFile Optional custom output file (null = /dev/null)
+     * @param  string|null  $outputFile  Optional custom output file (null = /dev/null)
      * @return string The complete cron command
      */
     public static function generateCronCommand(?string $outputFile = null): string
@@ -44,7 +45,7 @@ class CronHelper
             '/usr/bin/php',
             '/usr/local/bin/php',
             '/opt/homebrew/bin/php',
-            '/usr/bin/php' . PHP_VERSION_ID,
+            '/usr/bin/php'.PHP_VERSION_ID,
             exec('which php') ?: null,
         ];
 
@@ -61,7 +62,7 @@ class CronHelper
     /**
      * Get the output redirect string based on environment
      *
-     * @param string|null $outputFile Custom output file
+     * @param  string|null  $outputFile  Custom output file
      * @return string Output redirect command
      */
     public static function getOutputRedirect(?string $outputFile = null): string
@@ -70,20 +71,15 @@ class CronHelper
             return ">> {$outputFile} 2>&1";
         }
 
-        // Production: log to file for debugging
-        if (app()->isProduction()) {
-            $logPath = storage_path('logs/cron.log');
-            return ">> {$logPath} 2>&1";
+        if (config('scheduler.log_schedule_output', false)) {
+            return '>> '.storage_path('logs/cron.log').' 2>&1';
         }
 
-        // Development: suppress output
         return '>> /dev/null 2>&1';
     }
 
     /**
      * Check if running in Docker container
-     *
-     * @return bool
      */
     public static function isDocker(): bool
     {
@@ -117,7 +113,7 @@ class CronHelper
             'with_email' => [
                 'label' => 'With Email on Failure',
                 'description' => 'Email notification if cron fails (requires sendmail)',
-                'command' => "* * * * * cd {$basePath} && {$phpPath} artisan schedule:run >> {$logPath} 2>&1 || mail -s 'Cron failed on " . gethostname() . "' admin@example.com",
+                'command' => "* * * * * cd {$basePath} && {$phpPath} artisan schedule:run >> {$logPath} 2>&1 || mail -s 'Cron failed on ".gethostname()."' admin@example.com",
             ],
             'verbose' => [
                 'label' => 'Verbose (Development)',
@@ -137,25 +133,25 @@ class CronHelper
         $errors = [];
 
         // Check if artisan file exists
-        if (!file_exists(base_path('artisan'))) {
-            $errors[] = 'Laravel artisan file not found at ' . base_path('artisan');
+        if (! file_exists(base_path('artisan'))) {
+            $errors[] = 'Laravel artisan file not found at '.base_path('artisan');
         }
 
         // Check if PHP is accessible
         $phpPath = self::getPhpPath();
-        if (!file_exists($phpPath) && !shell_exec("which {$phpPath}")) {
+        if (! file_exists($phpPath) && ! shell_exec("which {$phpPath}")) {
             $errors[] = "PHP executable not found at {$phpPath}";
         }
 
         // Check storage/logs directory is writable
         $logsDir = storage_path('logs');
-        if (!is_writable($logsDir)) {
+        if (! is_writable($logsDir)) {
             $errors[] = "Storage logs directory is not writable: {$logsDir}";
         }
 
         // Check if any cron jobs are enabled
-        if (class_exists(\App\Models\CronJob::class)) {
-            $enabledCount = \App\Models\CronJob::where('enabled', true)->count();
+        if (class_exists(CronJob::class)) {
+            $enabledCount = CronJob::where('enabled', true)->count();
             if ($enabledCount === 0) {
                 $errors[] = 'No cron jobs are enabled in the database';
             }
@@ -165,7 +161,7 @@ class CronHelper
             'valid' => count($errors) === 0,
             'message' => count($errors) === 0
                 ? 'Cron setup appears to be configured correctly'
-                : 'Issues found: ' . implode('; ', $errors),
+                : 'Issues found: '.implode('; ', $errors),
             'errors' => $errors,
         ];
     }
@@ -177,17 +173,17 @@ class CronHelper
      */
     public static function getCronStats(): array
     {
-        if (!class_exists(\App\Models\CronJob::class)) {
+        if (! class_exists(CronJob::class)) {
             return [];
         }
 
         try {
-            $jobs = \App\Models\CronJob::with('latestLog')->get();
+            $jobs = CronJob::with('latestLog')->get();
 
             $totalJobs = $jobs->count();
             $enabledJobs = $jobs->where('enabled', true)->count();
-            $recentRuns = \App\Models\CronJobLog::where('started_at', '>=', now()->subHours(24))->count();
-            $recentFailures = \App\Models\CronJobLog::where('started_at', '>=', now()->subHours(24))
+            $recentRuns = CronJobLog::where('started_at', '>=', now()->subHours(24))->count();
+            $recentFailures = CronJobLog::where('started_at', '>=', now()->subHours(24))
                 ->where('status', 'failed')
                 ->count();
 

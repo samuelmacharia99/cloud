@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Models\CronJob;
 use App\Models\Setting;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
@@ -16,9 +15,7 @@ use App\Services\ResellerWalletService;
 use App\Services\TalksasaSmsService;
 use App\Services\WalletNotificationService;
 use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
@@ -60,23 +57,6 @@ class AppServiceProvider extends ServiceProvider
         $this->loadMailConfigFromDatabase();
 
         $this->shareResellerWalletData();
-
-        // Register dynamic cron job scheduler
-        $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-            try {
-                $jobs = CronJob::where('enabled', true)->get();
-
-                foreach ($jobs as $job) {
-                    $schedule->command($job->command)
-                        ->cron($job->schedule)
-                        ->withoutOverlapping()
-                        ->runInBackground();
-                }
-            } catch (\Exception $e) {
-                // Silently fail on fresh install when cron_jobs table doesn't exist yet
-                Log::debug('Cron jobs not loaded: '.$e->getMessage());
-            }
-        });
     }
 
     private function shareResellerWalletData(): void
