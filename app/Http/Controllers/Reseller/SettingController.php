@@ -353,12 +353,13 @@ class SettingController extends Controller
                 return back()->with('success', 'SSL certificate is active for '.$domain.'.'.$expires);
             }
 
-            $errorMessage = trim((string) ($ssl['error'] ?? ''));
-            if ($errorMessage === '' && ! empty($ssl['last_output'])) {
-                $errorMessage = \Illuminate\Support\Str::limit(trim((string) $ssl['last_output']), 500);
-            }
-            if ($errorMessage === '') {
-                $errorMessage = 'SSL provisioning failed. Check server logs or try again in a few minutes.';
+            $failure = $this->sslService->resolveSslFailureDisplay($ssl);
+            $errorMessage = $failure['error'] !== ''
+                ? $failure['error']
+                : 'SSL provisioning failed. Check server logs or try again in a few minutes.';
+
+            if ($failure['show_output']) {
+                $errorMessage .= "\n\n".$failure['output'];
             }
 
             return back()->with('error', $errorMessage);

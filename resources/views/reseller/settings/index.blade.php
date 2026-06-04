@@ -604,24 +604,19 @@
                                             </div>
                                         @elseif($sslStatus['status'] === 'failed')
                                             @php
-                                                $sslError = trim((string) ($sslStatus['error'] ?? ''));
-                                                $sslOutput = trim((string) ($sslStatus['last_output'] ?? ''));
-                                                if ($sslError === '' && $sslOutput !== '') {
-                                                    $sslError = \Illuminate\Support\Str::limit($sslOutput, 500);
-                                                }
+                                                $sslFailure = app(\App\Services\ResellerSslService::class)->resolveSslFailureDisplay($sslStatus);
                                             @endphp
                                             <div class="bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-800 space-y-2">
                                                 <p class="text-sm font-medium text-red-900 dark:text-red-300">SSL setup failed</p>
-                                                @if($sslError !== '')
+                                                @if($sslFailure['error'] !== '')
                                                     <p class="text-xs font-medium text-red-800 dark:text-red-300">Error</p>
-                                                    <p class="text-xs text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">{{ $sslError }}</p>
+                                                    <p class="text-xs text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">{{ $sslFailure['error'] }}</p>
                                                 @endif
-                                                @if($sslOutput !== '' && $sslOutput !== $sslError)
+                                                @if($sslFailure['show_output'])
                                                     <p class="text-xs font-medium text-red-800 dark:text-red-300 pt-1">Certbot output</p>
-                                                    <pre class="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto rounded-md bg-red-100/80 dark:bg-red-950/50 p-2 border border-red-200 dark:border-red-900">{{ $sslOutput }}</pre>
-                                                @endif
-                                                @if($sslError === '' && $sslOutput === '')
-                                                    <p class="text-xs text-red-700 dark:text-red-400">No error details were saved. Run Provision SSL again or check storage/logs/laravel.log on the server.</p>
+                                                    <pre class="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap break-words max-h-64 overflow-y-auto rounded-md bg-red-100/80 dark:bg-red-950/50 p-2 border border-red-200 dark:border-red-900">{{ $sslFailure['output'] }}</pre>
+                                                @elseif($sslFailure['output'] === '')
+                                                    <p class="text-xs text-red-700 dark:text-red-400">No certbot log was saved with this failure. Click <strong>Provision SSL</strong> again to capture the full error (including the Let’s Encrypt log file).</p>
                                                 @endif
                                                 <p class="text-xs text-red-700 dark:text-red-400 pt-1">Fix DNS if needed, then use Provision SSL above.</p>
                                             </div>

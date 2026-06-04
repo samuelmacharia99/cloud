@@ -278,7 +278,7 @@ class ResellerSslService
             ]);
 
             exec($command, $output, $exitCode);
-            $outputText = implode("\n", $output);
+            $outputText = $this->enrichCertbotOutput(implode("\n", $output));
 
             if ($exitCode !== 0) {
                 Log::error('certbot failed for reseller', [
@@ -367,13 +367,25 @@ class ResellerSslService
         string $message,
         ?string $rawOutput = null,
     ): array {
+        if ($rawOutput !== null && trim($rawOutput) !== '') {
+            $rawOutput = $this->enrichCertbotOutput(trim($rawOutput));
+        }
+
         $message = trim($message) !== '' ? trim($message) : 'SSL provisioning failed.';
+
+        if ($this->isBoilerplateSslMessage($message) && $rawOutput) {
+            $message = $this->summarizeCertbotFailure($rawOutput);
+        }
+
+        if ($this->isBoilerplateSslMessage($message)) {
+            $message = 'Certificate issuance failed. See the certbot output below for details.';
+        }
 
         $this->updateSslStatus($reseller, [
             'status' => 'failed',
             'domain' => $domain,
             'error' => Str::limit($message, 1000),
-            'last_output' => $rawOutput ? Str::limit(trim($rawOutput), 8000) : null,
+            'last_output' => $rawOutput ? Str::limit($rawOutput, 8000) : null,
             'last_attempt_at' => now()->toIso8601String(),
         ]);
 
@@ -383,22 +395,80 @@ class ResellerSslService
         ];
     }
 
+    public function isBoilerplateSslMessage(string $message): bool
+    {
+        $normalized = strtolower(trim($message));
+
+        if ($normalized === '') {
+            return true;
+        }
+
+        return (bool) preg_match('/^the following error was encountered:?$/i', $message)
+            || str_contains($normalized, 'following error was encountered')
+                && ! preg_match('/(detail:|invalid|unauthorized|404|403|challenge|could not)/i', $message);
+    }
+
+    /**
+     * @return array{error: string, output: string, show_output: bool}
+     */
+    public function resolveSslFailureDisplay(array $ssl): array
+    {
+        $error = trim((string) ($ssl['error'] ?? ''));
+        $output = trim((string) ($ssl['last_output'] ?? ''));
+
+        if ($this->isBoilerplateSslMessage($error) && $output !== '') {
+            $error = $this->summarizeCertbotFailure($output);
+        } elseif ($this->isBoilerplateSslMessage($error)) {
+            $error = '';
+        }
+
+        if ($error === '' && $output !== '') {
+            $error = $this->summarizeCertbotFailure($output);
+        }
+
+        if ($this->isBoilerplateSslMessage($error)) {
+            $error = 'Certificate issuance failed. See the certbot output below for details.';
+        }
+
+        $showOutput = $output !== ''
+            && ! Str::startsWith(strtolower($output), strtolower($error));
+
+        return [
+            'error' => $error,
+            'output' => $output,
+            'show_output' => $showOutput,
+        ];
+    }
+
     public function summarizeCertbotFailure(string $output): string
     {
         $lines = array_values(array_filter(array_map('trim', explode("\n", $output))));
 
         $skipPatterns = [
-            '/^the following error was encountered:?$/i',
             '/^to fix these errors,?/i',
             '/^please visit/i',
             '/^hint:/i',
             '/^\-+$/',
             '/^certbot failed/i',
+            '/^saving debug log to/i',
         ];
 
         $meaningful = [];
         foreach ($lines as $line) {
             if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^the following error was encountered:?\s*(.+)$/i', $line, $matches)) {
+                $remainder = trim($matches[1]);
+                if ($remainder !== '' && ! $this->isBoilerplateSslMessage($remainder)) {
+                    $meaningful[] = $remainder;
+                }
+
+                continue;
+            }
+
+            if ($this->isBoilerplateSslMessage($line)) {
                 continue;
             }
 
@@ -416,17 +486,90 @@ class ResellerSslService
         }
 
         foreach (array_reverse($meaningful) as $line) {
-            if (preg_match('/(detail:|type: urn:|problem|unauthorized|invalid|challenge|rate limit|connection|timeout|404|403|could not|denied|refused)/i', $line)) {
+            if (preg_match('/(detail:|type: urn:|problem|unauthorized|invalid|challenge|rate limit|connection|timeout|404|403|could not|denied|refused|letsencrypt log)/i', $line)) {
                 return Str::limit($line, 1000);
             }
         }
 
-        $tail = array_slice($meaningful, -4);
+        $tail = array_slice($meaningful, -6);
         if ($tail !== []) {
-            return Str::limit(implode("\n", $tail), 1000);
+            $summary = Str::limit(implode("\n", $tail), 1000);
+            if (! $this->isBoilerplateSslMessage($summary)) {
+                return $summary;
+            }
         }
 
-        return Str::limit(trim($output), 1000) ?: 'Certificate issuance failed. See certbot output below.';
+        $trimmed = Str::limit(trim($output), 1000);
+        if ($trimmed !== '' && ! $this->isBoilerplateSslMessage($trimmed)) {
+            return $trimmed;
+        }
+
+        return 'Certificate issuance failed. See certbot output below or check /var/log/letsencrypt/letsencrypt.log on the server.';
+    }
+
+    public function enrichCertbotOutput(string $output): string
+    {
+        $output = trim($output);
+
+        if ($this->hasActionableCertbotDetail($output)) {
+            return $output;
+        }
+
+        $logPaths = [];
+        if (preg_match('/Saving debug log to (.+)$/im', $output, $matches)) {
+            $logPaths[] = trim($matches[1]);
+        }
+
+        $logPaths[] = '/var/log/letsencrypt/letsencrypt.log';
+
+        foreach (array_unique($logPaths) as $path) {
+            if (! is_readable($path)) {
+                continue;
+            }
+
+            $tail = $this->readFileTail($path, 8000);
+            if ($tail === '') {
+                continue;
+            }
+
+            return $output.($output !== '' ? "\n\n" : '')
+                ."--- Let's Encrypt log (".basename($path).", last 8KB) ---\n"
+                .$tail;
+        }
+
+        return $output;
+    }
+
+    private function hasActionableCertbotDetail(string $output): bool
+    {
+        $summary = $this->summarizeCertbotFailure($output);
+
+        return ! $this->isBoilerplateSslMessage($summary)
+            && ! str_contains(strtolower($summary), 'see certbot output below');
+    }
+
+    private function readFileTail(string $path, int $maxBytes): string
+    {
+        if (! is_readable($path)) {
+            return '';
+        }
+
+        $size = filesize($path);
+        if ($size === false || $size === 0) {
+            return '';
+        }
+
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return '';
+        }
+
+        $read = (int) min($maxBytes, $size);
+        fseek($handle, -$read, SEEK_END);
+        $data = fread($handle, $read);
+        fclose($handle);
+
+        return is_string($data) ? $data : '';
     }
 
     public function renewCertificate(User $reseller): array
