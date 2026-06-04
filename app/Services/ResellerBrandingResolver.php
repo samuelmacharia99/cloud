@@ -190,7 +190,7 @@ class ResellerBrandingResolver
             'ssl' => [
                 'label' => 'SSL certificate',
                 'ready' => ($reseller->settings['branding']['ssl']['status'] ?? 'none') === 'active',
-                'hint' => 'Let\'s Encrypt SSL is provisioned automatically once DNS is correct.',
+                'hint' => 'Use Provision SSL on branding settings once DNS points to this server.',
             ],
             'documents' => [
                 'label' => 'Invoice PDFs',

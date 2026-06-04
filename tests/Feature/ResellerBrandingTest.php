@@ -135,10 +135,20 @@ class ResellerBrandingTest extends TestCase
         ]);
 
         Queue::assertPushed(ProvisionResellerSslJob::class, function (ProvisionResellerSslJob $job) use ($reseller) {
-            return $job->resellerId === $reseller->id;
+            return $job->resellerId === $reseller->id && $job->mode === 'issue';
         });
 
         $reseller->refresh();
         $this->assertSame('pending', $reseller->settings['branding']['ssl']['status'] ?? null);
+    }
+
+    public function test_provision_ssl_requires_saved_custom_domain(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.settings.branding.ssl.provision'))
+            ->assertRedirect()
+            ->assertSessionHas('error');
     }
 }

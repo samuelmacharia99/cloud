@@ -349,6 +349,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('reseller/settings/branding/file', [App\Http\Controllers\Reseller\SettingController::class, 'deleteBrandingFile'])->name('reseller.settings.branding.delete');
         Route::get('reseller/settings/branding/ssl/check-dns', [App\Http\Controllers\Reseller\SettingController::class, 'checkSslDns'])->name('reseller.settings.branding.ssl.check-dns');
         Route::post('reseller/settings/branding/ssl/issue', [App\Http\Controllers\Reseller\SettingController::class, 'issueSsl'])->name('reseller.settings.branding.ssl.issue');
+        Route::post('reseller/settings/branding/ssl/provision', [App\Http\Controllers\Reseller\SettingController::class, 'provisionSsl'])->name('reseller.settings.branding.ssl.provision');
         Route::post('reseller/settings/branding/ssl/renew', [App\Http\Controllers\Reseller\SettingController::class, 'renewSsl'])->name('reseller.settings.branding.ssl.renew');
 
         Route::resource('reseller/invoices', App\Http\Controllers\Reseller\InvoiceController::class)->only(['index', 'show'])->names('reseller.invoices');

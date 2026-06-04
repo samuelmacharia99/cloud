@@ -516,13 +516,25 @@
                                     value="{{ old('custom_domain', $brandingSettings['custom_domain'] ?? '') }}"
                                     placeholder="e.g., billing.acme.com"
                                     class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 dark:focus:ring-amber-400 text-slate-900 dark:text-white text-sm">
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your customers can access your portal via your custom domain. To use a custom domain, create a CNAME record pointing to your Talksasa instance.</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your customers can access your portal via your custom domain. Point a CNAME or A record to this Talksasa server, then provision SSL below.</p>
                                 @error('custom_domain')
                                     <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
                                 @enderror
+                                @if(!empty($brandingSettings['custom_domain']))
+                                    <div class="mt-3 flex flex-wrap items-center gap-3">
+                                        <button type="submit"
+                                            formaction="{{ route('reseller.settings.branding.ssl.provision') }}"
+                                            formmethod="post"
+                                            class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition inline-flex items-center gap-2">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                                            Provision SSL
+                                        </button>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400">Issues a Let’s Encrypt certificate for <span class="font-mono">{{ $brandingSettings['custom_domain'] }}</span> (save branding first if you changed the domain).</span>
+                                    </div>
+                                @endif
                             </div>
 
-                            <div class="flex gap-3">
+                            <div class="flex flex-wrap gap-3">
                                 <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
                                     Save Branding Settings
                                 </button>
@@ -633,15 +645,23 @@
 
                         @if(!empty($customDomain))
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6" x-data="sslChecker()">
-                            <h4 class="font-medium text-slate-900 dark:text-white mb-4">SSL Certificate</h4>
+                            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                <h4 class="font-medium text-slate-900 dark:text-white">SSL Certificate</h4>
+                                <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST">
+                                    @csrf
+                                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                                        Provision SSL
+                                    </button>
+                                </form>
+                            </div>
 
                             <!-- DNS Check Section -->
                             <div class="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-lg border border-slate-200 dark:border-slate-700 mb-6">
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                                    SSL is provisioned automatically in the background once your domain points to this server.
-                                    Use the DNS check below to confirm configuration.
+                                    After DNS points here, click <strong>Provision SSL</strong> to issue your certificate immediately.
+                                    Automatic background provisioning also runs on a schedule if a queue worker is active.
                                 </p>
-                                <div class="flex gap-3">
+                                <div class="flex flex-wrap gap-3">
                                     <button type="button" @click="checkDns()" :disabled="checking" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 disabled:bg-slate-500 text-white text-sm font-medium rounded-lg transition">
                                         <span x-show="!checking">Check DNS</span>
                                         <span x-show="checking">Checking...</span>
@@ -671,9 +691,15 @@
                                 @if(in_array($sslStatus['status'] ?? 'none', ['pending', 'provisioning']))
                                     <div class="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
                                         <p class="text-sm font-medium text-blue-900 dark:text-blue-300">SSL provisioning in progress</p>
-                                        <p class="text-xs text-blue-700 dark:text-blue-400 mt-1">
-                                            A background job is issuing your certificate. Refresh this page in a few minutes.
+                                        <p class="text-xs text-blue-700 dark:text-blue-400 mt-1 mb-3">
+                                            If this stays stuck, confirm DNS then click Provision SSL again.
                                         </p>
+                                        <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST">
+                                            @csrf
+                                            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                                                Provision SSL
+                                            </button>
+                                        </form>
                                     </div>
                                 @elseif($sslStatus['status'] === 'active')
                                     <div class="flex items-center justify-between bg-emerald-50 dark:bg-emerald-950/30 p-4 rounded-lg border border-emerald-200 dark:border-emerald-800">
@@ -698,23 +724,23 @@
                                         @if($sslStatus['error'])
                                             <p class="text-xs text-red-700 dark:text-red-400 mb-3">{{ $sslStatus['error'] }}</p>
                                         @endif
-                                        <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST" class="flex gap-3">
+                                        <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST" class="flex gap-3">
                                             @csrf
-                                            <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition">
-                                                Retry now
+                                            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                                                Provision SSL
                                             </button>
                                         </form>
                                     </div>
                                 @else
                                     <div class="bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
-                                        <p class="text-sm font-medium text-amber-900 dark:text-amber-300 mb-2">Waiting for DNS</p>
+                                        <p class="text-sm font-medium text-amber-900 dark:text-amber-300 mb-2">SSL not issued yet</p>
                                         <p class="text-xs text-amber-700 dark:text-amber-400 mb-3">
-                                            Save your custom domain, point DNS to this server, and SSL will be issued automatically every 15 minutes.
+                                            Point DNS to this server, use Check DNS above, then click Provision SSL to issue your certificate.
                                         </p>
-                                        <form action="{{ route('reseller.settings.branding.ssl.issue') }}" method="POST">
+                                        <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST">
                                             @csrf
-                                            <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">
-                                                Queue SSL now
+                                            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition">
+                                                Provision SSL
                                             </button>
                                         </form>
                                     </div>

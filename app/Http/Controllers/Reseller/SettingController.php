@@ -315,22 +315,55 @@ class SettingController extends Controller
 
     public function issueSsl(Request $request): RedirectResponse
     {
+        return $this->provisionSsl($request);
+    }
+
+    public function provisionSsl(Request $request): RedirectResponse
+    {
         try {
             $user = auth()->user();
+            $domain = $user->settings['branding']['custom_domain'] ?? null;
 
-            if ($this->sslService->queueProvision($user, 'manual')) {
-                return back()->with('success', 'SSL provisioning has been queued. This usually completes within a few minutes once DNS is correct.');
+            if (empty($domain)) {
+                return back()->with('error', 'Save a custom domain in branding settings before provisioning SSL.');
             }
 
-            return back()->with('info', 'SSL is already queued or provisioning. Check back shortly.');
+            if (! $this->sslService->isCertbotAvailable()) {
+                return back()->with('error', 'SSL provisioning is not available on this server (certbot is not installed). Contact your platform administrator.');
+            }
+
+            $dnsCheck = $this->sslService->checkDns($domain);
+            if (! $dnsCheck['match']) {
+                return back()->with('error', 'DNS is not pointing to this server yet. '.$dnsCheck['message'].' Expected server IP: '.$dnsCheck['server_ip']);
+            }
+
+            @set_time_limit(300);
+
+            $this->sslService->prepareManualProvision($user, 'manual');
+            ProvisionResellerSslJob::dispatchSync($user->id, 'issue');
+
+            $user->refresh();
+            $ssl = $this->sslService->getSslStatus($user);
+
+            if (($ssl['status'] ?? '') === 'active') {
+                $expires = ! empty($ssl['expires_at'])
+                    ? ' Valid until '.\Carbon\Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
+                    : '';
+
+                return back()->with('success', 'SSL certificate is active for '.$domain.'.'.$expires);
+            }
+
+            return back()->with('error', $ssl['error'] ?? 'SSL provisioning failed. Check server logs or try again in a few minutes.');
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {
-            Log::error('Exception during SSL queue', [
+            Log::error('Exception during SSL provisioning', [
                 'error' => $e->getMessage(),
                 'reseller_id' => auth()->id(),
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to queue SSL provisioning. Please try again.');
+            return back()->with('error', 'Failed to provision SSL. Please try again.');
         }
     }
 

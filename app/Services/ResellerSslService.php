@@ -43,7 +43,7 @@ class ResellerSslService
             'queued_at' => now()->toIso8601String(),
         ]);
 
-        ProvisionResellerSslJob::dispatch($reseller->id);
+        ProvisionResellerSslJob::dispatch($reseller->id, 'issue');
 
         Log::info('Queued reseller SSL provisioning job', [
             'reseller_id' => $reseller->id,
@@ -52,6 +52,27 @@ class ResellerSslService
         ]);
 
         return true;
+    }
+
+    /**
+     * Reset SSL state before a manual provision attempt (ignores in-progress locks).
+     */
+    public function prepareManualProvision(User $reseller, string $reason = 'manual'): void
+    {
+        $domain = $reseller->settings['branding']['custom_domain'] ?? null;
+
+        if (empty($domain)) {
+            throw new \InvalidArgumentException('No custom domain configured.');
+        }
+
+        $this->updateSslStatus($reseller, [
+            'status' => 'provisioning',
+            'domain' => $domain,
+            'error' => null,
+            'queued_reason' => $reason,
+            'queued_at' => now()->toIso8601String(),
+            'last_attempt_at' => now()->toIso8601String(),
+        ]);
     }
 
     public function shouldProcess(User $reseller): bool

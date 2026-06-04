@@ -184,7 +184,7 @@ class ResellerSettingsService
         ]);
 
         if ($newDomain !== $previousDomain && ! empty($newDomain)) {
-            ProvisionResellerSslJob::dispatch($user->id);
+            ProvisionResellerSslJob::dispatch($user->id, 'issue');
         }
     }
 
