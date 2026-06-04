@@ -133,13 +133,28 @@ class CustomerOrderController extends Controller
             'domain' => 'required|string|max:63|regex:/^[a-z0-9-]+$/i',
             'extension_id' => 'required|exists:domain_extensions,id',
             'years' => 'required|integer|min:1|max:10',
+            'bill_customer' => 'sometimes|boolean',
         ]);
 
         $customer = User::findOrFail($validated['customer_id']);
         $extension = DomainExtension::findOrFail($validated['extension_id']);
+        $billCustomer = $request->boolean('bill_customer', true);
 
         try {
-            $result = $this->orders->orderDomainForCustomer(
+            if ($billCustomer) {
+                $result = $this->orders->orderDomainForCustomer(
+                    $reseller,
+                    $customer,
+                    $validated['domain'],
+                    $extension,
+                    (int) $validated['years'],
+                );
+
+                return redirect()->route('reseller.customer-invoices.show', $result['invoice'])
+                    ->with('success', 'Domain order created for your customer at your retail price.');
+            }
+
+            $result = $this->orders->provisionDomainForCustomerWithoutBilling(
                 $reseller,
                 $customer,
                 $validated['domain'],
@@ -147,8 +162,13 @@ class CustomerOrderController extends Controller
                 (int) $validated['years'],
             );
 
-            return redirect()->route('reseller.customer-invoices.show', $result['invoice'])
-                ->with('success', 'Domain order created for your customer at your retail price.');
+            $fqdn = $result['domain']->name.$result['domain']->extension;
+            $message = $result['pushed']
+                ? "Domain {$fqdn} registered for {$customer->name} at no charge to the customer. Wholesale debited from your wallet."
+                : "Domain {$fqdn} queued for {$customer->name} without a customer invoice. Top up your wallet to push the registration.";
+
+            return redirect()->route('reseller.customers.show', $customer)
+                ->with($result['pushed'] ? 'success' : 'warning', $message);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage())->withInput();
         } catch (\Throwable $e) {

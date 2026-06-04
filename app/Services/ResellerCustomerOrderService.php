@@ -21,6 +21,7 @@ class ResellerCustomerOrderService
         private ResellerScopeService $scope,
         private ResellerCustomerBillingService $billing,
         private ResellerEnforcementService $enforcement,
+        private DomainPushService $domainPush,
     ) {}
 
     /**
@@ -135,6 +136,46 @@ class ResellerCustomerOrderService
     }
 
     /**
+     * Register a domain for a customer without billing them (retail 0). Pushes to registrar when wallet allows.
+     *
+     * @return array{domain: Domain, order: ResellerDomainOrder, pushed: bool}
+     */
+    public function provisionDomainForCustomerWithoutBilling(
+        User $reseller,
+        User $customer,
+        string $domainName,
+        DomainExtension $extension,
+        int $years,
+    ): array {
+        $this->billing->ensureManagedCustomer($reseller, $customer);
+
+        return DB::transaction(function () use ($reseller, $customer, $domainName, $extension, $years) {
+            $prepared = $this->prepareDomainRegistration(
+                $reseller,
+                $customer,
+                $domainName,
+                $extension,
+                $years,
+                retailAmount: 0.0,
+            );
+
+            $order = $prepared['order'];
+            $order->update([
+                'retail_amount' => 0,
+                'customer_invoice_id' => null,
+            ]);
+
+            $pushed = $this->domainPush->pushOrQueue($order->fresh(['reseller', 'customer']));
+
+            return [
+                'domain' => $prepared['domain']->fresh(),
+                'order' => $order->fresh(),
+                'pushed' => $pushed,
+            ];
+        });
+    }
+
+    /**
      * Checkout multiple domain registrations for one managed customer (single invoice).
      *
      * @param  array<int, array<string, mixed>>  $cartItems
@@ -213,6 +254,7 @@ class ResellerCustomerOrderService
         string $domainName,
         DomainExtension $extension,
         int $years,
+        ?float $retailAmount = null,
     ): array {
         $wholesale = $extension->pricing()
             ->where('tier', 'wholesale')
@@ -224,7 +266,7 @@ class ResellerCustomerOrderService
         }
 
         $wholesaleAmount = (float) $wholesale->price * $years;
-        $retailAmount = $this->retailAmountForExtension($reseller, $extension, $years, $wholesaleAmount);
+        $retailAmount ??= $this->retailAmountForExtension($reseller, $extension, $years, $wholesaleAmount);
         $domainName = strtolower($domainName);
 
         $domain = Domain::create([

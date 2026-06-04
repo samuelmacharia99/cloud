@@ -311,6 +311,45 @@ class ResellerCustomerBillingTest extends TestCase
         $this->assertGreaterThan(0, ResellerMarginEntry::where('reseller_id', $reseller->id)->count());
     }
 
+    public function test_domain_can_be_provisioned_without_customer_invoice(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $extension = DomainExtension::create([
+            'extension' => '.free',
+            'description' => 'FREE',
+            'enabled' => true,
+        ]);
+
+        DomainPricing::create([
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'tier' => 'wholesale',
+            'price' => 100,
+            'enabled' => true,
+        ]);
+
+        $invoiceCountBefore = Invoice::where('user_id', $customer->id)->count();
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-orders.domain.store'), [
+                'customer_id' => $customer->id,
+                'domain' => 'gift',
+                'extension_id' => $extension->id,
+                'years' => 1,
+                'bill_customer' => '0',
+            ])
+            ->assertRedirect(route('reseller.customers.show', $customer));
+
+        $this->assertSame($invoiceCountBefore, Invoice::where('user_id', $customer->id)->count());
+
+        $order = ResellerDomainOrder::where('customer_id', $customer->id)->first();
+        $this->assertNotNull($order);
+        $this->assertEquals(0, (float) $order->retail_amount);
+        $this->assertNull($order->customer_invoice_id);
+    }
+
     public function test_reports_page_shows_whitelabel_heading(): void
     {
         $reseller = $this->reseller();
