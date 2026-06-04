@@ -58,6 +58,21 @@ curl -I http://server.enthelotcloud.com/.well-known/acme-challenge/test.txt
 
 If Let's Encrypt reports **CAA SERVFAIL** for the parent zone, fix DNS at the domain’s nameservers (`dig CAA enthelotcloud.com @ns1.example.com`). The provision script cannot fix broken authoritative DNS.
 
+## Provision SSL button fails but manual `sudo provision.sh` works
+
+Usually one of:
+
+1. **`RESELLER_SSL_CERTBOT_SUDO` not active** — run `install-host.sh`, then `php artisan config:clear` (and `config:cache` again if you use it).
+2. **Sudoers not updated** — re-run `sudo bash scripts/reseller-ssl/install-host.sh` after pulling latest code (adds `test` + `openssl` for www-data).
+3. **Cached config** — `php artisan config:clear` on the server.
+4. **PHP-FPM timeout** — increase `max_execution_time` / `request_terminate_timeout` to at least 120s for the branding SSL request.
+
+Verify as www-data:
+
+```bash
+sudo -u www-data sudo -n /var/www/talksasa-cloud/scripts/reseller-ssl/provision.sh --help
+```
+
 ## Disable the script (certbot only)
 
 Set in `.env`:

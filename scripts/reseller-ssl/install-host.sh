@@ -44,6 +44,8 @@ chmod 755 "$SCRIPT_DIR"
 
 REAL_PROVISION="$(readlink -f "$PROVISION_SCRIPT")"
 REAL_CERTBOT="$(readlink -f "$(command -v certbot)")"
+REAL_OPENSSL="$(readlink -f "$(command -v openssl)")"
+REAL_TEST="$(readlink -f "$(command -v test)")"
 
 log "Writing sudoers: $SUDOERS_FILE"
 cat >"$SUDOERS_FILE" <<EOF
@@ -51,6 +53,8 @@ cat >"$SUDOERS_FILE" <<EOF
 Defaults:${WEB_USER} !requiretty
 ${WEB_USER} ALL=(root) NOPASSWD: ${REAL_PROVISION}
 ${WEB_USER} ALL=(root) NOPASSWD: ${REAL_CERTBOT} *
+${WEB_USER} ALL=(root) NOPASSWD: ${REAL_OPENSSL}
+${WEB_USER} ALL=(root) NOPASSWD: ${REAL_TEST}
 EOF
 
 chmod 0440 "$SUDOERS_FILE"
@@ -85,7 +89,8 @@ if [[ -f "$ENV_FILE" ]]; then
     fi
     log "Updated ${ENV_FILE} (RESELLER_SSL_* variables)"
     if [[ -f "${APP_ROOT}/artisan" ]]; then
-        (cd "$APP_ROOT" && php artisan config:clear) || true
+        (cd "$APP_ROOT" && php artisan config:clear && php artisan cache:clear) || true
+        log "If you use config:cache in production, run: cd ${APP_ROOT} && php artisan config:cache"
     fi
 else
     log "No .env at ${ENV_FILE} — add manually:"

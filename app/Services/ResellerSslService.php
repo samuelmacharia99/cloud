@@ -214,15 +214,82 @@ class ResellerSslService
 
     public function isCertbotAvailable(): bool
     {
-        try {
-            exec('which certbot', $output, $exitCode);
+        return $this->isSslProvisioningAvailable();
+    }
 
-            return $exitCode === 0;
+    public function isSslProvisioningAvailable(): bool
+    {
+        foreach (['/usr/bin/certbot', '/usr/local/bin/certbot'] as $path) {
+            if (is_file($path)) {
+                return true;
+            }
+        }
+
+        try {
+            exec('command -v certbot 2>/dev/null', $output, $exitCode);
+
+            if ($exitCode === 0 && ! empty($output)) {
+                return true;
+            }
         } catch (Exception $e) {
             Log::warning('Certbot availability check failed', ['error' => $e->getMessage()]);
-
-            return false;
         }
+
+        return $this->resolveProvisionScriptPath() !== null
+            && config('app.reseller_ssl_use_provision_script', true);
+    }
+
+    /**
+     * Returns a user-facing error when the web user cannot provision SSL (null = OK).
+     */
+    public function getProvisioningEnvironmentError(): ?string
+    {
+        if (! $this->isSslProvisioningAvailable()) {
+            return 'SSL provisioning is not available on this server (certbot is not installed). Contact your platform administrator.';
+        }
+
+        $disabledFunctions = array_filter(array_map('trim', explode(',', (string) ini_get('disable_functions'))));
+        if (in_array('exec', $disabledFunctions, true)) {
+            return 'PHP exec() is disabled on this server. Enable it for PHP-FPM so Provision SSL can run certbot.';
+        }
+
+        if ($this->resolveProvisionScriptPath() === null) {
+            return 'SSL provision script is missing. Deploy scripts/reseller-ssl/ and run install-host.sh on the server.';
+        }
+
+        if (! config('app.reseller_ssl_use_provision_script', true)) {
+            if (! config('app.reseller_ssl_certbot_sudo', false)) {
+                return 'Set RESELLER_SSL_CERTBOT_SUDO=true in .env and run: sudo bash scripts/reseller-ssl/install-host.sh';
+            }
+
+            return null;
+        }
+
+        if (! config('app.reseller_ssl_certbot_sudo', false)) {
+            return 'RESELLER_SSL_CERTBOT_SUDO is not enabled. On the server run: sudo bash scripts/reseller-ssl/install-host.sh — then php artisan config:clear';
+        }
+
+        $script = $this->resolveProvisionScriptPath();
+        if ($script === null) {
+            return 'SSL provision script path is not configured.';
+        }
+
+        $check = $this->sudoPrefix().escapeshellarg($script).' --help 2>&1';
+        exec($check, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            $tail = Str::limit(implode("\n", $output), 300);
+
+            return 'www-data cannot run the SSL provision script via sudo. Re-run on the server: sudo bash scripts/reseller-ssl/install-host.sh'
+                .($tail !== '' ? ' ('.$tail.')' : '');
+        }
+
+        return null;
+    }
+
+    public function sudoPrefix(): string
+    {
+        return config('app.reseller_ssl_certbot_sudo', false) ? 'sudo -n ' : '';
     }
 
     public function issueCertificate(User $reseller): array
@@ -235,12 +302,9 @@ class ResellerSslService
                 return $this->recordSslFailure($reseller, $customDomain, 'No custom domain configured.');
             }
 
-            if (! $this->isCertbotAvailable()) {
-                return $this->recordSslFailure(
-                    $reseller,
-                    $customDomain,
-                    'certbot is not installed on this server. Ask your administrator to install it (e.g. sudo apt install certbot).',
-                );
+            $environmentError = $this->getProvisioningEnvironmentError();
+            if ($environmentError !== null) {
+                return $this->recordSslFailure($reseller, $customDomain, $environmentError);
             }
 
             $dnsCheck = $this->checkDns($customDomain);
@@ -273,10 +337,13 @@ class ResellerSslService
                     'logs_dir' => $run['logs_dir'],
                 ]);
 
+                $message = $this->mapProvisionExitToMessage($outputText)
+                    ?? $this->summarizeCertbotFailure($outputText);
+
                 return $this->recordSslFailure(
                     $reseller,
                     $customDomain,
-                    $this->summarizeCertbotFailure($outputText),
+                    $message,
                     $outputText,
                     [
                         'exit_code' => $exitCode,
@@ -286,22 +353,19 @@ class ResellerSslService
                 );
             }
 
-            // Certbot succeeded - verify cert files exist
-            $certPath = "/etc/letsencrypt/live/{$customDomain}/fullchain.pem";
-            $keyPath = "/etc/letsencrypt/live/{$customDomain}/privkey.pem";
+            $paths = $this->resolveCertificatePaths($outputText, $customDomain);
 
-            if (! file_exists($certPath) || ! file_exists($keyPath)) {
+            if ($paths === null) {
                 Log::error('Certificate files not found after certbot', [
                     'reseller_id' => $reseller->id,
                     'domain' => $customDomain,
-                    'cert_path' => $certPath,
-                    'key_path' => $keyPath,
+                    'output' => $outputText,
                 ]);
 
                 return $this->recordSslFailure(
                     $reseller,
                     $customDomain,
-                    'Certificate files were not found after certbot finished. Expected: '.$certPath,
+                    'Certificate was issued but the app could not verify cert files (www-data needs sudo for /etc/letsencrypt). Re-run: sudo bash scripts/reseller-ssl/install-host.sh',
                     $outputText,
                     [
                         'exit_code' => $exitCode,
@@ -310,6 +374,9 @@ class ResellerSslService
                     ],
                 );
             }
+
+            $certPath = $paths['cert_path'];
+            $keyPath = $paths['key_path'];
 
             // Get certificate expiry
             $expiryDate = $this->getCertificateExpiry($certPath);
@@ -410,7 +477,9 @@ class ResellerSslService
             mkdir($logsDir, 0755, true);
         }
 
-        $command = $this->buildSslProvisionCommand($customDomain, $logsDir);
+        $command = $this->wrapProvisionShellCommand(
+            $this->buildSslProvisionCommand($customDomain, $logsDir)
+        );
 
         Log::info('Running certbot for reseller', [
             'reseller_id' => $reseller->id,
@@ -502,6 +571,78 @@ class ResellerSslService
             if (is_file($path)) {
                 return $path;
             }
+        }
+
+        return null;
+    }
+
+    public function wrapProvisionShellCommand(string $command): string
+    {
+        return 'export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; '
+            .'cd '.escapeshellarg(base_path()).' && '
+            .$command;
+    }
+
+    /**
+     * @return array{cert_path: string, key_path: string}|null
+     */
+    public function resolveCertificatePaths(string $output, string $domain): ?array
+    {
+        $certPath = $this->parseProvisionOutputLine($output, 'CERT_PATH')
+            ?? "/etc/letsencrypt/live/{$domain}/fullchain.pem";
+        $keyPath = $this->parseProvisionOutputLine($output, 'KEY_PATH')
+            ?? "/etc/letsencrypt/live/{$domain}/privkey.pem";
+
+        $provisionSucceeded = str_contains($output, 'SUCCESS:');
+
+        if ($provisionSucceeded || ($this->hostFileExists($certPath) && $this->hostFileExists($keyPath))) {
+            return [
+                'cert_path' => $certPath,
+                'key_path' => $keyPath,
+            ];
+        }
+
+        return null;
+    }
+
+    public function parseProvisionOutputLine(string $output, string $key): ?string
+    {
+        if (preg_match('/^'.preg_quote($key, '/').'=(.+)$/m', $output, $matches)) {
+            $value = trim($matches[1]);
+
+            return $value !== '' ? $value : null;
+        }
+
+        return null;
+    }
+
+    public function hostFileExists(string $path): bool
+    {
+        if (@is_readable($path) && @file_exists($path)) {
+            return true;
+        }
+
+        if (! config('app.reseller_ssl_certbot_sudo', false)) {
+            return false;
+        }
+
+        exec($this->sudoPrefix().'test -f '.escapeshellarg($path).' 2>/dev/null', $output, $exitCode);
+
+        return $exitCode === 0;
+    }
+
+    public function mapProvisionExitToMessage(string $output): ?string
+    {
+        $lower = strtolower($output);
+
+        if (str_contains($lower, 'a password is required')
+            || str_contains($lower, 'no tty')
+            || str_contains($lower, 'not allowed to execute')) {
+            return 'www-data cannot run sudo for SSL. On the server run: sudo bash scripts/reseller-ssl/install-host.sh — then php artisan config:clear';
+        }
+
+        if (str_contains($lower, 'must run as root')) {
+            return 'RESELLER_SSL_CERTBOT_SUDO is off or cached config is stale. Run install-host.sh and php artisan config:clear on the server.';
         }
 
         return null;
@@ -902,11 +1043,12 @@ class ResellerSslService
     private function getCertificateExpiry(string $certPath): ?Carbon
     {
         try {
-            if (! file_exists($certPath)) {
+            if (! $this->hostFileExists($certPath)) {
                 return null;
             }
 
-            exec('openssl x509 -enddate -noout -in '.escapeshellarg($certPath).' 2>/dev/null', $output, $exitCode);
+            $openssl = $this->sudoPrefix().'openssl x509 -enddate -noout -in '.escapeshellarg($certPath).' 2>/dev/null';
+            exec($openssl, $output, $exitCode);
 
             if ($exitCode !== 0 || empty($output)) {
                 return null;

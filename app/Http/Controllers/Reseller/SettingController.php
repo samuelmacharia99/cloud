@@ -18,6 +18,7 @@ use App\Services\ResellerMailService;
 use App\Services\ResellerSettingsService;
 use App\Services\ResellerSslService;
 use App\Services\TalksasaSmsService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -368,9 +369,10 @@ class SettingController extends Controller
                 ]);
             }
 
-            if (! $this->sslService->isCertbotAvailable()) {
+            $environmentError = $this->sslService->getProvisioningEnvironmentError();
+            if ($environmentError !== null) {
                 return $this->redirectToSettingsTab('branding', [
-                    'error' => 'SSL provisioning is not available on this server (certbot is not installed). Contact your platform administrator.',
+                    'error' => $environmentError,
                 ]);
             }
 
@@ -391,7 +393,7 @@ class SettingController extends Controller
 
             if ($result['success'] ?? false) {
                 $expires = ! empty($ssl['expires_at'])
-                    ? ' Valid until '.\Carbon\Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
+                    ? ' Valid until '.Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
                     : '';
 
                 return $this->redirectToSettingsTab('branding', [

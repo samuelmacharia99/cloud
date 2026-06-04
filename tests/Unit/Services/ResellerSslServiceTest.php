@@ -106,4 +106,31 @@ TXT;
         $this->assertStringContainsString('--webroot-path', $command);
         $this->assertStringNotContainsString('provision.sh', $command);
     }
+
+    public function test_resolve_certificate_paths_from_provision_script_output(): void
+    {
+        $service = app(ResellerSslService::class);
+
+        $output = <<<'TXT'
+[talksasa-ssl] SUCCESS: certificate issued for server.example.com
+CERT_PATH=/etc/letsencrypt/live/server.example.com/fullchain.pem
+KEY_PATH=/etc/letsencrypt/live/server.example.com/privkey.pem
+TXT;
+
+        $paths = $service->resolveCertificatePaths($output, 'server.example.com');
+
+        $this->assertNotNull($paths);
+        $this->assertSame('/etc/letsencrypt/live/server.example.com/fullchain.pem', $paths['cert_path']);
+        $this->assertSame('/etc/letsencrypt/live/server.example.com/privkey.pem', $paths['key_path']);
+    }
+
+    public function test_map_provision_exit_detects_sudo_password_required(): void
+    {
+        $message = app(ResellerSslService::class)->mapProvisionExitToMessage(
+            'sudo: a password is required',
+        );
+
+        $this->assertNotNull($message);
+        $this->assertStringContainsString('install-host.sh', $message);
+    }
 }
