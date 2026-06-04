@@ -3,10 +3,13 @@
 namespace Tests\Unit\Services;
 
 use App\Services\ResellerSslService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ResellerSslServiceTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_summarize_certbot_failure_skips_boilerplate_and_returns_detail(): void
     {
         $output = <<<'TXT'
@@ -64,5 +67,43 @@ TXT;
 
         $this->assertStringContainsString('404', $display['error']);
         $this->assertStringNotContainsString('following error was encountered', strtolower($display['error']));
+    }
+
+    public function test_build_ssl_provision_command_uses_provision_script_when_configured(): void
+    {
+        $script = base_path('scripts/reseller-ssl/provision.sh');
+        $this->assertFileExists($script);
+
+        config([
+            'app.reseller_ssl_use_provision_script' => true,
+            'app.reseller_ssl_provision_script' => $script,
+            'app.reseller_ssl_certbot_sudo' => true,
+        ]);
+
+        $service = app(ResellerSslService::class);
+        $command = $service->buildSslProvisionCommand('server.example.com', storage_path('app/ssl-test-logs'));
+
+        $this->assertStringContainsString('sudo -n', $command);
+        $this->assertStringContainsString('provision.sh', $command);
+        $this->assertStringContainsString('--domain', $command);
+        $this->assertStringContainsString('server.example.com', $command);
+        $this->assertStringContainsString('--webroot', $command);
+    }
+
+    public function test_build_ssl_provision_command_falls_back_to_certbot_when_script_disabled(): void
+    {
+        config([
+            'app.reseller_ssl_use_provision_script' => false,
+            'app.reseller_ssl_certbot_sudo' => false,
+        ]);
+
+        $command = app(ResellerSslService::class)->buildSslProvisionCommand(
+            'server.example.com',
+            storage_path('app/ssl-test-logs'),
+        );
+
+        $this->assertStringContainsString('certonly', $command);
+        $this->assertStringContainsString('--webroot-path', $command);
+        $this->assertStringNotContainsString('provision.sh', $command);
     }
 }

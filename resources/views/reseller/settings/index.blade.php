@@ -619,7 +619,7 @@
                                                     <p class="text-xs font-medium text-red-800 dark:text-red-300 pt-1">Certbot output</p>
                                                     <pre class="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap break-words max-h-64 overflow-y-auto rounded-md bg-red-100/80 dark:bg-red-950/50 p-2 border border-red-200 dark:border-red-900">{{ $sslFailure['output'] }}</pre>
                                                 @elseif($sslFailure['output'] === '')
-                                                    <p class="text-xs text-red-700 dark:text-red-400">No certbot log was captured. Click <strong>Provision SSL</strong> again. If this persists, your host may need <code class="text-xs">RESELLER_SSL_CERTBOT_SUDO=true</code> and passwordless sudo for certbot.</p>
+                                                    <p class="text-xs text-red-700 dark:text-red-400">No certbot log was captured. Click <strong>Provision SSL</strong> again. On the server, run once as root: <code class="text-xs">sudo bash scripts/reseller-ssl/install-host.sh</code> (sets up Apache ACME + sudo for www-data).</p>
                                                 @endif
                                                 @if(!empty($sslStatus['last_command']))
                                                     <p class="text-xs text-slate-500 dark:text-slate-400 font-mono break-all">Ran: {{ $sslStatus['last_command'] }}</p>

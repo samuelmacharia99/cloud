@@ -410,7 +410,7 @@ class ResellerSslService
             mkdir($logsDir, 0755, true);
         }
 
-        $command = $this->buildCertbotIssueCommand($customDomain, $logsDir);
+        $command = $this->buildSslProvisionCommand($customDomain, $logsDir);
 
         Log::info('Running certbot for reseller', [
             'reseller_id' => $reseller->id,
@@ -443,6 +443,17 @@ class ResellerSslService
         ];
     }
 
+    public function buildSslProvisionCommand(string $customDomain, string $logsDir): string
+    {
+        $script = $this->resolveProvisionScriptPath();
+
+        if ($script !== null && config('app.reseller_ssl_use_provision_script', true)) {
+            return $this->buildProvisionScriptCommand($customDomain, $logsDir, $script);
+        }
+
+        return $this->buildCertbotIssueCommand($customDomain, $logsDir);
+    }
+
     public function buildCertbotIssueCommand(string $customDomain, string $logsDir): string
     {
         $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
@@ -457,6 +468,43 @@ class ResellerSslService
             .' --non-interactive --agree-tos'
             .' --email '.escapeshellarg($adminEmail)
             .' --logs-dir '.escapeshellarg($logsDir);
+    }
+
+    public function buildProvisionScriptCommand(string $customDomain, string $logsDir, string $script): string
+    {
+        $adminEmail = Setting::getValue('admin_email', 'admin@talksasa.cloud');
+        $webroot = public_path();
+        $prefix = config('app.reseller_ssl_certbot_sudo', false) ? 'sudo -n ' : '';
+
+        return $prefix
+            .escapeshellarg($script)
+            .' --domain '.escapeshellarg($customDomain)
+            .' --webroot '.escapeshellarg($webroot)
+            .' --email '.escapeshellarg($adminEmail)
+            .' --logs-dir '.escapeshellarg($logsDir);
+    }
+
+    public function resolveProvisionScriptPath(): ?string
+    {
+        $configured = config('app.reseller_ssl_provision_script');
+        $candidates = array_filter([
+            is_string($configured) && $configured !== '' ? $configured : null,
+            base_path('scripts/reseller-ssl/provision.sh'),
+        ]);
+
+        foreach ($candidates as $path) {
+            if (is_file($path) && is_executable($path)) {
+                return $path;
+            }
+        }
+
+        foreach ($candidates as $path) {
+            if (is_file($path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -486,7 +534,7 @@ class ResellerSslService
         }
 
         if (! config('app.reseller_ssl_certbot_sudo', false)) {
-            $lines[] = 'Tip: certbot usually needs root. Set RESELLER_SSL_CERTBOT_SUDO=true and allow passwordless sudo for certbot in sudoers.';
+            $lines[] = 'Tip: run once on the server: sudo bash scripts/reseller-ssl/install-host.sh — then set RESELLER_SSL_CERTBOT_SUDO=true.';
         }
 
         $lines[] = 'Also check storage/logs/laravel.log on this server for "certbot failed for reseller".';
@@ -740,7 +788,20 @@ class ResellerSslService
                 ];
             }
 
-            $command = 'certbot renew --cert-name '.escapeshellarg($customDomain).' --quiet 2>&1';
+            $logsDir = storage_path('app/ssl-provisioning/reseller-'.$reseller->id.'/logs');
+            if (! is_dir($logsDir)) {
+                mkdir($logsDir, 0755, true);
+            }
+
+            $script = $this->resolveProvisionScriptPath();
+            if ($script !== null && config('app.reseller_ssl_use_provision_script', true)) {
+                $command = $this->buildProvisionScriptCommand($customDomain, $logsDir, $script).' --renew 2>&1';
+            } else {
+                $prefix = config('app.reseller_ssl_certbot_sudo', false) ? 'sudo -n ' : '';
+                $certbot = (string) config('app.reseller_ssl_certbot_path', 'certbot');
+                $command = $prefix.escapeshellcmd($certbot).' renew --cert-name '
+                    .escapeshellarg($customDomain).' --quiet 2>&1';
+            }
 
             Log::info('Running certbot renew for reseller', [
                 'reseller_id' => $reseller->id,

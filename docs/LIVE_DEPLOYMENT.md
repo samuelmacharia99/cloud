@@ -403,6 +403,14 @@ systemctl restart apache2
 
 ## Step 12: SSL Certificate (Let's Encrypt)
 
+**Reseller custom domains (Provision SSL in branding):** run once after deploy:
+
+```bash
+sudo bash /var/www/talksasa-cloud/scripts/reseller-ssl/install-host.sh
+```
+
+See [RESELLER_SSL.md](RESELLER_SSL.md) for troubleshooting (Apache ACME redirect, DNS/CAA).
+
 ```bash
 # Install Certbot
 apt-get install -y certbot python3-certbot-nginx python3-certbot-apache
