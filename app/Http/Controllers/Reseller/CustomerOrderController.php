@@ -175,6 +175,7 @@ class CustomerOrderController extends Controller
             'domain' => 'required|string|max:63|regex:/^[a-z0-9-]+$/i',
             'extension_id' => 'required|exists:domain_extensions,id',
             'years' => 'required|integer|min:1|max:10',
+            'expires_at' => 'nullable|date|after:today',
             'bill_customer' => 'sometimes|boolean',
         ]);
 
@@ -190,6 +191,7 @@ class CustomerOrderController extends Controller
                     $validated['domain'],
                     $extension,
                     (int) $validated['years'],
+                    $validated['expires_at'] ?? null,
                 );
 
                 return redirect()->route('reseller.customer-invoices.show', $result['invoice'])
@@ -202,6 +204,7 @@ class CustomerOrderController extends Controller
                 $validated['domain'],
                 $extension,
                 (int) $validated['years'],
+                $validated['expires_at'] ?? null,
             );
 
             $fqdn = $result['domain']->name.$result['domain']->extension;

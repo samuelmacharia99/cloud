@@ -15,6 +15,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -237,11 +238,12 @@ class ResellerCustomerOrderService
         string $domainName,
         DomainExtension $extension,
         int $years,
+        ?string $expiresAt = null,
     ): array {
         $this->billing->ensureManagedCustomer($reseller, $customer);
 
-        return DB::transaction(function () use ($reseller, $customer, $domainName, $extension, $years) {
-            $prepared = $this->prepareDomainRegistration($reseller, $customer, $domainName, $extension, $years);
+        return DB::transaction(function () use ($reseller, $customer, $domainName, $extension, $years, $expiresAt) {
+            $prepared = $this->prepareDomainRegistration($reseller, $customer, $domainName, $extension, $years, expiresAt: $expiresAt);
 
             $invoice = $this->billing->createCustomerInvoice($reseller, $customer, [
                 'status' => InvoiceStatus::Unpaid->value,
@@ -272,10 +274,11 @@ class ResellerCustomerOrderService
         string $domainName,
         DomainExtension $extension,
         int $years,
+        ?string $expiresAt = null,
     ): array {
         $this->billing->ensureManagedCustomer($reseller, $customer);
 
-        return DB::transaction(function () use ($reseller, $customer, $domainName, $extension, $years) {
+        return DB::transaction(function () use ($reseller, $customer, $domainName, $extension, $years, $expiresAt) {
             $prepared = $this->prepareDomainRegistration(
                 $reseller,
                 $customer,
@@ -283,6 +286,7 @@ class ResellerCustomerOrderService
                 $extension,
                 $years,
                 retailAmount: 0.0,
+                expiresAt: $expiresAt,
             );
 
             $order = $prepared['order'];
@@ -381,6 +385,7 @@ class ResellerCustomerOrderService
         DomainExtension $extension,
         int $years,
         ?float $retailAmount = null,
+        ?string $expiresAt = null,
     ): array {
         $wholesale = $extension->pricing()
             ->where('tier', 'wholesale')
@@ -394,6 +399,7 @@ class ResellerCustomerOrderService
         $wholesaleAmount = (float) $wholesale->price * $years;
         $retailAmount ??= $this->retailAmountForExtension($reseller, $extension, $years, $wholesaleAmount);
         $domainName = strtolower($domainName);
+        $domainExpiresAt = $this->resolveDomainExpiresAt($expiresAt, $years);
 
         $domain = Domain::create([
             'user_id' => $customer->id,
@@ -403,6 +409,7 @@ class ResellerCustomerOrderService
             'status' => 'pending',
             'type' => 'registration',
             'auto_renew' => false,
+            'expires_at' => $domainExpiresAt,
         ]);
 
         $order = ResellerDomainOrder::create([
@@ -431,6 +438,15 @@ class ResellerCustomerOrderService
                 'custom_options' => ['domain_order_id' => $order->id],
             ],
         ];
+    }
+
+    private function resolveDomainExpiresAt(?string $expiresAt, int $years): ?Carbon
+    {
+        if (blank($expiresAt)) {
+            return now()->addYears($years);
+        }
+
+        return Carbon::parse($expiresAt)->startOfDay();
     }
 
     private function linkDomainOrderToInvoice(ResellerDomainOrder $order, Domain $domain, Invoice $invoice): void

@@ -3,7 +3,18 @@
 @section('title', 'Register Domain for Customer')
 
 @section('content')
-<div class="space-y-6 max-w-xl" x-data="{ billCustomer: @js((bool) old('bill_customer', true)) }">
+<div class="space-y-6 max-w-xl" x-data="{
+    billCustomer: @js((bool) old('bill_customer', true)),
+    years: @js((int) old('years', 1)),
+    expiresAt: @js(old('expires_at', '')),
+    expiresTouched: @js(filled(old('expires_at'))),
+    suggestExpiry() {
+        if (this.expiresTouched) return;
+        const d = new Date();
+        d.setFullYear(d.getFullYear() + parseInt(this.years, 10) || 1);
+        this.expiresAt = d.toISOString().slice(0, 10);
+    },
+}" x-init="suggestExpiry()">
     <div>
         <a href="{{ $selectedCustomer ? route('reseller.customers.show', $selectedCustomer) : route('reseller.customers.index') }}" class="text-sm text-purple-600">← Customer</a>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">Add domain for customer</h1>
@@ -39,11 +50,29 @@
 
         <div>
             <label class="block text-sm font-medium mb-2">Years</label>
-            <select name="years" class="w-full px-4 py-2 border rounded-lg bg-white dark:bg-slate-800">
+            <select name="years" x-model.number="years" @change="suggestExpiry()"
+                class="w-full px-4 py-2 border rounded-lg bg-white dark:bg-slate-800">
                 @foreach ([1,2,3,5,10] as $y)
                     <option value="{{ $y }}" @selected(old('years', 1) == $y)>{{ $y }}</option>
                 @endforeach
             </select>
+            <p class="text-xs text-slate-500 mt-1">Used for wholesale pricing and registrar registration period.</p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+            <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Registration expiry</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+                When this domain should expire on the customer’s account. Adjust if you need a specific date; otherwise it follows the years selected above.
+            </p>
+            <div>
+                <label for="expires_at" class="block text-sm font-medium mb-2">Expiry date</label>
+                <input type="date" id="expires_at" name="expires_at" x-model="expiresAt" @input="expiresTouched = true"
+                    :min="new Date().toISOString().slice(0, 10)"
+                    class="w-full px-4 py-2 border rounded-lg bg-white dark:bg-slate-800 @error('expires_at') border-red-500 @enderror">
+                @error('expires_at')
+                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+            </div>
         </div>
 
         <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">

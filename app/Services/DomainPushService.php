@@ -255,7 +255,8 @@ class DomainPushService
 
             if ($domain) {
                 $registrationDate = now();
-                $expiryDate = $registrationDate->copy()->addYears($order->years);
+                $expiryDate = $domain->expires_at
+                    ?? $registrationDate->copy()->addYears($order->years);
 
                 $domain->update([
                     'status' => 'active',

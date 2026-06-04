@@ -5,6 +5,7 @@ namespace Tests\Feature\Reseller;
 use App\Http\Controllers\Reseller\CartController;
 use App\Models\ContainerTemplate;
 use App\Models\DirectAdminPackage;
+use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\Invoice;
@@ -483,6 +484,43 @@ class ResellerCustomerBillingTest extends TestCase
         $this->assertNotNull($order);
         $this->assertEquals(0, (float) $order->retail_amount);
         $this->assertNull($order->customer_invoice_id);
+    }
+
+    public function test_reseller_domain_order_accepts_custom_expiry_date(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $extension = DomainExtension::create([
+            'extension' => '.test',
+            'description' => 'TEST',
+            'enabled' => true,
+        ]);
+
+        DomainPricing::create([
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'tier' => 'wholesale',
+            'price' => 100,
+            'enabled' => true,
+        ]);
+
+        $expiry = now()->addMonths(18)->format('Y-m-d');
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-orders.domain.store'), [
+                'customer_id' => $customer->id,
+                'domain' => 'customexp',
+                'extension_id' => $extension->id,
+                'years' => 1,
+                'expires_at' => $expiry,
+                'bill_customer' => '0',
+            ])
+            ->assertRedirect();
+
+        $domain = Domain::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($domain);
+        $this->assertSame($expiry, $domain->expires_at->format('Y-m-d'));
     }
 
     public function test_reports_page_shows_whitelabel_heading(): void
