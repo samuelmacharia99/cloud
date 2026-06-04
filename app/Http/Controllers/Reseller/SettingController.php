@@ -11,14 +11,12 @@ use App\Http\Requests\UpdateMpesaSettingsRequest;
 use App\Http\Requests\UpdateSmsSettingsRequest;
 use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\UploadBrandingFileRequest;
-use App\Jobs\ProvisionResellerSslJob;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerSettingsService;
 use App\Services\ResellerSslService;
 use App\Services\TalksasaSmsService;
-use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -359,98 +357,15 @@ class SettingController extends Controller
 
     public function provisionSsl(Request $request): RedirectResponse
     {
-        try {
-            $user = auth()->user();
-            $domain = $user->settings['branding']['custom_domain'] ?? null;
-
-            if (empty($domain)) {
-                return $this->redirectToSettingsTab('branding', [
-                    'error' => 'Save a custom domain in branding settings before provisioning SSL.',
-                ]);
-            }
-
-            $environmentError = $this->sslService->getProvisioningEnvironmentError();
-            if ($environmentError !== null) {
-                return $this->redirectToSettingsTab('branding', [
-                    'error' => $environmentError,
-                ]);
-            }
-
-            $dnsCheck = $this->sslService->checkDns($domain);
-            if (! $dnsCheck['match']) {
-                return $this->redirectToSettingsTab('branding', [
-                    'error' => 'DNS is not pointing to this server yet. '.$dnsCheck['message'].' Expected server IP: '.$dnsCheck['server_ip'],
-                ]);
-            }
-
-            @set_time_limit(300);
-
-            $this->sslService->prepareManualProvision($user, 'manual');
-            $result = $this->sslService->issueCertificate($user->fresh());
-
-            $user->refresh();
-            $ssl = $this->sslService->getSslStatus($user);
-
-            if ($result['success'] ?? false) {
-                $expires = ! empty($ssl['expires_at'])
-                    ? ' Valid until '.Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
-                    : '';
-
-                return $this->redirectToSettingsTab('branding', [
-                    'success' => 'SSL certificate is active for '.$domain.'.'.$expires,
-                ]);
-            }
-
-            $failure = $this->sslService->resolveSslFailureDisplay($ssl);
-            $errorMessage = $failure['error'] !== ''
-                ? $failure['error']
-                : 'SSL provisioning failed. Check server logs or try again in a few minutes.';
-
-            if ($failure['show_output'] && $failure['output'] !== '') {
-                $errorMessage .= "\n\n".$failure['output'];
-            }
-
-            return $this->redirectToSettingsTab('branding', [
-                'error' => $errorMessage,
-                'ssl_provision_output' => $failure['output'],
-            ]);
-        } catch (\InvalidArgumentException $e) {
-            return $this->redirectToSettingsTab('branding', [
-                'error' => $e->getMessage(),
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Exception during SSL provisioning', [
-                'error' => $e->getMessage(),
-                'reseller_id' => auth()->id(),
-                'exception' => $e,
-            ]);
-
-            return $this->redirectToSettingsTab('branding', [
-                'error' => 'Failed to provision SSL. Please try again.',
-            ]);
-        }
+        return $this->redirectToSettingsTab('branding', [
+            'success' => 'SSL is installed on the server via command line. Use Check DNS above to verify your domain, and run scripts/reseller-ssl/provision.sh on the host.',
+        ]);
     }
 
     public function renewSsl(Request $request): RedirectResponse
     {
-        try {
-            $user = auth()->user();
-
-            ProvisionResellerSslJob::dispatch($user->id, 'renew');
-
-            return $this->redirectToSettingsTab('branding', [
-                'success' => 'SSL renewal has been queued.',
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Exception during SSL renewal queue', [
-                'error' => $e->getMessage(),
-                'reseller_id' => auth()->id(),
-                'exception' => $e,
-            ]);
-
-            return $this->redirectToSettingsTab('branding', [
-                'error' => 'Failed to queue SSL renewal. Please try again.',
-            ]);
-        }
+        return $this->redirectToSettingsTab('branding', [
+            'success' => 'Renew SSL on the server with: sudo scripts/reseller-ssl/provision.sh --renew (see docs/RESELLER_SSL.md).',
+        ]);
     }
 }

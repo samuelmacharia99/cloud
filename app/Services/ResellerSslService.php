@@ -143,6 +143,30 @@ class ResellerSslService
     /**
      * @return array<string, mixed>
      */
+    /**
+     * SSL is installed on the server via CLI; the portal only tracks the custom domain.
+     *
+     * @return array<string, mixed>
+     */
+    public function sslStatusForCliManaged(?string $domain): array
+    {
+        return [
+            'status' => 'external',
+            'domain' => $domain,
+            'cert_path' => null,
+            'key_path' => null,
+            'issued_at' => null,
+            'expires_at' => null,
+            'error' => null,
+            'queued_reason' => null,
+            'queued_at' => null,
+            'last_attempt_at' => null,
+            'last_output' => null,
+            'last_exit_code' => null,
+            'last_command' => null,
+        ];
+    }
+
     public function sslStatusForDomain(?string $domain): array
     {
         if (empty($domain)) {

@@ -116,7 +116,7 @@ class ResellerBrandingTest extends TestCase
         $this->assertFalse($status['payments']['ready']);
     }
 
-    public function test_saving_custom_domain_queues_background_ssl_job(): void
+    public function test_saving_custom_domain_does_not_queue_background_ssl_job(): void
     {
         Queue::fake();
 
@@ -134,21 +134,26 @@ class ResellerBrandingTest extends TestCase
             'custom_domain' => 'billing.acme.test',
         ]);
 
-        Queue::assertPushed(ProvisionResellerSslJob::class, function (ProvisionResellerSslJob $job) use ($reseller) {
-            return $job->resellerId === $reseller->id && $job->mode === 'issue';
-        });
+        Queue::assertNotPushed(ProvisionResellerSslJob::class);
 
         $reseller->refresh();
-        $this->assertSame('pending', $reseller->settings['branding']['ssl']['status'] ?? null);
+        $this->assertSame('external', $reseller->settings['branding']['ssl']['status'] ?? null);
     }
 
-    public function test_provision_ssl_requires_saved_custom_domain(): void
+    public function test_provision_ssl_redirects_with_cli_instructions(): void
     {
-        $reseller = User::factory()->create(['is_reseller' => true]);
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'settings' => [
+                'branding' => [
+                    'custom_domain' => 'billing.acme.test',
+                ],
+            ],
+        ]);
 
         $this->actingAs($reseller)
             ->post(route('reseller.settings.branding.ssl.provision'))
             ->assertRedirect()
-            ->assertSessionHas('error');
+            ->assertSessionHas('success');
     }
 }

@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Jobs\ProvisionResellerSslJob;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
@@ -132,7 +131,7 @@ class ResellerSettingsService
 
     public function getBrandingSettings(User $user): array
     {
-        return $this->getSettings($user, 'branding', [
+        $branding = $this->getSettings($user, 'branding', [
             'company_name' => '',
             'tagline' => '',
             'custom_domain' => null,
@@ -147,6 +146,28 @@ class ResellerSettingsService
             'ssl' => [],
             'updated_at' => null,
         ]);
+
+        $sslStatus = $branding['ssl']['status'] ?? 'none';
+        if (in_array($sslStatus, ['failed', 'pending', 'provisioning'], true)) {
+            $branding['ssl'] = app(ResellerSslService::class)->sslStatusForCliManaged(
+                $branding['custom_domain'] ?? null
+            );
+            $this->persistBrandingSslState($user, $branding);
+        }
+
+        return $branding;
+    }
+
+    /**
+     * @param  array<string, mixed>  $branding
+     */
+    private function persistBrandingSslState(User $user, array $branding): void
+    {
+        $settings = $user->settings ?? [];
+        $settings['branding'] = array_merge($settings['branding'] ?? [], [
+            'ssl' => $branding['ssl'],
+        ]);
+        $user->update([self::SETTINGS_KEY => $settings]);
     }
 
     public function updateBrandingSettings(User $user, array $data): void
@@ -168,7 +189,7 @@ class ResellerSettingsService
         ]);
 
         if ($newDomain !== $previousDomain) {
-            $settings['branding']['ssl'] = app(ResellerSslService::class)->sslStatusForDomain($newDomain);
+            $settings['branding']['ssl'] = app(ResellerSslService::class)->sslStatusForCliManaged($newDomain);
 
             if ($previousDomain) {
                 app(ResellerBrandingResolver::class)->forgetDomainCache($previousDomain);
@@ -182,10 +203,6 @@ class ResellerSettingsService
             'company_name' => $data['company_name'],
             'custom_domain' => $newDomain,
         ]);
-
-        if ($newDomain !== $previousDomain && ! empty($newDomain)) {
-            ProvisionResellerSslJob::dispatch($user->id, 'issue');
-        }
     }
 
     private function getSettings(User $user, string $key, array $defaults): array
