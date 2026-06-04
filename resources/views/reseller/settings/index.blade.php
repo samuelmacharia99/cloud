@@ -11,7 +11,7 @@
 @endsection
 
 @section('content')
-<div class="space-y-8" x-data="settingsTabs()" x-init="activeTab = 'payment'">
+<div class="space-y-8" x-data="settingsTabs(@js($activeSettingsTab))" x-init="init()">
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Settings</h1>
@@ -47,7 +47,7 @@
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <div class="flex border-b border-slate-200 dark:border-slate-800">
             <!-- Payment Gateways Tab -->
-            <button @click="activeTab = 'payment'" :class="activeTab === 'payment' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
+            <button type="button" @click="setTab('payment')" :class="activeTab === 'payment' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                 </svg>
@@ -63,7 +63,7 @@
             </button>
 
             <!-- Email Tab -->
-            <button @click="activeTab = 'email'" :class="activeTab === 'email' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
+            <button type="button" @click="setTab('email')" :class="activeTab === 'email' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
@@ -71,7 +71,7 @@
             </button>
 
             <!-- Branding Tab -->
-            <button @click="activeTab = 'branding'" :class="activeTab === 'branding' ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
+            <button type="button" @click="setTab('branding')" :class="activeTab === 'branding' ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
                 </svg>
@@ -423,7 +423,7 @@
             </div>
 
             <!-- Branding Tab Content -->
-            <div x-show="activeTab === 'branding'" x-transition>
+            <div id="settings-branding-panel" x-show="activeTab === 'branding'" x-transition>
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                     <div class="bg-gradient-to-r from-amber-600 to-amber-700 px-6 py-4">
                         <div class="flex items-center gap-3">
@@ -549,11 +549,14 @@
                                                 <span x-show="!checking">Check DNS</span>
                                                 <span x-show="checking">Checking...</span>
                                             </button>
-                                            <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST" class="inline">
+                                            <form action="{{ route('reseller.settings.branding.ssl.provision') }}" method="POST" class="inline"
+                                                @submit="sslProvisioning = true">
                                                 @csrf
-                                                <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition inline-flex items-center gap-2">
+                                                <button type="submit" :disabled="sslProvisioning"
+                                                    class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait text-white text-sm font-medium rounded-lg transition inline-flex items-center gap-2">
                                                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                                                    Provision SSL
+                                                    <span x-show="!sslProvisioning">Provision SSL</span>
+                                                    <span x-show="sslProvisioning" x-cloak>Provisioning… (may take 1–2 min)</span>
                                                 </button>
                                             </form>
                                         </div>
@@ -742,10 +745,36 @@
 </div>
 
 <script>
-function settingsTabs() {
+function settingsTabs(initialTab) {
+    const allowed = ['payment', 'sms', 'email', 'branding'];
+
     return {
-        activeTab: 'payment',
-    }
+        activeTab: allowed.includes(initialTab) ? initialTab : 'payment',
+        setTab(tab) {
+            if (! allowed.includes(tab)) {
+                return;
+            }
+            this.activeTab = tab;
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tab);
+            window.history.replaceState({}, '', url);
+        },
+        init() {
+            const urlTab = new URL(window.location.href).searchParams.get('tab');
+            if (urlTab && allowed.includes(urlTab)) {
+                this.activeTab = urlTab;
+            }
+
+            if (this.activeTab === 'branding') {
+                this.$nextTick(() => {
+                    document.getElementById('settings-branding-panel')?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start',
+                    });
+                });
+            }
+        },
+    };
 }
 
 function sslChecker() {
@@ -753,6 +782,7 @@ function sslChecker() {
         checking: false,
         dnsChecked: false,
         dnsResult: null,
+        sslProvisioning: false,
         checkDns() {
             this.checking = true;
             const domain = '{{ $savedCustomDomain ?? $brandingSettings['custom_domain'] ?? '' }}';

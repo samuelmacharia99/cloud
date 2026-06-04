@@ -26,6 +26,8 @@ use Illuminate\View\View;
 
 class SettingController extends Controller
 {
+    private const SETTINGS_TABS = ['payment', 'sms', 'email', 'branding'];
+
     public function __construct(
         private ResellerSettingsService $settingsService,
         private TalksasaSmsService $smsService,
@@ -35,7 +37,7 @@ class SettingController extends Controller
         private ResellerMailService $resellerMail,
     ) {}
 
-    public function index(): View
+    public function index(Request $request): View
     {
         $user = auth()->user();
 
@@ -47,7 +49,29 @@ class SettingController extends Controller
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
             'brandingStatus' => $this->brandingResolver->status($user),
             'registrationInviteUrl' => $this->brandingResolver->signedRegistrationUrl($user),
+            'activeSettingsTab' => $this->resolveSettingsTab($request),
         ]);
+    }
+
+    private function resolveSettingsTab(Request $request): string
+    {
+        $tab = (string) $request->query('tab', session('settings_tab', 'payment'));
+
+        return in_array($tab, self::SETTINGS_TABS, true) ? $tab : 'payment';
+    }
+
+    /**
+     * @param  array<string, mixed>  $with
+     */
+    private function redirectToSettingsTab(string $tab, array $with = []): RedirectResponse
+    {
+        if (! in_array($tab, self::SETTINGS_TABS, true)) {
+            $tab = 'payment';
+        }
+
+        return redirect()
+            ->route('reseller.settings.index', ['tab' => $tab])
+            ->with(array_merge(['settings_tab' => $tab], $with));
     }
 
     public function updateMpesa(UpdateMpesaSettingsRequest $request): RedirectResponse
@@ -204,7 +228,9 @@ class SettingController extends Controller
             $this->brandingResolver->forgetDomainCache($previousDomain);
             $this->brandingResolver->forgetDomainCache($request->input('custom_domain'));
 
-            return back()->with('success', 'Branding settings updated successfully. SSL will be provisioned automatically once DNS is configured.');
+            return $this->redirectToSettingsTab('branding', [
+                'success' => 'Branding settings updated successfully. SSL will be provisioned automatically once DNS is configured.',
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to update branding settings', [
                 'error' => $e->getMessage(),
@@ -212,7 +238,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to update branding settings. Please try again.');
+            return $this->redirectToSettingsTab('branding', [
+                'error' => 'Failed to update branding settings. Please try again.',
+            ]);
         }
     }
 
@@ -227,7 +255,9 @@ class SettingController extends Controller
 
             $typeLabel = ucfirst($type);
 
-            return back()->with('success', "{$typeLabel} uploaded successfully.");
+            return $this->redirectToSettingsTab('branding', [
+                'success' => "{$typeLabel} uploaded successfully.",
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to upload branding file', [
                 'error' => $e->getMessage(),
@@ -236,7 +266,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to upload file. Please try again.');
+            return $this->redirectToSettingsTab('branding', [
+                'error' => 'Failed to upload file. Please try again.',
+            ]);
         }
     }
 
@@ -247,14 +279,18 @@ class SettingController extends Controller
             $type = $request->input('type');
 
             if (! in_array($type, ['logo', 'favicon'])) {
-                return back()->with('error', 'Invalid file type.');
+                return $this->redirectToSettingsTab('branding', [
+                    'error' => 'Invalid file type.',
+                ]);
             }
 
             $this->brandingService->deleteFile($user, $type);
 
             $typeLabel = ucfirst($type);
 
-            return back()->with('success', "{$typeLabel} deleted successfully.");
+            return $this->redirectToSettingsTab('branding', [
+                'success' => "{$typeLabel} deleted successfully.",
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to delete branding file', [
                 'error' => $e->getMessage(),
@@ -263,7 +299,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to delete file. Please try again.');
+            return $this->redirectToSettingsTab('branding', [
+                'error' => 'Failed to delete file. Please try again.',
+            ]);
         }
     }
 
@@ -325,16 +363,22 @@ class SettingController extends Controller
             $domain = $user->settings['branding']['custom_domain'] ?? null;
 
             if (empty($domain)) {
-                return back()->with('error', 'Save a custom domain in branding settings before provisioning SSL.');
+                return $this->redirectToSettingsTab('branding', [
+                    'error' => 'Save a custom domain in branding settings before provisioning SSL.',
+                ]);
             }
 
             if (! $this->sslService->isCertbotAvailable()) {
-                return back()->with('error', 'SSL provisioning is not available on this server (certbot is not installed). Contact your platform administrator.');
+                return $this->redirectToSettingsTab('branding', [
+                    'error' => 'SSL provisioning is not available on this server (certbot is not installed). Contact your platform administrator.',
+                ]);
             }
 
             $dnsCheck = $this->sslService->checkDns($domain);
             if (! $dnsCheck['match']) {
-                return back()->with('error', 'DNS is not pointing to this server yet. '.$dnsCheck['message'].' Expected server IP: '.$dnsCheck['server_ip']);
+                return $this->redirectToSettingsTab('branding', [
+                    'error' => 'DNS is not pointing to this server yet. '.$dnsCheck['message'].' Expected server IP: '.$dnsCheck['server_ip'],
+                ]);
             }
 
             @set_time_limit(300);
@@ -350,7 +394,9 @@ class SettingController extends Controller
                     ? ' Valid until '.\Carbon\Carbon::parse($ssl['expires_at'])->format('M d, Y').'.'
                     : '';
 
-                return back()->with('success', 'SSL certificate is active for '.$domain.'.'.$expires);
+                return $this->redirectToSettingsTab('branding', [
+                    'success' => 'SSL certificate is active for '.$domain.'.'.$expires,
+                ]);
             }
 
             $failure = $this->sslService->resolveSslFailureDisplay($ssl);
@@ -362,9 +408,13 @@ class SettingController extends Controller
                 $errorMessage .= "\n\n".$failure['output'];
             }
 
-            return back()->with('error', $errorMessage);
+            return $this->redirectToSettingsTab('branding', [
+                'error' => $errorMessage,
+            ]);
         } catch (\InvalidArgumentException $e) {
-            return back()->with('error', $e->getMessage());
+            return $this->redirectToSettingsTab('branding', [
+                'error' => $e->getMessage(),
+            ]);
         } catch (\Exception $e) {
             Log::error('Exception during SSL provisioning', [
                 'error' => $e->getMessage(),
@@ -372,7 +422,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to provision SSL. Please try again.');
+            return $this->redirectToSettingsTab('branding', [
+                'error' => 'Failed to provision SSL. Please try again.',
+            ]);
         }
     }
 
@@ -383,7 +435,9 @@ class SettingController extends Controller
 
             ProvisionResellerSslJob::dispatch($user->id, 'renew');
 
-            return back()->with('success', 'SSL renewal has been queued.');
+            return $this->redirectToSettingsTab('branding', [
+                'success' => 'SSL renewal has been queued.',
+            ]);
         } catch (\Exception $e) {
             Log::error('Exception during SSL renewal queue', [
                 'error' => $e->getMessage(),
@@ -391,7 +445,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to queue SSL renewal. Please try again.');
+            return $this->redirectToSettingsTab('branding', [
+                'error' => 'Failed to queue SSL renewal. Please try again.',
+            ]);
         }
     }
 }
