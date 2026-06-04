@@ -8,7 +8,7 @@
         <title>@yield('title', 'My Account') — {{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa Cloud') }}</title>
 
         @isset($resellerBranding['favicon_url'])
-        <link rel="icon" type="image/x-icon" href="{{ $resellerBranding['favicon_url'] }}">
+        <link rel="icon" type="image/x-icon" href="{{ branding_asset_url($resellerBranding['favicon_url']) }}">
         @endisset
 
         <link rel="preconnect" href="https://fonts.bunny.net">
@@ -25,7 +25,7 @@
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2 w-full">
                         @if(!empty($resellerBranding['logo_url']))
-                            <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
+                            <img src="{{ branding_asset_url($resellerBranding['logo_url']) }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
                         @else
                             <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center flex-shrink-0">
                                 <span class="text-white font-bold text-sm">{{ strtoupper(substr($resellerBranding['company_name'] ?? 'TC', 0, 2)) }}</span>

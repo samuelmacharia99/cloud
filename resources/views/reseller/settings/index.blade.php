@@ -548,7 +548,7 @@
                                 @if(!empty($brandingSettings['logo_url']))
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
-                                            <img src="{{ $brandingSettings['logo_url'] }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
+                                            <img src="{{ branding_asset_url($brandingSettings['logo_url']) }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
                                             <div>
                                                 <p class="text-sm font-medium text-slate-900 dark:text-white">Current Logo</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 500x150px</p>
@@ -596,7 +596,7 @@
                                 @if(!empty($brandingSettings['favicon_url']))
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
-                                            <img src="{{ $brandingSettings['favicon_url'] }}" alt="Favicon" class="h-8 w-8 object-contain">
+                                            <img src="{{ branding_asset_url($brandingSettings['favicon_url']) }}" alt="Favicon" class="h-8 w-8 object-contain">
                                             <div>
                                                 <p class="text-sm font-medium text-slate-900 dark:text-white">Current Favicon</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 32x32px or 64x64px</p>
@@ -669,21 +669,25 @@
                                 </div>
 
                                 <!-- DNS Check Results -->
-                                <div x-show="dnsChecked" class="mt-4 space-y-2">
+                                <div x-show="dnsChecked && dnsResult" class="mt-4 space-y-2">
                                     <div class="text-sm">
                                         <p class="text-slate-600 dark:text-slate-400">Server IP: <span class="font-mono text-slate-900 dark:text-white">{{ substr(gethostbyname(parse_url(config('app.url'), PHP_URL_HOST)), 0, 50) }}</span></p>
-                                        <p class="text-slate-600 dark:text-slate-400" x-show="dnsResult">Domain IP: <span class="font-mono text-slate-900 dark:text-white" x-text="dnsResult.domain_ip"></span></p>
+                                        <p class="text-slate-600 dark:text-slate-400" x-show="dnsResult?.domain_ip">
+                                            Domain IP: <span class="font-mono text-slate-900 dark:text-white" x-text="dnsResult?.domain_ip ?? '—'"></span>
+                                        </p>
                                     </div>
-                                    <p class="text-sm" :class="dnsResult && dnsResult.match ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'" x-show="dnsResult && !dnsResult.match">
+                                    <p class="text-sm text-red-600 dark:text-red-400" x-show="dnsResult && dnsResult.success === false" x-text="dnsResult?.message ?? 'DNS check failed.'"></p>
+                                    <p class="text-sm text-red-600 dark:text-red-400" x-show="dnsResult && dnsResult.success !== false && !dnsResult.match">
                                         ✗ {{ $customDomain }} is not pointing to this server
                                     </p>
                                     <p class="text-sm text-emerald-600 dark:text-emerald-400" x-show="dnsResult && dnsResult.match">
                                         ✓ DNS is correctly configured
                                     </p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400" x-show="!dnsResult.certbot_available">
+                                    <p class="text-sm text-slate-600 dark:text-slate-400" x-show="dnsResult && dnsResult.certbot_available === false">
                                         ⚠️ certbot is not installed on this server. Ask your administrator to install it.
                                     </p>
                                 </div>
+                                <p x-show="dnsChecked && !dnsResult" class="mt-4 text-sm text-red-600 dark:text-red-400">DNS check failed. Please try again.</p>
                             </div>
 
                             <!-- SSL Status -->
@@ -784,14 +788,16 @@ function sslChecker() {
             fetch(`{{ route('reseller.settings.branding.ssl.check-dns') }}?domain=${encodeURIComponent(domain)}`)
                 .then(response => response.json())
                 .then(data => {
-                    this.dnsResult = data;
+                    this.dnsResult = data?.success === false ? data : { ...data, certbot_available: data.certbot_available ?? false };
                     this.dnsChecked = true;
                     this.checking = false;
                 })
                 .catch(error => {
                     console.error('Error checking DNS:', error);
-                    alert('Failed to check DNS. Please try again.');
+                    this.dnsResult = null;
+                    this.dnsChecked = true;
                     this.checking = false;
+                    alert('Failed to check DNS. Please try again.');
                 });
         }
     }

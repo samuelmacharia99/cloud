@@ -41,7 +41,8 @@ class ResellerBrandingService
                 'public'
             );
 
-            $url = asset("storage/{$storagePath}");
+            $url = branding_asset_url(Storage::disk('public')->url($storagePath))
+                ?? '/storage/'.$storagePath;
 
             // Update settings
             if (!isset($settings['branding'])) {

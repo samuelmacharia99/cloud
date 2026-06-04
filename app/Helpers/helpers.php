@@ -85,6 +85,24 @@ function setting(string $key, $default = null)
 }
 
 /**
+ * Use a same-origin path for uploaded branding assets (avoids SSL hostname errors on custom domains).
+ */
+function branding_asset_url(?string $url): ?string
+{
+    if (empty($url)) {
+        return null;
+    }
+
+    if (str_starts_with($url, '/')) {
+        return $url;
+    }
+
+    $path = parse_url($url, PHP_URL_PATH);
+
+    return ($path && str_starts_with($path, '/')) ? $path : $url;
+}
+
+/**
  * Format bytes as human-readable size
  */
 function formatBytes(int $bytes, int $precision = 2): string

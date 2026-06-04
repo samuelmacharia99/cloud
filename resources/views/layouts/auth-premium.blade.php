@@ -7,7 +7,7 @@
     <title>@yield('title', 'Authentication') — {{ $resellerBranding['company_name'] ?? config('app.name', 'Talksasa Cloud') }}</title>
 
     @isset($resellerBranding['favicon_url'])
-    <link rel="icon" type="image/x-icon" href="{{ $resellerBranding['favicon_url'] }}">
+    <link rel="icon" type="image/x-icon" href="{{ branding_asset_url($resellerBranding['favicon_url']) }}">
     @endisset
 
     <!-- Fonts -->
@@ -462,7 +462,7 @@
             <div class="auth-header">
                 <a href="/" class="inline-flex items-center gap-3 group">
                     @if(!empty($resellerBranding['logo_url']))
-                        <img src="{{ $resellerBranding['logo_url'] }}" alt="Logo" class="h-11 w-auto max-w-[140px] object-contain">
+                        <img src="{{ branding_asset_url($resellerBranding['logo_url']) }}" alt="Logo" class="h-11 w-auto max-w-[140px] object-contain">
                     @else
                     <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-white font-bold text-lg shadow-lg group-hover:shadow-xl group-hover:shadow-purple-500/20 transition-shadow">
                         {{ strtoupper(substr($resellerBranding['company_name'] ?? 'T', 0, 1)) }}
