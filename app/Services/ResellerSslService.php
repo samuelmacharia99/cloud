@@ -8,6 +8,7 @@ use App\Models\User;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class ResellerSslService
 {
@@ -231,27 +232,24 @@ class ResellerSslService
             $customDomain = $reseller->settings['branding']['custom_domain'] ?? null;
 
             if (empty($customDomain)) {
-                return [
-                    'success' => false,
-                    'message' => 'No custom domain configured.',
-                ];
+                return $this->recordSslFailure($reseller, $customDomain, 'No custom domain configured.');
             }
 
-            // Check if certbot is available
             if (! $this->isCertbotAvailable()) {
-                return [
-                    'success' => false,
-                    'message' => 'certbot is not installed on this server. Install with: sudo apt install certbot',
-                ];
+                return $this->recordSslFailure(
+                    $reseller,
+                    $customDomain,
+                    'certbot is not installed on this server. Ask your administrator to install it (e.g. sudo apt install certbot).',
+                );
             }
 
-            // Check DNS resolution
             $dnsCheck = $this->checkDns($customDomain);
             if (! $dnsCheck['match']) {
-                return [
-                    'success' => false,
-                    'message' => 'Custom domain does not resolve to this server. Ensure your DNS A record points to: '.$dnsCheck['server_ip'],
-                ];
+                return $this->recordSslFailure(
+                    $reseller,
+                    $customDomain,
+                    'Custom domain does not resolve to this server. Point your DNS A record to: '.($dnsCheck['server_ip'] ?? 'this server\'s IP'),
+                );
             }
 
             // Create challenge directory
@@ -283,7 +281,6 @@ class ResellerSslService
             $outputText = implode("\n", $output);
 
             if ($exitCode !== 0) {
-                $errorMsg = $this->extractErrorFromOutput($outputText);
                 Log::error('certbot failed for reseller', [
                     'reseller_id' => $reseller->id,
                     'domain' => $customDomain,
@@ -291,17 +288,12 @@ class ResellerSslService
                     'output' => $outputText,
                 ]);
 
-                // Store error in settings
-                $this->updateSslStatus($reseller, [
-                    'status' => 'failed',
-                    'domain' => $customDomain,
-                    'error' => $errorMsg,
-                ]);
-
-                return [
-                    'success' => false,
-                    'message' => 'Failed to issue certificate: '.$errorMsg,
-                ];
+                return $this->recordSslFailure(
+                    $reseller,
+                    $customDomain,
+                    $this->summarizeCertbotFailure($outputText),
+                    $outputText,
+                );
             }
 
             // Certbot succeeded - verify cert files exist
@@ -316,10 +308,12 @@ class ResellerSslService
                     'key_path' => $keyPath,
                 ]);
 
-                return [
-                    'success' => false,
-                    'message' => 'Certificate files not found after issuance. Check server logs.',
-                ];
+                return $this->recordSslFailure(
+                    $reseller,
+                    $customDomain,
+                    'Certificate files were not found after certbot finished. Expected: '.$certPath,
+                    $outputText,
+                );
             }
 
             // Get certificate expiry
@@ -354,11 +348,85 @@ class ResellerSslService
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return [
-                'success' => false,
-                'message' => 'An error occurred: '.$e->getMessage(),
-            ];
+            $domain = $reseller->settings['branding']['custom_domain'] ?? null;
+
+            return $this->recordSslFailure(
+                $reseller,
+                is_string($domain) ? $domain : null,
+                'An error occurred while issuing the certificate: '.$e->getMessage(),
+            );
         }
+    }
+
+    /**
+     * @return array{success: false, message: string}
+     */
+    public function recordSslFailure(
+        User $reseller,
+        ?string $domain,
+        string $message,
+        ?string $rawOutput = null,
+    ): array {
+        $message = trim($message) !== '' ? trim($message) : 'SSL provisioning failed.';
+
+        $this->updateSslStatus($reseller, [
+            'status' => 'failed',
+            'domain' => $domain,
+            'error' => Str::limit($message, 1000),
+            'last_output' => $rawOutput ? Str::limit(trim($rawOutput), 8000) : null,
+            'last_attempt_at' => now()->toIso8601String(),
+        ]);
+
+        return [
+            'success' => false,
+            'message' => $message,
+        ];
+    }
+
+    public function summarizeCertbotFailure(string $output): string
+    {
+        $lines = array_values(array_filter(array_map('trim', explode("\n", $output))));
+
+        $skipPatterns = [
+            '/^the following error was encountered:?$/i',
+            '/^to fix these errors,?/i',
+            '/^please visit/i',
+            '/^hint:/i',
+            '/^\-+$/',
+            '/^certbot failed/i',
+        ];
+
+        $meaningful = [];
+        foreach ($lines as $line) {
+            if ($line === '') {
+                continue;
+            }
+
+            $skip = false;
+            foreach ($skipPatterns as $pattern) {
+                if (preg_match($pattern, $line)) {
+                    $skip = true;
+                    break;
+                }
+            }
+
+            if (! $skip) {
+                $meaningful[] = $line;
+            }
+        }
+
+        foreach (array_reverse($meaningful) as $line) {
+            if (preg_match('/(detail:|type: urn:|problem|unauthorized|invalid|challenge|rate limit|connection|timeout|404|403|could not|denied|refused)/i', $line)) {
+                return Str::limit($line, 1000);
+            }
+        }
+
+        $tail = array_slice($meaningful, -4);
+        if ($tail !== []) {
+            return Str::limit(implode("\n", $tail), 1000);
+        }
+
+        return Str::limit(trim($output), 1000) ?: 'Certificate issuance failed. See certbot output below.';
     }
 
     public function renewCertificate(User $reseller): array
@@ -452,6 +520,7 @@ class ResellerSslService
             'queued_reason' => null,
             'queued_at' => null,
             'last_attempt_at' => null,
+            'last_output' => null,
         ];
 
         $ssl = $reseller->settings['branding']['ssl'] ?? [];
@@ -503,15 +572,7 @@ class ResellerSslService
 
     private function extractErrorFromOutput(string $output): string
     {
-        $lines = explode("\n", $output);
-
-        foreach ($lines as $line) {
-            if (stripos($line, 'error') !== false || stripos($line, 'failed') !== false) {
-                return trim($line);
-            }
-        }
-
-        return 'Unknown error. Check server logs for details.';
+        return $this->summarizeCertbotFailure($output);
     }
 
     private function canRetry(array $ssl): bool

@@ -36,6 +36,13 @@
         </div>
     @endif
 
+    @if (session('error'))
+        <div class="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl p-4">
+            <p class="text-sm font-medium text-red-800 dark:text-red-300 mb-1">Action failed</p>
+            <p class="text-sm text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">{{ session('error') }}</p>
+        </div>
+    @endif
+
     <!-- Tab Navigation -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <div class="flex border-b border-slate-200 dark:border-slate-800">
@@ -596,12 +603,27 @@
                                                 </form>
                                             </div>
                                         @elseif($sslStatus['status'] === 'failed')
-                                            <div class="bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-800">
+                                            @php
+                                                $sslError = trim((string) ($sslStatus['error'] ?? ''));
+                                                $sslOutput = trim((string) ($sslStatus['last_output'] ?? ''));
+                                                if ($sslError === '' && $sslOutput !== '') {
+                                                    $sslError = \Illuminate\Support\Str::limit($sslOutput, 500);
+                                                }
+                                            @endphp
+                                            <div class="bg-red-50 dark:bg-red-950/30 p-3 rounded-lg border border-red-200 dark:border-red-800 space-y-2">
                                                 <p class="text-sm font-medium text-red-900 dark:text-red-300">SSL setup failed</p>
-                                                @if($sslStatus['error'])
-                                                    <p class="text-xs text-red-700 dark:text-red-400 mt-1">{{ $sslStatus['error'] }}</p>
+                                                @if($sslError !== '')
+                                                    <p class="text-xs font-medium text-red-800 dark:text-red-300">Error</p>
+                                                    <p class="text-xs text-red-700 dark:text-red-400 whitespace-pre-wrap break-words">{{ $sslError }}</p>
                                                 @endif
-                                                <p class="text-xs text-red-700 dark:text-red-400 mt-2">Fix DNS if needed, then use Provision SSL above.</p>
+                                                @if($sslOutput !== '' && $sslOutput !== $sslError)
+                                                    <p class="text-xs font-medium text-red-800 dark:text-red-300 pt-1">Certbot output</p>
+                                                    <pre class="text-xs text-red-800 dark:text-red-300 whitespace-pre-wrap break-words max-h-48 overflow-y-auto rounded-md bg-red-100/80 dark:bg-red-950/50 p-2 border border-red-200 dark:border-red-900">{{ $sslOutput }}</pre>
+                                                @endif
+                                                @if($sslError === '' && $sslOutput === '')
+                                                    <p class="text-xs text-red-700 dark:text-red-400">No error details were saved. Run Provision SSL again or check storage/logs/laravel.log on the server.</p>
+                                                @endif
+                                                <p class="text-xs text-red-700 dark:text-red-400 pt-1">Fix DNS if needed, then use Provision SSL above.</p>
                                             </div>
                                         @else
                                             <div class="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800">
