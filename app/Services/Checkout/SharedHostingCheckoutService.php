@@ -288,15 +288,46 @@ class SharedHostingCheckoutService
 
     public function persistExtraInvoiceItems(Invoice $invoice, Order $order, array $invoiceItems): void
     {
+        $domainProduct = null;
+
         foreach ($invoiceItems as $line) {
-            InvoiceItem::create([
+            $meta = $line['meta'] ?? [];
+            $type = $meta['type'] ?? null;
+            $isDomainLine = in_array($type, ['domain_registration', 'domain_transfer'], true);
+
+            $attributes = [
                 'invoice_id' => $invoice->id,
                 'description' => $line['description'],
                 'quantity' => 1,
                 'unit_price' => $line['amount'],
                 'amount' => $line['amount'],
-            ]);
+            ];
+
+            if ($isDomainLine) {
+                $domainProduct ??= $this->domainProduct();
+                $attributes['product_id'] = $domainProduct->id;
+                $attributes['domain_id'] = $meta['domain_id'] ?? null;
+            }
+
+            InvoiceItem::create($attributes);
         }
+    }
+
+    private function domainProduct(): Product
+    {
+        return Product::where('type', 'domain')->firstOrCreate(
+            ['type' => 'domain'],
+            [
+                'name' => 'Domain Registration',
+                'slug' => 'domain-registration',
+                'description' => 'Domain registration and renewal',
+                'category' => 'domains',
+                'price' => 0,
+                'billing_cycle' => 'annual',
+                'is_active' => true,
+                'visible_to_resellers' => false,
+            ]
+        );
     }
 
     private function fqdnFromParts(string $name, string $extension): string
