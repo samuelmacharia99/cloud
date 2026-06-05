@@ -95,9 +95,10 @@ class DirectAdminCustomerPanelApi
      */
     public function listDnsRecords(string $username, string $domain): array
     {
-        // CMD_API_DNS_ADMIN provides a consistent JSON payload for listing records.
-        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DNS_ADMIN', [
+        // Use user-level endpoint. CMD_API_DNS_ADMIN is admin-only on many installs.
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DNS_CONTROL', [
             'domain' => $domain,
+            'action' => 'view',
             'full_mx_records' => 'yes',
         ]);
 
@@ -110,6 +111,14 @@ class DirectAdminCustomerPanelApi
                 'success' => true,
                 'message' => 'OK',
                 'data' => $this->normalizeDnsAdminRecords($response['data']['records'], $domain),
+            ];
+        }
+
+        if (isset($response['data']['zone']) && is_string($response['data']['zone'])) {
+            return [
+                'success' => true,
+                'message' => 'OK',
+                'data' => $this->normalizeDnsZoneText($response['data']['zone'], $domain),
             ];
         }
 
@@ -527,6 +536,69 @@ class DirectAdminCustomerPanelApi
         }
 
         return $normalized;
+    }
+
+    /**
+     * Minimal zone parser fallback for DA responses that only include zone text.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeDnsZoneText(string $zone, string $domain): array
+    {
+        $records = [];
+
+        $lines = preg_split("/\r\n|\n|\r/", $zone) ?: [];
+
+        foreach ($lines as $line) {
+            $line = trim(preg_replace('/\s*;.*$/', '', $line) ?? '');
+            if ($line === '' || str_starts_with($line, '$')) {
+                continue;
+            }
+
+            // Very basic: name [ttl] [class] type value...
+            $parts = preg_split('/\s+/', $line, 5) ?: [];
+            if (count($parts) < 3) {
+                continue;
+            }
+
+            $name = $parts[0];
+            $idx = 1;
+
+            $ttl = 3600;
+            if (isset($parts[$idx]) && is_numeric($parts[$idx])) {
+                $ttl = (int) $parts[$idx];
+                $idx++;
+            }
+
+            if (($parts[$idx] ?? '') === 'IN') {
+                $idx++;
+            }
+
+            $type = strtoupper((string) ($parts[$idx] ?? ''));
+            $idx++;
+
+            $value = trim((string) ($parts[$idx] ?? ''));
+            if ($type === '' || $value === '') {
+                continue;
+            }
+
+            $name = rtrim($name, '.');
+            if ($name === $domain) {
+                $name = '@';
+            }
+
+            $fqdn = $name === '@' || $name === '' ? $domain : $name.'.'.$domain;
+
+            $records[] = [
+                'name' => $name === '' ? '@' : $name,
+                'type' => $type,
+                'value' => $value,
+                'ttl' => $ttl,
+                'fqdn' => $fqdn,
+            ];
+        }
+
+        return $records;
     }
 
     /**
