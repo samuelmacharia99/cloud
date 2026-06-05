@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\NodeNameserverService;
+use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -67,6 +68,10 @@ class CheckoutController extends Controller
             $item['key'] = $key;
 
             if ($item['type'] === 'product') {
+                if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+                    continue;
+                }
+
                 $product = Product::find($item['product_id']);
                 if (! $product) {
                     continue;
@@ -94,8 +99,12 @@ class CheckoutController extends Controller
                     continue;
                 }
 
-                $pricing = $extension->getRetailPricing($item['years']);
-                $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                $price = $this->domainRegistrationPrice($user, $extension, (int) $item['years']);
+                if ($price === null) {
+                    continue;
+                }
+
+                $item['unit_price'] = $price;
                 $item['amount'] = $item['unit_price'];
                 $item['name'] = "{$item['domain']}{$item['extension']}";
                 $item['description'] = "Domain registration for {$item['years']} year(s)";
@@ -174,6 +183,10 @@ class CheckoutController extends Controller
                     $item['key'] = $key;
 
                     if ($item['type'] === 'product') {
+                        if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+                            continue;
+                        }
+
                         $product = Product::find($item['product_id']);
                         if (! $product) {
                             continue;
@@ -194,8 +207,12 @@ class CheckoutController extends Controller
                             continue;
                         }
 
-                        $pricing = $extension->getRetailPricing($item['years']);
-                        $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                        $price = $this->domainRegistrationPrice($user, $extension, (int) $item['years']);
+                        if ($price === null) {
+                            continue;
+                        }
+
+                        $item['unit_price'] = $price;
                         $item['amount'] = $item['unit_price'];
                     }
 
@@ -473,7 +490,12 @@ class CheckoutController extends Controller
     private function prepareResellerProductCartItem(array $item): ?array
     {
         $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
-        if (! $resellerProduct || ! $resellerProduct->product_id) {
+        if (! $resellerProduct || ! $resellerProduct->product_id || ! $resellerProduct->is_active) {
+            return null;
+        }
+
+        $customer = auth()->user();
+        if ($customer?->reseller_id && $resellerProduct->reseller_id !== $customer->reseller_id) {
             return null;
         }
 
@@ -626,7 +648,13 @@ class CheckoutController extends Controller
         foreach ($sessionCart as $key => $item) {
             $item['key'] = $key;
 
+            $user = auth()->user();
+
             if ($item['type'] === 'product') {
+                if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+                    continue;
+                }
+
                 $product = Product::find($item['product_id']);
                 if (! $product) {
                     continue;
@@ -635,14 +663,24 @@ class CheckoutController extends Controller
                 $item['name'] = $product->name;
                 $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
                 $item['amount'] = $item['unit_price'];
+            } elseif ($item['type'] === 'reseller_product') {
+                $prepared = $this->prepareResellerProductCartItem($item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
                 if (! $extension) {
                     continue;
                 }
 
-                $pricing = $extension->getRetailPricing($item['years'] ?? 1);
-                $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                $price = $this->domainRegistrationPrice($user, $extension, (int) ($item['years'] ?? 1));
+                if ($price === null) {
+                    continue;
+                }
+
+                $item['unit_price'] = $price;
                 $item['amount'] = $item['unit_price'];
                 $item['name'] = "{$item['domain']}{$item['extension']}";
             }
@@ -752,6 +790,10 @@ class CheckoutController extends Controller
                     $item['key'] = $key;
 
                     if ($item['type'] === 'product') {
+                        if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+                            continue;
+                        }
+
                         $product = Product::find($item['product_id']);
                         if (! $product) {
                             continue;
@@ -772,8 +814,12 @@ class CheckoutController extends Controller
                             continue;
                         }
 
-                        $pricing = $extension->getRetailPricing($item['years'] ?? 1);
-                        $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                        $price = $this->domainRegistrationPrice($user, $extension, (int) ($item['years'] ?? 1));
+                        if ($price === null) {
+                            continue;
+                        }
+
+                        $item['unit_price'] = $price;
                         $item['amount'] = $item['unit_price'];
                     }
 
@@ -1022,6 +1068,11 @@ class CheckoutController extends Controller
 
             return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
+    }
+
+    private function domainRegistrationPrice(User $user, DomainExtension $extension, int $years): ?float
+    {
+        return app(ResellerCustomerCatalogService::class)->domainRegistrationPrice($user, $extension, $years);
     }
 
     private function resellerDomainInvoiceItemFields(User $user, Domain $domain, Invoice $invoice, array $item): array

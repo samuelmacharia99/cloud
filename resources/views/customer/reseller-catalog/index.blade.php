@@ -5,8 +5,8 @@
 @section('content')
 <div class="space-y-6">
     <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Your Reseller Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Order hosting plans at your reseller's pricing.</p>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Services &amp; Plans</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Products and pricing from your provider — not the platform catalog.</p>
     </div>
 
     @if ($products->count())

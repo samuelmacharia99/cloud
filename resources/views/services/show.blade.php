@@ -19,7 +19,7 @@
             <div class="grid grid-cols-2 gap-4">
                 <div>
                     <p class="text-sm font-medium text-slate-600 uppercase">Status</p>
-                    <p class="text-lg font-semibold text-slate-900 mt-1">{{ ucfirst($service->status) }}</p>
+                    <p class="text-lg font-semibold text-slate-900 mt-1">{{ $service->status->label() }}</p>
                 </div>
                 <div>
                     <p class="text-sm font-medium text-slate-600 uppercase">Billing Cycle</p>

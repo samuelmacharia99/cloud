@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Setting;
 use App\Services\NodeNameserverService;
+use App\Services\ResellerCustomerCatalogService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,7 +23,11 @@ class CartController extends Controller
      */
     public function index()
     {
+        $user = auth()->user();
+        app(ResellerCustomerCatalogService::class)->sanitizeSessionCart($user);
+
         $cart = session(self::CART_SESSION_KEY, []);
+        $catalogService = app(ResellerCustomerCatalogService::class);
         $cartItems = [];
         $subtotal = 0;
 
@@ -30,6 +35,10 @@ class CartController extends Controller
             $item['key'] = $key;
 
             if ($item['type'] === 'product') {
+                if ($catalogService->isResellerCustomer($user)) {
+                    continue;
+                }
+
                 $product = Product::find($item['product_id']);
                 if ($product) {
                     $item['name'] = $product->name;
@@ -41,7 +50,8 @@ class CartController extends Controller
                 }
             } elseif ($item['type'] === 'reseller_product') {
                 $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
-                if ($resellerProduct && $resellerProduct->product_id) {
+                if ($resellerProduct && $resellerProduct->product_id
+                    && (! $catalogService->isResellerCustomer($user) || $resellerProduct->reseller_id === $user->reseller_id)) {
                     $item['name'] = $resellerProduct->name;
                     $item['description'] = $resellerProduct->description ?? $resellerProduct->name;
                     $item['unit_price'] = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
@@ -53,8 +63,12 @@ class CartController extends Controller
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
                 if ($extension) {
-                    $pricing = $extension->getRetailPricing($item['years']);
-                    $item['unit_price'] = $pricing ? (float) $pricing->price : 0;
+                    $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $item['years']);
+                    if ($price === null) {
+                        continue;
+                    }
+
+                    $item['unit_price'] = $price;
                     $item['amount'] = $item['unit_price'];
                     $item['name'] = "{$item['domain']}{$item['extension']}";
                     $item['description'] = "Domain registration for {$item['years']} year(s)";
@@ -92,9 +106,24 @@ class CartController extends Controller
      */
     public function add(Request $request)
     {
+        $user = auth()->user();
+        $catalogService = app(ResellerCustomerCatalogService::class);
         $type = $request->get('type'); // 'product' or 'domain'
 
         if ($type === 'product') {
+            if ($catalogService->isResellerCustomer($user)) {
+                $response = [
+                    'success' => false,
+                    'message' => 'Order hosting from your reseller catalog instead of platform pricing.',
+                ];
+
+                if ($request->expectsJson()) {
+                    return response()->json($response, 403);
+                }
+
+                return redirect()->route('customer.reseller-catalog.index')->with('error', $response['message']);
+            }
+
             $request->validate([
                 'product_id' => 'required|exists:products,id',
                 'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
@@ -124,13 +153,20 @@ class CartController extends Controller
                 ], 422);
             }
 
-            // Verify pricing exists for this period
-            $pricing = $extension->getRetailPricing($request->years);
-            if (! $pricing) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Pricing not available for this registration period',
-                ], 422);
+            $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $request->years);
+            if ($price === null) {
+                $message = $catalogService->isResellerCustomer($user)
+                    ? 'Your reseller has not set pricing for this domain extension.'
+                    : 'Pricing not available for this registration period';
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $message,
+                    ], 422);
+                }
+
+                return back()->with('error', $message);
             }
 
             $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
@@ -226,8 +262,11 @@ class CartController extends Controller
 
             // Get pricing
             $extension = DomainExtension::where('extension', $request->extension)->firstOrFail();
-            $pricing = $extension->getRetailPricing(1);
-            $price = $pricing ? (float) $pricing->price : 0;
+            $price = app(ResellerCustomerCatalogService::class)->domainRegistrationPrice(
+                auth()->user(),
+                $extension,
+                1,
+            ) ?? 0;
 
             return response()->json([
                 'success' => true,

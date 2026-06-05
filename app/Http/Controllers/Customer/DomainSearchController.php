@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers\Customer;
 
-use App\Models\DomainExtension;
-use App\Models\DomainPricing;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Http;
 use App\Http\Controllers\Controller;
+use App\Models\DomainExtension;
+use App\Services\ResellerCustomerCatalogService;
+use Illuminate\Http\Request;
 
 class DomainSearchController extends Controller
 {
@@ -32,19 +31,21 @@ class DomainSearchController extends Controller
         $query = str_replace(['www.', 'https://', 'http://'], '', strtolower($query));
         $query = trim($query);
 
+        $catalogService = app(ResellerCustomerCatalogService::class);
+        $user = auth()->user();
+
         // If user included TLD (full domain), search only that domain
         if (strpos($query, '.') !== false) {
             [$domainName, $tld] = explode('.', $query, 2);
-            $extension = DomainExtension::where('extension', '.' . $tld)->first();
+            $extension = DomainExtension::where('extension', '.'.$tld)->first();
 
             if ($extension) {
                 $available = $this->checkAvailability($query);
-                $pricing = $extension->getRetailPricing(1);
-                $price = $pricing ? (float) $pricing->price : 0;
+                $price = $catalogService->domainRegistrationPrice($user, $extension, 1) ?? 0;
 
                 $results[] = [
                     'domain' => $domainName,
-                    'extension' => '.' . $tld,
+                    'extension' => '.'.$tld,
                     'full_domain' => $query,
                     'available' => $available,
                     'price' => $price,
@@ -57,13 +58,17 @@ class DomainSearchController extends Controller
             $extensions = DomainExtension::where('enabled', true)->get();
 
             foreach ($extensions as $ext) {
-                if (!$ext) continue;
+                if (! $ext) {
+                    continue;
+                }
 
-                $fullDomain = $query . $ext->extension;
+                $fullDomain = $query.$ext->extension;
                 $available = $this->checkAvailability($fullDomain);
 
-                $pricing = $ext->getRetailPricing(1);
-                $price = $pricing ? (float) $pricing->price : 0;
+                $price = $catalogService->domainRegistrationPrice($user, $ext, 1);
+                if ($price === null) {
+                    continue;
+                }
 
                 $results[] = [
                     'domain' => $query,
@@ -78,7 +83,7 @@ class DomainSearchController extends Controller
         }
 
         // Sort available domains first
-        usort($results, fn($a, $b) => $b['available'] <=> $a['available']);
+        usort($results, fn ($a, $b) => $b['available'] <=> $a['available']);
 
         // Always return JSON for public search route
         return response()->json([
@@ -106,12 +111,12 @@ class DomainSearchController extends Controller
                 'ke' => 'whois.kenic.or.ke',
             ];
 
-            $whoisServer = $whoisServers[$tld] ?? 'whois.nic.' . $tld;
+            $whoisServer = $whoisServers[$tld] ?? 'whois.nic.'.$tld;
 
             // Try socket connection for WHOIS
             $conn = @fsockopen($whoisServer, 43, $errno, $errstr, self::WHOIS_TIMEOUT);
 
-            if (!$conn) {
+            if (! $conn) {
                 // If we can't reach WHOIS, use DNS check as fallback
                 return $this->checkDNS($domain);
             }
@@ -119,7 +124,7 @@ class DomainSearchController extends Controller
             // Send WHOIS query
             fwrite($conn, "$domain\r\n");
             $response = '';
-            while (!feof($conn)) {
+            while (! feof($conn)) {
                 $response .= fgets($conn, 128);
             }
             fclose($conn);
@@ -158,6 +163,7 @@ class DomainSearchController extends Controller
         try {
             // If DNS resolves, domain is taken. If not, it's available.
             $ip = gethostbyname($domain);
+
             // If gethostbyname returns the domain itself, DNS failed (available)
             return $ip === $domain;
         } catch (\Exception $e) {

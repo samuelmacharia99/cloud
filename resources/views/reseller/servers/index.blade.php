@@ -28,8 +28,8 @@
                     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition">
                         <!-- Status Row -->
                         <div class="flex items-center gap-3 mb-4">
-                            <span class="w-2 h-2 rounded-full" style="background-color: @switch($service->status) @case('active') rgb(16, 185, 129) @break @case('pending') rgb(59, 130, 246) @break @case('provisioning') rgb(245, 158, 11) @break @case('suspended') rgb(249, 115, 22) @break @case('terminated') @case('failed') rgb(239, 68, 68) @break @default rgb(107, 114, 128) @endswitch"></span>
-                            <span class="text-sm font-medium capitalize text-slate-600 dark:text-slate-400">{{ ucfirst($service->status) }}</span>
+                            <span class="w-2 h-2 rounded-full" style="background-color: @switch($service->status->value) @case('active') rgb(16, 185, 129) @break @case('pending') rgb(59, 130, 246) @break @case('provisioning') rgb(245, 158, 11) @break @case('suspended') rgb(249, 115, 22) @break @case('terminated') @case('failed') rgb(239, 68, 68) @break @default rgb(107, 114, 128) @endswitch"></span>
+                            <span class="text-sm font-medium text-slate-600 dark:text-slate-400">{{ $service->status->label() }}</span>
                         </div>
 
                         <!-- Type Badge -->

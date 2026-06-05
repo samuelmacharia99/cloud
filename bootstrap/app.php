@@ -7,6 +7,7 @@ use App\Http\Middleware\EnforceResellerLimits;
 use App\Http\Middleware\EnsureResellerBillingCurrent;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\ResolveResellerTenant;
+use App\Http\Middleware\RestrictResellerCustomerPlatformCatalog;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SkipVerificationIfImpersonating;
 use App\Http\Middleware\ThrottleRegistration;
@@ -55,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'reseller.billing' => EnsureResellerBillingCurrent::class,
             'skip.verification.if.impersonating' => SkipVerificationIfImpersonating::class,
             'registration.throttle' => ThrottleRegistration::class,
+            'reseller.customer.catalog' => RestrictResellerCustomerPlatformCatalog::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

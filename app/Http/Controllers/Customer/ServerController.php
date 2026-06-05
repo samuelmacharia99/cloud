@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers\Customer;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Currency;
 use App\Models\Product;
 use App\Models\Setting;
-use App\Models\Currency;
+use App\Services\ResellerCustomerCatalogService;
+use Illuminate\Http\Request;
 
 class ServerController extends Controller
 {
@@ -22,26 +23,29 @@ class ServerController extends Controller
             ->with('product')
             ->get()
             ->filter(function ($service) use ($selectedType) {
-                if (!$service->product || !Product::isServerType($service->product->type)) {
+                if (! $service->product || ! Product::isServerType($service->product->type)) {
                     return false;
                 }
                 if ($selectedType && $service->product->type !== $selectedType) {
                     return false;
                 }
+
                 return true;
             })
             ->sortByDesc('created_at')
             ->values();
 
-        // Load available VPS products
-        $vpsProducts = Product::where('type', 'vps')
-            ->where('is_active', true)
+        $catalogService = app(ResellerCustomerCatalogService::class);
+        $resellerListings = $catalogService->activeCatalogKeyedByProductId(auth()->user());
+
+        $productQuery = Product::query()->where('is_active', true);
+        $catalogService->scopePlatformProducts($productQuery, auth()->user());
+
+        $vpsProducts = (clone $productQuery)->where('type', 'vps')
             ->orderBy('monthly_price')
             ->get();
 
-        // Load available Dedicated Server products
-        $dedicatedProducts = Product::where('type', 'dedicated_server')
-            ->where('is_active', true)
+        $dedicatedProducts = (clone $productQuery)->where('type', 'dedicated_server')
             ->orderBy('monthly_price')
             ->get();
 
@@ -60,12 +64,13 @@ class ServerController extends Controller
         $currencySymbol = $currency?->symbol ?? $currencyCode;
 
         $linuxDistros = config('server_options.linux_distributions');
-        $maxIpCount   = config('server_options.max_ip_count', 8);
+        $maxIpCount = config('server_options.max_ip_count', 8);
 
         return view('customer.servers.index', compact(
             'services',
             'vpsProducts',
             'dedicatedProducts',
+            'resellerListings',
             'currencySymbol',
             'selectedType',
             'linuxDistros',
@@ -81,40 +86,65 @@ class ServerController extends Controller
         $validOs = implode(',', array_keys(config('server_options.linux_distributions')));
 
         $validated = $request->validate([
-            'product_id'       => 'required|integer|exists:products,id',
-            'billing_cycle'    => 'required|in:monthly,annual',
-            'operating_system' => 'required|string|in:' . $validOs,
-            'ip_count'         => 'required|integer|min:1|max:' . config('server_options.max_ip_count', 8),
+            'product_id' => 'required|integer|exists:products,id',
+            'billing_cycle' => 'required|in:monthly,annual',
+            'operating_system' => 'required|string|in:'.$validOs,
+            'ip_count' => 'required|integer|min:1|max:'.config('server_options.max_ip_count', 8),
         ]);
 
+        $user = auth()->user();
+        $catalogService = app(ResellerCustomerCatalogService::class);
         $product = Product::findOrFail($validated['product_id']);
 
-        // Guard: Product must be active
-        if (!$product->is_active) {
+        if (! $product->is_active) {
             return back()->withErrors(['error' => 'This product is no longer available.']);
         }
 
-        // Guard: Product must be a server type
-        if (!Product::isServerType($product->type)) {
+        if (! Product::isServerType($product->type)) {
             return back()->withErrors(['error' => 'Invalid product type.']);
         }
 
-        // Guard: Annual billing requires yearly price
-        if ($validated['billing_cycle'] === 'annual' && !$product->yearly_price) {
-            return back()->withErrors(['error' => 'Annual billing is not available for this product.']);
+        $listing = $catalogService->findListingForProduct($user, $product->id);
+        if ($catalogService->isResellerCustomer($user) && ! $listing) {
+            return redirect()->route('customer.reseller-catalog.index')
+                ->with('error', 'This server is not offered by your reseller.');
         }
 
-        // Add to session cart
+        if ($validated['billing_cycle'] === 'annual') {
+            $yearlyAvailable = $catalogService->isResellerCustomer($user)
+                ? (float) ($listing?->yearly_price ?? 0) > 0
+                : (bool) $product->yearly_price;
+
+            if (! $yearlyAvailable) {
+                return back()->withErrors(['error' => 'Annual billing is not available for this product.']);
+            }
+        }
+
         $cart = session('cart', []);
         $cartKey = uniqid();
-        $cart[$cartKey] = [
-            'type'             => 'product',
-            'product_id'       => $product->id,
-            'billing_cycle'    => $validated['billing_cycle'],
-            'operating_system' => $validated['operating_system'],
-            'ip_count'         => (int) $validated['ip_count'],
-            'added_at'         => now()->toIso8601String(),
-        ];
+
+        if ($listing) {
+            $cart[$cartKey] = [
+                'type' => 'reseller_product',
+                'reseller_product_id' => $listing->id,
+                'product_id' => $listing->product_id,
+                'reseller_id' => $listing->reseller_id,
+                'billing_cycle' => $validated['billing_cycle'],
+                'operating_system' => $validated['operating_system'],
+                'ip_count' => (int) $validated['ip_count'],
+                'added_at' => now()->toIso8601String(),
+            ];
+        } else {
+            $cart[$cartKey] = [
+                'type' => 'product',
+                'product_id' => $product->id,
+                'billing_cycle' => $validated['billing_cycle'],
+                'operating_system' => $validated['operating_system'],
+                'ip_count' => (int) $validated['ip_count'],
+                'added_at' => now()->toIso8601String(),
+            ];
+        }
+
         session(['cart' => $cart]);
 
         return redirect()->route('customer.checkout.show')->with('success', 'Server added to cart!');

@@ -154,16 +154,16 @@
                                 <div x-show="monthlyMargin !== null">
                                     <p class="text-emerald-700 dark:text-emerald-400 mb-1">Monthly</p>
                                     <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                                        <span x-text="'$' + monthlyMargin.toFixed(2)"></span>
-                                        <span x-text="'(' + monthlyMarginPercent.toFixed(1) + '%)'"></span>
+                                        <span x-text="formatMoney(monthlyMargin)"></span>
+                                        <span x-text="formatPercent(monthlyMarginPercent)"></span>
                                     </p>
                                 </div>
 
                                 <div x-show="yearlyMargin !== null">
                                     <p class="text-emerald-700 dark:text-emerald-400 mb-1">Yearly</p>
                                     <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                                        <span x-text="'$' + yearlyMargin.toFixed(2)"></span>
-                                        <span x-text="'(' + yearlyMarginPercent.toFixed(1) + '%)'"></span>
+                                        <span x-text="formatMoney(yearlyMargin)"></span>
+                                        <span x-text="formatPercent(yearlyMarginPercent)"></span>
                                     </p>
                                 </div>
                             </div>
@@ -326,6 +326,20 @@ function catalogForm() {
                 this.yearlyMargin = null;
                 this.yearlyMarginPercent = null;
             }
+        },
+        formatMoney(value) {
+            if (value === null || value === undefined || Number.isNaN(Number(value))) {
+                return '';
+            }
+
+            return '$' + Number(value).toFixed(2);
+        },
+        formatPercent(value) {
+            if (value === null || value === undefined || Number.isNaN(Number(value))) {
+                return '';
+            }
+
+            return '(' + Number(value).toFixed(1) + '%)';
         },
         productTypeLabel(type) {
             return this.productTypes[type] || type;

@@ -402,7 +402,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     });
 
     // Customer-only routes
-    Route::middleware('customer')->group(function () {
+    Route::middleware(['customer', 'reseller.customer.catalog'])->group(function () {
         Route::get('/my/services', [App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');

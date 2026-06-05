@@ -123,8 +123,8 @@
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:shadow-lg transition">
                     <!-- Status Row -->
                     <div class="flex items-center gap-3 mb-4">
-                        <span class="w-2 h-2 rounded-full" style="background-color: @switch($service->status) @case('active') rgb(16, 185, 129) @break @case('pending') rgb(59, 130, 246) @break @case('provisioning') rgb(245, 158, 11) @break @case('suspended') rgb(249, 115, 22) @break @case('terminated') @case('failed') rgb(239, 68, 68) @break @default rgb(107, 114, 128) @endswitch"></span>
-                        <span class="text-sm font-medium capitalize text-slate-600 dark:text-slate-400">{{ ucfirst($service->status) }}</span>
+                        <span class="w-2 h-2 rounded-full" style="background-color: @switch($service->status->value) @case('active') rgb(16, 185, 129) @break @case('pending') rgb(59, 130, 246) @break @case('provisioning') rgb(245, 158, 11) @break @case('suspended') rgb(249, 115, 22) @break @case('terminated') @case('failed') rgb(239, 68, 68) @break @default rgb(107, 114, 128) @endswitch"></span>
+                        <span class="text-sm font-medium text-slate-600 dark:text-slate-400">{{ $service->status->label() }}</span>
                     </div>
 
                     <!-- Type Badge -->
@@ -259,6 +259,12 @@
                     <template x-if="serverType === 'vps'">
                         <div class="space-y-4">
                             @forelse ($vpsProducts as $product)
+                                @php
+                                    $listing = isset($resellerListings) ? $resellerListings->get($product->id) : null;
+                                    $displayMonthly = $listing?->monthly_price ?? $product->monthly_price;
+                                    $displayYearly = $listing?->yearly_price ?? $product->yearly_price;
+                                    $displaySetup = $listing?->setup_fee ?? $product->setup_fee;
+                                @endphp
                                 <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-blue-400 transition">
                                     <!-- Product header -->
                                     <div class="flex items-start justify-between gap-4 mb-3">
@@ -279,8 +285,8 @@
                                                 @endif
                                             </div>
                                         </div>
-                                        @if ($product->setup_fee > 0)
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencySymbol }} {{ number_format($product->setup_fee, 0) }}</p>
+                                        @if ($displaySetup > 0)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencySymbol }} {{ number_format($displaySetup, 0) }}</p>
                                         @endif
                                     </div>
 
@@ -315,12 +321,12 @@
                                         <div class="flex gap-2 pt-1">
                                             <button type="submit" name="billing_cycle" value="monthly" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                                                 <span class="block text-xs opacity-80">Monthly</span>
-                                                <span class="font-bold">{{ $currencySymbol }} {{ number_format($product->monthly_price, 0) }}/mo</span>
+                                                <span class="font-bold">{{ $currencySymbol }} {{ number_format($displayMonthly, 0) }}/mo</span>
                                             </button>
-                                            @if ($product->yearly_price)
+                                            @if ($displayYearly)
                                                 <button type="submit" name="billing_cycle" value="annual" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                                                     <span class="block text-xs opacity-80">Annual — Save!</span>
-                                                    <span class="font-bold">{{ $currencySymbol }} {{ number_format($product->yearly_price, 0) }}/yr</span>
+                                                    <span class="font-bold">{{ $currencySymbol }} {{ number_format($displayYearly, 0) }}/yr</span>
                                                 </button>
                                             @endif
                                         </div>
@@ -336,6 +342,12 @@
                     <template x-if="serverType === 'dedicated_server'">
                         <div class="space-y-4">
                             @forelse ($dedicatedProducts as $product)
+                                @php
+                                    $listing = isset($resellerListings) ? $resellerListings->get($product->id) : null;
+                                    $displayMonthly = $listing?->monthly_price ?? $product->monthly_price;
+                                    $displayYearly = $listing?->yearly_price ?? $product->yearly_price;
+                                    $displaySetup = $listing?->setup_fee ?? $product->setup_fee;
+                                @endphp
                                 <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-blue-400 transition">
                                     <!-- Product header -->
                                     <div class="flex items-start justify-between gap-4 mb-3">
@@ -356,8 +368,8 @@
                                                 @endif
                                             </div>
                                         </div>
-                                        @if ($product->setup_fee > 0)
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencySymbol }} {{ number_format($product->setup_fee, 0) }}</p>
+                                        @if ($displaySetup > 0)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencySymbol }} {{ number_format($displaySetup, 0) }}</p>
                                         @endif
                                     </div>
 
@@ -392,12 +404,12 @@
                                         <div class="flex gap-2 pt-1">
                                             <button type="submit" name="billing_cycle" value="monthly" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                                                 <span class="block text-xs opacity-80">Monthly</span>
-                                                <span class="font-bold">{{ $currencySymbol }} {{ number_format($product->monthly_price, 0) }}/mo</span>
+                                                <span class="font-bold">{{ $currencySymbol }} {{ number_format($displayMonthly, 0) }}/mo</span>
                                             </button>
-                                            @if ($product->yearly_price)
+                                            @if ($displayYearly)
                                                 <button type="submit" name="billing_cycle" value="annual" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                                                     <span class="block text-xs opacity-80">Annual — Save!</span>
-                                                    <span class="font-bold">{{ $currencySymbol }} {{ number_format($product->yearly_price, 0) }}/yr</span>
+                                                    <span class="font-bold">{{ $currencySymbol }} {{ number_format($displayYearly, 0) }}/yr</span>
                                                 </button>
                                             @endif
                                         </div>
