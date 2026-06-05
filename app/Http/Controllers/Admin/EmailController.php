@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Email;
+use App\Services\EmailDeliveryService;
 use Illuminate\Http\Request;
 
 class EmailController extends Controller
@@ -12,6 +13,7 @@ class EmailController extends Controller
     {
         $this->middleware(function ($request, $next) {
             $this->authorize('viewAny', Email::class);
+
             return $next($request);
         });
     }
@@ -41,6 +43,24 @@ class EmailController extends Controller
     public function show(Email $email)
     {
         $this->authorize('view', $email);
+
         return view('admin.emails.show', compact('email'));
+    }
+
+    public function resend(Email $email, EmailDeliveryService $emailDelivery)
+    {
+        $this->authorize('resend', $email);
+
+        try {
+            $emailDelivery->resendLoggedEmail($email);
+
+            return redirect()
+                ->route('admin.emails.show', $email)
+                ->with('success', 'Email resent successfully to '.$email->recipient.'.');
+        } catch (\Throwable $e) {
+            return redirect()
+                ->route('admin.emails.show', $email)
+                ->with('error', 'Failed to resend email: '.$e->getMessage());
+        }
     }
 }

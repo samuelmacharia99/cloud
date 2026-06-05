@@ -18,9 +18,20 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $email->subject }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Email details and content</p>
         </div>
-        <a href="{{ route('admin.emails.index') }}" class="px-4 py-2 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-            ← Back
-        </a>
+        <div class="flex items-center gap-2">
+            @if (in_array($email->status, ['failed', 'bounced'], true))
+                <form method="POST" action="{{ route('admin.emails.resend', $email) }}" class="inline"
+                    onsubmit="return confirm('Resend this email to {{ $email->recipient }}?');">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
+                        Resend Email
+                    </button>
+                </form>
+            @endif
+            <a href="{{ route('admin.emails.index') }}" class="px-4 py-2 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                ← Back
+            </a>
+        </div>
     </div>
 
     <!-- Details Cards -->

@@ -2,8 +2,8 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\Email;
+use App\Models\User;
 
 class EmailPolicy
 {
@@ -15,5 +15,10 @@ class EmailPolicy
     public function view(User $user, Email $email): bool
     {
         return $user->is_admin;
+    }
+
+    public function resend(User $user, Email $email): bool
+    {
+        return $user->is_admin && in_array($email->status, ['failed', 'bounced'], true);
     }
 }

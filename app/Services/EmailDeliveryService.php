@@ -173,6 +173,53 @@ class EmailDeliveryService
         ]);
     }
 
+    /**
+     * Resend a previously logged email (admin action). Bypasses rate limits and user preferences.
+     */
+    public function resendLoggedEmail(Email $email): void
+    {
+        $user = $email->user_id
+            ? User::find($email->user_id)
+            : User::where('email', $email->recipient)->first();
+
+        if (! $this->mailConfiguredFor($user)) {
+            throw new \RuntimeException('SMTP is not configured for this recipient.');
+        }
+
+        $event = NotificationEvent::tryFrom($email->event_key ?? '') ?? NotificationEvent::InvoiceGenerated;
+        $mailable = new GenericNotificationMail($email->subject, $email->subject, $email->body);
+
+        try {
+            if ($user && $user->reseller_id !== null) {
+                $this->resellerMail->sendToCustomer($user, $mailable, $email->subject);
+            } else {
+                Mail::to($email->recipient)->sendNow($mailable);
+            }
+
+            $this->logEmail(
+                $email->recipient,
+                $email->subject,
+                'sent',
+                null,
+                $email->body,
+                $event,
+                $user?->id,
+            );
+        } catch (\Throwable $e) {
+            $this->logEmail(
+                $email->recipient,
+                $email->subject,
+                'failed',
+                $e->getMessage(),
+                $email->body,
+                $event,
+                $user?->id,
+            );
+
+            throw $e;
+        }
+    }
+
     protected function dispatchMail(string $email, Mailable $mailable, ?User $brandingCustomer = null): void
     {
         if ($brandingCustomer) {

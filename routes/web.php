@@ -223,6 +223,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Email Logs
         Route::get('admin/emails', [EmailController::class, 'index'])->name('admin.emails.index');
         Route::get('admin/emails/{email}', [EmailController::class, 'show'])->name('admin.emails.show');
+        Route::post('admin/emails/{email}/resend', [EmailController::class, 'resend'])->name('admin.emails.resend');
 
         // Cron Jobs
         Route::get('admin/cron', [CronController::class, 'index'])->name('admin.cron.index');
