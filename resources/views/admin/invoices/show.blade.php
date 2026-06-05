@@ -52,14 +52,6 @@
                 <a href="{{ route('admin.invoices.edit', $invoice) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Invoice
                 </a>
-                @if($invoice->status !== 'paid')
-                <form action="{{ route('admin.invoices.mark-paid', $invoice) }}" method="POST" class="inline">
-                    @csrf
-                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
-                        Mark as Paid
-                    </button>
-                </form>
-                @endif
                 <button @click="deleteConfirm = true" class="px-4 py-2 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900 font-medium rounded-lg transition text-sm">
                     Delete
                 </button>
