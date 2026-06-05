@@ -7,6 +7,7 @@ use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Setting;
+use App\Services\DomainInputParser;
 use App\Services\NodeNameserverService;
 use App\Services\ResellerCustomerCatalogService;
 use Exception;
@@ -249,13 +250,28 @@ class CartController extends Controller
     public function checkDomainAvailability(Request $request)
     {
         $request->validate([
-            'domain' => 'required|string|regex:/^[a-z0-9-]+$/i',
-            'extension' => 'required|string|exists:domain_extensions,extension',
+            'domain' => 'required|string|max:253',
+            'extension' => 'nullable|string',
         ]);
+
+        $allowedExtensions = DomainExtension::where('enabled', true)->pluck('extension')->all();
+        $parsed = app(DomainInputParser::class)->parse(
+            (string) $request->domain,
+            $request->extension,
+            $allowedExtensions,
+        );
+
+        if ($parsed === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Enter a valid domain name (e.g. example or example.com) and extension.',
+                'available' => false,
+            ], 422);
+        }
 
         try {
             $domainSearch = new DomainSearchController;
-            $fullDomain = $request->domain.$request->extension;
+            $fullDomain = $parsed['name'].$parsed['extension'];
 
             // Use reflection to call private method for availability check
             $reflection = new ReflectionClass($domainSearch);
@@ -265,7 +281,7 @@ class CartController extends Controller
             $available = $method->invoke($domainSearch, $fullDomain);
 
             // Get pricing
-            $extension = DomainExtension::where('extension', $request->extension)->firstOrFail();
+            $extension = DomainExtension::where('extension', $parsed['extension'])->firstOrFail();
             $price = app(ResellerCustomerCatalogService::class)->domainRegistrationPrice(
                 auth()->user(),
                 $extension,
@@ -276,6 +292,8 @@ class CartController extends Controller
                 'success' => true,
                 'available' => $available,
                 'full_domain' => $fullDomain,
+                'domain' => $parsed['name'],
+                'extension' => $parsed['extension'],
                 'price' => $price,
                 'message' => $available ? 'Domain is available!' : 'Domain is already taken',
             ]);

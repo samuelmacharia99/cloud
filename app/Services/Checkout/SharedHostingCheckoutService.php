@@ -10,6 +10,7 @@ use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
+use App\Services\DomainInputParser;
 use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
@@ -58,6 +59,8 @@ class SharedHostingCheckoutService
         if (empty($sharedItems)) {
             return;
         }
+
+        $this->normalizeHostingDomainInputs($request, $sharedItems);
 
         $rules = [];
         $messages = [
@@ -288,9 +291,53 @@ class SharedHostingCheckoutService
 
     private function fqdnFromParts(string $name, string $extension): string
     {
+        $allowedExtensions = DomainExtension::where('enabled', true)->pluck('extension')->all();
+        $parsed = app(DomainInputParser::class)->parse($name, $extension, $allowedExtensions);
+
+        if ($parsed !== null) {
+            return $this->domainValidator->assertValid($parsed['name'].$parsed['extension']);
+        }
+
         $name = strtolower(trim($name));
         $extension = str_starts_with($extension, '.') ? $extension : '.'.$extension;
 
         return $this->domainValidator->assertValid($name.$extension);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $sharedItems
+     */
+    private function normalizeHostingDomainInputs(Request $request, array $sharedItems): void
+    {
+        $allowedExtensions = DomainExtension::where('enabled', true)->pluck('extension')->all();
+        $parser = app(DomainInputParser::class);
+        $merge = [];
+
+        foreach ($sharedItems as $item) {
+            $key = $item['key'];
+            $mode = $request->input("hosting_domain_mode.{$key}");
+
+            if (! in_array($mode, [
+                SharedHostingDomainMode::Register->value,
+                SharedHostingDomainMode::Transfer->value,
+            ], true)) {
+                continue;
+            }
+
+            $parsed = $parser->parse(
+                (string) $request->input("hosting_domain_name.{$key}", ''),
+                $request->input("hosting_domain_extension.{$key}"),
+                $allowedExtensions,
+            );
+
+            if ($parsed !== null) {
+                $merge["hosting_domain_name.{$key}"] = $parsed['name'];
+                $merge["hosting_domain_extension.{$key}"] = $parsed['extension'];
+            }
+        }
+
+        if ($merge !== []) {
+            $request->merge($merge);
+        }
     }
 }

@@ -1,6 +1,6 @@
 @foreach($sharedHostingItems as $item)
     @php $key = $item['key']; @endphp
-    <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0" x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }})">
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0" x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }}, {{ Js::from($domainExtensions->pluck('extension')->values()) }})">
         <h3 class="font-semibold text-slate-900 dark:text-white mb-2">{{ $item['name'] }}</h3>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Choose how you want to connect a domain to this hosting plan.</p>
 
@@ -31,7 +31,7 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain name</label>
-                    <input type="text" name="hosting_domain_name[{{ $key }}]" x-model="domain" @input="resetAvailability()" placeholder="example" :disabled="mode !== 'register'"
+                    <input type="text" name="hosting_domain_name[{{ $key }}]" x-model="domain" @input="resetAvailability()" @blur="parseDomainInput()" placeholder="example or example.com" :disabled="mode !== 'register'"
                         class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50">
                     <p x-show="domainError" class="text-xs text-red-600 dark:text-red-400 mt-1" x-text="domainError"></p>
                 </div>
@@ -120,12 +120,12 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain name</label>
-                    <input type="text" name="hosting_domain_name[{{ $key }}]" placeholder="example" :disabled="mode !== 'transfer'"
+                    <input type="text" name="hosting_domain_name[{{ $key }}]" x-model="domain" @blur="parseDomainInput()" placeholder="example or example.com" :disabled="mode !== 'transfer'"
                         class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50">
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
-                    <select name="hosting_domain_extension[{{ $key }}]" :disabled="mode !== 'transfer'"
+                    <select name="hosting_domain_extension[{{ $key }}]" x-model="extension" @change="resetAvailability()" :disabled="mode !== 'transfer'"
                         class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50">
                         @foreach($domainExtensions as $ext)
                             <option value="{{ $ext->extension }}" data-transfer-price="{{ $ext->transfer_price }}">
@@ -162,7 +162,7 @@
 @endforeach
 
 <script>
-function sharedHostingDomainConfig(cartKey, defaultNs) {
+function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
     return {
         mode: 'register',
         domain: '',
@@ -175,6 +175,7 @@ function sharedHostingDomainConfig(cartKey, defaultNs) {
         domainError: '',
         statusMessage: '',
         defaultNs,
+        allowedExtensions: allowedExtensions || [],
 
         init() {
             const field = document.querySelector(`input[name="hosting_domain_mode[${cartKey}]"]`);
@@ -190,13 +191,49 @@ function sharedHostingDomainConfig(cartKey, defaultNs) {
             this.domainError = '';
         },
 
-        async checkAvailability() {
-            if (!this.domain || !this.extension) {
-                return;
+        parseDomainInput() {
+            let raw = (this.domain || '').trim().toLowerCase();
+            raw = raw.replace(/^https?:\/\//, '').split('/')[0].replace(/\.+$/, '');
+
+            const extensions = [...this.allowedExtensions]
+                .map((ext) => (ext.startsWith('.') ? ext : '.' + ext))
+                .sort((a, b) => b.length - a.length);
+
+            if (raw.includes('.')) {
+                for (const ext of extensions) {
+                    if (!raw.endsWith(ext)) {
+                        continue;
+                    }
+
+                    const name = raw.slice(0, -ext.length).replace(/\.+$/, '');
+
+                    if (this.isValidLabel(name)) {
+                        this.domain = name;
+                        this.extension = ext;
+                        this.domainError = '';
+                        return true;
+                    }
+                }
             }
 
-            if (!this.isValidDomain(this.domain)) {
-                this.domainError = 'Domain name can only contain letters, numbers, and hyphens';
+            const selectedExt = this.extension
+                ? (this.extension.startsWith('.') ? this.extension : '.' + this.extension)
+                : '';
+
+            if (selectedExt && extensions.includes(selectedExt) && this.isValidLabel(raw)) {
+                this.domain = raw;
+                this.domainError = '';
+                return true;
+            }
+
+            return false;
+        },
+
+        async checkAvailability() {
+            this.parseDomainInput();
+
+            if (!this.domain || !this.extension) {
+                this.domainError = 'Enter a domain name and extension, or type the full domain (e.g. example.com).';
                 this.checked = false;
                 return;
             }
@@ -221,6 +258,12 @@ function sharedHostingDomainConfig(cartKey, defaultNs) {
                 const data = await response.json();
 
                 if (data.success) {
+                    if (data.domain) {
+                        this.domain = data.domain;
+                    }
+                    if (data.extension) {
+                        this.extension = data.extension;
+                    }
                     this.available = data.available;
                     this.price = data.price;
                     this.statusMessage = data.message;
@@ -240,9 +283,12 @@ function sharedHostingDomainConfig(cartKey, defaultNs) {
             }
         },
 
-        isValidDomain(domain) {
-            const regex = /^[a-z0-9-]+$/i;
-            return regex.test(domain) && !domain.startsWith('-') && !domain.endsWith('-');
+        isValidLabel(label) {
+            if (!label || label.startsWith('-') || label.endsWith('-')) {
+                return false;
+            }
+
+            return /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i.test(label);
         },
     };
 }
