@@ -4,7 +4,6 @@ namespace App\Services\Hosting;
 
 use App\Models\Node;
 use App\Services\Provisioning\DirectAdminService;
-use Illuminate\Support\Str;
 
 /**
  * End-user DirectAdmin operations executed via the platform admin API (impersonation).
@@ -36,29 +35,33 @@ class DirectAdminCustomerPanelApi
             return ['success' => false, 'message' => 'Control panel URL is not configured for this server.'];
         }
 
-        $keyName = 'talksasa-'.Str::lower(Str::random(20));
-        $response = $this->directAdmin->executeAdminApiCall('CMD_API_LOGIN_KEYS', [
+        /**
+         * DirectAdmin Login Keys are typically scoped to the authenticated account.
+         * To create a one-time login URL for an end user, we must call the endpoint using
+         * admin "login-as" (admin|username), which is handled by executeUserApiCall().
+         *
+         * The legacy API returns the login URL in the "details" field.
+         */
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_LOGIN_KEYS', [
             'action' => 'create',
-            'user' => $username,
-            'type' => 'one_time',
-            'login_key_name' => $keyName,
-            'expiry' => 2,
+            'type' => 'one_time_url',
+            'expiry' => '5m',
+            'login_keys_notify_on_creation' => 0,
         ], 'POST');
 
         if (! $response['success']) {
             return ['success' => false, 'message' => $response['message']];
         }
 
-        $key = $response['data']['key']
-            ?? $response['data']['login_key']
-            ?? $response['data']['login_key_name']
-            ?? null;
-
-        if (! is_string($key) || $key === '') {
-            return ['success' => false, 'message' => 'DirectAdmin did not return a one-time login key.'];
+        $detailsUrl = $response['data']['details'] ?? null;
+        if (! is_string($detailsUrl) || $detailsUrl === '') {
+            return ['success' => false, 'message' => 'DirectAdmin did not return a one-time login URL.'];
         }
 
-        $url = rtrim($panelUrl, '/').'/api/login/url?username='.rawurlencode($username).'&key='.rawurlencode($key);
+        // DirectAdmin sometimes returns a relative URL in details.
+        $url = str_starts_with($detailsUrl, 'http')
+            ? $detailsUrl
+            : rtrim($panelUrl, '/').'/'.ltrim($detailsUrl, '/');
 
         return ['success' => true, 'url' => $url];
     }

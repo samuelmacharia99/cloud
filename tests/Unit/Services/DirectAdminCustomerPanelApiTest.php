@@ -15,7 +15,7 @@ class DirectAdminCustomerPanelApiTest extends TestCase
     public function test_create_one_time_login_url_builds_panel_redirect(): void
     {
         Http::fake([
-            '*/CMD_API_LOGIN_KEYS' => Http::response('error=0&key=abc123login', 200),
+            '*/CMD_API_LOGIN_KEYS' => Http::response('error=0&details=/CMD_LOGIN_URL?hash=abc123', 200),
         ]);
 
         $node = Node::factory()->create([
@@ -30,8 +30,8 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $result = $api->createOneTimeLoginUrl('siteuser');
 
         $this->assertTrue($result['success']);
-        $this->assertStringContainsString('siteuser', $result['url']);
-        $this->assertStringContainsString('abc123login', $result['url']);
+        $this->assertStringContainsString('CMD_LOGIN_URL', $result['url']);
+        $this->assertStringContainsString('hash=abc123', $result['url']);
     }
 
     public function test_get_dashboard_normalizes_usage_payload(): void
