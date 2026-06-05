@@ -20,7 +20,6 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\FacadesDB;
 use Illuminate\Support\Str;
 
 class CustomerController extends Controller
@@ -909,7 +908,7 @@ class CustomerController extends Controller
         ]);
 
         try {
-            $invoice = FacadesDB::transaction(function () use ($validated, $customer) {
+            $invoice = DB::transaction(function () use ($validated, $customer) {
                 // Calculate totals
                 $subtotal = 0;
                 foreach ($validated['items'] as $item) {
