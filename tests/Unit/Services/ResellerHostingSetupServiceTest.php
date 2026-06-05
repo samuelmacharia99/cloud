@@ -118,7 +118,7 @@ class ResellerHostingSetupServiceTest extends TestCase
     public function test_uses_catalog_directadmin_package_when_linked(): void
     {
         Http::fake(function ($request) {
-            if (str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER')) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
                 return Http::response(json_encode(['list' => ['Gold']]), 200);
             }
 

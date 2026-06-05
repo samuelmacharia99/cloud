@@ -162,7 +162,7 @@ class DirectAdminServiceTest extends TestCase
     public function test_get_reseller_packages_lists_packages_for_reseller(): void
     {
         Http::fake(function ($request) {
-            if (str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER')) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
                 return Http::response(json_encode(['list' => ['Bronze', 'Gold']]), 200);
             }
 
@@ -177,8 +177,11 @@ class DirectAdminServiceTest extends TestCase
         $this->assertSame('Gold', $packages[1]['name']);
 
         Http::assertSent(function ($request) {
-            return str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER')
-                && $request['user'] === 'reseller_acme';
+            $expectedAuth = 'Basic '.base64_encode('admin|reseller_acme:secret');
+
+            return str_contains($request->url(), 'CMD_API_PACKAGES_USER')
+                && ! isset($request['package'])
+                && ($request->header('Authorization')[0] ?? '') === $expectedAuth;
         });
     }
 

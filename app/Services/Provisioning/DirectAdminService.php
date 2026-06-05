@@ -311,9 +311,14 @@ class DirectAdminService
         return ['success' => true, 'message' => 'OK'];
     }
 
-    private function httpClient()
+    private function httpClient(?string $impersonateUsername = null)
     {
-        $request = Http::timeout(30)->withBasicAuth($this->username, $this->password);
+        $authUsername = $this->username;
+        if (filled($impersonateUsername)) {
+            $authUsername = $authUsername.'|'.$impersonateUsername;
+        }
+
+        $request = Http::timeout(30)->withBasicAuth($authUsername, $this->password);
 
         if ($this->node && ($this->node->verify_ssl ?? true) === false) {
             $request = $request->withoutVerifying();
@@ -572,7 +577,10 @@ class DirectAdminService
     }
 
     /**
-     * Fetch reseller-level packages assigned to a DirectAdmin reseller account.
+     * Fetch user hosting packages owned by a DirectAdmin reseller account.
+     *
+     * Uses admin login-as impersonation (admin|reseller) per DirectAdmin API docs —
+     * a plain CMD_API_PACKAGES_USER call as admin returns only the admin's packages.
      *
      * @return list<array{name: string, package_key: string, description: ?string, disk_quota: float, bandwidth_quota: float}>
      */
@@ -583,15 +591,14 @@ class DirectAdminService
         }
 
         try {
-            $response = $this->httpClient()
-                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_RESELLER', [
-                    'user' => $resellerUsername,
+            $response = $this->httpClient($resellerUsername)
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_USER', [
                     'json' => 'yes',
                 ])
                 ->throw();
 
             if (! $response->ok()) {
-                Log::warning('DirectAdmin PACKAGES_RESELLER request failed', [
+                Log::warning('DirectAdmin PACKAGES_USER (reseller impersonation) request failed', [
                     'node_id' => $this->node?->id,
                     'reseller' => $resellerUsername,
                     'status' => $response->status(),
@@ -600,11 +607,22 @@ class DirectAdminService
                 return [];
             }
 
-            $packageNames = $this->parsePackageNameList($response->body(), $response->json());
+            $body = $response->body();
+            if (stripos($body, '<!DOCTYPE') !== false || stripos($body, '<html') !== false) {
+                Log::warning('DirectAdmin reseller package list returned HTML', [
+                    'node_id' => $this->node?->id,
+                    'reseller' => $resellerUsername,
+                    'body_preview' => substr($body, 0, 500),
+                ]);
+
+                return [];
+            }
+
+            $packageNames = $this->parsePackageNameList($body, $response->json());
             $packages = [];
 
             foreach ($packageNames as $packageName) {
-                $details = $this->getPackageDetails($packageName);
+                $details = $this->getPackageDetails($packageName, $resellerUsername);
                 $packages[] = $details ?? [
                     'name' => $packageName,
                     'package_key' => Str::slug($packageName),
@@ -614,15 +632,16 @@ class DirectAdminService
                 ];
             }
 
-            Log::info('Fetched DirectAdmin reseller packages', [
+            Log::info('Fetched DirectAdmin reseller user packages', [
                 'node_id' => $this->node?->id,
                 'reseller' => $resellerUsername,
+                'impersonation' => $this->username.'|'.$resellerUsername,
                 'package_count' => count($packages),
             ]);
 
             return $packages;
         } catch (\Exception $e) {
-            Log::error('Failed to fetch DirectAdmin reseller packages', [
+            Log::error('Failed to fetch DirectAdmin reseller user packages', [
                 'node_id' => $this->node?->id,
                 'reseller' => $resellerUsername,
                 'error' => $e->getMessage(),
@@ -728,10 +747,10 @@ class DirectAdminService
      * Fetch detailed package information from DirectAdmin
      * Use CMD_API_PACKAGES_USER with package parameter to get specific package details
      */
-    private function getPackageDetails(string $packageName): ?array
+    private function getPackageDetails(string $packageName, ?string $impersonateUsername = null): ?array
     {
         try {
-            $response = $this->httpClient()
+            $response = $this->httpClient($impersonateUsername)
                 ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_USER', [
                     'package' => $packageName,
                     'json' => 'yes',
@@ -742,6 +761,7 @@ class DirectAdminService
                 Log::warning('Failed to fetch package details - API error', [
                     'node_id' => $this->node?->id,
                     'package_name' => $packageName,
+                    'impersonation' => filled($impersonateUsername) ? $this->username.'|'.$impersonateUsername : null,
                     'status' => $response->status(),
                     'body' => $response->body(),
                 ]);
@@ -754,6 +774,7 @@ class DirectAdminService
                 Log::warning('Failed to parse package details JSON', [
                     'node_id' => $this->node?->id,
                     'package_name' => $packageName,
+                    'impersonation' => filled($impersonateUsername) ? $this->username.'|'.$impersonateUsername : null,
                 ]);
 
                 return null;
@@ -764,6 +785,7 @@ class DirectAdminService
             Log::warning('Failed to fetch package details', [
                 'node_id' => $this->node?->id,
                 'package_name' => $packageName,
+                'impersonation' => filled($impersonateUsername) ? $this->username.'|'.$impersonateUsername : null,
                 'error' => $e->getMessage(),
             ]);
 

@@ -11,7 +11,7 @@
             DirectAdmin package
         </label>
         <p class="text-xs text-slate-500 dark:text-slate-400">
-            Link this plan to a package on your DirectAdmin reseller account. That package is used when customer hosting is auto-provisioned.
+            Link this plan to a hosting package from your DirectAdmin reseller panel (not the platform admin catalog). That package is used when customer hosting is auto-provisioned.
         </p>
     </div>
 
