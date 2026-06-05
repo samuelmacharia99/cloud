@@ -42,6 +42,34 @@ class HostingPanelTest extends TestCase
         $response->assertForbidden();
     }
 
+    public function test_dashboard_refresh_query_bypasses_cache(): void
+    {
+        $customer = User::factory()->create();
+        $service = $this->createDirectAdminService($customer);
+
+        $this->mock(CustomerHostingPanelService::class, function ($mock) use ($service) {
+            $mock->shouldReceive('flushDashboardCache')->once()->with(\Mockery::on(
+                fn ($arg) => $arg->id === $service->id
+            ));
+            $mock->shouldReceive('dashboard')->once()->andReturn([
+                'username' => 'siteuser',
+                'domain' => 'example.com',
+                'package' => 'Bronze',
+                'disk' => ['used_mb' => 10, 'limit_mb' => 100],
+                'bandwidth' => ['used_mb' => 5, 'limit_mb' => null],
+                'counts' => ['email' => 0, 'email_limit' => 10, 'ftp' => 0, 'ftp_limit' => 5, 'database' => 0, 'database_limit' => 2, 'subdomain' => 0],
+            ]);
+        });
+
+        $response = $this->actingAs($customer)->getJson(
+            route('customer.services.hosting.dashboard', $service).'?refresh=1'
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('data.username', 'siteuser')
+            ->assertJsonPath('data.domain', 'example.com');
+    }
+
     private function createDirectAdminService(User $customer): Service
     {
         $node = Node::factory()->create([

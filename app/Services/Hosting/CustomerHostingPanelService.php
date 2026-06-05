@@ -105,13 +105,16 @@ class CustomerHostingPanelService
     {
         $meta = $service->service_meta ?? [];
         $meta['password'] = $password;
-        $service->update(['service_meta' => $meta]);
+
+        $updates = ['service_meta' => $meta];
 
         $credentials = $service->credentials ? json_decode($service->credentials, true) : [];
         if (is_array($credentials)) {
             $credentials['password'] = $password;
-            $service->update(['credentials' => json_encode($credentials)]);
+            $updates['credentials'] = json_encode($credentials);
         }
+
+        $service->update($updates);
     }
 
     public function generatePassword(): string
@@ -148,7 +151,17 @@ class CustomerHostingPanelService
 
     private function resolveUsername(Service $service): ?string
     {
-        return $service->external_reference
-            ?? ($service->service_meta['username'] ?? null);
+        if (filled($service->external_reference)) {
+            return (string) $service->external_reference;
+        }
+
+        $meta = $service->service_meta ?? [];
+        if (! empty($meta['username'])) {
+            return (string) $meta['username'];
+        }
+
+        $credentials = $service->getHostingCredentials();
+
+        return isset($credentials['username']) ? (string) $credentials['username'] : null;
     }
 }

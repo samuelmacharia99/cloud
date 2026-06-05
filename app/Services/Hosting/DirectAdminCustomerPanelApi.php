@@ -392,12 +392,23 @@ class DirectAdminCustomerPanelApi
 
         $jobs = [];
         foreach ($response['data'] as $key => $value) {
-            if (! str_starts_with((string) $key, 'cron')) {
+            if (! preg_match('/^cron\d*$/', (string) $key)) {
                 continue;
             }
+
+            $raw = is_string($value) ? trim($value) : json_encode($value);
+            $schedule = null;
+            $command = $raw;
+
+            if (preg_match('/^(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.+)$/s', $raw, $matches)) {
+                $schedule = $matches[1];
+                $command = $matches[2];
+            }
+
             $jobs[] = [
                 'id' => (string) $key,
-                'command' => is_string($value) ? $value : json_encode($value),
+                'schedule' => $schedule,
+                'command' => $command,
             ];
         }
 
@@ -578,7 +589,20 @@ class DirectAdminCustomerPanelApi
      */
     private function normalizeList(array $data, string $listKey, callable $mapper): array
     {
-        $items = $data[$listKey] ?? $data['list[]'] ?? [];
+        $items = $data[$listKey] ?? $data['list[]'] ?? null;
+
+        if ($items === null) {
+            $indexed = [];
+            foreach ($data as $key => $value) {
+                if (preg_match('/^'.preg_quote($listKey, '/').'(\d+)$/', (string) $key, $matches)) {
+                    $indexed[(int) $matches[1]] = $value;
+                }
+            }
+
+            $items = $indexed !== []
+                ? array_values($indexed)
+                : [];
+        }
 
         if (! is_array($items)) {
             $items = [$items];
@@ -593,6 +617,18 @@ class DirectAdminCustomerPanelApi
         }
 
         return array_values($normalized);
+    }
+
+    public function normalizeSubdomainLabel(string $subdomain, string $domain): string
+    {
+        $label = strtolower(trim($subdomain));
+        $suffix = '.'.strtolower($domain);
+
+        if (str_ends_with($label, $suffix)) {
+            $label = substr($label, 0, -strlen($suffix));
+        }
+
+        return $label;
     }
 
     private function toMegabytes(mixed $value): ?float

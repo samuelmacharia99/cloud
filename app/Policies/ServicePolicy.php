@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\ServiceStatus;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Auth\Access\Response;
@@ -149,8 +150,12 @@ class ServicePolicy
             return Response::deny('This service does not include a hosting control panel.');
         }
 
-        if ($service->status->value !== 'active') {
+        if ($service->status !== ServiceStatus::Active) {
             return Response::deny('Hosting panel is only available for active services.');
+        }
+
+        if (! $service->node || $service->node->type !== 'directadmin') {
+            return Response::deny('This hosting service is not linked to a DirectAdmin server.');
         }
 
         return $user->is_admin || $user->id === $service->user_id

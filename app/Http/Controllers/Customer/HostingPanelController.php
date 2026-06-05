@@ -34,8 +34,12 @@ class HostingPanelController extends Controller
         }
     }
 
-    public function dashboard(Service $service): JsonResponse
+    public function dashboard(Request $request, Service $service): JsonResponse
     {
+        if ($request->boolean('refresh')) {
+            $this->panel->flushDashboardCache($service);
+        }
+
         return $this->jsonAction($service, fn () => [
             'success' => true,
             'message' => 'OK',
@@ -208,11 +212,13 @@ class HostingPanelController extends Controller
 
         return $this->jsonAction($service, function () use ($service, $data) {
             $domain = $this->requireDomain($service);
+            $api = $this->panel->api($service);
+            $subdomain = $api->normalizeSubdomainLabel($data['subdomain'], $domain);
 
-            return $this->panel->api($service)->deleteSubdomain(
+            return $api->deleteSubdomain(
                 $this->panel->username($service),
                 $domain,
-                $data['subdomain'],
+                $subdomain,
             );
         }, true);
     }

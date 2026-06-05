@@ -29,7 +29,7 @@
     ];
 @endphp
 
-<div x-data="hostingPanel({{ Js::from(['domain' => $hostingDomain, 'routes' => $hostingRoutes]) }})" x-init="init()" class="space-y-6">
+<div x-data="hostingPanel({{ Js::from(['domain' => $hostingDomain, 'routes' => $hostingRoutes]) }})" @hosting-console-open.window="initOnce()" class="space-y-6">
     <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
             <h3 class="text-lg font-bold text-slate-900 dark:text-white">Hosting Console</h3>
@@ -46,6 +46,10 @@
 
     <div x-show="message" x-transition class="rounded-lg px-4 py-3 text-sm" :class="messageType === 'error' ? 'bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200 border border-red-200 dark:border-red-800' : 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800'">
         <span x-text="message"></span>
+    </div>
+
+    <div x-show="!initialized && !loading" class="rounded-xl border border-dashed border-slate-300 dark:border-slate-600 px-6 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+        Open this tab to load your hosting console.
     </div>
 
     <div x-show="loading && !dashboard" class="flex items-center justify-center py-16 text-slate-500 dark:text-slate-400">
@@ -95,7 +99,9 @@
                 </div>
             </div>
 
-            <div x-show="activeSection === 'dns'" class="space-y-4">
+            <div x-show="sectionLoading" class="text-sm text-slate-500 dark:text-slate-400 py-4">Loading section...</div>
+
+            <div x-show="activeSection === 'dns' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addDns" class="grid grid-cols-1 md:grid-cols-5 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="dnsForm.name" placeholder="Name (@ or host)" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <select x-model="dnsForm.type" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
@@ -108,6 +114,9 @@
                     <table class="min-w-full text-sm">
                         <thead class="bg-slate-50 dark:bg-slate-800 text-left text-slate-500 dark:text-slate-400"><tr><th class="px-4 py-3">Name</th><th class="px-4 py-3">Type</th><th class="px-4 py-3">Value</th><th class="px-4 py-3"></th></tr></thead>
                         <tbody>
+                            <template x-if="dnsRecords.length === 0">
+                                <tr><td colspan="4" class="px-4 py-6 text-center text-slate-500 dark:text-slate-400">No DNS records found.</td></tr>
+                            </template>
                             <template x-for="record in dnsRecords" :key="`${record.name}-${record.type}-${record.value}`">
                                 <tr class="border-t border-slate-200 dark:border-slate-700">
                                     <td class="px-4 py-3 font-mono" x-text="record.fqdn || record.name"></td>
@@ -121,7 +130,7 @@
                 </div>
             </div>
 
-            <div x-show="activeSection === 'emails'" class="space-y-4">
+            <div x-show="activeSection === 'emails' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addEmail" class="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="emailForm.local_part" placeholder="mailbox" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <input x-model="emailForm.password" type="password" placeholder="Password" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
@@ -129,6 +138,9 @@
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Create Mailbox</button>
                 </form>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="emailAccounts.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No mailboxes yet.</li>
+                    </template>
                     <template x-for="mailbox in emailAccounts" :key="mailbox.email">
                         <li class="flex items-center justify-between px-4 py-3 text-sm">
                             <span class="font-mono" x-text="mailbox.email"></span>
@@ -138,13 +150,16 @@
                 </ul>
             </div>
 
-            <div x-show="activeSection === 'databases'" class="space-y-4">
+            <div x-show="activeSection === 'databases' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addDatabase" class="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="databaseForm.name" placeholder="database_name" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <input x-model="databaseForm.password" type="password" placeholder="Password" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Create Database</button>
                 </form>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="databases.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No databases yet.</li>
+                    </template>
                     <template x-for="db in databases" :key="db.name">
                         <li class="flex items-center justify-between px-4 py-3 text-sm">
                             <span class="font-mono" x-text="db.name"></span>
@@ -154,12 +169,15 @@
                 </ul>
             </div>
 
-            <div x-show="activeSection === 'subdomains'" class="space-y-4">
+            <div x-show="activeSection === 'subdomains' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addSubdomain" class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="subdomainForm.subdomain" placeholder="subdomain" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Add Subdomain</button>
                 </form>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="subdomains.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No subdomains yet.</li>
+                    </template>
                     <template x-for="sub in subdomains" :key="sub.fqdn">
                         <li class="flex items-center justify-between px-4 py-3 text-sm">
                             <span class="font-mono" x-text="sub.fqdn"></span>
@@ -169,7 +187,7 @@
                 </ul>
             </div>
 
-            <div x-show="activeSection === 'ftp'" class="space-y-4">
+            <div x-show="activeSection === 'ftp' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addFtp" class="grid grid-cols-1 md:grid-cols-4 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="ftpForm.user" placeholder="ftp user" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <input x-model="ftpForm.password" type="password" placeholder="Password" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
@@ -177,6 +195,9 @@
                     <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Create FTP</button>
                 </form>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="ftpAccounts.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No FTP accounts yet.</li>
+                    </template>
                     <template x-for="account in ftpAccounts" :key="account.account">
                         <li class="flex items-center justify-between px-4 py-3 text-sm">
                             <span class="font-mono" x-text="account.account"></span>
@@ -186,7 +207,7 @@
                 </ul>
             </div>
 
-            <div x-show="activeSection === 'ssl'" class="space-y-4">
+            <div x-show="activeSection === 'ssl' && !sectionLoading" class="space-y-4">
                 <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <p class="text-sm text-slate-700 dark:text-slate-300">SSL active: <strong x-text="sslInfo?.ssl_on ? 'Yes' : 'No'"></strong></p>
                     <p class="text-sm text-slate-700 dark:text-slate-300 mt-1">Let&apos;s Encrypt: <strong x-text="sslInfo?.letsencrypt ? 'Yes' : 'No'"></strong></p>
@@ -194,7 +215,7 @@
                 </div>
             </div>
 
-            <div x-show="activeSection === 'cron'" class="space-y-4">
+            <div x-show="activeSection === 'cron' && !sectionLoading" class="space-y-4">
                 <form @submit.prevent="addCron" class="grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-50 dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
                     <input x-model="cronForm.minute" placeholder="min" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
                     <input x-model="cronForm.hour" placeholder="hour" class="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
@@ -205,18 +226,27 @@
                     <button type="submit" class="col-span-2 md:col-span-6 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Add Cron Job</button>
                 </form>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="cronJobs.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No cron jobs yet.</li>
+                    </template>
                     <template x-for="job in cronJobs" :key="job.id">
                         <li class="flex items-center justify-between px-4 py-3 text-sm gap-4">
-                            <span class="font-mono break-all" x-text="job.command"></span>
+                            <div class="min-w-0">
+                                <p class="font-mono break-all" x-text="job.command"></p>
+                                <p x-show="job.schedule" class="text-xs text-slate-500 dark:text-slate-400 mt-1" x-text="job.schedule"></p>
+                            </div>
                             <button type="button" @click="deleteCron(job)" class="text-red-600 hover:underline text-xs shrink-0">Delete</button>
                         </li>
                     </template>
                 </ul>
             </div>
 
-            <div x-show="activeSection === 'backups'" class="space-y-4">
+            <div x-show="activeSection === 'backups' && !sectionLoading" class="space-y-4">
                 <button type="button" @click="createBackup()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg">Create Backup</button>
                 <ul class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+                    <template x-if="backups.length === 0">
+                        <li class="px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">No backups yet.</li>
+                    </template>
                     <template x-for="backup in backups" :key="backup.filename">
                         <li class="px-4 py-3 text-sm font-mono" x-text="backup.filename"></li>
                     </template>
@@ -232,7 +262,9 @@ function hostingPanel(config) {
     return {
         domain: config.domain,
         routes: config.routes,
+        initialized: false,
         loading: false,
+        sectionLoading: false,
         message: '',
         messageType: 'success',
         dashboard: null,
@@ -261,6 +293,15 @@ function hostingPanel(config) {
         subdomainForm: { subdomain: '' },
         ftpForm: { user: '', password: '', path: '/' },
         cronForm: { minute: '*', hour: '*', day: '*', month: '*', weekday: '*', command: '' },
+
+        async initOnce() {
+            if (this.initialized) {
+                return;
+            }
+
+            this.initialized = true;
+            await this.init();
+        },
 
         async init() {
             await this.loadDashboard();
@@ -320,7 +361,10 @@ function hostingPanel(config) {
         async loadDashboard(force = false) {
             this.loading = true;
             try {
-                const data = await this.api(this.routes.dashboard);
+                const url = force
+                    ? `${this.routes.dashboard}${this.routes.dashboard.includes('?') ? '&' : '?'}refresh=1`
+                    : this.routes.dashboard;
+                const data = await this.api(url);
                 if (data.success === false) throw new Error(data.message || 'Failed to load dashboard');
                 this.dashboard = data.data || data;
                 if (force) this.notify('Hosting dashboard refreshed.');
@@ -344,6 +388,8 @@ function hostingPanel(config) {
             };
             const entry = map[section];
             if (!entry) return;
+
+            this.sectionLoading = true;
             try {
                 const data = await this.api(this.routes[entry[0]]);
                 if (!data.success) throw new Error(data.message || 'Failed to load section');
@@ -354,6 +400,8 @@ function hostingPanel(config) {
                 }
             } catch (e) {
                 this.notify(e.message, 'error');
+            } finally {
+                this.sectionLoading = false;
             }
         },
 
@@ -405,7 +453,7 @@ function hostingPanel(config) {
 
         async deleteSubdomain(sub) {
             if (!confirm('Delete this subdomain?')) return;
-            const data = await this.api(this.routes.subdomainsDestroy, 'DELETE', { subdomain: sub.subdomain || sub.fqdn });
+            const data = await this.api(this.routes.subdomainsDestroy, 'DELETE', { subdomain: sub.subdomain ?? sub.fqdn });
             this.notify(data.message, data.success ? 'success' : 'error');
             if (data.success) await this.loadSection('subdomains');
         },

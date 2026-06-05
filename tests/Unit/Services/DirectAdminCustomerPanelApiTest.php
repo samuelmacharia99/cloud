@@ -69,4 +69,45 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame(256.0, $result['data']['disk']['used_mb']);
         $this->assertNull($result['data']['bandwidth']['limit_mb']);
     }
+
+    public function test_list_email_accounts_handles_indexed_list_keys(): void
+    {
+        Http::fake([
+            '*/CMD_API_POP*' => Http::response(json_encode([
+                'error' => '0',
+                'list0' => 'info',
+                'list1' => 'sales',
+            ]), 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+        $result = $api->listEmailAccounts('siteuser', 'example.com');
+
+        $this->assertTrue($result['success']);
+        $this->assertCount(2, $result['data']);
+        $this->assertSame('info@example.com', $result['data'][0]['email']);
+        $this->assertSame('sales@example.com', $result['data'][1]['email']);
+    }
+
+    public function test_normalize_subdomain_label_strips_domain_suffix(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+
+        $this->assertSame('blog', $api->normalizeSubdomainLabel('blog.example.com', 'example.com'));
+        $this->assertSame('blog', $api->normalizeSubdomainLabel('blog', 'example.com'));
+    }
 }

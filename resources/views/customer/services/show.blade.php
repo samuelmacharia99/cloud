@@ -56,7 +56,7 @@
                     Billing
                 </button>
                 @if ($service->isSharedHosting() && $service->status->value === 'active')
-                    <button @click="tab = 'hosting'" :class="tab === 'hosting' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
+                    <button @click="tab = 'hosting'; $dispatch('hosting-console-open')" :class="tab === 'hosting' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
                         Hosting Console
                     </button>
                 @endif
