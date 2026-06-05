@@ -997,4 +997,116 @@ class DirectAdminService
             return $result;
         });
     }
+
+    /**
+     * Execute a DirectAdmin legacy API command impersonating an end-user account.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array{success: bool, message: string, data: array<string, mixed>}
+     */
+    public function executeUserApiCall(string $username, string $command, array $params = [], string $httpMethod = 'GET'): array
+    {
+        if (! $this->isConfigured()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured.', 'data' => []];
+        }
+
+        $url = rtrim($this->apiUrl, '/').'/'.ltrim($command, '/');
+
+        try {
+            $client = $this->httpClient($username);
+            $response = match (strtoupper($httpMethod)) {
+                'POST' => $client->asForm()->post($url, $params),
+                default => $client->get($url, array_merge($params, ['json' => 'yes'])),
+            };
+
+            return $this->decodeUserApiResponse($response->body(), $response->status());
+        } catch (\Throwable $e) {
+            Log::error('DirectAdmin user API call failed', [
+                'node_id' => $this->node?->id,
+                'username' => $username,
+                'command' => $command,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage(), 'data' => []];
+        }
+    }
+
+    /**
+     * Execute a DirectAdmin legacy API command as the platform admin.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array{success: bool, message: string, data: array<string, mixed>}
+     */
+    public function executeAdminApiCall(string $command, array $params = [], string $httpMethod = 'GET'): array
+    {
+        if (! $this->isConfigured()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured.', 'data' => []];
+        }
+
+        $url = rtrim($this->apiUrl, '/').'/'.ltrim($command, '/');
+
+        try {
+            $client = $this->httpClient();
+            $response = match (strtoupper($httpMethod)) {
+                'POST' => $client->asForm()->post($url, $params),
+                default => $client->get($url, array_merge($params, ['json' => 'yes'])),
+            };
+
+            return $this->decodeUserApiResponse($response->body(), $response->status());
+        } catch (\Throwable $e) {
+            Log::error('DirectAdmin admin API call failed', [
+                'node_id' => $this->node?->id,
+                'command' => $command,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => $e->getMessage(), 'data' => []];
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string, data: array<string, mixed>}
+     */
+    private function decodeUserApiResponse(string $body, int $status): array
+    {
+        $parsed = $this->parseApiResponse($body, $status);
+        if (! $parsed['success']) {
+            return ['success' => false, 'message' => $parsed['message'], 'data' => []];
+        }
+
+        return [
+            'success' => true,
+            'message' => $parsed['message'],
+            'data' => $this->extractResponseData($body),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractResponseData(string $body): array
+    {
+        $trimmed = trim($body);
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $json = json_decode($trimmed, true);
+        if (is_array($json)) {
+            unset($json['error'], $json['text']);
+
+            return $json;
+        }
+
+        parse_str($trimmed, $parsed);
+
+        if (! is_array($parsed)) {
+            return [];
+        }
+
+        unset($parsed['error'], $parsed['text']);
+
+        return $parsed;
+    }
 }

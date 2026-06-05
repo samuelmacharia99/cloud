@@ -30,6 +30,7 @@ use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
+use App\Http\Controllers\Customer\HostingPanelController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\Customer\ResellerCatalogController;
 use App\Http\Controllers\Customer\ServiceBrowserController;
@@ -408,6 +409,35 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
+
+        Route::prefix('my/services/{service}/hosting')->name('customer.services.hosting.')->group(function () {
+            Route::get('panel-login', [HostingPanelController::class, 'panelLogin'])->middleware('throttle:10,1')->name('panel-login');
+            Route::get('dashboard', [HostingPanelController::class, 'dashboard'])->middleware('throttle:60,1')->name('dashboard');
+            Route::get('dns', [HostingPanelController::class, 'dnsIndex'])->name('dns.index');
+            Route::post('dns', [HostingPanelController::class, 'dnsStore'])->middleware('throttle:30,1')->name('dns.store');
+            Route::delete('dns', [HostingPanelController::class, 'dnsDestroy'])->middleware('throttle:30,1')->name('dns.destroy');
+            Route::get('emails', [HostingPanelController::class, 'emailsIndex'])->name('emails.index');
+            Route::post('emails', [HostingPanelController::class, 'emailsStore'])->middleware('throttle:20,1')->name('emails.store');
+            Route::delete('emails', [HostingPanelController::class, 'emailsDestroy'])->middleware('throttle:20,1')->name('emails.destroy');
+            Route::get('databases', [HostingPanelController::class, 'databasesIndex'])->name('databases.index');
+            Route::post('databases', [HostingPanelController::class, 'databasesStore'])->middleware('throttle:20,1')->name('databases.store');
+            Route::delete('databases', [HostingPanelController::class, 'databasesDestroy'])->middleware('throttle:20,1')->name('databases.destroy');
+            Route::get('subdomains', [HostingPanelController::class, 'subdomainsIndex'])->name('subdomains.index');
+            Route::post('subdomains', [HostingPanelController::class, 'subdomainsStore'])->middleware('throttle:20,1')->name('subdomains.store');
+            Route::delete('subdomains', [HostingPanelController::class, 'subdomainsDestroy'])->middleware('throttle:20,1')->name('subdomains.destroy');
+            Route::get('ftp', [HostingPanelController::class, 'ftpIndex'])->name('ftp.index');
+            Route::post('ftp', [HostingPanelController::class, 'ftpStore'])->middleware('throttle:20,1')->name('ftp.store');
+            Route::delete('ftp', [HostingPanelController::class, 'ftpDestroy'])->middleware('throttle:20,1')->name('ftp.destroy');
+            Route::get('ssl', [HostingPanelController::class, 'sslShow'])->name('ssl.show');
+            Route::post('ssl/letsencrypt', [HostingPanelController::class, 'sslLetsEncrypt'])->middleware('throttle:5,10')->name('ssl.letsencrypt');
+            Route::get('cron', [HostingPanelController::class, 'cronIndex'])->name('cron.index');
+            Route::post('cron', [HostingPanelController::class, 'cronStore'])->middleware('throttle:20,1')->name('cron.store');
+            Route::delete('cron', [HostingPanelController::class, 'cronDestroy'])->middleware('throttle:20,1')->name('cron.destroy');
+            Route::get('backups', [HostingPanelController::class, 'backupsIndex'])->name('backups.index');
+            Route::post('backups', [HostingPanelController::class, 'backupsStore'])->middleware('throttle:5,10')->name('backups.store');
+            Route::post('password/reset', [HostingPanelController::class, 'resetPassword'])->middleware('throttle:5,10')->name('password.reset');
+        });
+
         Route::get('/my/servers', [App\Http\Controllers\Customer\ServerController::class, 'index'])->name('customer.servers.index');
         Route::post('/my/servers/order', [App\Http\Controllers\Customer\ServerController::class, 'order'])->name('customer.servers.order');
         Route::resource('my/orders', App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');

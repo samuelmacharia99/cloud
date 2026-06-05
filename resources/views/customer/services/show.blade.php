@@ -35,8 +35,8 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
-                @if ($service->isSharedHosting() && $service->getDirectAdminPanelUrl())
-                    <a href="{{ $service->getDirectAdminPanelUrl() }}" target="_blank" rel="noopener noreferrer" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
+                @if ($service->isSharedHosting() && $service->status->value === 'active' && $service->getDirectAdminPanelUrl())
+                    <a href="{{ route('customer.services.hosting.panel-login', $service) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                         Open Panel
                     </a>
                 @endif
@@ -55,6 +55,11 @@
                 <button @click="tab = 'billing'" :class="tab === 'billing' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
                     Billing
                 </button>
+                @if ($service->isSharedHosting() && $service->status->value === 'active')
+                    <button @click="tab = 'hosting'" :class="tab === 'hosting' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
+                        Hosting Console
+                    </button>
+                @endif
                 <button @click="tab = 'credentials'" :class="tab === 'credentials' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
                     Credentials
                 </button>
@@ -228,6 +233,12 @@
                 @endif
             </div>
 
+            @if ($service->isSharedHosting() && $service->status->value === 'active')
+                <div x-show="tab === 'hosting'" class="space-y-4" x-cloak>
+                    @include('customer.services.partials.hosting-panel')
+                </div>
+            @endif
+
             <!-- Credentials Tab -->
             <div x-show="tab === 'credentials'" class="space-y-4" x-data="{ showPassword: false }">
                 @php($hostingCredentials = $service->getHostingCredentials())
@@ -274,8 +285,8 @@
                             @if (!empty($hostingCredentials['panel_url']))
                                 <div>
                                     <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase mb-2">Control Panel</p>
-                                    <a href="{{ $hostingCredentials['panel_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
-                                        {{ $hostingCredentials['panel_url'] }}
+                                    <a href="{{ route('customer.services.hosting.panel-login', $service) }}" class="inline-flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300">
+                                        Sign in to {{ $hostingCredentials['panel_url'] }}
                                     </a>
                                 </div>
                             @endif

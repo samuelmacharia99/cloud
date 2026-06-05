@@ -139,4 +139,22 @@ class ServicePolicy
             ? Response::allow()
             : Response::deny('You can only access terminal for your own services.');
     }
+
+    /**
+     * Customer can manage DirectAdmin hosting panel for their own active shared hosting services.
+     */
+    public function manageHostingPanel(User $user, Service $service): Response
+    {
+        if (! $service->isSharedHosting()) {
+            return Response::deny('This service does not include a hosting control panel.');
+        }
+
+        if ($service->status->value !== 'active') {
+            return Response::deny('Hosting panel is only available for active services.');
+        }
+
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only manage hosting for your own services.');
+    }
 }
