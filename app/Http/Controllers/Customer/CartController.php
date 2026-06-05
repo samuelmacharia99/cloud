@@ -252,6 +252,7 @@ class CartController extends Controller
         $request->validate([
             'domain' => 'required|string|max:253',
             'extension' => 'nullable|string',
+            'years' => 'nullable|integer|min:1|max:10',
         ]);
 
         $allowedExtensions = DomainExtension::where('enabled', true)->pluck('extension')->all();
@@ -280,12 +281,14 @@ class CartController extends Controller
 
             $available = $method->invoke($domainSearch, $fullDomain);
 
-            // Get pricing
+            $years = max(1, min(10, (int) $request->input('years', 1)));
+
+            // Get pricing for the selected registration period
             $extension = DomainExtension::where('extension', $parsed['extension'])->firstOrFail();
             $price = app(ResellerCustomerCatalogService::class)->domainRegistrationPrice(
                 auth()->user(),
                 $extension,
-                1,
+                $years,
             ) ?? 0;
 
             return response()->json([
@@ -294,6 +297,7 @@ class CartController extends Controller
                 'full_domain' => $fullDomain,
                 'domain' => $parsed['name'],
                 'extension' => $parsed['extension'],
+                'years' => $years,
                 'price' => $price,
                 'message' => $available ? 'Domain is available!' : 'Domain is already taken',
             ]);

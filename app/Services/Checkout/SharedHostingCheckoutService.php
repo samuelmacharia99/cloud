@@ -15,6 +15,7 @@ use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\DirectAdminSetupService;
+use App\Services\ResellerCustomerCatalogService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -66,6 +67,7 @@ class SharedHostingCheckoutService
         $messages = [
             'hosting_domain_mode.*.required' => 'Choose how you want to connect a domain to your shared hosting plan.',
             'hosting_domain_mode.*.in' => 'Invalid domain option selected for shared hosting.',
+            'hosting_domain_added.*.accepted' => 'Check availability and add the domain to your order before placing it.',
         ];
 
         foreach ($sharedItems as $item) {
@@ -81,6 +83,7 @@ class SharedHostingCheckoutService
                     Rule::in(DomainExtension::where('enabled', true)->pluck('extension')),
                 ];
                 $rules["hosting_domain_years.{$key}"] = ['required', 'integer', 'min:1', 'max:10'];
+                $rules["hosting_domain_added.{$key}"] = ['accepted'];
             } elseif ($mode === SharedHostingDomainMode::Existing->value) {
                 $rules["hosting_domain_fqdn.{$key}"] = ['required', 'string', 'max:253', 'regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i'];
             } elseif ($mode === SharedHostingDomainMode::Transfer->value) {
@@ -126,6 +129,10 @@ class SharedHostingCheckoutService
         }
 
         if ($mode === SharedHostingDomainMode::Register) {
+            if (! $request->boolean("hosting_domain_added.{$cartKey}")) {
+                return null;
+            }
+
             $extension = DomainExtension::where('extension', $request->input("hosting_domain_extension.{$cartKey}"))
                 ->where('enabled', true)
                 ->first();
@@ -135,8 +142,11 @@ class SharedHostingCheckoutService
             }
 
             $years = (int) $request->input("hosting_domain_years.{$cartKey}", 1);
-            $pricing = $extension->getRetailPricing($years);
-            $amount = $pricing ? (float) $pricing->price : 0.0;
+            $amount = app(ResellerCustomerCatalogService::class)->domainRegistrationPrice(
+                $request->user(),
+                $extension,
+                $years,
+            ) ?? 0.0;
             $name = strtolower((string) $request->input("hosting_domain_name.{$cartKey}"));
 
             return [

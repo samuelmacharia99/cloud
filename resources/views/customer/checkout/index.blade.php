@@ -9,7 +9,14 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Review and place your order</p>
     </div>
 
-    <form action="{{ route('customer.checkout.process') }}" method="POST" x-data="{ agree: false }">
+    <form action="{{ route('customer.checkout.process') }}" method="POST"
+        x-data="checkoutPage({{ Js::from([
+            'baseSubtotal' => $subtotal,
+            'taxEnabled' => $taxEnabled,
+            'taxRate' => $taxRate,
+        ]) }})"
+        @checkout-domain-added.window="addDomainAddon($event.detail)"
+        @checkout-domain-removed.window="onDomainRemoved($event.detail.cartKey)">
         @csrf
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -26,6 +33,19 @@
                                 <p class="font-semibold text-slate-900 dark:text-white">Ksh {{ number_format($item['amount'], 0) }}</p>
                             </div>
                         @endforeach
+                        <template x-for="addon in domainAddonList()" :key="addon.cartKey">
+                            <div class="flex justify-between items-center p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                                <div>
+                                    <p class="font-medium text-slate-900 dark:text-white" x-text="addon.label"></p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400" x-text="addon.description"></p>
+                                    <button type="button" @click="removeDomainAddon(addon.cartKey)"
+                                        class="mt-2 text-xs font-medium text-red-600 dark:text-red-400 hover:underline">
+                                        Remove from cart
+                                    </button>
+                                </div>
+                                <p class="font-semibold text-slate-900 dark:text-white" x-text="formatMoney(addon.amount)"></p>
+                            </div>
+                        </template>
                     </div>
                 </div>
 
@@ -107,22 +127,22 @@
                     <div class="space-y-3 mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
                         <div class="flex justify-between text-sm">
                             <span class="text-slate-600 dark:text-slate-400">Subtotal</span>
-                            <span class="font-medium text-slate-900 dark:text-white">Ksh {{ number_format($subtotal, 0) }}</span>
+                            <span class="font-medium text-slate-900 dark:text-white" x-text="formatMoney(displaySubtotal())"></span>
                         </div>
                         @if($taxEnabled)
                             <div class="flex justify-between text-sm">
                                 <span class="text-slate-600 dark:text-slate-400">Tax ({{ $taxRate }}%)</span>
-                                <span class="font-medium text-slate-900 dark:text-white">Ksh {{ number_format($tax, 0) }}</span>
+                                <span class="font-medium text-slate-900 dark:text-white" x-text="formatMoney(displayTax())"></span>
                             </div>
                         @endif
                     </div>
                     <div class="flex justify-between">
                         <span class="font-semibold text-slate-900 dark:text-white">Total</span>
-                        <span class="text-2xl font-bold text-green-600 dark:text-green-400">Ksh {{ number_format($total, 0) }}</span>
+                        <span class="text-2xl font-bold text-green-600 dark:text-green-400" x-text="formatMoney(displayTotal())"></span>
                     </div>
                     @if(!empty($sharedHostingItems))
                         <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
-                            Domain registration or transfer fees selected at checkout are included in the total once you submit the form.
+                            After checking availability, add your domain to the cart to include registration fees in the total above. Transfer fees are added when you place your order.
                         </p>
                     @endif
                     <div class="mt-6 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
@@ -136,3 +156,59 @@
     </form>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+function checkoutPage(config) {
+    return {
+        agree: false,
+        baseSubtotal: config.baseSubtotal,
+        taxEnabled: config.taxEnabled,
+        taxRate: config.taxRate,
+        domainAddons: {},
+
+        addDomainAddon(detail) {
+            this.domainAddons[detail.cartKey] = {
+                cartKey: detail.cartKey,
+                label: detail.label,
+                description: detail.description,
+                amount: detail.amount,
+            };
+        },
+
+        removeDomainAddon(cartKey) {
+            delete this.domainAddons[cartKey];
+            window.dispatchEvent(new CustomEvent('checkout-domain-removed', { detail: { cartKey } }));
+        },
+
+        onDomainRemoved(cartKey) {
+            delete this.domainAddons[cartKey];
+        },
+
+        domainAddonList() {
+            return Object.values(this.domainAddons);
+        },
+
+        domainAddonsTotal() {
+            return this.domainAddonList().reduce((sum, addon) => sum + addon.amount, 0);
+        },
+
+        displaySubtotal() {
+            return this.baseSubtotal + this.domainAddonsTotal();
+        },
+
+        displayTax() {
+            return this.taxEnabled ? this.displaySubtotal() * this.taxRate / 100 : 0;
+        },
+
+        displayTotal() {
+            return this.displaySubtotal() + this.displayTax();
+        },
+
+        formatMoney(amount) {
+            return 'Ksh ' + Math.round(amount).toLocaleString();
+        },
+    };
+}
+</script>
+@endpush

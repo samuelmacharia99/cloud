@@ -1,25 +1,27 @@
 @foreach($sharedHostingItems as $item)
     @php $key = $item['key']; @endphp
-    <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0" x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }}, {{ Js::from($domainExtensions->pluck('extension')->values()) }})">
+    <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0"
+        x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }}, {{ Js::from($domainExtensions->pluck('extension')->values()) }})"
+        @checkout-domain-removed.window="if ($event.detail.cartKey === cartKey) { setAddedToCart(false); }">
         <h3 class="font-semibold text-slate-900 dark:text-white mb-2">{{ $item['name'] }}</h3>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Choose how you want to connect a domain to this hosting plan.</p>
 
         <input type="hidden" name="hosting_domain_mode[{{ $key }}]" x-model="mode">
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-            <button type="button" @click="mode = 'register'; resetAvailability()"
+            <button type="button" @click="mode = 'register'; clearDomainCart()"
                 :class="mode === 'register' ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40' : 'border-slate-300 dark:border-slate-600'"
                 class="text-left p-4 rounded-lg border-2 transition">
                 <p class="font-semibold text-slate-900 dark:text-white">Register new domain</p>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Domain registration fees apply.</p>
             </button>
-            <button type="button" @click="mode = 'existing'"
+            <button type="button" @click="mode = 'existing'; clearDomainCart()"
                 :class="mode === 'existing' ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40' : 'border-slate-300 dark:border-slate-600'"
                 class="text-left p-4 rounded-lg border-2 transition">
                 <p class="font-semibold text-slate-900 dark:text-white">Use existing domain</p>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Point nameservers at your registrar.</p>
             </button>
-            <button type="button" @click="mode = 'transfer'; resetAvailability()"
+            <button type="button" @click="mode = 'transfer'; clearDomainCart()"
                 :class="mode === 'transfer' ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40' : 'border-slate-300 dark:border-slate-600'"
                 class="text-left p-4 rounded-lg border-2 transition">
                 <p class="font-semibold text-slate-900 dark:text-white">Transfer to us</p>
@@ -47,7 +49,7 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registration period</label>
-                    <select name="hosting_domain_years[{{ $key }}]" x-model="years" :disabled="mode !== 'register'"
+                    <select name="hosting_domain_years[{{ $key }}]" x-model="years" @change="onYearsChange()" :disabled="mode !== 'register'"
                         class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white disabled:opacity-50">
                         @for($y = 1; $y <= 5; $y++)
                             <option value="{{ $y }}">{{ $y }} year{{ $y > 1 ? 's' : '' }}</option>
@@ -75,11 +77,32 @@
                 :class="available ? 'bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700' : 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700'">
                 <p class="font-semibold" :class="available ? 'text-emerald-900 dark:text-emerald-100' : 'text-red-900 dark:text-red-100'" x-text="statusMessage"></p>
                 <p x-show="available" class="text-sm text-emerald-700 dark:text-emerald-300 mt-1">
-                    <span x-text="`Ksh ${price.toLocaleString()} per year`"></span>
+                    <span x-text="`Ksh ${price.toLocaleString()} for ${years} year${years > 1 ? 's' : ''}`"></span>
                 </p>
             </div>
 
-            <p class="text-xs text-amber-700 dark:text-amber-300">Check availability before placing your order. Registration pricing is added to your invoice total.</p>
+            <div x-show="available && checked && !addedToCart" class="flex justify-end">
+                <button type="button" @click="addToCart()"
+                    class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition text-sm">
+                    Add to cart
+                </button>
+            </div>
+
+            <div x-show="addedToCart" class="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700">
+                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p class="font-medium text-emerald-900 dark:text-emerald-100">
+                        <span x-text="`${domain}${extension}`"></span> added to your order
+                    </p>
+                    <button type="button" @click="removeFromCart()"
+                        class="text-sm font-medium text-red-600 dark:text-red-400 hover:underline whitespace-nowrap">
+                        Remove from cart
+                    </button>
+                </div>
+            </div>
+
+            <input type="hidden" name="hosting_domain_added[{{ $key }}]" :value="addedToCart ? '1' : '0'">
+
+            <p class="text-xs text-amber-700 dark:text-amber-300">Check availability, then add the domain to your order. Registration fees are included in the total above.</p>
         </div>
 
         <div x-show="mode === 'existing'" class="space-y-4">
@@ -158,12 +181,16 @@
         @error("hosting_domain_mode.{$key}")
             <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
         @enderror
+        @error("hosting_domain_added.{$key}")
+            <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
+        @enderror
     </div>
 @endforeach
 
 <script>
 function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
     return {
+        cartKey,
         mode: 'register',
         domain: '',
         extension: '',
@@ -171,6 +198,7 @@ function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
         checking: false,
         checked: false,
         available: false,
+        addedToCart: false,
         price: 0,
         domainError: '',
         statusMessage: '',
@@ -184,11 +212,57 @@ function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
             }
         },
 
+        clearDomainCart() {
+            this.resetAvailability();
+        },
+
         resetAvailability() {
+            if (this.addedToCart) {
+                this.removeFromCart();
+            }
             this.checked = false;
             this.available = false;
             this.statusMessage = '';
             this.domainError = '';
+        },
+
+        onYearsChange() {
+            this.resetAvailability();
+        },
+
+        setAddedToCart(value) {
+            this.addedToCart = value;
+        },
+
+        addToCart() {
+            if (!this.available || !this.checked) {
+                return;
+            }
+
+            this.addedToCart = true;
+
+            const ext = this.extension.startsWith('.') ? this.extension : '.' + this.extension;
+            const years = parseInt(this.years, 10) || 1;
+
+            window.dispatchEvent(new CustomEvent('checkout-domain-added', {
+                detail: {
+                    cartKey: this.cartKey,
+                    label: `${this.domain}${ext}`,
+                    description: `Domain registration (${years} year${years > 1 ? 's' : ''})`,
+                    amount: this.price,
+                },
+            }));
+        },
+
+        removeFromCart() {
+            if (!this.addedToCart) {
+                return;
+            }
+
+            this.addedToCart = false;
+            window.dispatchEvent(new CustomEvent('checkout-domain-removed', {
+                detail: { cartKey: this.cartKey },
+            }));
         },
 
         parseDomainInput() {
@@ -240,6 +314,9 @@ function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
 
             this.domainError = '';
             this.checking = true;
+            if (this.addedToCart) {
+                this.removeFromCart();
+            }
             this.checked = false;
 
             try {
@@ -252,6 +329,7 @@ function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
                     body: JSON.stringify({
                         domain: this.domain,
                         extension: this.extension,
+                        years: parseInt(this.years, 10) || 1,
                     }),
                 });
 
