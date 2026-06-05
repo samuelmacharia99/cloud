@@ -219,6 +219,8 @@
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
+
+                    @include('admin.partials.send-welcome-email-checkbox')
                 </div>
             </div>
 

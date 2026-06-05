@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AdminAccountWelcomeService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
 use Carbon\Carbon;
@@ -82,12 +83,28 @@ class CustomerController extends Controller
             'vat_number' => 'nullable|string',
             'notes' => 'nullable|string',
             'status' => 'required|in:active,suspended,inactive',
+            'send_welcome_email' => 'sometimes|boolean',
         ]);
 
-        User::create($validated);
+        $plainPassword = $validated['password'];
+        $sendWelcomeEmail = $request->boolean('send_welcome_email');
+        unset($validated['send_welcome_email']);
+
+        $user = User::create($validated);
+
+        $flash = 'Customer created successfully.';
+
+        if ($sendWelcomeEmail) {
+            try {
+                app(AdminAccountWelcomeService::class)->send($user, $plainPassword, 'customer');
+                $flash .= ' Welcome email sent.';
+            } catch (\Throwable $e) {
+                $flash .= ' Welcome email could not be sent: '.$e->getMessage();
+            }
+        }
 
         return redirect()->route('admin.customers.index')
-            ->with('success', 'Customer created successfully.');
+            ->with('success', $flash);
     }
 
     public function show(User $customer)

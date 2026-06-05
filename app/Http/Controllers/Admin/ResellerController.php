@@ -14,6 +14,7 @@ use App\Models\ResellerPackage;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AdminAccountWelcomeService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerPackageSubscriptionService;
@@ -200,6 +201,7 @@ class ResellerController extends Controller
             'notes' => 'nullable|string|max:1000',
             'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
             'reseller_node_id' => 'nullable|exists:nodes,id',
+            'send_welcome_email' => 'sometimes|boolean',
         ]);
 
         if (blank($validated['directadmin_username'] ?? null)) {
@@ -207,9 +209,13 @@ class ResellerController extends Controller
             $validated['reseller_node_id'] = null;
         }
 
+        $plainPassword = $validated['password'];
+        $sendWelcomeEmail = $request->boolean('send_welcome_email');
+        unset($validated['send_welcome_email']);
+
         $user = User::create(array_merge($validated, [
             'status' => 'active',
-            'package_subscribed_at' => $validated['reseller_package_id'] ? now() : null,
+            'package_subscribed_at' => ($validated['reseller_package_id'] ?? null) ? now() : null,
         ]));
 
         // is_reseller is intentionally not mass-assignable on User; set explicitly.
@@ -224,6 +230,15 @@ class ResellerController extends Controller
                 $flash .= ' A verification code was sent to their email.';
             } catch (\Throwable $e) {
                 $flash .= ' Verification email could not be sent: '.$e->getMessage();
+            }
+        }
+
+        if ($sendWelcomeEmail) {
+            try {
+                app(AdminAccountWelcomeService::class)->send($user, $plainPassword, 'reseller');
+                $flash .= ' Welcome email sent.';
+            } catch (\Throwable $e) {
+                $flash .= ' Welcome email could not be sent: '.$e->getMessage();
             }
         }
 
