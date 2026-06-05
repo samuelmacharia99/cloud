@@ -572,6 +572,67 @@ class DirectAdminService
     }
 
     /**
+     * Fetch reseller-level packages assigned to a DirectAdmin reseller account.
+     *
+     * @return list<array{name: string, package_key: string, description: ?string, disk_quota: float, bandwidth_quota: float}>
+     */
+    public function getResellerPackages(string $resellerUsername): array
+    {
+        if (! $this->isConfigured() || blank($resellerUsername)) {
+            return [];
+        }
+
+        try {
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_RESELLER', [
+                    'user' => $resellerUsername,
+                    'json' => 'yes',
+                ])
+                ->throw();
+
+            if (! $response->ok()) {
+                Log::warning('DirectAdmin PACKAGES_RESELLER request failed', [
+                    'node_id' => $this->node?->id,
+                    'reseller' => $resellerUsername,
+                    'status' => $response->status(),
+                ]);
+
+                return [];
+            }
+
+            $packageNames = $this->parsePackageNameList($response->body(), $response->json());
+            $packages = [];
+
+            foreach ($packageNames as $packageName) {
+                $details = $this->getPackageDetails($packageName);
+                $packages[] = $details ?? [
+                    'name' => $packageName,
+                    'package_key' => Str::slug($packageName),
+                    'description' => null,
+                    'disk_quota' => 0,
+                    'bandwidth_quota' => 0,
+                ];
+            }
+
+            Log::info('Fetched DirectAdmin reseller packages', [
+                'node_id' => $this->node?->id,
+                'reseller' => $resellerUsername,
+                'package_count' => count($packages),
+            ]);
+
+            return $packages;
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch DirectAdmin reseller packages', [
+                'node_id' => $this->node?->id,
+                'reseller' => $resellerUsername,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
      * Fetch all packages from DirectAdmin server
      * DirectAdmin returns form-encoded list of package names: list[]=Package1&list[]=Package2
      *
@@ -629,14 +690,7 @@ class DirectAdminService
                     return [];
                 }
 
-                // Handle both formats: direct array or object with list key
-                $packageNames = is_array($responseData) && isset($responseData[0]) && ! isset($responseData['list'])
-                    ? $responseData  // Direct array format: ["Bronze", "Gold", ...]
-                    : ($responseData['list'] ?? []);  // Object format: {"list": ["Bronze", ...]}
-
-                if (! is_array($packageNames)) {
-                    $packageNames = [$packageNames];
-                }
+                $packageNames = $this->parsePackageNameList($response->body(), $responseData);
 
                 Log::debug('DirectAdmin API response', [
                     'node_id' => $this->node?->id,
@@ -715,6 +769,37 @@ class DirectAdminService
 
             return null;
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parsePackageNameList(string $body, mixed $responseData): array
+    {
+        if (! is_array($responseData)) {
+            return [];
+        }
+
+        if (isset($responseData['list'])) {
+            $packageNames = $responseData['list'];
+        } elseif (isset($responseData[0]) && is_string($responseData[0])) {
+            $packageNames = $responseData;
+        } else {
+            $packageNames = array_keys(array_filter(
+                $responseData,
+                fn ($value, $key) => is_string($key) && ! in_array($key, ['error', 'text', 'details'], true),
+                ARRAY_FILTER_USE_BOTH
+            ));
+        }
+
+        if (! is_array($packageNames)) {
+            $packageNames = [$packageNames];
+        }
+
+        return array_values(array_filter(array_map(
+            fn ($name) => is_string($name) ? trim($name) : null,
+            $packageNames
+        )));
     }
 
     /**

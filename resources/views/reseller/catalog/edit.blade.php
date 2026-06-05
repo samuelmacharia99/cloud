@@ -62,6 +62,15 @@
                         @enderror
                     </div>
 
+                    <div id="directadmin-package-field" class="{{ old('type', $catalogItem->type) === 'shared_hosting' ? '' : 'hidden' }}">
+                        @include('reseller.catalog.partials.directadmin-package-field', [
+                            'directAdminBinding' => $directAdminBinding,
+                            'directAdminPackages' => $directAdminPackages,
+                            'directAdminPackagesError' => $directAdminPackagesError,
+                            'selectedPackage' => old('direct_admin_package_name', $catalogItem->direct_admin_package_name),
+                        ])
+                    </div>
+
                     <!-- Base Product (if applicable) -->
                     @if(!$catalogItem->isCustom())
                         <div class="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -144,4 +153,13 @@
         </form>
     </div>
 </div>
+
+<script>
+document.getElementById('type')?.addEventListener('change', function () {
+    const field = document.getElementById('directadmin-package-field');
+    if (field) {
+        field.classList.toggle('hidden', this.value !== 'shared_hosting');
+    }
+});
+</script>
 @endsection

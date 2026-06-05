@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminSetupService;
 
@@ -22,6 +23,15 @@ class ResellerHostingSetupService
         return $product->type === 'shared_hosting' && $product->direct_admin_package_id;
     }
 
+    public function requiresPrimaryDomainForCatalog(ResellerProduct $catalog, ?Product $adminProduct = null): bool
+    {
+        if ($catalog->usesDirectAdminPackage()) {
+            return true;
+        }
+
+        return $adminProduct ? $this->requiresPrimaryDomain($adminProduct) : false;
+    }
+
     /**
      * Build node_id, service_meta, and driver for a reseller customer hosting order.
      *
@@ -32,11 +42,14 @@ class ResellerHostingSetupService
         User $customer,
         Product $adminProduct,
         ?string $primaryDomain = null,
+        ?ResellerProduct $catalogProduct = null,
     ): array {
         $driver = $adminProduct->provisioning_driver_key;
 
-        if ($driver === 'directadmin' || ($adminProduct->type === 'shared_hosting' && $adminProduct->direct_admin_package_id)) {
-            return $this->buildDirectAdminContext($reseller, $customer, $adminProduct, $primaryDomain);
+        if ($catalogProduct?->usesDirectAdminPackage()
+            || $driver === 'directadmin'
+            || ($adminProduct->type === 'shared_hosting' && $adminProduct->direct_admin_package_id)) {
+            return $this->buildDirectAdminContext($reseller, $customer, $adminProduct, $primaryDomain, $catalogProduct);
         }
 
         if ($driver === 'container') {
@@ -71,6 +84,7 @@ class ResellerHostingSetupService
         User $customer,
         Product $adminProduct,
         ?string $primaryDomain,
+        ?ResellerProduct $catalogProduct = null,
     ): array {
         if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
             throw new \InvalidArgumentException(
@@ -84,6 +98,39 @@ class ResellerHostingSetupService
             );
         }
 
+        $resellerNode = $this->resellerDirectAdmin->resolveNode($reseller);
+        if (! $resellerNode) {
+            throw new \InvalidArgumentException(
+                'No active DirectAdmin node is configured for your reseller account.'
+            );
+        }
+
+        if ($catalogProduct?->usesDirectAdminPackage()) {
+            if (! $this->resellerDirectAdmin->packageNameIsValid($reseller, (string) $catalogProduct->direct_admin_package_name)) {
+                throw new \InvalidArgumentException(
+                    'The linked DirectAdmin package is no longer available on your reseller account. Update the catalog item.'
+                );
+            }
+
+            $prepared = $this->directAdminSetup->prepareForResellerPackage(
+                $customer,
+                (string) $primaryDomain,
+                (string) $catalogProduct->direct_admin_package_name,
+                $resellerNode,
+            );
+
+            $meta = array_merge($prepared['meta'], [
+                'directadmin_reseller' => $reseller->directadmin_username,
+                'reseller_product_id' => $catalogProduct->id,
+            ]);
+
+            return [
+                'node_id' => $resellerNode->id,
+                'service_meta' => $meta,
+                'provisioning_driver_key' => 'directadmin',
+            ];
+        }
+
         $adminProduct->loadMissing('directAdminPackage');
 
         $prepared = $this->directAdminSetup->prepareForOrder(
@@ -92,17 +139,10 @@ class ResellerHostingSetupService
             (string) $primaryDomain,
         );
 
-        $resellerNode = $this->resellerDirectAdmin->resolveNode($reseller);
-        if (! $resellerNode) {
-            throw new \InvalidArgumentException(
-                'No active DirectAdmin node is configured for your reseller account.'
-            );
-        }
-
         $package = $adminProduct->directAdminPackage;
         if ($package && (int) $package->node_id !== (int) $resellerNode->id) {
             throw new \InvalidArgumentException(
-                'This catalog plan is tied to a different DirectAdmin server than your reseller account. Choose a plan on your server or contact support.'
+                'This catalog plan is tied to a different DirectAdmin server than your reseller account. Link a DirectAdmin package from your server on this catalog item.'
             );
         }
 

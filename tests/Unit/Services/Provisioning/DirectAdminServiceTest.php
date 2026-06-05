@@ -159,6 +159,29 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_get_reseller_packages_lists_packages_for_reseller(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER')) {
+                return Http::response(json_encode(['list' => ['Bronze', 'Gold']]), 200);
+            }
+
+            return Http::response(json_encode(['disk' => '1000M', 'bandwidth' => '10000M']), 200);
+        });
+
+        $packages = (new DirectAdminService($this->createDirectAdminNode()))
+            ->getResellerPackages('reseller_acme');
+
+        $this->assertCount(2, $packages);
+        $this->assertSame('Bronze', $packages[0]['name']);
+        $this->assertSame('Gold', $packages[1]['name']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER')
+                && $request['user'] === 'reseller_acme';
+        });
+    }
+
     public function test_empty_api_body_is_treated_as_failure_for_create(): void
     {
         Http::fake([

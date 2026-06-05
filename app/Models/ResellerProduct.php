@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class ResellerProduct extends Model
 {
@@ -15,6 +16,7 @@ class ResellerProduct extends Model
         'name',
         'description',
         'type',
+        'direct_admin_package_name',
         'monthly_price',
         'yearly_price',
         'setup_fee',
@@ -44,6 +46,24 @@ class ResellerProduct extends Model
     public function isCustom(): bool
     {
         return is_null($this->product_id);
+    }
+
+    public function usesDirectAdminPackage(): bool
+    {
+        return $this->type === 'shared_hosting' && filled($this->direct_admin_package_name);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function directAdminPackageMeta(): array
+    {
+        $name = (string) $this->direct_admin_package_name;
+
+        return [
+            'package_name' => $name,
+            'package' => Str::slug($name),
+        ];
     }
 
     public function getWholesaleMonthlyCost(): ?float

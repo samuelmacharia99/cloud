@@ -67,7 +67,7 @@ class CustomerOrderController extends Controller
             ->firstOrFail();
 
         $adminProduct = $product->adminProduct;
-        if ($adminProduct && $this->hostingSetup->requiresPrimaryDomain($adminProduct) && blank($validated['primary_domain'] ?? null)) {
+        if ($this->hostingSetup->requiresPrimaryDomainForCatalog($product, $adminProduct) && blank($validated['primary_domain'] ?? null)) {
             return back()
                 ->withErrors(['primary_domain' => 'Primary domain is required for shared hosting (PHP / WordPress) plans.'])
                 ->withInput();

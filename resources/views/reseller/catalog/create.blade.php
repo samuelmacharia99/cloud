@@ -63,6 +63,15 @@
                             @enderror
                         </div>
 
+                        <div x-show="selectedProduct?.type === 'shared_hosting'" x-cloak>
+                            @include('reseller.catalog.partials.directadmin-package-field', [
+                                'directAdminBinding' => $directAdminBinding,
+                                'directAdminPackages' => $directAdminPackages,
+                                'directAdminPackagesError' => $directAdminPackagesError,
+                                'selectedPackage' => old('direct_admin_package_name'),
+                            ])
+                        </div>
+
                         <!-- Your Pricing -->
                         <div class="space-y-4">
                             <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Your Pricing</h3>
@@ -206,6 +215,15 @@
                             @error('type')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
+                        </div>
+
+                        <div x-show="customType === 'shared_hosting'" x-cloak>
+                            @include('reseller.catalog.partials.directadmin-package-field', [
+                                'directAdminBinding' => $directAdminBinding,
+                                'directAdminPackages' => $directAdminPackages,
+                                'directAdminPackagesError' => $directAdminPackagesError,
+                                'selectedPackage' => old('direct_admin_package_name'),
+                            ])
                         </div>
                     </div>
 

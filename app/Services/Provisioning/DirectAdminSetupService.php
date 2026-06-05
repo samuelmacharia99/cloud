@@ -3,10 +3,12 @@
 namespace App\Services\Provisioning;
 
 use App\Models\DirectAdminPackage;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Support\Str;
 
 class DirectAdminSetupService
 {
@@ -18,6 +20,27 @@ class DirectAdminSetupService
     /**
      * @return array{node_id: int, meta: array<string, mixed>}
      */
+    /**
+     * @return array{node_id: int, meta: array<string, mixed>}
+     */
+    public function prepareForResellerPackage(User $user, string $domainFqdn, string $packageName, Node $node): array
+    {
+        $domain = $this->domainValidator->assertValid($domainFqdn);
+
+        return [
+            'node_id' => $node->id,
+            'meta' => [
+                'username' => $this->credentials->generateUsername($user),
+                'password' => $this->credentials->generatePassword(),
+                'domain' => $domain,
+                'package' => Str::slug($packageName),
+                'package_name' => $packageName,
+                'node_id' => $node->id,
+                'node_name' => $node->name,
+            ],
+        ];
+    }
+
     public function prepareForOrder(Product $product, User $user, string $domainFqdn): array
     {
         $domain = $this->domainValidator->assertValid($domainFqdn);

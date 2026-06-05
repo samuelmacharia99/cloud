@@ -63,6 +63,52 @@ class ResellerDirectAdminService
         return $service->isConfigured() ? $service : null;
     }
 
+    /**
+     * @return array{packages: list<array<string, mixed>>, error: ?string}
+     */
+    public function listAssignablePackages(User $reseller): array
+    {
+        if (! $this->hasDirectAdminBinding($reseller)) {
+            return [
+                'packages' => [],
+                'error' => 'Your account is not linked to a DirectAdmin reseller. Ask your provider to set your DirectAdmin username and server.',
+            ];
+        }
+
+        $da = $this->directAdmin($reseller);
+        if (! $da) {
+            return [
+                'packages' => [],
+                'error' => 'Could not connect to the DirectAdmin API for your server. Contact your provider.',
+            ];
+        }
+
+        $packages = $da->getResellerPackages((string) $reseller->directadmin_username);
+
+        if ($packages === []) {
+            return [
+                'packages' => [],
+                'error' => 'No shared hosting packages were found on your DirectAdmin reseller account. Create packages in DirectAdmin first.',
+            ];
+        }
+
+        usort($packages, fn (array $a, array $b) => strcmp($a['name'], $b['name']));
+
+        return ['packages' => $packages, 'error' => null];
+    }
+
+    public function packageNameIsValid(User $reseller, string $packageName): bool
+    {
+        if (! filled($packageName) || ! $this->hasDirectAdminBinding($reseller)) {
+            return false;
+        }
+
+        $result = $this->listAssignablePackages($reseller);
+
+        return collect($result['packages'])
+            ->contains(fn (array $package) => ($package['name'] ?? '') === $packageName);
+    }
+
     public function fetchHostedUserCount(User $reseller): ?int
     {
         if (! filled($reseller->directadmin_username)) {

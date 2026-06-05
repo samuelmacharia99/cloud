@@ -55,6 +55,13 @@
                         <p class="text-slate-900 dark:text-white">{{ Product::typeLabel($catalogItem->type) }}</p>
                     </div>
 
+                    @if ($catalogItem->direct_admin_package_name)
+                    <div>
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">DirectAdmin package</p>
+                        <p class="text-slate-900 dark:text-white font-mono">{{ $catalogItem->direct_admin_package_name }}</p>
+                    </div>
+                    @endif
+
                     <!-- Status -->
                     <div>
                         <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Status</p>

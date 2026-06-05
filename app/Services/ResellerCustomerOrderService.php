@@ -196,12 +196,13 @@ class ResellerCustomerOrderService
             'notes' => $options['notes'] ?? null,
         ];
 
-        if ($this->isProvisionableHostingProduct($adminProduct)) {
+        if ($this->isProvisionableHostingProduct($adminProduct, $catalogProduct)) {
             $context = $this->hostingSetup->buildProvisioningContext(
                 $reseller,
                 $customer,
                 $adminProduct,
                 $options['primary_domain'] ?? null,
+                $catalogProduct,
             );
 
             $attributes['provisioning_driver_key'] = $context['provisioning_driver_key']
@@ -219,8 +220,12 @@ class ResellerCustomerOrderService
         return Service::create($attributes);
     }
 
-    private function isProvisionableHostingProduct(Product $adminProduct): bool
+    private function isProvisionableHostingProduct(Product $adminProduct, ResellerProduct $catalogProduct): bool
     {
+        if ($catalogProduct->usesDirectAdminPackage()) {
+            return true;
+        }
+
         $driver = $adminProduct->provisioning_driver_key;
 
         return in_array($driver, ['directadmin', 'container'], true)
