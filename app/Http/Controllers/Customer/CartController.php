@@ -30,6 +30,7 @@ class CartController extends Controller
         $catalogService = app(ResellerCustomerCatalogService::class);
         $cartItems = [];
         $subtotal = 0;
+        $hasSharedHosting = false;
 
         foreach ($cart as $key => $item) {
             $item['key'] = $key;
@@ -45,6 +46,7 @@ class CartController extends Controller
                     $item['description'] = $product->description ?? $product->name;
                     $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
                     $item['amount'] = $item['unit_price'];
+                    $hasSharedHosting = $hasSharedHosting || $product->type === 'shared_hosting';
                 } else {
                     continue; // Skip if product not found
                 }
@@ -57,6 +59,7 @@ class CartController extends Controller
                     $item['unit_price'] = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
                     $item['amount'] = $item['unit_price'] + (float) ($resellerProduct->setup_fee ?? 0);
                     $item['product_id'] = $resellerProduct->product_id;
+                    $hasSharedHosting = $hasSharedHosting || ($resellerProduct->adminProduct?->type === 'shared_hosting');
                 } else {
                     continue;
                 }
@@ -98,6 +101,7 @@ class CartController extends Controller
             'total' => $total,
             'itemCount' => count($cartItems),
             'defaultNameservers' => $defaultNameservers,
+            'hasSharedHosting' => $hasSharedHosting,
         ]);
     }
 
