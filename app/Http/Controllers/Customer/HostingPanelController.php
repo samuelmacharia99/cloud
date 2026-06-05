@@ -291,9 +291,7 @@ class HostingPanelController extends Controller
     public function cronIndex(Service $service): JsonResponse
     {
         return $this->jsonAction($service, function () use ($service) {
-            $domain = $this->requireDomain($service);
-
-            return $this->panel->api($service)->listCronJobs($this->panel->username($service), $domain);
+            return $this->panel->api($service)->listCronJobs($this->panel->username($service));
         });
     }
 
@@ -309,11 +307,8 @@ class HostingPanelController extends Controller
         ]);
 
         return $this->jsonAction($service, function () use ($service, $data) {
-            $domain = $this->requireDomain($service);
-
             return $this->panel->api($service)->createCronJob(
                 $this->panel->username($service),
-                $domain,
                 $data['minute'],
                 $data['hour'],
                 $data['day'],
@@ -331,11 +326,8 @@ class HostingPanelController extends Controller
         ]);
 
         return $this->jsonAction($service, function () use ($service, $data) {
-            $domain = $this->requireDomain($service);
-
             return $this->panel->api($service)->deleteCronJob(
                 $this->panel->username($service),
-                $domain,
                 $data['cron_id'],
             );
         }, true);
@@ -343,12 +335,20 @@ class HostingPanelController extends Controller
 
     public function backupsIndex(Service $service): JsonResponse
     {
-        return $this->jsonAction($service, fn () => $this->panel->api($service)->listBackups($this->panel->username($service)));
+        return $this->jsonAction($service, function () use ($service) {
+            $domain = $this->requireDomain($service);
+
+            return $this->panel->api($service)->listBackups($this->panel->username($service), $domain);
+        });
     }
 
     public function backupsStore(Service $service): JsonResponse
     {
-        return $this->jsonAction($service, fn () => $this->panel->api($service)->createBackup($this->panel->username($service)), true);
+        return $this->jsonAction($service, function () use ($service) {
+            $domain = $this->requireDomain($service);
+
+            return $this->panel->api($service)->createBackup($this->panel->username($service), $domain);
+        }, true);
     }
 
     public function resetPassword(Service $service): JsonResponse

@@ -95,13 +95,22 @@ class DirectAdminCustomerPanelApi
      */
     public function listDnsRecords(string $username, string $domain): array
     {
-        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DNS_CONTROL', [
+        // CMD_API_DNS_ADMIN provides a consistent JSON payload for listing records.
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DNS_ADMIN', [
             'domain' => $domain,
-            'action' => 'view',
+            'full_mx_records' => 'yes',
         ]);
 
         if (! $response['success']) {
             return ['success' => false, 'message' => $response['message'], 'data' => []];
+        }
+
+        if (isset($response['data']['records']) && is_array($response['data']['records'])) {
+            return [
+                'success' => true,
+                'message' => 'OK',
+                'data' => $this->normalizeDnsAdminRecords($response['data']['records'], $domain),
+            ];
         }
 
         return [
@@ -243,8 +252,8 @@ class DirectAdminCustomerPanelApi
      */
     public function listSubdomains(string $username, string $domain): array
     {
+        // Listing does not require an action (passing one may break on some DA builds).
         $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_SUBDOMAINS', [
-            'action' => 'list',
             'domain' => $domain,
         ]);
 
@@ -370,21 +379,23 @@ class DirectAdminCustomerPanelApi
         return $this->directAdmin->executeUserApiCall($username, 'CMD_API_SSL', [
             'action' => 'save',
             'domain' => $domain,
+            'type' => 'create',
             'request' => 'letsencrypt',
+            'name' => $domain,
+            'keysize' => 'secp384r1',
+            'encryption' => 'sha256',
             'le_select0' => $domain,
-            'wildcard' => 'no',
+            'le_select1' => 'www.'.$domain,
+            'submit' => 'save',
         ], 'POST');
     }
 
     /**
      * @return array{success: bool, data: array<int, array<string, mixed>>, message: string}
      */
-    public function listCronJobs(string $username, string $domain): array
+    public function listCronJobs(string $username): array
     {
-        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON', [
-            'domain' => $domain,
-            'action' => 'view',
-        ]);
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON_JOBS');
 
         if (! $response['success']) {
             return ['success' => false, 'message' => $response['message'], 'data' => []];
@@ -392,7 +403,7 @@ class DirectAdminCustomerPanelApi
 
         $jobs = [];
         foreach ($response['data'] as $key => $value) {
-            if (! preg_match('/^cron\d*$/', (string) $key)) {
+            if (! preg_match('/^cronid\d*$/', (string) $key)) {
                 continue;
             }
 
@@ -418,11 +429,10 @@ class DirectAdminCustomerPanelApi
     /**
      * @return array{success: bool, message: string}
      */
-    public function createCronJob(string $username, string $domain, string $minute, string $hour, string $day, string $month, string $weekday, string $command): array
+    public function createCronJob(string $username, string $minute, string $hour, string $day, string $month, string $weekday, string $command): array
     {
-        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON', [
+        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON_JOBS', [
             'action' => 'create',
-            'domain' => $domain,
             'minute' => $minute,
             'hour' => $hour,
             'dayofmonth' => $day,
@@ -435,11 +445,10 @@ class DirectAdminCustomerPanelApi
     /**
      * @return array{success: bool, message: string}
      */
-    public function deleteCronJob(string $username, string $domain, string $cronId): array
+    public function deleteCronJob(string $username, string $cronId): array
     {
-        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON', [
+        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_CRON_JOBS', [
             'action' => 'delete',
-            'domain' => $domain,
             'select0' => $cronId,
         ], 'POST');
     }
@@ -447,10 +456,10 @@ class DirectAdminCustomerPanelApi
     /**
      * @return array{success: bool, data: array<int, array<string, mixed>>, message: string}
      */
-    public function listBackups(string $username): array
+    public function listBackups(string $username, string $domain): array
     {
-        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_BACKUP', [
-            'action' => 'view',
+        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_SITE_BACKUP', [
+            'domain' => $domain,
         ]);
 
         if (! $response['success']) {
@@ -469,15 +478,55 @@ class DirectAdminCustomerPanelApi
     /**
      * @return array{success: bool, message: string}
      */
-    public function createBackup(string $username): array
+    public function createBackup(string $username, string $domain): array
     {
-        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_BACKUP', [
-            'action' => 'create',
+        return $this->directAdmin->executeUserApiCall($username, 'CMD_API_SITE_BACKUP', [
+            'action' => 'backup',
+            'domain' => $domain,
             'select0' => 'domain',
             'select1' => 'email',
             'select2' => 'ftp',
             'select3' => 'database',
         ], 'POST');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $records
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeDnsAdminRecords(array $records, string $domain): array
+    {
+        $normalized = [];
+
+        foreach ($records as $record) {
+            if (! is_array($record)) {
+                continue;
+            }
+
+            $type = strtoupper((string) ($record['type'] ?? ''));
+            if ($type === '') {
+                continue;
+            }
+
+            $name = (string) ($record['name'] ?? '');
+            $value = (string) ($record['value'] ?? '');
+            $ttl = (int) ($record['ttl'] ?? 3600);
+
+            $fqdn = rtrim($name, '.');
+            if ($fqdn === '' || $fqdn === '@') {
+                $fqdn = $domain;
+            }
+
+            $normalized[] = [
+                'name' => $name === '' ? '@' : rtrim($name, '.'),
+                'type' => $type,
+                'value' => $value,
+                'ttl' => $ttl,
+                'fqdn' => $fqdn,
+            ];
+        }
+
+        return $normalized;
     }
 
     /**
