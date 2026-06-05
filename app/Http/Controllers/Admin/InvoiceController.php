@@ -236,7 +236,6 @@ class InvoiceController extends Controller
             ]);
 
             $invoice->refresh();
-            $wasUnpaid = ! $invoice->isPaid();
             $remaining = $invoice->getAmountRemaining();
 
             if ($remaining <= 0) {
@@ -251,17 +250,6 @@ class InvoiceController extends Controller
                     'wallet_applied' => $invoice->wallet_amount_applied,
                     'invoice_total' => $invoice->total,
                 ]);
-
-                if ($wasUnpaid) {
-                    try {
-                        $this->provisionServices($invoice->fresh());
-                    } catch (\Throwable $e) {
-                        \Log::error('Provisioning after admin payment failed', [
-                            'invoice_id' => $invoice->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                }
             } elseif ($remaining > 0 && in_array($invoice->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)) {
                 $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
 
@@ -270,6 +258,32 @@ class InvoiceController extends Controller
                     'remaining' => $remaining,
                     'invoice_total' => $invoice->total,
                 ]);
+            }
+
+            $invoice->refresh();
+
+            if ($invoice->isFullyPaid()) {
+                try {
+                    $result = $this->provisionServices($invoice);
+                    \Log::info('Provisioning attempted after admin payment', [
+                        'invoice_id' => $invoice->id,
+                        'result' => $result,
+                    ]);
+                } catch (\Throwable $e) {
+                    \Log::error('Provisioning after admin payment failed', [
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+
+                try {
+                    $this->notificationService->notifyPaymentReceived($payment);
+                } catch (\Throwable $e) {
+                    \Log::error('Payment notification failed after admin payment', [
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             return redirect()->route('admin.invoices.show', $invoice)
@@ -288,10 +302,10 @@ class InvoiceController extends Controller
     }
 
     /**
-     * Provision services linked to the invoice.
+     * @return array{provisioned: int, failed: array<int>, skipped: bool}
      */
-    private function provisionServices(Invoice $invoice): void
+    private function provisionServices(Invoice $invoice): array
     {
-        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
+        return app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
     }
 }

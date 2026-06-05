@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Enums\ServiceStatus;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
@@ -53,13 +54,13 @@ class InvoiceProvisioningService
 
         foreach ($services as $service) {
             try {
-                if ($service->status !== 'pending') {
+                if ($service->status !== ServiceStatus::Pending) {
                     continue;
                 }
 
                 $this->resellerEnforcement->assertCanProvision($service);
 
-                $service->update(['status' => 'provisioning']);
+                $service->update(['status' => ServiceStatus::Provisioning]);
                 $this->provisioningService->provision($service->fresh());
                 $provisioned++;
             } catch (\Throwable $e) {
@@ -118,6 +119,10 @@ class InvoiceProvisioningService
             $service->update(['invoice_id' => $invoice->id]);
         }
 
-        return in_array($invoice->status, ['paid', 'active'], true);
+        $status = $invoice->status instanceof \BackedEnum
+            ? $invoice->status->value
+            : (string) $invoice->status;
+
+        return in_array($status, ['paid', 'active'], true);
     }
 }
