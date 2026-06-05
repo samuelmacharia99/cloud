@@ -64,7 +64,7 @@
                 </tr>
                 <tr>
                     <td><strong>Status:</strong></td>
-                    <td>{{ ucfirst($invoice->status) }}</td>
+                    <td>{{ $invoice->status->label() }}</td>
                 </tr>
             </table>
 

@@ -219,7 +219,7 @@
                 @if ($service->invoice)
                     <div class="bg-blue-50 dark:bg-blue-950 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
                         <p class="text-sm text-blue-900 dark:text-blue-100">
-                            <strong>Invoice {{ str_pad($service->invoice->id, 5, '0', STR_PAD_LEFT) }}:</strong> KSH {{ number_format($service->invoice->total, 2) }} • Status: {{ ucfirst($service->invoice->status) }}
+                            <strong>Invoice {{ str_pad($service->invoice->id, 5, '0', STR_PAD_LEFT) }}:</strong> KSH {{ number_format($service->invoice->total, 2) }} • Status: {{ $service->invoice->status->label() }}
                         </p>
                         <a href="{{ route('customer.invoices.index') }}" class="text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 mt-2 inline-block">
                             View Invoice →
