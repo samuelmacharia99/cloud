@@ -67,7 +67,7 @@
                     </div>
                     <div class="flex justify-between">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Amount</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($invoice->total, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Due Date</span>
@@ -77,7 +77,7 @@
 
                 <div class="my-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                     <p class="text-2xl font-bold text-slate-900 dark:text-white">
-                        KES {{ number_format($invoice->total, 2) }}
+                        KSH {{ number_format($invoice->total, 2) }}
                     </p>
                 </div>
 

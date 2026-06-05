@@ -315,7 +315,7 @@ function domainSearchManager(customerMode = false) {
                             extension: extension,
                             price: unitPrice,
                             lineTotal: lineTotal,
-                            currency: pricingData.currency || 'KES',
+                            currency: pricingData.currency || 'KSH',
                             available: true,
                             retail: pricingData.retail || this.customerMode,
                         });

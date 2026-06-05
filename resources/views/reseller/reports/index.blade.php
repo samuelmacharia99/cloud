@@ -24,16 +24,16 @@
     <div class="grid md:grid-cols-3 gap-6">
         <div class="bg-white dark:bg-slate-900 rounded-2xl border p-6">
             <p class="text-sm text-slate-500">Earned margin (filtered)</p>
-            <p class="text-2xl font-bold text-emerald-600">KES {{ number_format($ledgerTotals['margin_total'] ?? 0, 2) }}</p>
+            <p class="text-2xl font-bold text-emerald-600">KSH {{ number_format($ledgerTotals['margin_total'] ?? 0, 2) }}</p>
             <p class="text-xs text-slate-500 mt-2">{{ $ledgerTotals['entry_count'] ?? 0 }} payment line(s)</p>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-2xl border p-6">
             <p class="text-sm text-slate-500">Customer retail collected</p>
-            <p class="text-2xl font-bold">KES {{ number_format($ledgerTotals['retail_total'] ?? 0, 2) }}</p>
+            <p class="text-2xl font-bold">KSH {{ number_format($ledgerTotals['retail_total'] ?? 0, 2) }}</p>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-2xl border p-6">
             <p class="text-sm text-slate-500">Outstanding billing</p>
-            <p class="text-2xl font-bold text-amber-600">KES {{ number_format($outstandingBalance, 2) }}</p>
+            <p class="text-2xl font-bold text-amber-600">KSH {{ number_format($outstandingBalance, 2) }}</p>
         </div>
     </div>
 
@@ -49,8 +49,8 @@
                 @forelse ($catalogMargins as $row)
                     <tr>
                         <td class="px-4 py-3">{{ $row['name'] }} @if($row['is_custom'])<span class="text-xs text-slate-500">(custom)</span>@endif</td>
-                        <td class="px-4 py-3 text-right">{{ $row['monthly_margin'] !== null ? 'KES '.number_format($row['monthly_margin'], 2) : '—' }}</td>
-                        <td class="px-4 py-3 text-right">{{ $row['yearly_margin'] !== null ? 'KES '.number_format($row['yearly_margin'], 2) : '—' }}</td>
+                        <td class="px-4 py-3 text-right">{{ $row['monthly_margin'] !== null ? 'KSH '.number_format($row['monthly_margin'], 2) : '—' }}</td>
+                        <td class="px-4 py-3 text-right">{{ $row['yearly_margin'] !== null ? 'KSH '.number_format($row['yearly_margin'], 2) : '—' }}</td>
                     </tr>
                 @empty
                     <tr><td colspan="3" class="px-4 py-8 text-center text-slate-500">No catalog products yet.</td></tr>
@@ -78,7 +78,7 @@
                             <td class="px-4 py-3">{{ $entry->created_at->format('M d, Y') }}</td>
                             <td class="px-4 py-3">{{ $entry->customer?->name }}</td>
                             <td class="px-4 py-3">{{ $entry->description }}</td>
-                            <td class="px-4 py-3 text-right text-emerald-600 font-medium">KES {{ number_format($entry->margin_amount, 2) }}</td>
+                            <td class="px-4 py-3 text-right text-emerald-600 font-medium">KSH {{ number_format($entry->margin_amount, 2) }}</td>
                         </tr>
                     @endforeach
                 </tbody>

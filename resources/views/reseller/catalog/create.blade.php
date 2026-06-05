@@ -80,8 +80,8 @@
                             <div>
                                 <label for="monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
-                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                    <input type="number" id="monthly_price" name="monthly_price" value="{{ old('monthly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                    <input type="number" id="monthly_price" name="monthly_price" value="{{ old('monthly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                                 </div>
                                 @error('monthly_price')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -92,8 +92,8 @@
                             <div>
                                 <label for="yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
-                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                    <input type="number" id="yearly_price" name="yearly_price" value="{{ old('yearly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                    <input type="number" id="yearly_price" name="yearly_price" value="{{ old('yearly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                                 </div>
                                 @error('yearly_price')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -104,8 +104,8 @@
                             <div>
                                 <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
-                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                    <input type="number" id="setup_fee" name="setup_fee" value="{{ old('setup_fee') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                                    <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                    <input type="number" id="setup_fee" name="setup_fee" value="{{ old('setup_fee') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                                 </div>
                                 @error('setup_fee')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -143,11 +143,11 @@
                                     <p class="text-slate-600 dark:text-slate-400 mb-1">Your Cost (Wholesale)</p>
                                     <div class="space-y-1">
                                         <p class="font-medium text-slate-900 dark:text-white">
-                                            <span x-show="selectedProduct?.wholesale_monthly_price" x-text="'$' + parseFloat(selectedProduct?.wholesale_monthly_price || 0).toFixed(2) + '/mo'"></span>
+                                            <span x-show="selectedProduct?.wholesale_monthly_price" x-text="'KSH ' + parseFloat(selectedProduct?.wholesale_monthly_price || 0).toFixed(2) + '/mo'"></span>
                                             <span x-show="!selectedProduct?.wholesale_monthly_price">—</span>
                                         </p>
                                         <p class="font-medium text-slate-900 dark:text-white">
-                                            <span x-show="selectedProduct?.wholesale_yearly_price" x-text="'$' + parseFloat(selectedProduct?.wholesale_yearly_price || 0).toFixed(2) + '/yr'"></span>
+                                            <span x-show="selectedProduct?.wholesale_yearly_price" x-text="'KSH ' + parseFloat(selectedProduct?.wholesale_yearly_price || 0).toFixed(2) + '/yr'"></span>
                                             <span x-show="!selectedProduct?.wholesale_yearly_price">—</span>
                                         </p>
                                     </div>
@@ -232,8 +232,8 @@
                         <div>
                             <label for="custom_monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
-                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_monthly_price" name="monthly_price" x-model.number="customMonthlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                <input type="number" id="custom_monthly_price" name="monthly_price" x-model.number="customMonthlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                             </div>
                             @error('monthly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -244,8 +244,8 @@
                         <div>
                             <label for="custom_yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
-                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_yearly_price" name="yearly_price" x-model.number="customYearlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                <input type="number" id="custom_yearly_price" name="yearly_price" x-model.number="customYearlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                             </div>
                             @error('yearly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -256,8 +256,8 @@
                         <div>
                             <label for="custom_setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
-                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                                <input type="number" id="custom_setup_fee" name="setup_fee" x-model.number="customSetupFee" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                                <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                                <input type="number" id="custom_setup_fee" name="setup_fee" x-model.number="customSetupFee" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                             </div>
                             @error('setup_fee')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -350,7 +350,7 @@ function catalogForm() {
                 return '';
             }
 
-            return '$' + Number(value).toFixed(2);
+            return 'KSH ' + Number(value).toFixed(2);
         },
         formatPercent(value) {
             if (value === null || value === undefined || Number.isNaN(Number(value))) {

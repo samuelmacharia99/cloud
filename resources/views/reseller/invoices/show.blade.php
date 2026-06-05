@@ -282,8 +282,8 @@
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
                                     </td>
                                     <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KES {{ number_format($item->unit_price, 2) }}</td>
-                                    <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($item->amount, 2) }}</td>
+                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
+                                    <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -296,26 +296,26 @@
                 <div class="w-full md:w-80">
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-2">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Subtotal</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($invoice->subtotal, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->subtotal, 2) }}</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-3">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Tax</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($invoice->tax, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->tax, 2) }}</span>
                     </div>
                     <div class="flex justify-between py-3 bg-purple-50 dark:bg-purple-900/20 px-3 rounded">
                         <span class="text-base font-bold text-slate-900 dark:text-white">Total</span>
-                        <span class="text-lg font-bold text-slate-900 dark:text-white">KES {{ number_format($invoice->total, 2) }}</span>
+                        <span class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</span>
                     </div>
                     @if((float) $invoice->wallet_amount_applied > 0)
                     <div class="flex justify-between py-2 mt-2 text-emerald-700 dark:text-emerald-300">
                         <span class="text-sm">Wallet Applied</span>
-                        <span class="text-sm font-semibold">- KES {{ number_format($invoice->wallet_amount_applied, 2) }}</span>
+                        <span class="text-sm font-semibold">- KSH {{ number_format($invoice->wallet_amount_applied, 2) }}</span>
                     </div>
                     @endif
                     @if(in_array($invoice->status->value, ['unpaid', 'overdue']))
                     <div class="flex justify-between py-3 mt-2 bg-purple-100 dark:bg-purple-900/40 px-3 rounded">
                         <span class="text-base font-bold text-slate-900 dark:text-white">Amount Due</span>
-                        <span class="text-lg font-bold text-purple-700 dark:text-purple-300">KES {{ number_format($amountDue, 2) }}</span>
+                        <span class="text-lg font-bold text-purple-700 dark:text-purple-300">KSH {{ number_format($amountDue, 2) }}</span>
                     </div>
                     @endif
                 </div>
@@ -360,7 +360,7 @@
                             @foreach ($invoice->payments as $payment)
                                 <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded">
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($payment->amount, 2) }}</p>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</p>
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() }} • {{ $payment->created_at->format('M d, Y') }}</p>
                                     </div>
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
@@ -403,7 +403,7 @@
             <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 p-4">
                 <div class="flex items-center justify-between mb-3">
                     <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
-                    <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES <span x-text="walletBalance.toFixed(2)"></span></p>
+                    <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KSH <span x-text="walletBalance.toFixed(2)"></span></p>
                 </div>
                 <template x-if="walletBalance > 0 && amountDue > 0">
                     <label class="flex items-start gap-3 cursor-pointer">
@@ -411,7 +411,7 @@
                         <span class="text-sm text-slate-700 dark:text-slate-300">
                             Apply wallet balance
                             <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyWallet">
-                                KES <span x-text="walletToApply.toFixed(2)"></span> from wallet · Pay KES <span x-text="payableAmount.toFixed(2)"></span> via selected method
+                                KSH <span x-text="walletToApply.toFixed(2)"></span> from wallet · Pay KSH <span x-text="payableAmount.toFixed(2)"></span> via selected method
                             </span>
                         </span>
                     </label>

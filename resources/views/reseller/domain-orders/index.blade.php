@@ -73,7 +73,7 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Expires: {{ $order->expires_at->format('M d') }}</p>
                                 @endif
                             </td>
-                            <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($order->wholesale_amount, 2) }}</td>
+                            <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($order->wholesale_amount, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->created_at->format('M d, Y') }}</td>
                             <td class="px-6 py-4 text-right">
                                 <div class="flex items-center justify-end gap-2">

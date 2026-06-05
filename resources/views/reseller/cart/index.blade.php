@@ -53,12 +53,12 @@
                                 <div class="flex items-center gap-6">
                                     <div class="text-right">
                                         <p class="text-sm text-slate-600 dark:text-slate-400">Unit Price</p>
-                                        <p class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($item['price'], 2) }}</p>
+                                        <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['price'], 2) }}</p>
                                     </div>
 
                                     <div class="text-right">
                                         <p class="text-sm text-slate-600 dark:text-slate-400">Total</p>
-                                        <p class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($item['total'], 2) }}</p>
+                                        <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
                                     </div>
 
                                     <form method="POST" action="{{ route('reseller.cart.remove', $key) }}" data-confirm='Remove this item?'>
@@ -85,19 +85,19 @@
                     <div class="space-y-3 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">
                         <div class="flex justify-between items-center">
                             <span class="text-slate-600 dark:text-slate-400">Subtotal</span>
-                            <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($subtotal, 2) }}</span>
+                            <span class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($subtotal, 2) }}</span>
                         </div>
 
                         @if($taxEnabled)
                             <div class="flex justify-between items-center">
                                 <span class="text-slate-600 dark:text-slate-400">Tax ({{ $taxRate }}%)</span>
-                                <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($tax, 2) }}</span>
+                                <span class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($tax, 2) }}</span>
                             </div>
                         @endif
 
                         <div class="flex justify-between items-center pt-3">
                             <span class="text-lg font-semibold text-slate-900 dark:text-white">Total</span>
-                            <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KES {{ number_format($total, 2) }}</span>
+                            <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KSH {{ number_format($total, 2) }}</span>
                         </div>
                     </div>
 

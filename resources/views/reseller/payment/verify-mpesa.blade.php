@@ -15,7 +15,7 @@
             </div>
 
             <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Verify Your M-Pesa Payment</h1>
-            <p class="text-slate-600 dark:text-slate-400 mb-4">Invoice #{{ $invoice->invoice_number }} - KES {{ number_format($invoice->total, 2) }}</p>
+            <p class="text-slate-600 dark:text-slate-400 mb-4">Invoice #{{ $invoice->invoice_number }} - KSH {{ number_format($invoice->total, 2) }}</p>
 
             <div class="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-4 mb-6">
                 <p class="text-sm text-purple-900 dark:text-purple-100 mb-2">

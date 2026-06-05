@@ -60,7 +60,7 @@
         @if($wallet->isLowBalance())
         <div class="mt-6 p-4 bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg">
             <p class="text-amber-800 dark:text-amber-200 text-sm">
-                <strong>Low Balance Alert:</strong> Your wallet balance is below KES {{ number_format($wallet->low_balance_threshold, 2) }}. Top up to process domain orders.
+                <strong>Low Balance Alert:</strong> Your wallet balance is below KSH {{ number_format($wallet->low_balance_threshold, 2) }}. Top up to process domain orders.
             </p>
         </div>
         @endif
@@ -104,9 +104,9 @@
                 <div class="space-y-4">
                     <!-- Amount -->
                     <div>
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KES)</label>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (KSH)</label>
                         <input type="number" name="amount" min="5" max="50000" step="1" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white">
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KES 5 | Maximum: KES 50,000</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Minimum: KSH 5 | Maximum: KSH 50,000</p>
                     </div>
 
                     <!-- Payment Method -->
@@ -206,9 +206,9 @@
                             </td>
                             <td class="px-6 py-3 text-sm text-slate-900 dark:text-white">{{ $transaction->description }}</td>
                             <td class="px-6 py-3 text-right text-sm font-medium {{ $transaction->type === 'domain_debit' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
-                                {{ $transaction->type === 'domain_debit' ? '-' : '+' }}KES {{ number_format($transaction->amount, 2) }}
+                                {{ $transaction->type === 'domain_debit' ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
                             </td>
-                            <td class="px-6 py-3 text-right text-sm text-slate-900 dark:text-white">KES {{ number_format($transaction->balance_after, 2) }}</td>
+                            <td class="px-6 py-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($transaction->balance_after, 2) }}</td>
                             <td class="px-6 py-3 text-sm text-slate-600 dark:text-slate-400">{{ $transaction->created_at->format('M d, Y') }}</td>
                         </tr>
                     @empty

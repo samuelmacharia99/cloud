@@ -63,7 +63,7 @@
                                         <span class="text-slate-400">—</span>
                                     @else
                                         @if($item->adminProduct?->wholesale_monthly_price)
-                                            ${{ number_format($item->adminProduct->wholesale_monthly_price, 2) }}/mo
+                                            KSH {{ number_format($item->adminProduct->wholesale_monthly_price, 2) }}/mo
                                         @else
                                             <span class="text-slate-400">—</span>
                                         @endif
@@ -71,7 +71,7 @@
                                 </td>
                                 <td class="px-6 py-4 text-sm text-right text-slate-900 dark:text-white font-medium">
                                     @if($item->monthly_price)
-                                        ${{ number_format($item->monthly_price, 2) }}/mo
+                                        KSH {{ number_format($item->monthly_price, 2) }}/mo
                                     @else
                                         <span class="text-slate-400">—</span>
                                     @endif
@@ -79,7 +79,7 @@
                                 <td class="px-6 py-4 text-sm text-right">
                                     @if($item->getMonthlyMargin() !== null)
                                         <span class="text-emerald-600 dark:text-emerald-400 font-medium">
-                                            ${{ number_format($item->getMonthlyMargin(), 2) }}
+                                            KSH {{ number_format($item->getMonthlyMargin(), 2) }}
                                         </span>
                                         <br>
                                         <span class="text-emerald-600 dark:text-emerald-400 text-xs">

@@ -51,7 +51,7 @@
                 @isset($walletBalance)
                     <a href="{{ route('reseller.wallet.index') }}" class="text-right block px-4 py-3 rounded-xl bg-white/10 hover:bg-white/20 transition">
                         <p class="text-xs text-purple-200">Wallet balance</p>
-                        <p class="text-xl font-bold">{{ $walletCurrency ?? 'KES' }} {{ number_format($walletBalance, 2) }}</p>
+                        <p class="text-xl font-bold">{{ $walletCurrency ?? 'KSH' }} {{ number_format($walletBalance, 2) }}</p>
                         @if ($walletIsLow ?? false)
                             <p class="text-xs text-amber-200 mt-1">Low balance — top up soon</p>
                         @endif
@@ -91,12 +91,12 @@
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Collected revenue</p>
-            <p class="text-3xl font-bold text-emerald-600 mt-2">KES {{ number_format($totalRevenue, 2) }}</p>
+            <p class="text-3xl font-bold text-emerald-600 mt-2">KSH {{ number_format($totalRevenue, 2) }}</p>
             <p class="text-xs text-slate-500 mt-4">Paid customer invoices</p>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Outstanding</p>
-            <p class="text-3xl font-bold text-amber-600 mt-2">KES {{ number_format($outstandingBalance, 2) }}</p>
+            <p class="text-3xl font-bold text-amber-600 mt-2">KSH {{ number_format($outstandingBalance, 2) }}</p>
             <p class="text-xs text-slate-500 mt-4">Remaining on unpaid invoices</p>
         </div>
     </div>
@@ -135,7 +135,7 @@
                             <p class="text-xs text-slate-500">{{ $invoice->user?->name }}</p>
                         </div>
                         <div class="text-right">
-                            <p class="font-semibold">KES {{ number_format($invoice->total, 2) }}</p>
+                            <p class="font-semibold">KSH {{ number_format($invoice->total, 2) }}</p>
                             <x-status-badge :status="$invoice->status" type="invoice" />
                         </div>
                     </a>
@@ -190,15 +190,15 @@
                     </div>
                     @if ($marginSummary['avg_monthly_margin'] !== null)
                         <p class="text-sm text-slate-600">Avg catalog margin / mo</p>
-                        <p class="text-xl font-bold text-emerald-600">KES {{ number_format($marginSummary['avg_monthly_margin'], 2) }}</p>
+                        <p class="text-xl font-bold text-emerald-600">KSH {{ number_format($marginSummary['avg_monthly_margin'], 2) }}</p>
                     @endif
                     <p class="text-sm text-slate-600 mt-3">Domain orders margin (30d)</p>
-                    <p class="text-lg font-semibold">KES {{ number_format($marginSummary['domain_margin_30d'] ?? 0, 2) }}</p>
+                    <p class="text-lg font-semibold">KSH {{ number_format($marginSummary['domain_margin_30d'] ?? 0, 2) }}</p>
                     @if (!empty($ledgerMargin30d['margin_total']))
                         <p class="text-sm text-slate-600 mt-3">Earned from payments (30d)</p>
-                        <p class="text-lg font-semibold text-emerald-600">KES {{ number_format($ledgerMargin30d['margin_total'], 2) }}</p>
+                        <p class="text-lg font-semibold text-emerald-600">KSH {{ number_format($ledgerMargin30d['margin_total'], 2) }}</p>
                     @endif
-                    <p class="text-xs text-slate-500 mt-2">Platform commission (display only): KES {{ number_format($totalCommission, 2) }} at {{ number_format($commissionRate, 1) }}%</p>
+                    <p class="text-xs text-slate-500 mt-2">Platform commission (display only): KSH {{ number_format($totalCommission, 2) }} at {{ number_format($commissionRate, 1) }}%</p>
                 </div>
             @endif
 
@@ -239,7 +239,7 @@
                 <div class="flex items-end gap-2 h-20 mt-4">
                     @foreach ($monthlyRevenue ?? [] as $amount)
                         @php $height = ($amount > 0 && max($monthlyRevenue) > 0) ? max(8, ($amount / max($monthlyRevenue)) * 100) : 8; @endphp
-                        <div class="flex-1 bg-purple-500/80 rounded-t" style="height: {{ $height }}%" title="KES {{ number_format($amount, 0) }}"></div>
+                        <div class="flex-1 bg-purple-500/80 rounded-t" style="height: {{ $height }}%" title="KSH {{ number_format($amount, 0) }}"></div>
                     @endforeach
                 </div>
             </div>

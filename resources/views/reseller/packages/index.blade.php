@@ -156,7 +156,7 @@
                 <div class="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
                     <p class="text-sm text-slate-600 dark:text-slate-400">Price</p>
                     <p class="text-3xl font-bold text-slate-900 dark:text-white mt-1">
-                        Ksh {{ number_format($package->price, 0) }}
+                        KSH {{ number_format($package->price, 0) }}
                         <span class="text-lg text-slate-600 dark:text-slate-400 font-normal">/{{ $billingCycle === 'monthly' ? 'mo' : 'yr' }}</span>
                     </p>
                 </div>
@@ -196,7 +196,7 @@
                         Cannot Downgrade
                     </button>
                 @else
-                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="You will be charged Ksh {{ number_format($package->price, 0) }} for this plan. Continue?" data-confirm-title="Confirm subscription">
+                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="You will be charged KSH {{ number_format($package->price, 0) }} for this plan. Continue?" data-confirm-title="Confirm subscription">
                         @csrf
                         <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
                             {{ $user->resellerPackage ? 'Upgrade & pay' : 'Subscribe & pay' }}

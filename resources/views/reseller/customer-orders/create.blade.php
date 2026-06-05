@@ -26,7 +26,7 @@
             <label class="block text-sm font-medium mb-2">Catalog product</label>
             <select name="reseller_product_id" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800">
                 @forelse ($products as $product)
-                    <option value="{{ $product->id }}">{{ $product->name }} — mo KES {{ number_format($product->monthly_price ?? 0, 2) }}</option>
+                    <option value="{{ $product->id }}">{{ $product->name }} — mo KSH {{ number_format($product->monthly_price ?? 0, 2) }}</option>
                 @empty
                     <option value="">No active catalog items</option>
                 @endforelse

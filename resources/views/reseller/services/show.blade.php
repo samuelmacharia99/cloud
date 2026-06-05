@@ -35,7 +35,7 @@
             <p class="text-sm">Cycle: {{ ucfirst($service->billing_cycle ?? 'n/a') }}</p>
             <p class="text-sm">Next due: {{ $service->next_due_date?->format('M d, Y') ?? 'N/A' }}</p>
             @if ($service->custom_price)
-                <p class="text-sm">Retail price: KES {{ number_format($service->custom_price, 2) }}</p>
+                <p class="text-sm">Retail price: KSH {{ number_format($service->custom_price, 2) }}</p>
             @endif
             @if ($service->invoice)
                 <a href="{{ route('reseller.customer-invoices.show', $service->invoice) }}" class="text-sm text-purple-600">Invoice →</a>

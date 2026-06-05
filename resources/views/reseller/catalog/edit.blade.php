@@ -77,7 +77,7 @@
                             <p class="text-xs font-semibold text-blue-900 dark:text-blue-300 uppercase tracking-wide mb-2">Based on Admin Product</p>
                             <p class="text-sm font-medium text-blue-900 dark:text-blue-300">{{ $catalogItem->adminProduct?->name }}</p>
                             <p class="text-xs text-blue-800 dark:text-blue-400 mt-2">
-                                Wholesale: <span class="font-medium">${{ number_format($catalogItem->adminProduct?->wholesale_monthly_price, 2) }}/mo</span>
+                                Wholesale: <span class="font-medium">KSH {{ number_format($catalogItem->adminProduct?->wholesale_monthly_price, 2) }}/mo</span>
                             </p>
                         </div>
                     @endif
@@ -97,8 +97,8 @@
                     <div>
                         <label for="monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <div class="relative">
-                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                            <input type="number" id="monthly_price" name="monthly_price" value="{{ old('monthly_price', $catalogItem->monthly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                            <input type="number" id="monthly_price" name="monthly_price" value="{{ old('monthly_price', $catalogItem->monthly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                         </div>
                         @error('monthly_price')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -109,8 +109,8 @@
                     <div>
                         <label for="yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <div class="relative">
-                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                            <input type="number" id="yearly_price" name="yearly_price" value="{{ old('yearly_price', $catalogItem->yearly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                            <input type="number" id="yearly_price" name="yearly_price" value="{{ old('yearly_price', $catalogItem->yearly_price) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                         </div>
                         @error('yearly_price')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -121,8 +121,8 @@
                     <div>
                         <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <div class="relative">
-                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">$</span>
-                            <input type="number" id="setup_fee" name="setup_fee" value="{{ old('setup_fee', $catalogItem->setup_fee) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-7 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                            <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
+                            <input type="number" id="setup_fee" name="setup_fee" value="{{ old('setup_fee', $catalogItem->setup_fee) }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                         </div>
                         @error('setup_fee')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -134,7 +134,7 @@
                         <div class="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                             <p class="text-xs font-semibold text-emerald-900 dark:text-emerald-300 uppercase tracking-wide mb-2">Your Margin</p>
                             <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                                ${{ number_format($catalogItem->getMonthlyMargin(), 2) }} ({{ number_format($catalogItem->getMonthlyMarginPercent(), 1) }}%)
+                                KSH {{ number_format($catalogItem->getMonthlyMargin(), 2) }} ({{ number_format($catalogItem->getMonthlyMarginPercent(), 1) }}%)
                             </p>
                         </div>
                     @endif

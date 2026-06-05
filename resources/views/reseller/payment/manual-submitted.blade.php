@@ -95,7 +95,7 @@
 
                     <div class="flex justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Amount</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($payment->amount, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</span>
                     </div>
 
                     <div class="flex justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">

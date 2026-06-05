@@ -95,7 +95,7 @@
                             <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Monthly</p>
                             <p class="text-2xl font-bold text-slate-900 dark:text-white">
                                 @if($catalogItem->monthly_price)
-                                    ${{ number_format($catalogItem->monthly_price, 2) }}
+                                    KSH {{ number_format($catalogItem->monthly_price, 2) }}
                                 @else
                                     <span class="text-slate-400">—</span>
                                 @endif
@@ -107,7 +107,7 @@
                             <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Yearly</p>
                             <p class="text-2xl font-bold text-slate-900 dark:text-white">
                                 @if($catalogItem->yearly_price)
-                                    ${{ number_format($catalogItem->yearly_price, 2) }}
+                                    KSH {{ number_format($catalogItem->yearly_price, 2) }}
                                 @else
                                     <span class="text-slate-400">—</span>
                                 @endif
@@ -120,9 +120,9 @@
                         <p class="text-xs font-medium text-slate-600 dark:text-slate-400 uppercase tracking-wide mb-2">Setup Fee</p>
                         <p class="text-xl font-bold text-slate-900 dark:text-white">
                             @if($catalogItem->setup_fee)
-                                ${{ number_format($catalogItem->setup_fee, 2) }}
+                                KSH {{ number_format($catalogItem->setup_fee, 2) }}
                             @else
-                                $0.00
+                                KSH 0.00
                             @endif
                         </p>
                     </div>
@@ -147,7 +147,7 @@
                             <p class="text-slate-600 dark:text-slate-400 mb-1">Wholesale Monthly</p>
                             <p class="font-medium text-slate-900 dark:text-white">
                                 @if($catalogItem->adminProduct?->wholesale_monthly_price)
-                                    ${{ number_format($catalogItem->adminProduct->wholesale_monthly_price, 2) }}
+                                    KSH {{ number_format($catalogItem->adminProduct->wholesale_monthly_price, 2) }}
                                 @else
                                     —
                                 @endif
@@ -158,7 +158,7 @@
                             <p class="text-slate-600 dark:text-slate-400 mb-1">Wholesale Yearly</p>
                             <p class="font-medium text-slate-900 dark:text-white">
                                 @if($catalogItem->adminProduct?->wholesale_yearly_price)
-                                    ${{ number_format($catalogItem->adminProduct->wholesale_yearly_price, 2) }}
+                                    KSH {{ number_format($catalogItem->adminProduct->wholesale_yearly_price, 2) }}
                                 @else
                                     —
                                 @endif
@@ -177,7 +177,7 @@
                                 <div>
                                     <p class="text-emerald-700 dark:text-emerald-400 mb-1">Monthly Margin</p>
                                     <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                                        ${{ number_format($catalogItem->getMonthlyMargin(), 2) }}
+                                        KSH {{ number_format($catalogItem->getMonthlyMargin(), 2) }}
                                     </p>
                                     <p class="text-xs text-emerald-700 dark:text-emerald-400">
                                         {{ number_format($catalogItem->getMonthlyMarginPercent(), 1) }}% markup
@@ -189,7 +189,7 @@
                                 <div>
                                     <p class="text-emerald-700 dark:text-emerald-400 mb-1">Yearly Margin</p>
                                     <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                                        ${{ number_format($catalogItem->getYearlyMargin(), 2) }}
+                                        KSH {{ number_format($catalogItem->getYearlyMargin(), 2) }}
                                     </p>
                                     <p class="text-xs text-emerald-700 dark:text-emerald-400">
                                         {{ number_format($catalogItem->getYearlyMarginPercent(), 1) }}% markup

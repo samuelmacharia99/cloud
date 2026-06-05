@@ -64,7 +64,7 @@
                                 </p>
                             </div>
                             <div class="text-right">
-                                <p class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($item['total'], 2) }}</p>
+                                <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
                             </div>
                         </div>
                     @endforeach
@@ -112,21 +112,21 @@
                 <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <div class="flex items-center justify-between mb-3">
                         <p class="text-sm font-medium text-emerald-900 dark:text-emerald-200">Wallet Balance</p>
-                        <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES {{ number_format($wallet->balance, 2) }}</p>
+                        <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KSH {{ number_format($wallet->balance, 2) }}</p>
                     </div>
                     <label class="flex items-start gap-3 cursor-pointer">
                         <input type="checkbox" name="apply_wallet" value="1" x-model="applyWallet" class="mt-1 rounded border-slate-300 text-purple-600 focus:ring-purple-500">
                         <span class="text-sm text-slate-700 dark:text-slate-300">
                             Apply wallet balance to this order
                             <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyWallet">
-                                Up to KES {{ number_format($walletApplicable, 2) }} will be used from your wallet.
+                                Up to KSH {{ number_format($walletApplicable, 2) }} will be used from your wallet.
                             </span>
                         </span>
                     </label>
                 </div>
                 @elseif(!($isCustomerCheckout ?? false))
                 <div class="mb-6 p-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg">
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Wallet balance: <strong class="text-slate-900 dark:text-white">KES 0.00</strong>. <a href="{{ route('reseller.wallet.index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Top up your wallet</a> to pay from balance.</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Wallet balance: <strong class="text-slate-900 dark:text-white">KSH 0.00</strong>. <a href="{{ route('reseller.wallet.index') }}" class="text-purple-600 dark:text-purple-400 hover:underline">Top up your wallet</a> to pay from balance.</p>
                 </div>
                 @endif
 
@@ -161,29 +161,29 @@
                 <div class="space-y-3 mb-6 border-b border-slate-200 dark:border-slate-700 pb-6">
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600 dark:text-slate-400">Subtotal</span>
-                        <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($subtotal, 2) }}</span>
+                        <span class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($subtotal, 2) }}</span>
                     </div>
 
                     @if($taxEnabled)
                         <div class="flex justify-between items-center">
                             <span class="text-slate-600 dark:text-slate-400">Tax ({{ $taxRate }}%)</span>
-                            <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($tax, 2) }}</span>
+                            <span class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($tax, 2) }}</span>
                         </div>
                     @endif
 
                     <div class="flex justify-between items-center">
                         <span class="text-slate-600 dark:text-slate-400">Order Total</span>
-                        <span class="font-semibold text-slate-900 dark:text-white">KES {{ number_format($total, 2) }}</span>
+                        <span class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($total, 2) }}</span>
                     </div>
 
                     <div class="flex justify-between items-center text-emerald-700 dark:text-emerald-300" x-show="walletApplied > 0" x-cloak>
                         <span>Wallet Applied</span>
-                        <span class="font-semibold">- KES <span x-text="walletApplied.toFixed(2)"></span></span>
+                        <span class="font-semibold">- KSH <span x-text="walletApplied.toFixed(2)"></span></span>
                     </div>
 
                     <div class="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-700">
                         <span class="text-lg font-semibold text-slate-900 dark:text-white">Amount Due</span>
-                        <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KES <span x-text="amountDue.toFixed(2)"></span></span>
+                        <span class="text-2xl font-bold text-purple-600 dark:text-purple-400">KSH <span x-text="amountDue.toFixed(2)"></span></span>
                     </div>
                 </div>
 

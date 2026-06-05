@@ -52,7 +52,7 @@ class ResellerWallet extends Model
 
     public function needsLowBalanceAlert(): bool
     {
-        if (!$this->isLowBalance()) {
+        if (! $this->isLowBalance()) {
             return false;
         }
 
@@ -65,6 +65,8 @@ class ResellerWallet extends Model
 
     public function getFormattedBalance(): string
     {
-        return "{$this->currency} " . number_format($this->balance, 2);
+        $label = $this->currency === 'KES' ? 'KSH' : $this->currency;
+
+        return "{$label} ".number_format($this->balance, 2);
     }
 }

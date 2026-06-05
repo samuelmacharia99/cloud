@@ -61,15 +61,16 @@ class AppServiceProvider extends ServiceProvider
 
     private function shareResellerWalletData(): void
     {
-        View::composer(['layouts.reseller', 'dashboard.reseller'], function ($view) {
+        View::composer(['layouts.reseller', 'dashboard.reseller', 'reseller.*'], function ($view) {
             if (! auth()->check() || ! auth()->user()->is_reseller) {
                 return;
             }
 
             $wallet = auth()->user()->wallet;
+            $view->with('resellerCurrency', 'KSH');
             $view->with('walletBalance', $wallet?->balance ?? 0);
             $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
-            $view->with('walletCurrency', $wallet?->currency ?? 'KES');
+            $view->with('walletCurrency', 'KSH');
         });
     }
 
