@@ -179,6 +179,21 @@ class InvoiceController extends Controller
                 ]);
             });
 
+            $invoice->refresh();
+
+            try {
+                $result = $this->provisionServices($invoice);
+                \Log::info('Provisioning attempted after admin mark-as-paid', [
+                    'invoice_id' => $invoice->id,
+                    'result' => $result,
+                ]);
+            } catch (\Throwable $e) {
+                \Log::error('Provisioning after admin mark-as-paid failed', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return redirect()->back()
                 ->with('success', 'Invoice marked as paid successfully.');
         } catch (\Exception $e) {

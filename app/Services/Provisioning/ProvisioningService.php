@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Models\Domain;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\DomainActivationService;
 use App\Services\DomainTransferService;
 use App\Services\NotificationService;
 use App\Services\ResellerDirectAdminService;
@@ -40,7 +41,7 @@ class ProvisioningService
                 // Unknown driver - only allow for domain-type services (manual provisioning)
                 if ($service->product && $service->product->type === 'domain') {
                     $service->update(['status' => 'active']);
-                    $this->activateDomain($service);
+                    app(DomainActivationService::class)->activateFromService($service);
                 } else {
                     throw new \Exception("Unknown provisioning driver '{$driver}' for service type '{$service->product->type}'. Service requires a valid driver (directadmin, container, server).");
                 }
@@ -279,6 +280,8 @@ class ProvisioningService
                 if ($domainModel && $domainModel->isTransfer()) {
                     DomainTransferService::initiateTransfer($domainModel);
                 }
+            } elseif (! empty($meta['domain_id'])) {
+                app(DomainActivationService::class)->activateFromService($service->fresh());
             }
 
             \Log::info("Service {$service->id} provisioned on DirectAdmin", [
@@ -292,35 +295,5 @@ class ProvisioningService
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
         }
-    }
-
-    /**
-     * Activate a domain after payment is received
-     */
-    private function activateDomain(Service $service): void
-    {
-        $domainId = $service->service_meta['domain_id'] ?? null;
-        if (! $domainId) {
-            return;
-        }
-
-        $domain = Domain::find($domainId);
-        if (! $domain) {
-            return;
-        }
-
-        $years = $service->service_meta['years'] ?? 1;
-        $domain->update([
-            'status' => 'active',
-            'registered_at' => now(),
-            'expires_at' => now()->addYears($years),
-        ]);
-
-        \Log::info('Domain activated after payment', [
-            'domain_id' => $domain->id,
-            'domain_name' => $domain->name,
-            'service_id' => $service->id,
-            'expires_at' => $domain->expires_at,
-        ]);
     }
 }

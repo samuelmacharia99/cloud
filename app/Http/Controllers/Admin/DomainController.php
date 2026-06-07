@@ -7,6 +7,7 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\DomainRenewalOrder;
+use App\Services\DomainActivationService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
@@ -227,6 +228,10 @@ class DomainController extends Controller
             $validated['auto_renew'] = (bool) $request->has('auto_renew');
 
             $domain->update($validated);
+
+            if ($validated['status'] === 'active') {
+                app(DomainActivationService::class)->applyAdminActivation($domain->fresh(), $validated);
+            }
 
             \Log::info('Domain updated successfully', ['domain_id' => $domain->id]);
 
