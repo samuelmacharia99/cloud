@@ -1,4 +1,4 @@
-<aside class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto hidden md:flex flex-col">
+<aside id="sidebar" class="w-64 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
     <!-- Logo -->
     <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
         <div class="flex items-center gap-2">
@@ -13,7 +13,7 @@
     </div>
 
     <!-- Navigation -->
-    <nav class="flex-1 px-3 py-6 space-y-1">
+    <nav class="flex-1 px-3 py-6 space-y-1" @click="if (window.innerWidth < 768) sidebarOpen = false">
         <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('dashboard') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }}">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 4l4 2m-7-2l4-2"/>

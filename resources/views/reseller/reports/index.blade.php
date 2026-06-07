@@ -38,7 +38,8 @@
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl border overflow-hidden">
-        <div class="p-6 border-b"><h2 class="font-semibold">Catalog margin (your retail vs wholesale)</h2></div>
+        <div class="p-4 sm:p-6 border-b"><h2 class="font-semibold">Catalog margin (your retail vs wholesale)</h2></div>
+        <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead class="bg-slate-50 dark:bg-slate-800"><tr>
                 <th class="px-4 py-3 text-left">Product</th>
@@ -57,14 +58,16 @@
                 @endforelse
             </tbody>
         </table>
+        </div>
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl border overflow-hidden">
-        <div class="p-6 border-b flex justify-between items-center">
+        <div class="p-4 sm:p-6 border-b flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
             <h2 class="font-semibold">Margin ledger (from customer payments)</h2>
             <a href="{{ route('reseller.reports.export.margins', request()->only(['from','to'])) }}" class="text-sm text-purple-600">Export CSV</a>
         </div>
         @if ($ledgerEntries->count())
+            <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-slate-800"><tr>
                     <th class="px-4 py-3 text-left">Date</th>
@@ -83,6 +86,7 @@
                     @endforeach
                 </tbody>
             </table>
+            </div>
             <div class="p-4">{{ $ledgerEntries->links() }}</div>
         @else
             <p class="p-8 text-center text-slate-500">No margin recorded yet — entries appear when customer invoices are paid.</p>

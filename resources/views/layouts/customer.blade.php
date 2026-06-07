@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" x-data="{ dark: localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches), sidebarOpen: false }" :class="{ 'dark': dark }">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" x-data="{ dark: localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches), sidebarOpen: false }" @keydown.escape="sidebarOpen = false" :class="{ 'dark': dark }">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,7 +20,7 @@
     <body class="font-sans antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
         <div class="min-h-screen flex">
             <!-- Sidebar -->
-            <aside class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto hidden md:flex md:flex-col fixed h-screen md:static">
+            <aside class="w-64 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
                 <!-- Logo -->
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2 w-full">
@@ -39,7 +39,7 @@
                 </div>
 
                 <!-- Navigation -->
-                <nav class="flex-1 px-3 py-6 space-y-8">
+                <nav class="flex-1 px-3 py-6 space-y-8" @click="if (window.innerWidth < 768) sidebarOpen = false">
                     <!-- Dashboard -->
                     <div class="space-y-1">
                         <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('dashboard') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }}">
@@ -176,25 +176,24 @@
                 </div>
             </aside>
 
-            <!-- Mobile Sidebar Backdrop -->
-            <div x-show="sidebarOpen" class="fixed inset-0 bg-black/50 md:hidden z-40" @click="sidebarOpen = false"></div>
+            <div x-cloak x-show="sidebarOpen" class="fixed inset-0 bg-black/50 md:hidden z-40" @click="sidebarOpen = false"></div>
 
             <!-- Main Content -->
-            <div class="flex-1 md:ml-0 flex flex-col">
+            <div class="flex-1 flex flex-col min-w-0">
                 <!-- Top Navigation -->
-                <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-6">
+                <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 sm:px-6 min-w-0">
                     <!-- Left: Hamburger + Title -->
-                    <div class="flex items-center gap-4">
-                        <button class="md:hidden p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" @click="sidebarOpen = !sidebarOpen">
+                    <div class="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+                        <button type="button" class="md:hidden shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" @click="sidebarOpen = !sidebarOpen" aria-label="Open menu">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                             </svg>
                         </button>
-                        <h1 class="hidden sm:block text-lg font-semibold">@yield('title')</h1>
+                        <h1 class="text-base sm:text-lg font-semibold truncate sm:whitespace-normal">@yield('title')</h1>
                     </div>
 
                     <!-- Right: Actions + Dark Mode + Notifications + Profile -->
-                    <div class="flex items-center gap-4 ml-auto">
+                    <div class="flex items-center gap-2 sm:gap-4 ml-auto shrink-0">
                         <!-- Shopping Cart -->
                         <a href="{{ route('customer.cart.index') }}" class="relative p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
                             <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -272,7 +271,7 @@
 
                 @if (session('impersonating'))
                 <!-- Admin Impersonation Banner -->
-                <div class="h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex items-center px-6 justify-between">
+                <div class="min-h-12 py-3 sm:py-0 sm:h-12 bg-amber-50 dark:bg-amber-950 border-b border-amber-200 dark:border-amber-800 flex flex-col gap-3 sm:flex-row sm:items-center px-4 sm:px-6 sm:justify-between">
                     <div class="flex items-center gap-2">
                         <svg class="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12a9 9 0 11-18 0 9 9 0 0118 0m-.5 4.5h.01"/>
@@ -288,7 +287,7 @@
                 </div>
                 @elseif (session('impersonating_reseller'))
                 <!-- Reseller Impersonation Banner -->
-                <div class="h-12 bg-cyan-50 dark:bg-cyan-950 border-b border-cyan-200 dark:border-cyan-800 flex items-center px-6 justify-between">
+                <div class="min-h-12 py-3 sm:py-0 sm:h-12 bg-cyan-50 dark:bg-cyan-950 border-b border-cyan-200 dark:border-cyan-800 flex flex-col gap-3 sm:flex-row sm:items-center px-4 sm:px-6 sm:justify-between">
                     <div class="flex items-center gap-2">
                         <svg class="w-5 h-5 text-cyan-600 dark:text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
@@ -310,7 +309,7 @@
                     x-transition:leave="transition ease-in duration-300"
                     x-transition:leave-start="opacity-100 translate-y-0"
                     x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg">
+                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg">
                     <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -327,7 +326,7 @@
                     x-transition:leave="transition ease-in duration-300"
                     x-transition:leave-start="opacity-100 translate-y-0"
                     x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 rounded-lg">
+                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 rounded-lg">
                     <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 4v2m0-14a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
@@ -341,8 +340,8 @@
                 @endif
 
                 <!-- Page Content -->
-                <main class="flex-1 overflow-auto">
-                    <div class="px-6 py-8 max-w-7xl mx-auto w-full">
+                <main class="flex-1 overflow-auto min-w-0">
+                    <div class="px-4 py-6 sm:px-6 sm:py-8 max-w-7xl mx-auto w-full">
                         @yield('content')
                     </div>
                 </main>
