@@ -4,137 +4,74 @@
 
 @section('content')
 <div class="space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Domains</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your domain registrations</p>
-        </div>
-        <a href="{{ route('customer.domains.transfer-form') }}" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition inline-block">
-            Transfer Domain
-        </a>
-    </div>
+    <x-page-header title="My Domains" description="Register, transfer, renew, and manage DNS for your domains.">
+        <x-slot:actions>
+            <a href="{{ route('customer.domains.transfer-form') }}" class="btn-success">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                Transfer domain
+            </a>
+        </x-slot:actions>
+    </x-page-header>
 
-    <!-- Registered Domains Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div class="p-6 border-b border-slate-200 dark:border-slate-800">
-            <h2 class="text-lg font-bold text-slate-900 dark:text-white">My Registered Domains</h2>
-        </div>
-
+    <!-- Registered domains -->
+    <x-dashboard-section title="Registered domains" description="{{ $domains->count() }} domain(s) in your account">
         @if($domains->count() > 0)
-            <div class="overflow-x-auto">
-                <table class="w-full">
-                    <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+            <div class="ui-table-wrap">
+                <table class="ui-table">
+                    <thead>
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Domain</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Registered</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Expires</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Actions</th>
+                            <th>Domain</th>
+                            <th>Registered</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                            <th class="text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                    <tbody>
                         @foreach($domains as $domain)
-                            <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">
-                                    {{ $domain->name }}{{ $domain->extension }}
+                            <tr>
+                                <td>
+                                    <span class="font-semibold text-slate-900 dark:text-white font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</span>
                                 </td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
-                                    {{ $domain->registered_at?->format('M d, Y') ?? 'N/A' }}
-                                </td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
-                                    {{ $domain->expires_at?->format('M d, Y') ?? 'N/A' }}
-                                </td>
-                                <td class="px-6 py-4 text-sm">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium {{ $domain->status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' }}">
-                                        {{ ucfirst($domain->status) }}
+                                <td class="text-slate-600 dark:text-slate-400">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</td>
+                                <td>
+                                    <span class="{{ $domain->expires_at?->isPast() ? 'text-red-600 dark:text-red-400 font-medium' : '' }}">
+                                        {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
                                     </span>
                                 </td>
-                                <td class="px-6 py-4 text-sm">
-                                    <div x-data="{ open: false, showRenewal: false, years: 1 }" class="relative">
-                                        <!-- Menu Button -->
-                                        <button @click="open = !open" type="button" class="inline-flex items-center justify-center p-2 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                <path d="M10.5 1.5H9.5V3.5H10.5V1.5ZM10.5 8.5H9.5V10.5H10.5V8.5ZM10.5 15.5H9.5V17.5H10.5V15.5Z"/>
-                                            </svg>
+                                <td><x-domain-status-badge :status="$domain->status" /></td>
+                                <td class="text-right">
+                                    <div x-data="{ open: false, showRenewal: false, years: 1 }" class="relative inline-block text-left">
+                                        <button @click="open = !open" type="button" class="btn-ghost btn-sm" aria-label="Domain actions">
+                                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/></svg>
                                         </button>
-
-                                        <!-- Dropdown Menu -->
-                                        <div x-show="open" @click.outside="open = false; showRenewal = false" class="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden" style="display: none;">
-                                            <!-- Renew Option -->
-                                            <div x-show="!showRenewal" style="display: none;">
-                                                <button @click="showRenewal = true" type="button" class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
-                                                    <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                                    </svg>
-                                                    <div>
-                                                        <p class="font-medium text-slate-900 dark:text-white">Renew Domain</p>
-                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Extend registration</p>
-                                                    </div>
+                                        <div x-show="open" @click.outside="open = false; showRenewal = false" x-cloak
+                                            class="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                                            <div x-show="!showRenewal">
+                                                <button @click="showRenewal = true" type="button" class="w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition flex items-center gap-3 border-b border-slate-100 dark:border-slate-800">
+                                                    <span class="text-brand-600">↻</span>
+                                                    <span class="font-medium text-sm">Renew domain</span>
                                                 </button>
-
-                                                <!-- DNS Management Option -->
-                                                <a href="{{ route('customer.domains.dns.index', $domain) }}" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3 border-b border-slate-200 dark:border-slate-700">
-                                                    <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                                                    </svg>
-                                                    <div>
-                                                        <p class="font-medium text-slate-900 dark:text-white">DNS Management</p>
-                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Manage nameservers</p>
-                                                    </div>
-                                                </a>
-
-                                                <!-- View Details Option -->
-                                                <a href="{{ route('customer.domains.transfer-details', $domain->id) }}" onclick="event.preventDefault(); alert('Details view coming soon')" class="block w-full text-left px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center gap-3">
-                                                    <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                                    </svg>
-                                                    <div>
-                                                        <p class="font-medium text-slate-900 dark:text-white">View Details</p>
-                                                        <p class="text-xs text-slate-500 dark:text-slate-400">Domain information</p>
-                                                    </div>
-                                                </a>
+                                                <a href="{{ route('customer.domains.dns.index', $domain) }}" class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium border-b border-slate-100 dark:border-slate-800">DNS management</a>
                                             </div>
-
-                                            <!-- Renewal Period Selection -->
-                                            <div x-show="showRenewal" style="display: none;" class="p-4">
-                                                <button @click="showRenewal = false" type="button" class="flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white mb-4 text-sm font-medium transition">
-                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                                                    </svg>
-                                                    Back
-                                                </button>
-
-                                                <div class="mb-4">
-                                                    <label class="block text-sm font-semibold text-slate-900 dark:text-white mb-3">Select Renewal Period</label>
-                                                    <div class="space-y-2">
-                                                        <template x-for="period in [1, 2, 3, 5]" :key="period">
-                                                            <label class="flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition" :class="years == period ? 'bg-blue-50 dark:bg-blue-950 border-blue-300 dark:border-blue-600' : 'border-slate-200 dark:border-slate-600 hover:border-blue-300 dark:hover:border-blue-600'">
-                                                                <input type="radio" :value="period" x-model.number="years" class="w-4 h-4 text-blue-600">
-                                                                <span class="font-medium text-slate-900 dark:text-white" x-text="`${period} Year${period > 1 ? 's' : ''}`"></span>
-                                                            </label>
-                                                        </template>
-                                                    </div>
+                                            <div x-show="showRenewal" class="p-4">
+                                                <button @click="showRenewal = false" type="button" class="text-xs font-semibold text-slate-500 mb-3">← Back</button>
+                                                <p class="text-sm font-semibold mb-2">Renewal period</p>
+                                                <div class="space-y-2 mb-4">
+                                                    @foreach([1, 2, 3, 5] as $period)
+                                                        <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm" :class="years == {{ $period }} ? 'border-brand-400 bg-brand-50 dark:bg-brand-950/40' : 'border-slate-200 dark:border-slate-700'">
+                                                            <input type="radio" :value="{{ $period }}" x-model.number="years" class="text-brand-600">
+                                                            {{ $period }} year{{ $period > 1 ? 's' : '' }}
+                                                        </label>
+                                                    @endforeach
                                                 </div>
-
                                                 <button @click="
                                                     fetch('{{ route('customer.domains.initiate-renewal', $domain->id) }}', {
                                                         method: 'POST',
-                                                        headers: {
-                                                            'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
-                                                            'Content-Type': 'application/json'
-                                                        },
+                                                        headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Content-Type': 'application/json' },
                                                         body: JSON.stringify({ years: parseInt(years) })
-                                                    }).then(r => r.json()).then(data => {
-                                                        if (data.success) {
-                                                            window.location.href = data.redirect;
-                                                        } else {
-                                                            alert('Error: ' + data.message);
-                                                        }
-                                                    })
-                                                " type="button" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-                                                    Continue
-                                                </button>
+                                                    }).then(r => r.json()).then(data => { if (data.success) window.location.href = data.redirect; else alert(data.message); })
+                                                " type="button" class="btn-primary w-full btn-sm">Continue</button>
                                             </div>
                                         </div>
                                     </div>
@@ -145,109 +82,65 @@
                 </table>
             </div>
         @else
-            <div class="p-8 text-center">
-                <svg class="w-12 h-12 mx-auto text-slate-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-                </svg>
-                <p class="text-slate-500 dark:text-slate-400">You haven't registered any domains yet</p>
-            </div>
+            <x-empty-state
+                title="No domains yet"
+                description="Search and register a new domain, or transfer one you already own."
+                action-label="Transfer a domain"
+                :action-href="route('customer.domains.transfer-form')"
+                :icon="'<svg class=\"w-7 h-7\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1\"/></svg>'"
+            />
         @endif
-    </div>
+    </x-dashboard-section>
 
-    <!-- Domain Search & Register Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Register New Domain</h2>
+    <!-- Domain search -->
+    <div class="ui-card overflow-hidden">
+        <div class="ui-card-header">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Register a new domain</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Check availability and add to cart</p>
+        </div>
+        <div class="ui-card-body">
+            <div x-data="{ searchQuery: '', searching: false, results: [], showResults: false }" class="space-y-4">
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" x-model="searchQuery" placeholder="e.g. mybusiness.co.ke"
+                        @keyup.debounce.1200="if(searchQuery.length > 2) { searching = true; fetch(`{{ route('domains.search') }}?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()).then(d => { results = d.results; showResults = true; searching = false; }); } else { showResults = false; }"
+                        class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm" />
+                    <button type="button" @click="if(searchQuery.length > 0) { searching = true; fetch(`{{ route('domains.search') }}?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()).then(d => { results = d.results; showResults = true; searching = false; }); }"
+                        class="btn-primary shrink-0">
+                        <span x-show="!searching">Check availability</span>
+                        <span x-show="searching" x-cloak>Searching…</span>
+                    </button>
+                </div>
 
-        <div x-data="{ searchQuery: '', searching: false, results: [], showResults: false }" class="space-y-4">
-            <!-- Search Form -->
-            <div class="flex gap-2">
-                <input
-                    type="text"
-                    x-model="searchQuery"
-                    placeholder="Search for a domain (e.g., mysite.com)"
-                    @keyup.debounce.1500="
-                        if(searchQuery.length > 2) {
-                            searching = true;
-                            fetch(`{{ route('domains.search') }}?q=${encodeURIComponent(searchQuery)}`)
-                                .then(r => r.json())
-                                .then(data => {
-                                    results = data.results;
-                                    showResults = true;
-                                    searching = false;
-                                });
-                        } else {
-                            showResults = false;
-                        }
-                    "
-                    class="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-                <button
-                    type="button"
-                    @click="
-                        if(searchQuery.length > 0) {
-                            searching = true;
-                            fetch(`{{ route('domains.search') }}?q=${encodeURIComponent(searchQuery)}`)
-                                .then(r => r.json())
-                                .then(data => {
-                                    results = data.results;
-                                    showResults = true;
-                                    searching = false;
-                                });
-                        }
-                    "
-                    class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition"
-                >
-                    <span x-show="!searching">Check Availability</span>
-                    <span x-show="searching" class="inline-flex items-center gap-2">
-                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                        </svg>
-                        Searching...
-                    </span>
-                </button>
-            </div>
-
-            <!-- Results -->
-            <div x-show="showResults && results.length > 0" class="mt-6 space-y-3">
-                <h3 class="font-semibold text-slate-900 dark:text-white">Available Domains</h3>
-                <div class="grid gap-3">
+                <div x-show="showResults && results.length > 0" x-cloak class="space-y-3">
                     <template x-for="result in results" :key="`${result.domain}${result.extension}`">
-                        <div class="flex items-center justify-between p-4 rounded-lg border" :class="result.available ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border"
+                            :class="result.available ? 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60' : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'">
                             <div>
-                                <p class="font-semibold text-slate-900 dark:text-white" x-text="`${result.full_domain}`"></p>
-                                <p class="text-sm" :class="result.available ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'" x-text="result.available ? '✓ Available' : '✗ Taken'"></p>
+                                <p class="font-semibold text-slate-900 dark:text-white font-mono" x-text="result.full_domain"></p>
+                                <p class="text-sm mt-0.5" :class="result.available ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500'" x-text="result.available ? 'Available' : 'Taken'"></p>
                             </div>
-                            <div class="text-right">
-                                <p class="font-semibold text-slate-900 dark:text-white" x-text="`Ksh ${result.price.toLocaleString()}`"></p>
+                            <div class="flex items-center gap-3">
+                                <p class="font-bold text-slate-900 dark:text-white" x-text="`KES ${result.price.toLocaleString()}`"></p>
                                 <template x-if="result.available">
-                                    <form action="{{ route('customer.cart.add') }}" method="POST" class="mt-2">
+                                    <form action="{{ route('customer.cart.add') }}" method="POST" class="flex items-center gap-2">
                                         @csrf
                                         <input type="hidden" name="type" value="domain">
                                         <input type="hidden" name="domain" :value="result.domain">
                                         <input type="hidden" name="extension" :value="result.extension">
-                                        <select name="years" class="px-3 py-1 text-sm rounded border border-green-300 dark:border-green-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                                            <option value="1">1 year</option>
-                                            <option value="2">2 years</option>
-                                            <option value="3">3 years</option>
-                                            <option value="5">5 years</option>
+                                        <select name="years" class="text-sm rounded-lg border-slate-300 dark:border-slate-600 dark:bg-slate-800">
+                                            <option value="1">1 yr</option><option value="2">2 yr</option><option value="3">3 yr</option><option value="5">5 yr</option>
                                         </select>
-                                        <button type="submit" class="block w-full mt-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-sm rounded font-medium transition">
-                                            Add to Cart
-                                        </button>
+                                        <button type="submit" class="btn-success btn-sm">Add to cart</button>
                                     </form>
                                 </template>
                             </div>
                         </div>
                     </template>
                 </div>
-            </div>
 
-            <!-- No Results -->
-            <div x-show="showResults && results.length === 0 && !searching" class="text-center py-6 text-slate-500 dark:text-slate-400">
-                <p>No domains found matching your search</p>
+                <div x-show="showResults && results.length === 0 && !searching" x-cloak class="text-center py-8 text-sm text-slate-500">No matching domains found.</div>
             </div>
         </div>
     </div>
-
 </div>
 @endsection

@@ -4,118 +4,73 @@
 
 @section('content')
 <div class="space-y-6">
-    <!-- Header -->
-    <div class="flex items-center justify-between">
-        <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Services</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your active services and subscriptions.</p>
-        </div>
-        <a href="{{ route('customer.select-techstack') }}" class="inline-flex px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            Deploy New Service
-        </a>
-    </div>
+    <x-page-header title="My Services" description="Manage your active subscriptions, hosting, and containers.">
+        <x-slot:actions>
+            <a href="{{ route('customer.select-techstack') }}" class="btn-primary">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Deploy new service
+            </a>
+        </x-slot:actions>
+    </x-page-header>
 
-    <!-- Services Cards/Grid -->
     @if ($services->count() > 0)
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
             @foreach ($services as $service)
                 @php $canRenew = in_array($service->status->value, ['active', 'suspended']); @endphp
-                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 transition-colors flex flex-col">
-                    <!-- Clickable card body -->
-                    <a href="{{ route('customer.services.show', $service) }}" class="block p-6 flex-1">
-                        <!-- Header -->
-                        <div class="mb-4">
-                            <div class="flex items-start justify-between mb-2">
-                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ $service->product->name }}</h3>
+                <article class="ui-card ui-card-interactive flex flex-col overflow-hidden group">
+                    <a href="{{ route('customer.services.show', $service) }}" class="block p-5 sm:p-6 flex-1">
+                        <div class="flex items-start justify-between gap-3 mb-4">
+                            <div class="min-w-0">
+                                <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->product->name }}</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 capitalize">{{ str_replace('_', ' ', $service->product->type) }}</p>
                             </div>
-                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
+                            <x-status-badge :status="$service->status" type="service" />
                         </div>
 
-                        <!-- Status Badge -->
-                        <div class="mb-4">
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                @if($service->status->value === 'active')
-                                    bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                @elseif($service->status->value === 'pending')
-                                    bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                @elseif($service->status->value === 'provisioning')
-                                    bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                @elseif($service->status->value === 'suspended')
-                                    bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                                @elseif($service->status->value === 'terminated')
-                                    bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                @elseif($service->status->value === 'failed')
-                                    bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                @endif
-                            ">
-                                {{ ucfirst($service->status->value) }}
-                            </span>
-                        </div>
-
-                        <!-- Service Details -->
-                        <div class="space-y-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-                            <div class="flex justify-between items-center">
-                                <span class="text-xs text-slate-600 dark:text-slate-400">Service ID</span>
-                                <span class="text-sm font-medium text-slate-900 dark:text-white">#{{ $service->id }}</span>
+                        <dl class="space-y-2.5 text-sm border-t border-slate-100 dark:border-slate-800 pt-4">
+                            <div class="flex justify-between gap-2">
+                                <dt class="text-slate-500 dark:text-slate-400">Service ID</dt>
+                                <dd class="font-mono font-medium text-slate-900 dark:text-white">#{{ $service->id }}</dd>
                             </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-xs text-slate-600 dark:text-slate-400">Billing Cycle</span>
-                                <span class="text-sm font-medium text-slate-900 dark:text-white">{{ ucfirst($service->billing_cycle) }}</span>
+                            <div class="flex justify-between gap-2">
+                                <dt class="text-slate-500 dark:text-slate-400">Billing</dt>
+                                <dd class="font-medium capitalize">{{ $service->billing_cycle }}</dd>
                             </div>
-                            <div class="flex justify-between items-center">
-                                <span class="text-xs text-slate-600 dark:text-slate-400">Next Due</span>
-                                <span class="text-sm font-medium
-                                    @if($service->next_due_date && $service->next_due_date->isPast()) text-red-600 dark:text-red-400
+                            <div class="flex justify-between gap-2">
+                                <dt class="text-slate-500 dark:text-slate-400">Next due</dt>
+                                <dd class="font-medium
+                                    @if($service->next_due_date?->isPast()) text-red-600 dark:text-red-400
                                     @elseif($service->next_due_date && $service->next_due_date->diffInDays(now()) <= 7) text-amber-600 dark:text-amber-400
                                     @else text-slate-900 dark:text-white @endif">
                                     {{ $service->next_due_date?->format('M d, Y') ?? '—' }}
-                                </span>
+                                </dd>
                             </div>
-                        </div>
+                        </dl>
                     </a>
 
-                    <!-- Action Buttons — outside the link so clicks don't navigate -->
-                    <div class="px-6 py-4 flex gap-2">
-                        <a href="{{ route('customer.services.show', $service) }}"
-                           class="flex-1 px-3 py-2 text-xs font-medium text-center text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition">
-                            Manage
-                        </a>
-
+                    <div class="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex gap-2">
+                        <a href="{{ route('customer.services.show', $service) }}" class="btn-secondary flex-1 btn-sm">Manage</a>
                         @if($canRenew)
-                            <form method="POST"
-                                  action="{{ route('customer.services.renew', $service) }}"
-                                  class="flex-1"
-                                  data-confirm='Generate a renewal invoice for {{ addslashes($service->product->name) }}?\n\nYou will be taken to the payment page.'>
+                            <form method="POST" action="{{ route('customer.services.renew', $service) }}" class="flex-1"
+                                data-confirm="Generate a renewal invoice for {{ addslashes($service->product->name) }}?">
                                 @csrf
-                                <button type="submit"
-                                        class="w-full px-3 py-2 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition">
-                                    Renew
-                                </button>
+                                <button type="submit" class="btn-primary w-full btn-sm">Renew</button>
                             </form>
                         @else
-                            <button disabled
-                                    title="Renewal not available for {{ $service->status->value }} services"
-                                    class="flex-1 px-3 py-2 text-xs font-medium text-slate-400 dark:text-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg cursor-not-allowed">
-                                Renew
-                            </button>
+                            <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed" title="Renewal unavailable">Renew</button>
                         @endif
                     </div>
-                </div>
+                </article>
             @endforeach
         </div>
     @else
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
-            <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
-            </svg>
-            <p class="text-slate-600 dark:text-slate-400">You don't have any services yet</p>
-            <a href="{{ route('customer.select-techstack') }}" class="inline-block mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
-                Deploy Your First Service
-            </a>
-        </div>
+        <x-empty-state
+            title="No services yet"
+            description="Deploy hosting, containers, or other infrastructure in minutes."
+            action-label="Deploy your first service"
+            :action-href="route('customer.select-techstack')"
+            :icon="'<svg class=\"w-7 h-7\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" d=\"M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01\"/></svg>'"
+        />
     @endif
 </div>
 @endsection

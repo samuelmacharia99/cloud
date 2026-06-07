@@ -1,4 +1,4 @@
-@props(['status', 'type' => 'service'])
+@props(['status', 'type' => 'service', 'dot' => true])
 
 @php
     $enumClass = match($type) {
@@ -9,27 +9,25 @@
     };
 
     if (!$enumClass) {
-        // Fallback for non-enum types
         $styles = [
             'ticket' => [
-                'open' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-200',
-                'in_progress' => 'bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-200',
-                'on_hold' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-200',
-                'closed' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+                'open' => ['pill' => 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200', 'dot' => 'bg-blue-500'],
+                'in_progress' => ['pill' => 'bg-violet-100 dark:bg-violet-950/60 text-violet-700 dark:text-violet-200', 'dot' => 'bg-violet-500'],
+                'on_hold' => ['pill' => 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-200', 'dot' => 'bg-amber-500'],
+                'closed' => ['pill' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300', 'dot' => 'bg-slate-400'],
             ],
             'priority' => [
-                'low' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
-                'medium' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-200',
-                'high' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-200',
-                'urgent' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-200',
+                'low' => ['pill' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300', 'dot' => 'bg-slate-400'],
+                'medium' => ['pill' => 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-200', 'dot' => 'bg-blue-500'],
+                'high' => ['pill' => 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-200', 'dot' => 'bg-amber-500'],
+                'urgent' => ['pill' => 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-200', 'dot' => 'bg-red-500'],
             ],
         ];
 
         $statusStyles = $styles[$type] ?? [];
-        $style = $statusStyles[strtolower($status)] ?? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300';
+        $style = $statusStyles[strtolower($status)] ?? ['pill' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300', 'dot' => 'bg-slate-400'];
         $label = ucfirst(str_replace('_', ' ', $status));
     } else {
-        // Handle both enum instances and string/int values
         if (is_object($status) && method_exists($status, 'badge')) {
             $enum = $status;
         } else {
@@ -40,11 +38,11 @@
         }
 
         $colorMap = [
-            'success' => 'bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-200',
-            'danger' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-200',
-            'warning' => 'bg-yellow-100 dark:bg-yellow-950 text-yellow-700 dark:text-yellow-200',
-            'info' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-200',
-            'secondary' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+            'success' => ['pill' => 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-200', 'dot' => 'bg-emerald-500'],
+            'danger' => ['pill' => 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-200', 'dot' => 'bg-red-500'],
+            'warning' => ['pill' => 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-200', 'dot' => 'bg-amber-500'],
+            'info' => ['pill' => 'bg-brand-100 dark:bg-brand-950/60 text-brand-700 dark:text-brand-200', 'dot' => 'bg-brand-500'],
+            'secondary' => ['pill' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300', 'dot' => 'bg-slate-400'],
         ];
 
         $badge = $enum->badge();
@@ -53,6 +51,9 @@
     }
 @endphp
 
-<span {{ $attributes->merge(['class' => "inline-block px-3 py-1 rounded-full text-xs font-medium {$style}"]) }}>
+<span {{ $attributes->merge(['class' => "status-pill {$style['pill']}"]) }}>
+    @if($dot)
+        <span class="status-pill-dot {{ $style['dot'] }}"></span>
+    @endif
     {{ $label }}
 </span>

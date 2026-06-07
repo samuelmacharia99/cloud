@@ -11,16 +11,15 @@
         <link rel="icon" type="image/x-icon" href="{{ branding_asset_url($resellerBranding['favicon_url']) }}">
         @endisset
 
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+        @include('layouts.partials.fonts')
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     </head>
-    <body class="font-sans antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+    <body class="font-sans antialiased app-shell">
         <div class="min-h-screen flex">
             <!-- Sidebar -->
-            <aside class="w-64 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
+            <aside class="app-sidebar w-64 max-w-[85vw] overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
                 <!-- Logo -->
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2 w-full">
@@ -202,7 +201,7 @@
             <!-- Main Content -->
             <div class="flex-1 flex flex-col min-w-0">
                 <!-- Top Navigation -->
-                <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 sm:px-6 min-w-0">
+                <header class="app-header h-16 flex items-center px-4 sm:px-6 min-w-0">
                     <!-- Left: Hamburger + Title -->
                     <div class="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
                         <button type="button" class="md:hidden shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" @click="sidebarOpen = !sidebarOpen" aria-label="Open menu">
@@ -299,45 +298,11 @@
                 </div>
                 @endif
 
-                <!-- Flash Messages -->
-                @if (session('success'))
-                <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)"
-                    x-transition:leave="transition ease-in duration-300"
-                    x-transition:leave-start="opacity-100 translate-y-0"
-                    x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg">
-                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-sm font-medium flex-1">{{ session('success') }}</p>
-                    <button @click="show = false" class="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                @endif
-                @if (session('error'))
-                <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 7000)"
-                    x-transition:leave="transition ease-in duration-300"
-                    x-transition:leave-start="opacity-100 translate-y-0"
-                    x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 rounded-lg">
-                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 4v2m0-14a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-sm font-medium flex-1">{{ session('error') }}</p>
-                    <button @click="show = false" class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                @endif
+                <x-flash-messages />
 
                 <!-- Page Content -->
                 <main class="flex-1 overflow-auto min-w-0">
-                    <div class="px-4 py-6 sm:px-6 sm:py-8 max-w-7xl mx-auto w-full">
+                    <div class="page-enter px-4 py-6 sm:px-6 sm:py-8 max-w-7xl mx-auto w-full">
                         @yield('content')
                     </div>
                 </main>

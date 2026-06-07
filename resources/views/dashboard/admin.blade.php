@@ -9,15 +9,12 @@
 @section('content')
 <div class="space-y-8">
     <!-- Header -->
-    <div>
-        <h1 class="text-3xl font-bold text-slate-900">Dashboard</h1>
-        <p class="text-slate-600 mt-1">Welcome back! Here's your business overview.</p>
-    </div>
+    <x-admin-page-header title="Dashboard" description="Welcome back! Here's your business overview." />
 
     <!-- Primary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Total Customers -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Customers</p>
@@ -33,7 +30,7 @@
         </div>
 
         <!-- Active Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active Services</p>
@@ -49,7 +46,7 @@
         </div>
 
         <!-- Unpaid Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid Invoices</p>
@@ -65,7 +62,7 @@
         </div>
 
         <!-- Total Revenue -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Revenue</p>
@@ -84,7 +81,7 @@
     <!-- Secondary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Suspended Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Suspended Services</p>
@@ -100,7 +97,7 @@
         </div>
 
         <!-- Overdue Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Overdue Invoices</p>
@@ -116,7 +113,7 @@
         </div>
 
         <!-- Pending Payments -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Pending Payments</p>
@@ -132,7 +129,7 @@
         </div>
 
         <!-- Urgent Tickets -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Urgent Tickets</p>

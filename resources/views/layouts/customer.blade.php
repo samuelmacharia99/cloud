@@ -11,16 +11,15 @@
         <link rel="icon" type="image/x-icon" href="{{ branding_asset_url($resellerBranding['favicon_url']) }}">
         @endisset
 
-        <link rel="preconnect" href="https://fonts.bunny.net">
-        <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
+        @include('layouts.partials.fonts')
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
         <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     </head>
-    <body class="font-sans antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-white">
+    <body class="font-sans antialiased app-shell">
         <div class="min-h-screen flex">
             <!-- Sidebar -->
-            <aside class="w-64 max-w-[85vw] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
+            <aside class="app-sidebar w-64 max-w-[85vw] overflow-y-auto flex flex-col fixed inset-y-0 left-0 z-50 h-screen transform transition-transform duration-200 ease-out -translate-x-full md:translate-x-0 md:static md:z-auto md:flex-shrink-0" :class="{ 'translate-x-0': sidebarOpen }">
                 <!-- Logo -->
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2 w-full">
@@ -42,7 +41,7 @@
                 <nav class="flex-1 px-3 py-6 space-y-8" @click="if (window.innerWidth < 768) sidebarOpen = false">
                     <!-- Dashboard -->
                     <div class="space-y-1">
-                        <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('dashboard') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }}">
+                        <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('dashboard') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 4l4 2m-7-2l4-2"/>
                             </svg>
@@ -52,41 +51,41 @@
 
                     <!-- Services -->
                     <div class="space-y-2">
-                        <p class="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Services</p>
-                        <a href="{{ route('customer.services.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.services.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <p class="nav-section-label">Services</p>
+                        <a href="{{ route('customer.services.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.services.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
                             </svg>
                             <span class="text-sm font-medium">My Services</span>
                         </a>
                         @if (auth()->user()->reseller_id)
-                        <a href="{{ route('customer.reseller-catalog.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.reseller-catalog.*') ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300' : 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950 dark:to-teal-950 text-emerald-700 dark:text-emerald-300 hover:from-emerald-100 hover:to-teal-100' }}">
+                        <a href="{{ route('customer.reseller-catalog.index') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all {{ request()->routeIs('customer.reseller-catalog.*') ? 'nav-link-active' : 'nav-link-accent' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m0 0l8-4m0 0v10l-8 4m0-10L4 7m0 10v10l8 4m8-4v-10l-8-4"/>
                             </svg>
                             <span class="text-sm font-medium">Order Services</span>
                         </a>
                         @else
-                        <a href="{{ route('customer.deploy-service') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.deploy-service') ? 'bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300' : 'bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950 dark:to-teal-950 text-emerald-700 dark:text-emerald-300 hover:from-emerald-100 hover:to-teal-100' }}">
+                        <a href="{{ route('customer.deploy-service') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all {{ request()->routeIs('customer.deploy-service') ? 'nav-link-active' : 'nav-link-accent' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
                             <span class="text-sm font-medium">Deploy New Service</span>
                         </a>
                         @endif
-                        <a href="{{ route('customer.orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.orders.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('customer.orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.orders.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
                             </svg>
                             <span class="text-sm font-medium">Orders</span>
                         </a>
-                        <a href="{{ route('customer.domains.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.domains.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('customer.domains.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.domains.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
                             </svg>
                             <span class="text-sm font-medium">Domains</span>
                         </a>
-                        <a href="{{ route('customer.servers.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.servers.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('customer.servers.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.servers.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                       d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
@@ -97,14 +96,14 @@
 
                     <!-- Billing -->
                     <div class="space-y-2">
-                        <p class="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Billing</p>
-                        <a href="{{ route('customer.invoices.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.invoices.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <p class="nav-section-label">Billing</p>
+                        <a href="{{ route('customer.invoices.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.invoices.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                             </svg>
                             <span class="text-sm font-medium">Invoices</span>
                         </a>
-                        <a href="{{ route('customer.payments.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.payments.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('customer.payments.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.payments.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
@@ -127,14 +126,14 @@
 
                     <!-- Account -->
                     <div class="space-y-2">
-                        <p class="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Account</p>
-                        <a href="{{ route('profile.edit') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('profile.edit') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <p class="nav-section-label">Account</p>
+                        <a href="{{ route('profile.edit') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('profile.edit') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4z"/>
                             </svg>
                             <span class="text-sm font-medium">Profile</span>
                         </a>
-                        <a href="{{ route('profile.security') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('profile.security') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('profile.security') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('profile.security') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                             </svg>
@@ -144,8 +143,8 @@
 
                     <!-- Support -->
                     <div class="space-y-2">
-                        <p class="px-4 py-2 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Help</p>
-                        <a href="{{ route('customer.tickets.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.tickets.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <p class="nav-section-label">Help</p>
+                        <a href="{{ route('customer.tickets.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.tickets.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
                             </svg>
@@ -181,7 +180,7 @@
             <!-- Main Content -->
             <div class="flex-1 flex flex-col min-w-0">
                 <!-- Top Navigation -->
-                <header class="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 sm:px-6 min-w-0">
+                <header class="app-header h-16 flex items-center px-4 sm:px-6 min-w-0">
                     <!-- Left: Hamburger + Title -->
                     <div class="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
                         <button type="button" class="md:hidden shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" @click="sidebarOpen = !sidebarOpen" aria-label="Open menu">
@@ -303,45 +302,11 @@
                 </div>
                 @endif
 
-                <!-- Flash Messages -->
-                @if (session('success'))
-                <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)"
-                    x-transition:leave="transition ease-in duration-300"
-                    x-transition:leave-start="opacity-100 translate-y-0"
-                    x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg">
-                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-sm font-medium flex-1">{{ session('success') }}</p>
-                    <button @click="show = false" class="text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                @endif
-                @if (session('error'))
-                <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 7000)"
-                    x-transition:leave="transition ease-in duration-300"
-                    x-transition:leave-start="opacity-100 translate-y-0"
-                    x-transition:leave-end="opacity-0 -translate-y-2"
-                    class="mx-4 sm:mx-6 mt-4 flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 rounded-lg">
-                    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4v2m0 4v2m0-14a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <p class="text-sm font-medium flex-1">{{ session('error') }}</p>
-                    <button @click="show = false" class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                @endif
+                <x-flash-messages />
 
                 <!-- Page Content -->
                 <main class="flex-1 overflow-auto min-w-0">
-                    <div class="px-4 py-6 sm:px-6 sm:py-8 max-w-7xl mx-auto w-full">
+                    <div class="page-enter px-4 py-6 sm:px-6 sm:py-8 max-w-7xl mx-auto w-full">
                         @yield('content')
                     </div>
                 </main>
