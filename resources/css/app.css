@@ -37,8 +37,7 @@
 
     img,
     video,
-    canvas,
-    svg {
+    canvas {
         max-width: 100%;
         height: auto;
     }
@@ -121,6 +120,14 @@
 
     .btn-sm {
         @apply px-3 py-1.5 text-xs rounded-lg;
+    }
+
+    .action-icon-btn {
+        @apply inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-lg transition-colors;
+    }
+
+    .action-icon-btn svg {
+        @apply w-5 h-5 shrink-0 pointer-events-none;
     }
 
     /* Navigation */
