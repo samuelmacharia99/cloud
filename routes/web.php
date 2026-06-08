@@ -372,6 +372,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
                 ->names('reseller.catalog');
             Route::get('reseller/domains', [App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
             Route::post('reseller/domains/{domain}/renew', [App\Http\Controllers\Reseller\DomainController::class, 'addRenewalToCart'])->name('reseller.domains.renew');
+            Route::delete('reseller/domains/{domain}', [App\Http\Controllers\Reseller\DomainController::class, 'destroy'])->name('reseller.domains.destroy');
             Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
             Route::post('reseller/domains-pricing', [DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
             Route::get('api/reseller/domains/pricing/{extension}', [App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');

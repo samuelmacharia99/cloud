@@ -158,6 +158,17 @@ class DomainController extends Controller
         ]);
     }
 
+    public function destroy(Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $fullName = $domain->name.$domain->extension;
+        $domain->delete();
+
+        return redirect()->route('reseller.domains.index')
+            ->with('success', "Domain {$fullName} has been removed from your account.");
+    }
+
     public function addRenewalToCart(Request $request, Domain $domain)
     {
         $this->assertResellerCanManageDomain($domain);

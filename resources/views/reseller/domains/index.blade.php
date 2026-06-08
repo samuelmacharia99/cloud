@@ -145,8 +145,8 @@
         <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Your Domains</h2>
 
         @if($domains->count() > 0)
-            <div class="ui-card overflow-hidden">
-                <div class="ui-table-wrap">
+            <div class="ui-card">
+                <div class="ui-table-wrap overflow-visible">
                     <table class="ui-table">
                         <thead>
                             <tr>
@@ -185,8 +185,8 @@
                                             {{ $domain->auto_renew ? 'On' : 'Off' }}
                                         </span>
                                     </td>
-                                    <td class="text-right">
-                                        <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left">
+                                    <td class="text-right overflow-visible">
+                                        <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left z-10">
                                             <button type="button" @click="open = !open" class="action-icon-btn text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Domain actions">
                                                 <svg fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                                                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
@@ -203,9 +203,22 @@
                                                         Renew domain
                                                     </button>
                                                     <a href="{{ route('reseller.cart.index') }}"
-                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
                                                         View cart
                                                     </a>
+                                                    <form method="POST" action="{{ route('reseller.domains.destroy', $domain) }}"
+                                                        data-confirm="Remove {{ $domain->name }}{{ $domain->extension }} from your account? This only deletes the local record; it does not cancel registration at the registry."
+                                                        @submit="open = false">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit"
+                                                            class="w-full text-left px-4 py-3 hover:bg-red-50 dark:hover:bg-red-950/40 transition flex items-center gap-3 text-sm font-medium text-red-600 dark:text-red-400">
+                                                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                            </svg>
+                                                            Delete domain
+                                                        </button>
+                                                    </form>
                                                 </div>
                                                 <div x-show="showRenewal" class="p-4">
                                                     <button type="button" @click="showRenewal = false" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 hover:text-slate-700 dark:hover:text-slate-200">← Back</button>
