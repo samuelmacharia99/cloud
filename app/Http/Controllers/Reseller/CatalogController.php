@@ -149,7 +149,7 @@ class CatalogController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        if ($validated['product_id']) {
+        if (filled($validated['product_id'] ?? null)) {
             $product = Product::findOrFail($validated['product_id']);
             if (! $product->visible_to_resellers) {
                 throw ValidationException::withMessages([
