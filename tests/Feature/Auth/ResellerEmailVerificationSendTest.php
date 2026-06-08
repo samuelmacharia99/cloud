@@ -7,6 +7,7 @@ use App\Models\ResellerPackage;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
@@ -62,11 +63,38 @@ class ResellerEmailVerificationSendTest extends TestCase
         });
     }
 
-    public function test_profile_resend_shows_error_when_smtp_not_configured(): void
+    private function seedPlatformSms(): void
+    {
+        Setting::setValue('sms_enabled', '1');
+        Setting::setValue('sms_api_token', 'test-token');
+        Setting::setValue('sms_sender_id', 'TalksasaCloud');
+    }
+
+    public function test_profile_resend_sends_via_sms_when_smtp_missing(): void
+    {
+        Mail::fake();
+        Http::fake([
+            'bulksms.talksasa.com/*' => Http::response(['status' => 'accepted'], 202),
+        ]);
+        $this->seedPlatformSms();
+
+        $reseller = $this->createUnverifiedReseller();
+        $reseller->update(['phone' => '0712345678']);
+
+        $response = $this->actingAs($reseller)
+            ->post(route('verification.send'));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('status', 'verification-link-sent');
+        Mail::assertNothingSent();
+    }
+
+    public function test_profile_resend_shows_error_when_no_delivery_channel(): void
     {
         Mail::fake();
 
         $reseller = $this->createUnverifiedReseller();
+        $reseller->update(['phone' => null]);
 
         $response = $this->actingAs($reseller)
             ->post(route('verification.send'));

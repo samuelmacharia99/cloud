@@ -8,6 +8,12 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
+        if (app()->environment('production')) {
+            throw new \RuntimeException(
+                'DatabaseSeeder cannot run in production. Use db:seed --class=CronJobSeeder or another allowlisted seeder.'
+            );
+        }
+
         $this->call([
             UserSeeder::class,
             SettingSeeder::class,

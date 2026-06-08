@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Helpers\PhoneHelper;
+use App\Models\Setting;
 use App\Models\SmsLog;
 use Illuminate\Support\Facades\Http;
 
@@ -12,8 +13,8 @@ class SmsService
 
     public function isConfigured(): bool
     {
-        $enabled = \App\Models\Setting::getValue('sms_enabled');
-        $token = \App\Models\Setting::getValue('sms_api_token');
+        $enabled = Setting::getValue('sms_enabled');
+        $token = Setting::getValue('sms_api_token');
 
         // Convert string "1"/"0" or "true"/"false" to boolean
         $enabledBool = in_array($enabled, ['1', 'true', true], true);
@@ -21,32 +22,33 @@ class SmsService
         \Log::info('SMS Service Configuration Check', [
             'enabled_raw' => $enabled,
             'enabled_bool' => $enabledBool,
-            'token_present' => !empty($token),
-            'is_configured' => $enabledBool && !empty($token)
+            'token_present' => ! empty($token),
+            'is_configured' => $enabledBool && ! empty($token),
         ]);
 
-        return $enabledBool && !empty($token);
+        return $enabledBool && ! empty($token);
     }
 
     public function send(string|array $recipients, string $message, ?string $senderId = null): array
     {
-        if (!$this->isConfigured()) {
+        if (! $this->isConfigured()) {
             \Log::error('SMS service not configured', [
-                'sms_enabled' => \App\Models\Setting::getValue('sms_enabled'),
-                'token_set' => !empty(\App\Models\Setting::getValue('sms_api_token')),
+                'sms_enabled' => Setting::getValue('sms_enabled'),
+                'token_set' => ! empty(Setting::getValue('sms_api_token')),
             ]);
+
             return [
                 'success' => false,
                 'message' => 'SMS service is not configured.',
             ];
         }
 
-        $token = \App\Models\Setting::getValue('sms_api_token');
-        $senderId = $senderId ?? \App\Models\Setting::getValue('sms_sender_id', 'TalksasaCloud');
+        $token = Setting::getValue('sms_api_token');
+        $senderId = $senderId ?? Setting::getValue('sms_sender_id', 'TalksasaCloud');
 
         // Normalize recipients to array, normalize each phone, then rejoin
         $recipientArray = is_array($recipients) ? $recipients : explode(',', $recipients);
-        $normalizedRecipients = array_map(fn($phone) => PhoneHelper::normalize(trim($phone)), $recipientArray);
+        $normalizedRecipients = array_map(fn ($phone) => PhoneHelper::normalize(trim($phone)), $recipientArray);
         $recipients = implode(',', $normalizedRecipients);
 
         \Log::info('Attempting to send SMS', [
@@ -67,20 +69,14 @@ class SmsService
                     'message' => $message,
                 ]);
 
-            // If the request wasn't successful, throw an exception
-            if (!$response->successful()) {
-                throw new \Exception('SMS API returned status ' . $response->status() . ': ' . substr($response->body(), 0, 200));
-            }
-
             // Try to parse JSON response
             try {
-                $data = $response->json();
+                $data = $response->json() ?? [];
             } catch (\Exception $e) {
-                // If JSON parsing fails, try to handle raw response
-                $data = ['status' => 'success', 'message' => 'SMS sent', 'data' => $response->body()];
+                $data = ['raw_body' => $response->body()];
             }
 
-            if ($response->successful() && isset($data['status']) && $data['status'] === 'success') {
+            if ($response->successful() && isset($data['status']) && in_array($data['status'], ['success', 'accepted'], true)) {
                 // Log success
                 $recipientArray = explode(',', $recipients);
                 foreach ($recipientArray as $recipient) {
@@ -97,7 +93,7 @@ class SmsService
 
                 return [
                     'success' => true,
-                    'message' => 'SMS sent successfully to ' . count($recipientArray) . ' recipient(s).',
+                    'message' => 'SMS sent successfully to '.count($recipientArray).' recipient(s).',
                 ];
             } else {
                 // Log failure
@@ -114,7 +110,8 @@ class SmsService
                     ]);
                 }
 
-                $errorMessage = $data['message'] ?? 'Failed to send SMS';
+                $errorMessage = $data['message'] ?? ('SMS API returned status '.$response->status());
+
                 return [
                     'success' => false,
                     'message' => $errorMessage,
@@ -138,14 +135,14 @@ class SmsService
                     'sender_id' => $senderId,
                     'status' => 'failed',
                     'response' => $e->getMessage(),
-                    'sent_by' => auth()->id() ?? 0,
+                    'sent_by' => auth()->id(),
                     'created_at' => now(),
                 ]);
             }
 
             return [
                 'success' => false,
-                'message' => 'Failed to send SMS: ' . $e->getMessage(),
+                'message' => 'Failed to send SMS: '.$e->getMessage(),
             ];
         }
     }

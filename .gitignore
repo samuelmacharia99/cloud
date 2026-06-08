@@ -12,6 +12,7 @@
 /public/build
 /bootstrap/cache
 /storage/framework/views
+/storage/backups
 *.swp
 *.swo
 *~

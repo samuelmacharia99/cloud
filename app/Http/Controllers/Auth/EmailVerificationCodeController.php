@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Helpers\PhoneHelper;
 use App\Http\Controllers\Controller;
 use App\Models\EmailVerificationCode;
 use App\Models\User;
@@ -18,8 +19,20 @@ class EmailVerificationCodeController extends Controller
     public function show(Request $request): View
     {
         $email = $request->query('email') ?? session('email');
+        $user = $email ? User::where('email', $email)->first() : null;
+        $phoneHint = null;
 
-        return view('auth.verify-code', ['email' => $email]);
+        if ($user?->phone) {
+            $normalized = PhoneHelper::normalize($user->phone);
+            $phoneHint = strlen($normalized) >= 4
+                ? '***'.substr($normalized, -4)
+                : null;
+        }
+
+        return view('auth.verify-code', [
+            'email' => $email,
+            'phoneHint' => $phoneHint,
+        ]);
     }
 
     /**
@@ -86,11 +99,11 @@ class EmailVerificationCodeController extends Controller
         }
 
         try {
-            app(EmailVerificationService::class)->sendVerificationCode($user);
+            $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
         } catch (\Throwable $e) {
             return back()->withErrors(['email' => $e->getMessage()]);
         }
 
-        return back()->with('success', 'New verification code sent to your email.');
+        return back()->with('success', 'New verification code sent to '.EmailVerificationService::deliverySummary($delivery).'.');
     }
 }

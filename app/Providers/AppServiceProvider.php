@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Listeners\BlockDestructiveProductionCommands;
 use App\Models\Setting;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
@@ -15,7 +16,9 @@ use App\Services\ResellerWalletService;
 use App\Services\TalksasaSmsService;
 use App\Services\WalletNotificationService;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
@@ -51,6 +54,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Event::listen(CommandStarting::class, BlockDestructiveProductionCommands::class);
+
         $this->configureRateLimiting();
 
         // Load mail settings from database

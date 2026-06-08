@@ -142,6 +142,15 @@ class SettingSeeder extends Seeder
         ];
 
         foreach ($settings as $setting) {
+            if (app()->environment('production')) {
+                Setting::firstOrCreate(
+                    ['key' => $setting['key']],
+                    ['value' => $setting['value'], 'description' => $setting['description']]
+                );
+
+                continue;
+            }
+
             Setting::updateOrCreate(
                 ['key' => $setting['key']],
                 ['value' => $setting['value'], 'description' => $setting['description']]

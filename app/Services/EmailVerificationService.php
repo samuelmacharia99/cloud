@@ -12,25 +12,24 @@ class EmailVerificationService
 {
     public function __construct(
         private ResellerMailService $mailService,
+        private AuthCodeSmsService $authCodeSms,
     ) {}
 
     /**
-     * Create a fresh OTP and send it synchronously (never queued).
+     * Create a fresh OTP and deliver via email and/or SMS (at least one must succeed).
      *
-     * @throws \RuntimeException When SMTP is not configured or rate limited.
+     * @return array{email: bool, sms: bool}
+     *
+     * @throws \RuntimeException When rate limited or no delivery channel succeeds.
      */
-    public function sendVerificationCode(User $user, int $expiryMinutes = 30): void
+    public function sendVerificationCode(User $user, int $expiryMinutes = 30): array
     {
         if ($user->hasVerifiedEmail()) {
             throw new \RuntimeException('Email is already verified.');
         }
 
-        if (! $this->mailService->isConfigured()) {
-            throw new \RuntimeException('Email is not configured on the server. Please contact support.');
-        }
-
         if (SecurityService::isEmailVerificationRateLimited($user->email)) {
-            throw new \RuntimeException('Too many verification emails sent. Please wait before trying again.');
+            throw new \RuntimeException('Too many verification codes sent. Please wait before trying again.');
         }
 
         EmailVerificationCode::where('user_id', $user->id)->delete();
@@ -43,8 +42,72 @@ class EmailVerificationService
             'expires_at' => now()->addMinutes($expiryMinutes),
         ]);
 
+        $siteName = $this->authCodeSms->siteNameFor($user);
+        $smsMessage = "Your {$siteName} verification code is: {$code}. Valid for {$expiryMinutes} minutes. Do not share this code.";
+
+        $emailSent = $this->sendEmailCode($user, $code);
+        $smsSent = $this->sendSmsCode($user, $smsMessage);
+
+        if (! $emailSent && ! $smsSent) {
+            EmailVerificationCode::where('user_id', $user->id)->delete();
+
+            throw new \RuntimeException(
+                'Could not deliver a verification code. Configure email or SMS in admin settings, or add a phone number to your profile.'
+            );
+        }
+
+        SecurityService::recordEmailVerificationAttempt($user->email);
+
+        Log::info('Verification code dispatched', [
+            'user_id' => $user->id,
+            'email_sent' => $emailSent,
+            'sms_sent' => $smsSent,
+        ]);
+
+        return [
+            'email' => $emailSent,
+            'sms' => $smsSent,
+        ];
+    }
+
+    /**
+     * Human-readable summary for flash messages.
+     *
+     * @param  array{email: bool, sms: bool}  $delivery
+     */
+    public static function deliverySummary(array $delivery): string
+    {
+        $channels = [];
+        if ($delivery['email'] ?? false) {
+            $channels[] = 'email';
+        }
+        if ($delivery['sms'] ?? false) {
+            $channels[] = 'phone (SMS)';
+        }
+
+        if ($channels === []) {
+            return 'your registered contact methods';
+        }
+
+        if (count($channels) === 1) {
+            return 'your '.$channels[0];
+        }
+
+        return 'your '.implode(' and ', $channels);
+    }
+
+    private function sendEmailCode(User $user, string $code): bool
+    {
+        if (! $this->mailService->isConfigured()) {
+            Log::warning('Verification email skipped — SMTP not configured', ['user_id' => $user->id]);
+
+            return false;
+        }
+
         try {
             Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
+
+            return true;
         } catch (\Throwable $e) {
             Log::error('Failed to send email verification code', [
                 'user_id' => $user->id,
@@ -52,9 +115,28 @@ class EmailVerificationService
                 'error' => $e->getMessage(),
             ]);
 
-            throw new \RuntimeException('Could not send verification email. Please try again or contact support.');
+            return false;
+        }
+    }
+
+    private function sendSmsCode(User $user, string $message): bool
+    {
+        if (! $this->authCodeSms->canSend($user)) {
+            return false;
         }
 
-        SecurityService::recordEmailVerificationAttempt($user->email);
+        $result = $this->authCodeSms->send($user, $message);
+
+        if (! ($result['success'] ?? false)) {
+            Log::warning('Verification SMS delivery failed', [
+                'user_id' => $user->id,
+                'channel' => $result['channel'] ?? null,
+                'message' => $result['message'] ?? 'unknown',
+            ]);
+
+            return false;
+        }
+
+        return true;
     }
 }

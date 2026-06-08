@@ -10,9 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class TwoFactorService
 {
-    public function __construct(private SmsService $smsService)
-    {
-    }
+    public function __construct(private AuthCodeSmsService $authCodeSms) {}
 
     /**
      * Enable 2FA for a user and generate recovery codes
@@ -57,23 +55,19 @@ class TwoFactorService
      */
     public function sendCode(User $user): bool
     {
-        if (!$user->phone) {
-            Log::error('Cannot send 2FA code: user has no phone number', [
+        if (! $this->authCodeSms->canSend($user)) {
+            Log::error('Cannot send 2FA code: phone or SMS not available', [
                 'user_id' => $user->id,
+                'has_phone' => (bool) $user->phone,
+                'sms_configured' => $this->authCodeSms->isConfiguredFor($user),
             ]);
-            return false;
-        }
 
-        if (!$this->smsService->isConfigured()) {
-            Log::error('Cannot send 2FA code: SMS service not configured', [
-                'user_id' => $user->id,
-            ]);
             return false;
         }
 
         try {
             // Generate 6-digit code
-            $code = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
 
             // Store hashed code with 5-minute expiry
             $user->update([
@@ -81,33 +75,34 @@ class TwoFactorService
                 'two_factor_code_expires_at' => now()->addMinutes(5),
             ]);
 
-            // Send SMS
-            $message = "Your Talksasa Cloud login code is: {$code}. Valid for 5 minutes. Do not share this code.";
-            $smsResult = $this->smsService->send($user->phone, $message);
+            $siteName = $this->authCodeSms->siteNameFor($user);
+            $message = "Your {$siteName} login code is: {$code}. Valid for 5 minutes. Do not share this code.";
+            $smsResult = $this->authCodeSms->send($user, $message);
 
-            // Log with SMS delivery status
             if ($smsResult['success'] ?? false) {
                 Log::info('2FA code sent to user', [
                     'user_id' => $user->id,
-                    'phone' => substr($user->phone, -4),
-                    'code_length' => strlen($code),
-                    'sms_success' => true,
+                    'phone' => substr((string) $user->phone, -4),
+                    'channel' => $smsResult['channel'] ?? null,
                 ]);
+
                 return true;
-            } else {
-                Log::error('2FA SMS delivery failed', [
-                    'user_id' => $user->id,
-                    'phone' => substr($user->phone, -4),
-                    'sms_message' => $smsResult['message'] ?? 'Unknown error',
-                ]);
-                return false;
             }
+
+            Log::error('2FA SMS delivery failed', [
+                'user_id' => $user->id,
+                'phone' => substr((string) $user->phone, -4),
+                'sms_message' => $smsResult['message'] ?? 'Unknown error',
+            ]);
+
+            return false;
         } catch (\Exception $e) {
             Log::error('Failed to send 2FA code', [
                 'user_id' => $user->id,
-                'phone' => substr($user->phone, -4),
+                'phone' => substr((string) $user->phone, -4),
                 'error' => $e->getMessage(),
             ]);
+
             return false;
         }
     }
@@ -115,15 +110,15 @@ class TwoFactorService
     /**
      * Verify 2FA code
      *
-     * @throws \Illuminate\Validation\ValidationException when rate limit is exceeded
+     * @throws ValidationException when rate limit is exceeded
      */
     public function verifyCode(User $user, string $code): bool
     {
-        if (!$user->two_factor_enabled) {
+        if (! $user->two_factor_enabled) {
             return false;
         }
 
-        $rateLimiterKey = '2fa|' . $user->id;
+        $rateLimiterKey = '2fa|'.$user->id;
 
         // Check rate limit: max 5 attempts per minute
         if (RateLimiter::tooManyAttempts($rateLimiterKey, 5)) {
@@ -135,20 +130,22 @@ class TwoFactorService
         }
 
         // Check if code has expired
-        if (!$user->two_factor_code_expires_at || now()->isAfter($user->two_factor_code_expires_at)) {
+        if (! $user->two_factor_code_expires_at || now()->isAfter($user->two_factor_code_expires_at)) {
             RateLimiter::hit($rateLimiterKey);
             Log::warning('2FA code expired', [
                 'user_id' => $user->id,
             ]);
+
             return false;
         }
 
         // Check if code matches using Hash::check (bcrypt constant-time comparison)
-        if (!Hash::check($code, (string) $user->two_factor_code)) {
+        if (! Hash::check($code, (string) $user->two_factor_code)) {
             RateLimiter::hit($rateLimiterKey);
             Log::warning('Invalid 2FA code attempt', [
                 'user_id' => $user->id,
             ]);
+
             return false;
         }
 
@@ -173,29 +170,31 @@ class TwoFactorService
      */
     public function verifyRecoveryCode(User $user, string $code): bool
     {
-        if (!$user->two_factor_enabled) {
+        if (! $user->two_factor_enabled) {
             return false;
         }
 
         // Recovery codes must exist and be a non-empty array
         $recoveryCodes = $user->two_factor_recovery_codes;
-        if (!is_array($recoveryCodes) || count($recoveryCodes) === 0) {
+        if (! is_array($recoveryCodes) || count($recoveryCodes) === 0) {
             Log::warning('No recovery codes available', [
                 'user_id' => $user->id,
             ]);
+
             return false;
         }
 
         // Check if recovery code exists
-        if (!in_array($code, $recoveryCodes)) {
+        if (! in_array($code, $recoveryCodes)) {
             Log::warning('Invalid recovery code attempt', [
                 'user_id' => $user->id,
             ]);
+
             return false;
         }
 
         // Remove the used recovery code
-        $recoveryCodes = array_values(array_filter($recoveryCodes, fn($c) => $c !== $code));
+        $recoveryCodes = array_values(array_filter($recoveryCodes, fn ($c) => $c !== $code));
 
         // Update user with remaining recovery codes
         $user->update([
@@ -235,9 +234,10 @@ class TwoFactorService
      */
     public function getRecoveryCodesCount(User $user): int
     {
-        if (!$user->two_factor_recovery_codes) {
+        if (! $user->two_factor_recovery_codes) {
             return 0;
         }
+
         return count($user->two_factor_recovery_codes);
     }
 }

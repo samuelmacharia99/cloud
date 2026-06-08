@@ -47,7 +47,7 @@ class RegisteredUserController extends Controller
         session()->forget('registration_reseller_id');
 
         try {
-            app(EmailVerificationService::class)->sendVerificationCode($user);
+            $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
         } catch (\Throwable $e) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
@@ -56,6 +56,6 @@ class RegisteredUserController extends Controller
 
         return redirect()->route('verification.code.show')
             ->with('email', $user->email)
-            ->with('message', 'We sent a verification code to your email. Please enter it below.');
+            ->with('message', 'We sent a verification code to '.EmailVerificationService::deliverySummary($delivery).'. Please enter it below.');
     }
 }

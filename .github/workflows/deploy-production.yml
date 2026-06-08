@@ -39,40 +39,9 @@ jobs:
           key: ${{ secrets.PROD_SSH_KEY }}
           script: |
             set -e
-
             cd /var/www/talksasa-cloud
-
-            # Create backup
-            BACKUP_TIME=$(date +%Y%m%d_%H%M%S)
-            cp -r . ../talksasa-cloud.backup.$BACKUP_TIME
-            echo "📦 Backup created: talksasa-cloud.backup.$BACKUP_TIME"
-
-            # Pull latest code
-            git fetch origin
-            git checkout main
-            git pull origin main
-
-            # Install dependencies
-            composer install --no-ansi --no-interaction --no-progress --prefer-dist --optimize-autoloader
-
-            # Run migrations (with backup ready)
-            php artisan migrate --force
-
-            # Clear caches
-            php artisan cache:clear
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-
-            # Seed if needed (CronJobSeeder is safe to re-run)
-            php artisan db:seed --class=CronJobSeeder --force
-
-            # Restart services
-            sudo systemctl restart talksasa-queue || true
-            sudo systemctl restart talksasa-scheduler || true
-
-            echo "✅ Production deployment complete"
-            echo "📝 Backup available at: ../talksasa-cloud.backup.$BACKUP_TIME"
+            chmod +x scripts/deploy-production.sh
+            APP_PATH=/var/www/talksasa-cloud bash scripts/deploy-production.sh
 
       - name: Verify deployment
         uses: appleboy/ssh-action@master

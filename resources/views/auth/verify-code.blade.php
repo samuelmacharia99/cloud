@@ -7,7 +7,9 @@
     <!-- Header -->
     <div class="space-y-3">
         <h1 class="text-4xl font-bold tracking-tight">Verify Your Email</h1>
-        <p class="text-base text-slate-600 dark:text-slate-400 font-medium">We sent a 6-digit code to <strong>{{ $email }}</strong></p>
+        <p class="text-base text-slate-600 dark:text-slate-400 font-medium">
+            We sent a 6-digit code to <strong>{{ $email }}</strong>@if($phoneHint) and your phone ending in <strong>{{ $phoneHint }}</strong>@endif.
+        </p>
     </div>
 
     <!-- Verification Form -->

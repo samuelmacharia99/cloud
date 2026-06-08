@@ -58,11 +58,11 @@ class LoginRequest extends FormRequest
         if (! $user->hasVerifiedEmail()) {
             Auth::logout();
 
-            $message = 'Please verify your email before signing in. Enter the 6-digit code we sent to your inbox.';
+            $message = 'Please verify your email before signing in. Enter the 6-digit code we sent.';
 
             try {
-                app(EmailVerificationService::class)->sendVerificationCode($user);
-                $message .= ' A new verification code has been sent to your email.';
+                $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
+                $message .= ' A new verification code has been sent to '.EmailVerificationService::deliverySummary($delivery).'.';
             } catch (\Throwable $e) {
                 Log::warning('Could not send verification code during login', [
                     'user_id' => $user->id,

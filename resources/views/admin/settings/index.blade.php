@@ -1123,11 +1123,25 @@
                                 <textarea name="settings[footer_text]" rows="3" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ $settings['footer_text'] ?? '' }}</textarea>
                             </div>
 
-                            @php $currentLogoUrl = branding_asset_url_or_fallback($settings['logo_url'] ?? null, 'logo'); @endphp
-                            @if($currentLogoUrl)
+                            @php
+                                $storedLogoUrl = $settings['logo_url'] ?? null;
+                                $resolvedLogoUrl = branding_asset_url($storedLogoUrl);
+                                $effectiveLogoUrl = $resolvedLogoUrl ?? branding_asset_url_or_fallback(null, 'logo');
+                                $logoUsesFallback = $effectiveLogoUrl && ! $resolvedLogoUrl;
+                            @endphp
+                            @if($storedLogoUrl)
                                 <div>
-                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current Logo</p>
-                                    <img src="{{ $currentLogoUrl }}" alt="Logo" class="h-12 object-contain" />
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Stored logo URL</p>
+                                    <p class="text-xs font-mono text-slate-500 dark:text-slate-400 break-all">{{ $storedLogoUrl }}</p>
+                                </div>
+                            @endif
+                            @if($effectiveLogoUrl)
+                                <div>
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Logo preview</p>
+                                    <img src="{{ $effectiveLogoUrl }}" alt="Logo" class="h-12 object-contain" />
+                                    @if($logoUsesFallback)
+                                        <p class="text-xs text-amber-600 dark:text-amber-400 mt-2">Showing latest uploaded file from storage — stored URL is missing or invalid. Re-upload to update settings.</p>
+                                    @endif
                                 </div>
                             @endif
 
@@ -1137,11 +1151,25 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Max 5MB, PNG/JPG recommended</p>
                             </div>
 
-                            @php $currentFaviconUrl = branding_asset_url_or_fallback($settings['favicon_url'] ?? null, 'favicon'); @endphp
-                            @if($currentFaviconUrl)
+                            @php
+                                $storedFaviconUrl = $settings['favicon_url'] ?? null;
+                                $resolvedFaviconUrl = branding_asset_url($storedFaviconUrl);
+                                $effectiveFaviconUrl = $resolvedFaviconUrl ?? branding_asset_url_or_fallback(null, 'favicon');
+                                $faviconUsesFallback = $effectiveFaviconUrl && ! $resolvedFaviconUrl;
+                            @endphp
+                            @if($storedFaviconUrl)
                                 <div>
-                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current Favicon</p>
-                                    <img src="{{ $currentFaviconUrl }}" alt="Favicon" class="w-8 h-8" />
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Stored favicon URL</p>
+                                    <p class="text-xs font-mono text-slate-500 dark:text-slate-400 break-all">{{ $storedFaviconUrl }}</p>
+                                </div>
+                            @endif
+                            @if($effectiveFaviconUrl)
+                                <div>
+                                    <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Favicon preview</p>
+                                    <img src="{{ $effectiveFaviconUrl }}" alt="Favicon" class="w-8 h-8" />
+                                    @if($faviconUsesFallback)
+                                        <p class="text-xs text-amber-600 dark:text-amber-400 mt-2">Showing latest uploaded file from storage — stored URL is missing or invalid.</p>
+                                    @endif
                                 </div>
                             @endif
 
