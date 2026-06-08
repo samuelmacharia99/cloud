@@ -55,8 +55,41 @@
         />
     </div>
 
+    @if ($suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)
+    <div class="space-y-3">
+        @if ($suspendedServices->count() > 0)
+            <div class="ui-card p-4 border-orange-200 dark:border-orange-800 bg-orange-50/80 dark:bg-orange-950/30 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-sm text-orange-900 dark:text-orange-200"><strong>{{ $suspendedServices->count() }}</strong> service(s) suspended — pay outstanding invoices to restore access.</p>
+                <a href="{{ route('customer.invoices.index') }}" class="btn-sm btn-primary">View invoices</a>
+            </div>
+        @endif
+        @if ($provisioningServices->count() > 0)
+            <div class="ui-card p-4 border-blue-200 dark:border-blue-800 bg-blue-50/80 dark:bg-blue-950/30">
+                <p class="text-sm text-blue-900 dark:text-blue-200"><strong>{{ $provisioningServices->count() }}</strong> service(s) provisioning — we'll notify you when ready.</p>
+            </div>
+        @endif
+        @if ($expiringDomains->count() > 0)
+            <div class="ui-card p-4 border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-sm text-amber-900 dark:text-amber-200"><strong>{{ $expiringDomains->count() }}</strong> domain(s) expiring within 30 days.</p>
+                <a href="{{ route('customer.domains.index') }}" class="btn-sm btn-primary">Manage domains</a>
+            </div>
+        @endif
+    </div>
+    @endif
+
     <!-- Quick actions -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        @if ($isResellerManaged)
+        <a href="{{ route('customer.reseller-catalog.index') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
+            <span class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m0 0l8-4m0 0v10l-8 4m0-10L4 7m0 10v10l8 4m8-4v-10l-8-4"/></svg>
+            </span>
+            <div>
+                <p class="font-semibold text-slate-900 dark:text-white text-sm">Order services</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Reseller catalog</p>
+            </div>
+        </a>
+        @else
         <a href="{{ route('customer.select-techstack') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
             <span class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -66,6 +99,7 @@
                 <p class="text-xs text-slate-500 dark:text-slate-400">Hosting & containers</p>
             </div>
         </a>
+        @endif
         <a href="{{ route('customer.domains.index') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
             <span class="w-10 h-10 rounded-xl bg-brand-100 dark:bg-brand-950/60 text-brand-600 dark:text-brand-400 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
@@ -148,6 +182,12 @@
                         <dt class="text-slate-500 dark:text-slate-400">Member since</dt>
                         <dd class="font-medium text-slate-900 dark:text-white mt-0.5">{{ auth()->user()->created_at->format('M d, Y') }}</dd>
                     </div>
+                    @if ($creditBalance > 0)
+                    <div>
+                        <dt class="text-slate-500 dark:text-slate-400">Account credit</dt>
+                        <dd class="font-medium text-emerald-600 dark:text-emerald-400 mt-0.5">KES {{ number_format($creditBalance, 2) }}</dd>
+                    </div>
+                    @endif
                 </dl>
             </div>
 

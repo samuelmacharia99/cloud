@@ -3,20 +3,17 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
-use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
-use App\Models\Service;
 use App\Models\Setting;
-use App\Services\DomainRenewalService;
+use App\Services\Billing\InvoiceSettlementService;
+use App\Services\CreditService;
 use App\Services\NotificationService;
+use App\Services\PaymentGateway\BankTransferPaymentService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\PaymentGateway\PayPalService;
 use App\Services\PaymentGateway\StripeService;
-use App\Services\Provisioning\InvoiceProvisioningService;
-use App\Services\Provisioning\ProvisioningService;
-use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session;
@@ -30,9 +27,27 @@ class PaymentController extends Controller
      */
     public function index(Request $request)
     {
-        $payments = Payment::where('user_id', auth()->id())
-            ->latest()
-            ->paginate(10);
+        $this->authorize('viewAny', Payment::class);
+
+        $query = Payment::where('user_id', auth()->id())->with('invoice')->latest();
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->payment_method);
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+
+        $payments = $query->paginate(10)->withQueryString();
 
         return view('customer.payments.index', compact('payments'));
     }
@@ -42,7 +57,7 @@ class PaymentController extends Controller
      */
     public function show(Payment $payment)
     {
-        abort_if($payment->user_id !== auth()->id(), 403);
+        $this->authorize('view', $payment);
 
         $payment->load('invoice');
 
@@ -52,28 +67,54 @@ class PaymentController extends Controller
     /**
      * Show payment method selection for invoice
      */
-    public function selectMethod(Invoice $invoice)
+    public function selectMethod(Invoice $invoice, InvoiceSettlementService $settlement)
     {
-        // Verify invoice belongs to authenticated user
-        abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+        $this->authorize('pay', $invoice);
 
-        // Don't allow payment for already paid invoices
-        if ($invoice->status === 'paid') {
-            return redirect()->route('customer.invoices.show', $invoice)
-                ->with('info', 'This invoice has already been paid');
+        $invoice->refresh();
+        $settlement->applyAvailableCredits($invoice);
+        $invoice->refresh();
+
+        if ($invoice->status->value === 'paid' || $invoice->isFullyPaid()) {
+            $settlement->settleFromCredits($invoice);
+
+            return redirect()->route('customer.payment.success', $invoice)
+                ->with('success', 'Invoice paid using your account credit.');
         }
 
         $availableGateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);
+        $creditBalance = CreditService::getAvailableBalance(auth()->user());
+        $bankDetails = BankTransferPaymentService::bankDetails();
 
-        if (empty($availableGateways)) {
+        if (empty($availableGateways) && $creditBalance <= 0) {
             return redirect()->route('customer.invoices.show', $invoice)
                 ->with('error', 'No payment methods available at the moment. Please contact support.');
         }
 
         return view('customer.payment.select-method', [
-            'invoice' => $invoice,
+            'invoice' => $invoice->fresh(),
             'availableGateways' => $availableGateways,
+            'creditBalance' => $creditBalance,
+            'appliedCredits' => $invoice->getAppliedCredits(),
+            'amountRemaining' => $invoice->getAmountRemaining(),
+            'bankDetails' => $bankDetails,
         ]);
+    }
+
+    public function applyCredits(Invoice $invoice, InvoiceSettlementService $settlement)
+    {
+        $this->authorize('pay', $invoice);
+
+        $settlement->applyAvailableCredits($invoice);
+        $invoice->refresh();
+
+        if ($settlement->settleFromCredits($invoice)) {
+            return redirect()->route('customer.payment.success', $invoice)
+                ->with('success', 'Invoice paid using your account credit.');
+        }
+
+        return redirect()->route('customer.payment.select-method', $invoice)
+            ->with('info', 'Credits applied. Pay the remaining balance below.');
     }
 
     /**
@@ -82,11 +123,10 @@ class PaymentController extends Controller
     public function initiate(Request $request, Invoice $invoice)
     {
         // Verify invoice belongs to authenticated user
-        abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+        $this->authorize('pay', $invoice);
 
-        // Validate request
         $request->validate([
-            'payment_method' => 'required|string|in:mpesa,stripe,paypal,manual',
+            'payment_method' => 'required|string|in:mpesa,stripe,paypal,manual,bank_transfer',
             'phone' => 'required_if:payment_method,mpesa|nullable|string',
         ]);
 
@@ -143,9 +183,12 @@ class PaymentController extends Controller
                 return redirect($result['approval_url']);
             }
 
-            // Manual: Show form to collect payment details
             if ($request->payment_method === 'manual') {
                 return redirect()->route('customer.payment.manual-form', ['invoice' => $invoice->id]);
+            }
+
+            if ($request->payment_method === 'bank_transfer') {
+                return redirect()->route('customer.payment.bank-transfer-form', ['invoice' => $invoice->id]);
             }
 
             return back()->with('error', 'Unknown payment method');
@@ -548,173 +591,7 @@ class PaymentController extends Controller
      */
     private function processPaymentCompletion(Payment $payment, Invoice $invoice): void
     {
-        // Handle overpayments by creating credits
-        if ($payment->isOverpayment()) {
-            $payment->createCreditFromOverpayment();
-
-            Log::info('Overpayment detected and credited', [
-                'payment_id' => $payment->id,
-                'invoice_id' => $invoice->id,
-                'overpayment_amount' => $payment->getOverpaymentAmount(),
-            ]);
-        }
-
-        // Mark invoice as paid
-        $invoice->update(['status' => 'paid']);
-
-        // Send payment received notification
-        try {
-            $notificationService = app(NotificationService::class);
-            $notificationService->notifyPaymentReceived($payment);
-        } catch (\Exception $e) {
-            Log::error('Failed to send payment received notification', [
-                'payment_id' => $payment->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        // Trigger service provisioning (new services: pending → provisioning)
-        $this->provisionServices($invoice);
-
-        // Unsuspend any suspended services now that invoice is paid
-        $this->unsuspendServices($invoice);
-
-        // Advance next_due_date for services that were renewed (active/suspended at payment time)
-        $this->advanceServiceBillingDates($invoice);
-
-        // Process domain orders for reseller customers
-        $this->processDomainOrdersForReseller($invoice);
-
-        // Process domain renewal orders
-        $this->processDomainRenewals($invoice);
-    }
-
-    private function processDomainOrdersForReseller(Invoice $invoice): void
-    {
-        if ($invoice->user->reseller_id === null) {
-            return;
-        }
-
-        try {
-            app('domain-push-service')->handlePaidDomainInvoice($invoice);
-        } catch (\Exception $e) {
-            Log::error('Failed to process domain orders after payment', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function processDomainRenewals(Invoice $invoice): void
-    {
-        try {
-            $renewalOrders = DomainRenewalOrder::where('invoice_id', $invoice->id)
-                ->where('status', 'invoiced')
-                ->get();
-
-            foreach ($renewalOrders as $order) {
-                $renewalService = app(DomainRenewalService::class);
-                $renewalService->pushRenewalToAdmin($order);
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to process domain renewals after payment', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
-     * Trigger service provisioning when payment is received
-     *
-     * This is called immediately after payment verification.
-     * Services will go from "pending" → "provisioning" → "running"
-     */
-    private function provisionServices(Invoice $invoice): void
-    {
-        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
-    }
-
-    /**
-     * Unsuspend suspended services linked to a paid invoice.
-     */
-    private function unsuspendServices(Invoice $invoice): void
-    {
-        try {
-            $provisioningService = app(ProvisioningService::class);
-            $notificationService = app(NotificationService::class);
-            $enforcement = app(ServiceOverdueEnforcementService::class);
-            $services = $enforcement->suspendedServicesForPaidInvoice($invoice);
-
-            foreach ($services as $service) {
-                if (! $enforcement->canAutoUnsuspendForPaidInvoice($service)) {
-                    continue;
-                }
-
-                try {
-                    $enforcement->clearInvoiceSuspensionMeta($service);
-                    $provisioningService->unsuspend($service->fresh());
-                    $notificationService->notifyServiceUnsuspended($service->fresh());
-
-                    Log::info('Service unsuspended - invoice paid', [
-                        'service_id' => $service->id,
-                        'invoice_id' => $invoice->id,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Service unsuspension trigger failed', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    /**
-     * Advance next_due_date for services that were manually renewed.
-     *
-     * Called after provisionServices() and unsuspendServices() so that suspended
-     * services have already transitioned back to active before we query.
-     * Only touches services that are active or suspended at query time — pending
-     * services are new purchases handled by provisionServices(), not renewals.
-     *
-     * Billing dates advance from the payment date (today), not from the previous
-     * due date, so a customer who renews on May 20 (monthly) is next due June 20.
-     */
-    private function advanceServiceBillingDates(Invoice $invoice): void
-    {
-        try {
-            // Re-query services directly so we see statuses after unsuspension.
-            $services = Service::where('invoice_id', $invoice->id)
-                ->whereIn('status', ['active', 'suspended'])
-                ->get();
-
-            foreach ($services as $service) {
-                $newDueDate = match ($service->billing_cycle) {
-                    'monthly' => now()->addMonth(),
-                    'quarterly' => now()->addMonths(3),
-                    'semi-annual' => now()->addMonths(6),
-                    'annual' => now()->addYear(),
-                    default => now()->addMonth(),
-                };
-
-                $service->update(['next_due_date' => $newDueDate]);
-
-                Log::info('Service billing date advanced after payment', [
-                    'service_id' => $service->id,
-                    'invoice_id' => $invoice->id,
-                    'billing_cycle' => $service->billing_cycle,
-                    'new_due_date' => $newDueDate->toDateString(),
-                ]);
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to advance service billing dates', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(InvoiceSettlementService::class)->settleFromPayment($payment);
     }
 
     /**
@@ -774,11 +651,70 @@ class PaymentController extends Controller
      */
     public function manualPaymentSubmitted(Payment $payment)
     {
-        abort_if($payment->user_id !== auth()->id(), 403, 'Unauthorized');
+        $this->authorize('view', $payment);
 
         $payment->load('invoice');
 
         return view('customer.payment.manual-submitted', ['payment' => $payment]);
+    }
+
+    public function bankTransferForm(Invoice $invoice)
+    {
+        $this->authorize('pay', $invoice);
+
+        if ($invoice->status->value === 'paid') {
+            return redirect()->route('customer.invoices.show', $invoice)
+                ->with('info', 'This invoice has already been paid');
+        }
+
+        return view('customer.payment.bank-transfer-form', [
+            'invoice' => $invoice,
+            'bankDetails' => BankTransferPaymentService::bankDetails(),
+            'amountRemaining' => $invoice->getAmountRemaining(),
+        ]);
+    }
+
+    public function submitBankTransfer(Request $request, Invoice $invoice)
+    {
+        $this->authorize('pay', $invoice);
+
+        $validated = $request->validate([
+            'payment_reference' => 'required|string|max:100',
+            'transfer_date' => 'nullable|date',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $gateway = PaymentGatewayFactory::makeForInvoice('bank_transfer', $invoice);
+            $result = $gateway->initiate($invoice, array_merge($validated, ['currency' => 'KES']));
+
+            if ($result['success']) {
+                return redirect()->route('customer.payment.bank-transfer-submitted', [
+                    'payment' => $result['payment_id'],
+                ])->with('success', $result['message']);
+            }
+
+            return back()->with('error', $result['message'] ?? 'Failed to submit bank transfer');
+        } catch (\Exception $e) {
+            Log::error('Bank transfer submission error', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Failed to submit bank transfer. Please try again.');
+        }
+    }
+
+    public function bankTransferSubmitted(Payment $payment)
+    {
+        $this->authorize('view', $payment);
+
+        $payment->load('invoice');
+
+        return view('customer.payment.bank-transfer-submitted', [
+            'payment' => $payment,
+            'bankDetails' => BankTransferPaymentService::bankDetails(),
+        ]);
     }
 
     /**

@@ -28,6 +28,39 @@
         </div>
     </div>
 
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Status</label>
+            <select name="status" class="form-select text-sm">
+                <option value="all" @selected(request('status', 'all') === 'all')>All</option>
+                @foreach (['pending', 'completed', 'failed', 'reversed'] as $s)
+                    <option value="{{ $s }}" @selected(request('status') === $s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Method</label>
+            <select name="payment_method" class="form-select text-sm">
+                <option value="">All</option>
+                @foreach (['mpesa', 'stripe', 'paypal', 'manual', 'bank_transfer', 'wallet'] as $m)
+                    <option value="{{ $m }}" @selected(request('payment_method') === $m)>{{ ucfirst(str_replace('_', ' ', $m)) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">From</label>
+            <input type="date" name="from_date" value="{{ request('from_date') }}" class="form-input text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">To</label>
+            <input type="date" name="to_date" value="{{ request('to_date') }}" class="form-input text-sm">
+        </div>
+        <button type="submit" class="btn-primary btn-sm">Filter</button>
+        @if(request()->hasAny(['status', 'payment_method', 'from_date', 'to_date']))
+            <a href="{{ route('customer.payments.index') }}" class="btn-secondary btn-sm">Clear</a>
+        @endif
+    </form>
+
     <!-- Payments Table -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">

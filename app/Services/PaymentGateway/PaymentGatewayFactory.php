@@ -23,6 +23,7 @@ class PaymentGatewayFactory
             'stripe' => new StripeService,
             'paypal' => new PayPalService,
             'manual' => new ManualPaymentService,
+            'bank_transfer' => new BankTransferPaymentService,
             default => throw new InvalidArgumentException("Unsupported payment method: {$method}"),
         };
     }
@@ -109,6 +110,16 @@ class PaymentGatewayFactory
                 'icon' => 'document-text',
                 'color' => 'gray',
                 'description' => 'Submit payment details for manual processing and approval',
+            ];
+        }
+
+        $bank = new BankTransferPaymentService;
+        if ($bank->isConfigured()) {
+            $gateways['bank_transfer'] = [
+                'label' => 'Bank Transfer',
+                'icon' => 'building-2',
+                'color' => 'slate',
+                'description' => 'Pay via bank transfer and submit your reference',
             ];
         }
 

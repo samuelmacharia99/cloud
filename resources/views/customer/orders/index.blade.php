@@ -10,6 +10,35 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage your orders.</p>
     </div>
 
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Status</label>
+            <select name="status" class="form-select text-sm">
+                <option value="all" @selected(request('status', 'all') === 'all')>All</option>
+                @foreach (['pending', 'paid', 'cancelled', 'failed'] as $s)
+                    <option value="{{ $s }}" @selected(request('status') === $s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Payment</label>
+            <select name="payment_status" class="form-select text-sm">
+                <option value="all" @selected(request('payment_status', 'all') === 'all')>All</option>
+                @foreach (['unpaid', 'paid', 'refunded'] as $s)
+                    <option value="{{ $s }}" @selected(request('payment_status') === $s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Order #</label>
+            <input type="text" name="search" value="{{ request('search') }}" class="form-input text-sm" placeholder="ORD-...">
+        </div>
+        <button type="submit" class="btn-primary btn-sm">Filter</button>
+        @if(request()->hasAny(['status', 'payment_status', 'search', 'from_date', 'to_date']))
+            <a href="{{ route('customer.orders.index') }}" class="btn-secondary btn-sm">Clear</a>
+        @endif
+    </form>
+
     <!-- Orders Table -->
     @if ($orders->count() > 0)
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">

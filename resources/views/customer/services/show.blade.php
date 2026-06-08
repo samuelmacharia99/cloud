@@ -35,6 +35,11 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
+                @if ($service->isSharedHosting() && in_array($service->status->value, ['active', 'suspended']))
+                    <a href="{{ route('customer.services.upgrade', $service) }}" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
+                        Upgrade plan
+                    </a>
+                @endif
                 @if ($service->isSharedHosting() && $service->status->value === 'active' && $service->getDirectAdminPanelUrl())
                     <a href="{{ route('customer.services.hosting.panel-login', $service) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                         Open Panel

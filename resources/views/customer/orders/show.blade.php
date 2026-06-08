@@ -10,7 +10,13 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $order->order_number }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Ordered on {{ $order->created_at->format('F d, Y') }}</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
+            @can('cancel', $order)
+                <form method="POST" action="{{ route('customer.orders.cancel', $order) }}" onsubmit="return confirm('Cancel this order?')">
+                    @csrf
+                    <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 border border-red-300 dark:border-red-700 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30">Cancel order</button>
+                </form>
+            @endcan
             <span class="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium
                 @if($order->status === 'pending')
                     bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300

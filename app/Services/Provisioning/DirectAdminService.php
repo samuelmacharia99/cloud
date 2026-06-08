@@ -361,6 +361,55 @@ class DirectAdminService
     }
 
     /**
+     * Change the hosting package assigned to an existing DirectAdmin user.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function changeUserPackage(string $username, string $packageKey): array
+    {
+        if (! $this->isConfigured()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured.'];
+        }
+
+        if (blank($username) || blank($packageKey)) {
+            return ['success' => false, 'message' => 'Username and package are required.'];
+        }
+
+        try {
+            $response = $this->httpClient()
+                ->asForm()
+                ->post(rtrim($this->apiUrl, '/').'/CMD_API_MODIFY_USER', [
+                    'action' => 'package',
+                    'user' => $username,
+                    'package' => $packageKey,
+                ]);
+
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            if ($parsed['success']) {
+                Log::info('DirectAdmin user package changed', [
+                    'username' => $username,
+                    'package' => $packageKey,
+                    'node_id' => $this->node?->id,
+                ]);
+            }
+
+            return $parsed;
+        } catch (\Exception $e) {
+            Log::error('Failed to change DirectAdmin user package', [
+                'username' => $username,
+                'package' => $packageKey,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to change hosting package: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Check whether a DirectAdmin user already exists.
      */
     public function accountExists(string $username): bool

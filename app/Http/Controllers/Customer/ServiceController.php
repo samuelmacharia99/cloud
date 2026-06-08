@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\Customer;
 
-use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
-use App\Models\Ticket;
+use App\Services\Customer\CustomerServiceCancellationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -30,10 +29,7 @@ class ServiceController extends Controller
 
     public function show(Service $service)
     {
-        // Ensure customer can only view their own services
-        if ($service->user_id !== auth()->id()) {
-            abort(403);
-        }
+        $this->authorize('view', $service);
 
         // Redirect container services to their dedicated dashboard
         if ($service->product?->type === 'container_hosting') {
@@ -45,34 +41,27 @@ class ServiceController extends Controller
         return view('customer.services.show', compact('service'));
     }
 
-    public function cancel(Request $request, Service $service)
+    public function cancel(Request $request, Service $service, CustomerServiceCancellationService $cancellation)
     {
-        abort_if($service->user_id !== auth()->id(), 403);
-        abort_if(in_array($service->status->value, ['terminated', 'cancelled']), 422);
+        $this->authorize('view', $service);
 
         $request->validate([
             'reason' => 'required|string|min:10|max:1000',
         ]);
 
-        DB::transaction(function () use ($service, $request) {
-            $service->update(['status' => ServiceStatus::Cancelled]);
+        try {
+            $result = $cancellation->cancel($service, auth()->user(), $request->reason);
 
-            Ticket::create([
-                'user_id' => auth()->id(),
-                'title' => 'Service Cancellation: '.$service->name,
-                'description' => $request->reason,
-                'status' => 'open',
-                'priority' => 'low',
-            ]);
-        });
-
-        return redirect()->route('customer.services.index')
-            ->with('success', 'Service cancelled successfully. A ticket has been created.');
+            return redirect()->route('customer.services.index')
+                ->with($result['deprovisioned'] ? 'success' : 'warning', $result['message']);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function renew(Request $request, Service $service)
     {
-        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('view', $service);
         abort_if(
             ! in_array($service->status->value, ['active', 'suspended']),
             422,

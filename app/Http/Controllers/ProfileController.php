@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\ProfileUpdateRequest;
 use App\Helpers\PhoneHelper;
+use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\TwoFactorService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -45,7 +46,7 @@ class ProfileController extends Controller
         $validated = $request->validated();
 
         // Normalize phone number if provided
-        if (!empty($validated['phone'])) {
+        if (! empty($validated['phone'])) {
             $validated['phone'] = PhoneHelper::normalize($validated['phone']);
         }
 
@@ -90,5 +91,68 @@ class ProfileController extends Controller
         $request->session()->regenerateToken();
 
         return Redirect::route('profile.security')->with('status', 'sessions-cleared');
+    }
+
+    public function enableTwoFactor(Request $request, TwoFactorService $twoFactorService): RedirectResponse
+    {
+        $user = $request->user();
+
+        if (! $user->phone) {
+            return Redirect::route('profile.edit')
+                ->with('error', 'Please set your phone number on your profile before enabling 2FA.');
+        }
+
+        try {
+            $recoveryCodes = $twoFactorService->enable($user);
+
+            return Redirect::route('profile.security')
+                ->with('success', 'Two-factor authentication enabled successfully.')
+                ->with('recovery_codes', $recoveryCodes);
+        } catch (\Exception $e) {
+            return Redirect::route('profile.security')
+                ->with('error', 'Failed to enable 2FA. '.$e->getMessage());
+        }
+    }
+
+    public function disableTwoFactor(Request $request, TwoFactorService $twoFactorService): RedirectResponse
+    {
+        $request->validate([
+            'password' => ['required', 'current_password'],
+        ]);
+
+        try {
+            $twoFactorService->disable($request->user());
+
+            return Redirect::route('profile.security')
+                ->with('success', 'Two-factor authentication has been disabled.');
+        } catch (\Exception $e) {
+            return Redirect::route('profile.security')
+                ->with('error', 'Failed to disable 2FA. '.$e->getMessage());
+        }
+    }
+
+    public function regenerateRecoveryCodes(Request $request, TwoFactorService $twoFactorService): RedirectResponse
+    {
+        $request->validate([
+            'password' => ['required', 'current_password'],
+        ]);
+
+        $user = $request->user();
+
+        if (! $user->two_factor_enabled) {
+            return Redirect::route('profile.security')
+                ->with('error', '2FA is not enabled.');
+        }
+
+        try {
+            $recoveryCodes = $twoFactorService->enable($user);
+
+            return Redirect::route('profile.security')
+                ->with('success', 'Recovery codes regenerated successfully.')
+                ->with('recovery_codes', $recoveryCodes);
+        } catch (\Exception $e) {
+            return Redirect::route('profile.security')
+                ->with('error', 'Failed to regenerate recovery codes. '.$e->getMessage());
+        }
     }
 }

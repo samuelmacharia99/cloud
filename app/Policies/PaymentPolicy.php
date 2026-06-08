@@ -2,8 +2,8 @@
 
 namespace App\Policies;
 
-use App\Models\User;
 use App\Models\Payment;
+use App\Models\User;
 use Illuminate\Auth\Access\Response;
 
 class PaymentPolicy
@@ -17,13 +17,11 @@ class PaymentPolicy
     }
 
     /**
-     * Admin can view all payments, customers cannot.
+     * Customers may list their own payments (scoped in controller); admins see all.
      */
-    public function index(User $user): Response
+    public function viewAny(User $user): bool
     {
-        return $user->is_admin
-            ? Response::allow()
-            : Response::deny('Customers cannot view all payments.');
+        return true;
     }
 
     /**
@@ -53,7 +51,7 @@ class PaymentPolicy
      */
     public function update(User $user, Payment $payment): Response
     {
-        if (!$user->is_admin) {
+        if (! $user->is_admin) {
             return Response::deny('Only administrators can update payments.');
         }
 
@@ -73,7 +71,7 @@ class PaymentPolicy
      */
     public function reverse(User $user, Payment $payment): Response
     {
-        if (!$user->is_admin) {
+        if (! $user->is_admin) {
             return Response::deny('Only administrators can reverse payments.');
         }
 

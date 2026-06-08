@@ -10,6 +10,34 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage your invoices.</p>
     </div>
 
+    <form method="GET" class="ui-card p-4 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Status</label>
+            <select name="status" class="form-select text-sm">
+                <option value="all" @selected(request('status', 'all') === 'all')>All</option>
+                @foreach (['unpaid', 'paid', 'overdue', 'draft', 'cancelled'] as $s)
+                    <option value="{{ $s }}" @selected(request('status') === $s)>{{ ucfirst($s) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">From</label>
+            <input type="date" name="from_date" value="{{ request('from_date') }}" class="form-input text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">To</label>
+            <input type="date" name="to_date" value="{{ request('to_date') }}" class="form-input text-sm">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Invoice #</label>
+            <input type="text" name="search" value="{{ request('search') }}" placeholder="INV-..." class="form-input text-sm">
+        </div>
+        <button type="submit" class="btn-primary btn-sm">Filter</button>
+        @if(request()->hasAny(['status', 'from_date', 'to_date', 'search']))
+            <a href="{{ route('customer.invoices.index') }}" class="btn-secondary btn-sm">Clear</a>
+        @endif
+    </form>
+
     <!-- Invoices Table -->
     @if ($invoices->count() > 0)
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">

@@ -38,6 +38,7 @@ use App\Http\Controllers\Customer\InterCustomerDomainTransferController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\Customer\ResellerCatalogController;
 use App\Http\Controllers\Customer\ServiceBrowserController;
+use App\Http\Controllers\Customer\ServiceUpgradeController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailWebhookController;
 use App\Http\Controllers\NotificationPreferenceController;
@@ -427,6 +428,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
+        Route::get('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'show'])->name('customer.services.upgrade');
+        Route::post('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'store'])->name('customer.services.upgrade.store');
 
         Route::prefix('my/services/{service}/hosting')->name('customer.services.hosting.')->group(function () {
             Route::get('panel-login', [HostingPanelController::class, 'panelLogin'])->middleware('throttle:10,1')->name('panel-login');
@@ -459,6 +462,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/servers', [App\Http\Controllers\Customer\ServerController::class, 'index'])->name('customer.servers.index');
         Route::post('/my/servers/order', [App\Http\Controllers\Customer\ServerController::class, 'order'])->name('customer.servers.order');
         Route::resource('my/orders', App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
+        Route::post('my/orders/{order}/cancel', [App\Http\Controllers\Customer\OrderController::class, 'cancel'])->name('customer.orders.cancel');
+        Route::get('my/credits', [App\Http\Controllers\Customer\CreditController::class, 'index'])->name('customer.credits.index');
         Route::resource('my/invoices', App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('my/invoices/{invoice}/download', [App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
         Route::get('my/invoices/{invoice}/preview', [App\Http\Controllers\Customer\InvoiceController::class, 'preview'])->name('customer.invoices.preview');
@@ -515,6 +520,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Payment methods (resource routes already defined above, these are additional payment workflows)
         Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
+        Route::post('/invoices/{invoice}/apply-credits', [PaymentController::class, 'applyCredits'])->name('customer.payment.apply-credits');
         Route::post('/invoices/{invoice}/pay', [PaymentController::class, 'initiate'])->name('customer.payment.initiate');
         Route::get('/invoices/{invoice}/pay/mpesa/verify', [PaymentController::class, 'verifyMpesa'])->name('customer.payment.verify-mpesa');
         Route::get('/invoices/{invoice}/pay/mpesa/status', [PaymentController::class, 'mpesaStatus'])->name('customer.payment.mpesa-status');
@@ -526,6 +532,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/invoices/{invoice}/payment/manual', [PaymentController::class, 'manualPaymentForm'])->name('customer.payment.manual-form');
         Route::post('/invoices/{invoice}/payment/manual', [PaymentController::class, 'submitManualPayment'])->name('customer.payment.manual-submit');
         Route::get('/payments/{payment}/submitted', [PaymentController::class, 'manualPaymentSubmitted'])->name('customer.payment.manual-submitted');
+        Route::get('/invoices/{invoice}/payment/bank-transfer', [PaymentController::class, 'bankTransferForm'])->name('customer.payment.bank-transfer-form');
+        Route::post('/invoices/{invoice}/payment/bank-transfer', [PaymentController::class, 'submitBankTransfer'])->name('customer.payment.bank-transfer-submit');
+        Route::get('/payments/{payment}/bank-transfer-submitted', [PaymentController::class, 'bankTransferSubmitted'])->name('customer.payment.bank-transfer-submitted');
 
         // Container management
         Route::get('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
@@ -586,6 +595,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/security', [ProfileController::class, 'security'])->name('profile.security');
     Route::post('/security/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions'])->name('profile.logout-other-sessions');
+    Route::post('/security/two-factor/enable', [ProfileController::class, 'enableTwoFactor'])->name('profile.two-factor.enable');
+    Route::post('/security/two-factor/disable', [ProfileController::class, 'disableTwoFactor'])->name('profile.two-factor.disable');
+    Route::post('/security/two-factor/regenerate-codes', [ProfileController::class, 'regenerateRecoveryCodes'])->name('profile.two-factor.regenerate-codes');
 });
 
 require __DIR__.'/auth.php';

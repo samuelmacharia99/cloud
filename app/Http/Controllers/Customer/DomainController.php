@@ -2,19 +2,20 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
+use App\Models\Currency;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
-use App\Models\Currency;
-use App\Services\DomainTransferService;
 use App\Services\DomainRenewalService;
+use App\Services\DomainTransferService;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
-use App\Http\Controllers\Controller;
+use Illuminate\Validation\Rule;
 
 class DomainController extends Controller
 {
@@ -23,6 +24,8 @@ class DomainController extends Controller
      */
     public function index()
     {
+        $this->authorize('viewAny', Domain::class);
+
         // Get all domains registered by the customer
         $domains = Domain::where('user_id', auth()->id())
             ->orderBy('name')
@@ -94,7 +97,7 @@ class DomainController extends Controller
                     'domain_name' => "{$domain->name}{$domain->extension}",
                     'transfer_price' => $transferPrice,
                     'extension_id' => $extension->id,
-                ]
+                ],
             ]);
 
             // Redirect to checkout confirmation page
@@ -116,9 +119,8 @@ class DomainController extends Controller
      */
     public function showTransferDetails(Domain $domain)
     {
-        // Verify ownership
-        abort_if($domain->user_id !== auth()->id(), 403);
-        abort_if(!$domain->isTransfer(), 404);
+        $this->authorize('view', $domain);
+        abort_if(! $domain->isTransfer(), 404);
 
         $instructions = DomainTransferService::getTransferInstructions($domain);
         $estimatedCompletion = DomainTransferService::getEstimatedCompletionDate($domain);
@@ -135,14 +137,13 @@ class DomainController extends Controller
      */
     public function cancelTransfer(Request $request, Domain $domain)
     {
-        // Verify ownership
-        abort_if($domain->user_id !== auth()->id(), 403);
-        abort_if(!$domain->isTransfer(), 404);
+        $this->authorize('view', $domain);
+        abort_if(! $domain->isTransfer(), 404);
 
         // Can only cancel if transfer is pending or initiated
-        if (!in_array($domain->transfer_status, ['pending', 'initiated'])) {
+        if (! in_array($domain->transfer_status, ['pending', 'initiated'])) {
             return redirect()->back()
-                ->with('error', 'Cannot cancel a ' . $domain->transfer_status . ' transfer');
+                ->with('error', 'Cannot cancel a '.$domain->transfer_status.' transfer');
         }
 
         $reason = $request->input('reason', 'Cancelled by user');
@@ -163,11 +164,11 @@ class DomainController extends Controller
     {
         $transferCheckout = session('transfer_checkout');
 
-        abort_if(!$transferCheckout, 404, 'Transfer not found');
+        abort_if(! $transferCheckout, 404, 'Transfer not found');
 
         // Get domain and extension for verification
         $domain = Domain::findOrFail($transferCheckout['domain_id']);
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('view', $domain);
 
         // Calculate totals
         $subtotal = $transferCheckout['transfer_price'];
@@ -202,12 +203,12 @@ class DomainController extends Controller
         ]);
 
         $transferCheckout = session('transfer_checkout');
-        abort_if(!$transferCheckout, 404, 'Transfer not found');
+        abort_if(! $transferCheckout, 404, 'Transfer not found');
 
         try {
             // Get domain and verify ownership
             $domain = Domain::findOrFail($transferCheckout['domain_id']);
-            abort_if($domain->user_id !== auth()->id(), 403);
+            $this->authorize('view', $domain);
 
             // Create invoice and invoice item within a transaction
             $invoice = DB::transaction(function () use ($domain, $transferCheckout) {
@@ -216,7 +217,7 @@ class DomainController extends Controller
                 // Create invoice
                 $invoice = Invoice::create([
                     'user_id' => auth()->id(),
-                    'invoice_number' => 'INV-' . strtoupper(uniqid()),
+                    'invoice_number' => 'INV-'.strtoupper(uniqid()),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays(7),
                     'subtotal' => $transferPrice,
@@ -252,14 +253,14 @@ class DomainController extends Controller
      */
     public function initiateRenewal(Request $request, Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('update', $domain);
 
         $validated = $request->validate([
             'years' => 'required|integer|min:1|max:10',
         ]);
 
         try {
-            $renewalService = new DomainRenewalService();
+            $renewalService = new DomainRenewalService;
             $renewalOrder = $renewalService->initiateRenewal($domain, auth()->user(), $validated['years']);
 
             // Redirect to renewal checkout
@@ -290,10 +291,10 @@ class DomainController extends Controller
     public function showRenewalCheckout()
     {
         $renewalCheckout = session('renewal_checkout');
-        abort_if(!$renewalCheckout, 404, 'Renewal not found');
+        abort_if(! $renewalCheckout, 404, 'Renewal not found');
 
         $domain = Domain::findOrFail($renewalCheckout['domain_id']);
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('view', $domain);
 
         $subtotal = $renewalCheckout['amount'];
         $taxEnabled = Setting::getValue('tax_enabled') == 'true';
@@ -327,11 +328,11 @@ class DomainController extends Controller
         ]);
 
         $renewalCheckout = session('renewal_checkout');
-        abort_if(!$renewalCheckout, 404, 'Renewal not found');
+        abort_if(! $renewalCheckout, 404, 'Renewal not found');
 
         try {
-            $renewalService = new DomainRenewalService();
-            $renewalOrder = \App\Models\DomainRenewalOrder::findOrFail($renewalCheckout['renewal_order_id']);
+            $renewalService = new DomainRenewalService;
+            $renewalOrder = DomainRenewalOrder::findOrFail($renewalCheckout['renewal_order_id']);
 
             abort_if($renewalOrder->user_id !== auth()->id(), 403);
 

@@ -2,28 +2,52 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Services\InvoicePdfService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class InvoiceController extends Controller
 {
     public function index(Request $request)
     {
-        $invoices = Invoice::where('user_id', auth()->id())
-            ->latest()
-            ->paginate(10);
+        $this->authorize('viewAny', Invoice::class);
+
+        $query = Invoice::where('user_id', auth()->id())->latest();
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where('invoice_number', 'like', "%{$search}%");
+        }
+
+        $invoices = $query->paginate(10)->withQueryString();
 
         return view('customer.invoices.index', compact('invoices'));
     }
 
     public function show(Invoice $invoice)
     {
-        abort_if($invoice->user_id !== auth()->id(), 403);
+        $this->authorize('view', $invoice);
 
-        $invoice->load('items.product', 'payments');
-        return view('customer.invoices.show', compact('invoice'));
+        $invoice->load('items.product', 'payments', 'credits');
+
+        return view('customer.invoices.show', [
+            'invoice' => $invoice,
+            'appliedCredits' => $invoice->getAppliedCredits(),
+            'amountRemaining' => $invoice->getAmountRemaining(),
+        ]);
     }
 
     /**
@@ -31,7 +55,7 @@ class InvoiceController extends Controller
      */
     public function download(Invoice $invoice)
     {
-        abort_if($invoice->user_id !== auth()->id(), 403);
+        $this->authorize('download', $invoice);
 
         return InvoicePdfService::download($invoice);
     }

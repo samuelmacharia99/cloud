@@ -5,6 +5,30 @@
 @section('content')
 <div class="space-y-6 max-w-4xl">
     <!-- Success Message -->
+    @if (session('success'))
+        <div class="flex items-center gap-3 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-lg">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    @if (session('error'))
+        <div class="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-200 rounded-lg">
+            {{ session('error') }}
+        </div>
+    @endif
+
+    @if (session('recovery_codes'))
+        <div class="ui-card p-6 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20">
+            <h3 class="font-semibold text-amber-900 dark:text-amber-200 mb-2">Save your recovery codes</h3>
+            <p class="text-sm text-amber-800 dark:text-amber-300 mb-3">Store these in a safe place. Each code can only be used once.</p>
+            <div class="grid grid-cols-2 gap-2 font-mono text-sm">
+                @foreach (session('recovery_codes') as $code)
+                    <span class="px-2 py-1 bg-white dark:bg-slate-900 rounded">{{ $code }}</span>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     @if (session('status') === 'sessions-cleared')
         <div
             x-data="{ show: true }"
@@ -26,6 +50,48 @@
     </div>
 
     <div class="space-y-6">
+        <!-- Two-Factor Authentication -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <section class="space-y-4">
+                <header>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Two-Factor Authentication</h2>
+                    <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Require an SMS code when signing in for extra security.</p>
+                </header>
+                <div class="p-4 rounded-lg {{ $user->two_factor_enabled ? 'bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700' }}">
+                    <p class="font-medium">{{ $user->two_factor_enabled ? 'Enabled' : 'Disabled' }}</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        @if ($user->two_factor_enabled)
+                            SMS codes required at login{{ $user->two_factor_recovery_codes ? ' ('.count($user->two_factor_recovery_codes).' recovery codes)' : '' }}
+                        @elseif ($user->phone)
+                            Codes will be sent to {{ $user->phone }}
+                        @else
+                            <a href="{{ route('profile.edit') }}" class="text-brand-600 hover:underline">Add a phone number</a> on your profile to enable 2FA.
+                        @endif
+                    </p>
+                </div>
+                @if (! $user->two_factor_enabled && $user->phone)
+                    <form method="POST" action="{{ route('profile.two-factor.enable') }}">
+                        @csrf
+                        <button type="submit" class="btn-primary">Enable 2FA</button>
+                    </form>
+                @elseif ($user->two_factor_enabled)
+                    <form method="POST" action="{{ route('profile.two-factor.regenerate-codes') }}" class="mb-4">
+                        @csrf
+                        <label class="block text-sm font-medium mb-2">Password to regenerate codes</label>
+                        <input type="password" name="password" required class="form-input mb-2 max-w-xs">
+                        <button type="submit" class="btn-secondary btn-sm">Regenerate recovery codes</button>
+                    </form>
+                    <form method="POST" action="{{ route('profile.two-factor.disable') }}">
+                        @csrf
+                        <label class="block text-sm font-medium mb-2">Password to disable 2FA</label>
+                        <input type="password" name="password" required class="form-input mb-2 max-w-xs @error('password') border-red-500 @enderror">
+                        @error('password')<p class="text-sm text-red-600 mb-2">{{ $message }}</p>@enderror
+                        <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium">Disable 2FA</button>
+                    </form>
+                @endif
+            </section>
+        </div>
+
         <!-- Password Change Section -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             @include('profile.partials.update-password-form')

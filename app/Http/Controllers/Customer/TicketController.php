@@ -25,22 +25,38 @@ class TicketController extends Controller
         $this->authorize('viewAny', Ticket::class);
 
         $user = auth()->user();
-        $query = $user->tickets()->with('assignee')->latest();
 
         if ($user->isReseller()) {
             $customerIds = app(ResellerScopeService::class)->managedCustomerIds($user);
 
-            $query = Ticket::with('user', 'assignee')
+            $query = Ticket::with('user', 'assignee', 'replies')
                 ->where(function ($builder) use ($user, $customerIds) {
                     $builder->where('user_id', $user->id)
                         ->orWhereIn('user_id', $customerIds);
-                })
-                ->latest();
+                });
+        } else {
+            $query = $user->tickets()->with('assignee', 'replies');
         }
 
-        $query = $query->paginate(15);
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
 
-        return view('customer.tickets.index', compact('query'));
+        if ($request->filled('priority') && $request->priority !== 'all') {
+            $query->where('priority', $request->priority);
+        }
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $tickets = $query->latest()->paginate(15)->withQueryString();
+
+        return view('customer.tickets.index', compact('tickets'));
     }
 
     /**

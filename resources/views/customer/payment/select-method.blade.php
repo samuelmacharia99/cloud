@@ -7,7 +7,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Pay Invoice</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} - Ksh {{ number_format($invoice->total, 0) }}</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — KES {{ number_format($amountRemaining ?? $invoice->total, 2) }} remaining</p>
     </div>
 
     <!-- Invoice Summary -->
@@ -28,12 +28,31 @@
                 <span class="font-semibold text-slate-900 dark:text-white">{{ $invoice->due_date->format('M d, Y') }}</span>
             </div>
             <hr class="my-4 border-slate-200 dark:border-slate-700">
+            @if(($appliedCredits ?? 0) > 0)
+            <div class="flex justify-between">
+                <span class="text-slate-600 dark:text-slate-400">Credits applied</span>
+                <span class="font-semibold text-emerald-600">− KES {{ number_format($appliedCredits, 2) }}</span>
+            </div>
+            @endif
             <div class="flex justify-between text-lg">
                 <span class="font-semibold text-slate-900 dark:text-white">Amount Due</span>
-                <span class="font-bold text-blue-600 dark:text-blue-400">Ksh {{ number_format($invoice->total, 0) }}</span>
+                <span class="font-bold text-blue-600 dark:text-blue-400">KES {{ number_format($amountRemaining ?? $invoice->total, 2) }}</span>
             </div>
         </div>
     </div>
+
+    @if (($creditBalance ?? 0) > 0 && ($amountRemaining ?? $invoice->total) > 0)
+    <div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <p class="font-semibold text-emerald-900 dark:text-emerald-300">Account credit available</p>
+            <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">KES {{ number_format($creditBalance, 2) }} can be applied to this invoice.</p>
+        </div>
+        <form method="POST" action="{{ route('customer.payment.apply-credits', $invoice) }}">
+            @csrf
+            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg text-sm">Apply credits</button>
+        </form>
+    </div>
+    @endif
 
     <!-- Payment Methods -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="{ selectedMethod: null, showManualModal: false, mpesaPhoneNumber: '' }">
@@ -100,7 +119,7 @@
         </div>
 
         <!-- Input Section (appears when method selected) -->
-        <div x-show="selectedMethod !== null && selectedMethod !== 'manual'" class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-800/50" x-transition>
+        <div x-show="selectedMethod !== null && selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'" class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-800/50" x-transition>
 
             <!-- M-Pesa Input -->
             <div x-show="selectedMethod === 'mpesa'" class="space-y-4" x-transition>
@@ -129,7 +148,7 @@
 
         <!-- Submit Button -->
         <div class="mt-6 flex gap-3">
-            <form id="paymentForm" method="POST" action="{{ route('customer.payment.initiate', $invoice) }}" x-show="selectedMethod !== 'manual'">
+            <form id="paymentForm" method="POST" action="{{ route('customer.payment.initiate', $invoice) }}" x-show="selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'">
                 @csrf
                 <input type="hidden" name="payment_method" x-bind:value="selectedMethod">
                 <!-- Pass the phone number from Alpine.js reactive variable -->
@@ -139,6 +158,10 @@
                     Continue to Payment
                 </button>
             </form>
+
+            <a x-show="selectedMethod === 'bank_transfer'" href="{{ route('customer.payment.bank-transfer-form', $invoice) }}" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition text-center">
+                Continue to bank transfer
+            </a>
 
             <button type="button" x-show="selectedMethod === 'manual'" @click="showManualModal = true" :disabled="!selectedMethod" class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
                 Enter Payment Details

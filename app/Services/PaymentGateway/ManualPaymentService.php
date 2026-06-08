@@ -23,7 +23,7 @@ class ManualPaymentService implements PaymentGatewayInterface
                 'invoice_number' => $invoice->invoice_number,
                 'user_id' => $userId,
                 'user_name' => $user->name,
-                'amount' => $invoice->total,
+                'amount' => $invoice->getAmountRemaining(),
                 'currency' => $customerData['currency'] ?? 'KES',
             ]);
 
@@ -31,7 +31,7 @@ class ManualPaymentService implements PaymentGatewayInterface
             $payment = Payment::create([
                 'user_id' => $userId,
                 'invoice_id' => $invoice->id,
-                'amount' => $invoice->total,
+                'amount' => $invoice->getAmountRemaining(),
                 'currency' => $customerData['currency'] ?? 'KES',
                 'payment_method' => 'manual',
                 'transaction_reference' => 'manual-'.uniqid(),

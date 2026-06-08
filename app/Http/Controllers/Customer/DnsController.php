@@ -3,9 +3,8 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
-use App\Models\Domain;
 use App\Models\DnsRecord;
-use App\Models\DnsZone;
+use App\Models\Domain;
 use Illuminate\Http\Request;
 
 class DnsController extends Controller
@@ -15,7 +14,7 @@ class DnsController extends Controller
      */
     public function index(Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
 
         $zone = $domain->dnsZones()->first();
         $records = $zone ? $zone->records()->orderBy('type')->get() : collect();
@@ -28,7 +27,7 @@ class DnsController extends Controller
      */
     public function nameservers(Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
 
         return view('customer.domains.dns.nameservers', compact('domain'));
     }
@@ -38,7 +37,7 @@ class DnsController extends Controller
      */
     public function updateNameservers(Request $request, Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
 
         $validated = $request->validate([
             'nameserver_1' => 'required|string|min:3|max:253',
@@ -62,7 +61,7 @@ class DnsController extends Controller
      */
     public function records(Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
 
         $zone = $domain->dnsZones()->firstOrFail();
         $records = $zone->records()->orderBy('type')->get();
@@ -75,7 +74,7 @@ class DnsController extends Controller
      */
     public function addRecord(Request $request, Domain $domain)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
 
         $validated = $request->validate([
             'name' => 'required|string',
@@ -108,7 +107,7 @@ class DnsController extends Controller
      */
     public function updateRecord(Request $request, Domain $domain, DnsRecord $record)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
         abort_if($record->dnsZone->domain_id !== $domain->id, 403);
 
         $validated = $request->validate([
@@ -135,11 +134,12 @@ class DnsController extends Controller
      */
     public function deleteRecord(Domain $domain, DnsRecord $record)
     {
-        abort_if($domain->user_id !== auth()->id(), 403);
+        $this->authorize('manageDns', $domain);
         abort_if($record->dnsZone->domain_id !== $domain->id, 403);
 
         try {
             $record->delete();
+
             return back()->with('success', 'DNS record deleted successfully');
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());

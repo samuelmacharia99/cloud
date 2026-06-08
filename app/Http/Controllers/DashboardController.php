@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Services\CreditService;
 use App\Services\ResellerAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -191,18 +192,28 @@ class DashboardController extends Controller
 
     private function customerDashboard($user)
     {
-        $data = [
-            'activeServices' => $user->services()->where('status', 'active')->get(),
+        $isResellerManaged = filled($user->reseller_id);
+
+        return view('dashboard.customer', [
+            'activeServices' => $user->services()->where('status', 'active')->with('product')->get(),
+            'suspendedServices' => $user->services()->where('status', 'suspended')->with('product')->get(),
+            'provisioningServices' => $user->services()->whereIn('status', ['pending', 'provisioning'])->with('product')->get(),
             'upcomingDueInvoices' => $user->invoices()
-                ->where('status', 'unpaid')
+                ->whereIn('status', ['unpaid', 'overdue'])
                 ->orderBy('due_date')
                 ->take(5)
                 ->get(),
             'outstandingBalance' => $user->getOutstandingBalance(),
             'openTickets' => $user->tickets()->where('status', '!=', 'closed')->get(),
             'domains' => $user->domains()->where('status', 'active')->get(),
-        ];
-
-        return view('dashboard.customer', $data);
+            'expiringDomains' => $user->domains()
+                ->where('status', 'active')
+                ->whereNotNull('expires_at')
+                ->where('expires_at', '<=', now()->addDays(30))
+                ->orderBy('expires_at')
+                ->get(),
+            'creditBalance' => CreditService::getAvailableBalance($user),
+            'isResellerManaged' => $isResellerManaged,
+        ]);
     }
 }
