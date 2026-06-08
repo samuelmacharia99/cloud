@@ -1,10 +1,10 @@
 @php
-    $logoUrl = \App\Models\Setting::getValue('logo_url', '');
+    $logoUrl = branding_asset_url_or_fallback(\App\Models\Setting::getValue('logo_url'), 'logo');
 @endphp
 
 <div class="flex items-center gap-2" {{ $attributes->merge(['class' => 'h-8 w-auto']) }}>
     @if($logoUrl)
-        <img src="{{ $logoUrl }}" alt="Talksasa Cloud" class="h-8 w-auto object-contain">
+        <img src="{{ $logoUrl }}" alt="{{ config('app.name', 'Talksasa Cloud') }}" class="h-8 w-auto object-contain">
     @else
         <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
             <span class="text-white font-bold text-sm">TC</span>

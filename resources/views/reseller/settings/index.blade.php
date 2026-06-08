@@ -589,10 +589,11 @@
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
                             <h4 class="font-medium text-slate-900 dark:text-white mb-4">Logo</h4>
                             <div class="space-y-4">
-                                @if(!empty($brandingSettings['logo_url']))
+                                @php $resellerLogoUrl = branding_asset_url_or_fallback($brandingSettings['logo_url'] ?? null, 'logo'); @endphp
+                                @if($resellerLogoUrl)
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
-                                            <img src="{{ branding_asset_url($brandingSettings['logo_url']) }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
+                                            <img src="{{ $resellerLogoUrl }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
                                             <div>
                                                 <p class="text-sm font-medium text-slate-900 dark:text-white">Current Logo</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 500x150px</p>
@@ -637,10 +638,11 @@
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
                             <h4 class="font-medium text-slate-900 dark:text-white mb-4">Favicon</h4>
                             <div class="space-y-4">
-                                @if(!empty($brandingSettings['favicon_url']))
+                                @php $resellerFaviconUrl = branding_asset_url_or_fallback($brandingSettings['favicon_url'] ?? null, 'favicon'); @endphp
+                                @if($resellerFaviconUrl)
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
-                                            <img src="{{ branding_asset_url($brandingSettings['favicon_url']) }}" alt="Favicon" class="h-8 w-8 object-contain">
+                                            <img src="{{ $resellerFaviconUrl }}" alt="Favicon" class="h-8 w-8 object-contain">
                                             <div>
                                                 <p class="text-sm font-medium text-slate-900 dark:text-white">Current Favicon</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 32x32px or 64x64px</p>

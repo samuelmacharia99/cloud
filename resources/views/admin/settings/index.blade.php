@@ -1123,10 +1123,11 @@
                                 <textarea name="settings[footer_text]" rows="3" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">{{ $settings['footer_text'] ?? '' }}</textarea>
                             </div>
 
-                            @if($settings['logo_url'] ?? false)
+                            @php $currentLogoUrl = branding_asset_url_or_fallback($settings['logo_url'] ?? null, 'logo'); @endphp
+                            @if($currentLogoUrl)
                                 <div>
                                     <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current Logo</p>
-                                    <img src="{{ $settings['logo_url'] }}" alt="Logo" class="h-12 object-contain" />
+                                    <img src="{{ $currentLogoUrl }}" alt="Logo" class="h-12 object-contain" />
                                 </div>
                             @endif
 
@@ -1136,10 +1137,11 @@
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Max 5MB, PNG/JPG recommended</p>
                             </div>
 
-                            @if($settings['favicon_url'] ?? false)
+                            @php $currentFaviconUrl = branding_asset_url_or_fallback($settings['favicon_url'] ?? null, 'favicon'); @endphp
+                            @if($currentFaviconUrl)
                                 <div>
                                     <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current Favicon</p>
-                                    <img src="{{ $settings['favicon_url'] }}" alt="Favicon" class="w-8 h-8" />
+                                    <img src="{{ $currentFaviconUrl }}" alt="Favicon" class="w-8 h-8" />
                                 </div>
                             @endif
 

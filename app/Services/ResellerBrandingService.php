@@ -3,16 +3,16 @@
 namespace App\Services;
 
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\Log;
 use Exception;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ResellerBrandingService
 {
     public function uploadFile(User $reseller, UploadedFile $file, string $type): array
     {
-        if (!in_array($type, ['logo', 'favicon'])) {
+        if (! in_array($type, ['logo', 'favicon'])) {
             throw new Exception("Invalid file type: {$type}");
         }
 
@@ -41,11 +41,10 @@ class ResellerBrandingService
                 'public'
             );
 
-            $url = branding_asset_url(Storage::disk('public')->url($storagePath))
-                ?? '/storage/'.$storagePath;
+            $url = '/storage/'.$storagePath;
 
             // Update settings
-            if (!isset($settings['branding'])) {
+            if (! isset($settings['branding'])) {
                 $settings['branding'] = [];
             }
             $settings['branding']["{$type}_url"] = $url;
@@ -75,7 +74,7 @@ class ResellerBrandingService
 
     public function deleteFile(User $reseller, string $type): void
     {
-        if (!in_array($type, ['logo', 'favicon'])) {
+        if (! in_array($type, ['logo', 'favicon'])) {
             throw new Exception("Invalid file type: {$type}");
         }
 

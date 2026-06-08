@@ -16,13 +16,18 @@
         <!-- Sidebar -->
         <aside class="app-sidebar w-64 max-w-[85vw] overflow-y-auto flex flex-col fixed h-screen left-0 top-0 z-50 transform transition-transform duration-200 ease-out -translate-x-full lg:translate-x-0 lg:z-30" :class="{ 'translate-x-0': sidebarOpen }">
                 <!-- Logo -->
+                @php $adminLogoUrl = branding_asset_url_or_fallback(\App\Models\Setting::getValue('logo_url'), 'logo'); @endphp
                 <div class="h-16 flex items-center px-6 border-b border-slate-200 dark:border-slate-800">
                     <a href="{{ route('dashboard') }}" class="flex items-center gap-2">
-                        <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                            <span class="text-white font-bold text-sm">TC</span>
-                        </div>
+                        @if($adminLogoUrl)
+                            <img src="{{ $adminLogoUrl }}" alt="Logo" class="h-8 w-auto max-w-[120px] object-contain">
+                        @else
+                            <div class="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                <span class="text-white font-bold text-sm">TC</span>
+                            </div>
+                        @endif
                         <div>
-                            <p class="text-sm font-bold text-slate-900 dark:text-white">Talksasa</p>
+                            <p class="text-sm font-bold text-slate-900 dark:text-white">{{ \App\Models\Setting::getValue('company_name', 'Talksasa') }}</p>
                             <p class="text-xs text-slate-500 dark:text-slate-400">Admin</p>
                         </div>
                     </a>

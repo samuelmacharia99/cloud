@@ -303,7 +303,7 @@ class SettingController extends Controller
 
         // Store file in public disk under branding directory
         $path = $file->store("branding/{$type}", 'public');
-        $url = asset("storage/{$path}");
+        $url = '/storage/'.$path;
 
         // Update setting
         $settingKey = $type === 'logo' ? 'logo_url' : 'favicon_url';

@@ -1,8 +1,9 @@
 <?php
 
-use App\Helpers\CurrencyHelper;
 use App\Helpers\CronHelper;
+use App\Helpers\CurrencyHelper;
 use App\Models\Setting;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Generate the dynamic cron command for the current environment
@@ -93,15 +94,59 @@ function branding_asset_url(?string $url): ?string
         return null;
     }
 
-    if (str_starts_with($url, '/')) {
-        $localPath = public_path(ltrim($url, '/'));
+    $path = str_starts_with($url, '/')
+        ? $url
+        : parse_url($url, PHP_URL_PATH);
 
-        return is_file($localPath) ? $url : null;
+    if (! is_string($path) || ! str_starts_with($path, '/')) {
+        return $url;
     }
 
-    $path = parse_url($url, PHP_URL_PATH);
+    if (str_starts_with($path, '/storage/')) {
+        $relative = ltrim(substr($path, strlen('/storage/')), '/');
 
-    return ($path && str_starts_with($path, '/')) ? $path : $url;
+        if ($relative !== '' && Storage::disk('public')->exists($relative)) {
+            return $path;
+        }
+    }
+
+    if (is_file(public_path(ltrim($path, '/')))) {
+        return $path;
+    }
+
+    return null;
+}
+
+/**
+ * Resolve a branding asset URL from settings, with upload-directory fallback.
+ */
+function branding_asset_url_or_fallback(?string $url, string $type = 'logo'): ?string
+{
+    $resolved = branding_asset_url($url);
+
+    if ($resolved !== null) {
+        return $resolved;
+    }
+
+    if (! in_array($type, ['logo', 'favicon'], true)) {
+        return null;
+    }
+
+    $disk = Storage::disk('public');
+    $directory = "branding/{$type}";
+
+    if (! $disk->exists($directory)) {
+        return null;
+    }
+
+    $files = collect($disk->files($directory))
+        ->filter(fn (string $file) => ! str_ends_with($file, '/'))
+        ->sortByDesc(fn (string $file) => $disk->lastModified($file))
+        ->values();
+
+    $latest = $files->first();
+
+    return $latest ? '/storage/'.$latest : null;
 }
 
 /**
@@ -114,5 +159,6 @@ function formatBytes(int $bytes, int $precision = 2): string
     $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
     $pow = min($pow, count($units) - 1);
     $bytes /= (1 << (10 * $pow));
-    return round($bytes, $precision) . ' ' . $units[$pow];
+
+    return round($bytes, $precision).' '.$units[$pow];
 }
