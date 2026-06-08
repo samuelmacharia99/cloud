@@ -375,6 +375,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
             Route::post('reseller/domains-pricing', [DomainPricingController::class, 'update'])->name('reseller.domains.pricing.update');
             Route::get('api/reseller/domains/pricing/{extension}', [App\Http\Controllers\Reseller\DomainController::class, 'getPricing'])->name('reseller.domains.pricing.api');
+            Route::get('api/reseller/domains/check', [App\Http\Controllers\Reseller\DomainController::class, 'checkAvailability'])->name('reseller.domains.check');
             Route::get('reseller/domain-orders', [DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
             Route::post('reseller/domain-orders/{order}/push', [DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
             Route::post('reseller/domain-orders/{order}/retry', [DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');

@@ -7,13 +7,13 @@ use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Setting;
+use App\Services\DomainAvailabilityService;
 use App\Services\DomainInputParser;
 use App\Services\NodeNameserverService;
 use App\Services\ResellerCustomerCatalogService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use ReflectionClass;
 
 class CartController extends Controller
 {
@@ -158,6 +158,16 @@ class CartController extends Controller
                 ], 422);
             }
 
+            if (! app(DomainAvailabilityService::class)->isAvailable($request->domain, $request->extension)) {
+                $message = 'This domain is not available for registration.';
+
+                if ($request->expectsJson()) {
+                    return response()->json(['success' => false, 'message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
+
             $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $request->years);
             if ($price === null) {
                 $message = $catalogService->isResellerCustomer($user)
@@ -271,15 +281,9 @@ class CartController extends Controller
         }
 
         try {
-            $domainSearch = new DomainSearchController;
             $fullDomain = $parsed['name'].$parsed['extension'];
-
-            // Use reflection to call private method for availability check
-            $reflection = new ReflectionClass($domainSearch);
-            $method = $reflection->getMethod('checkAvailability');
-            $method->setAccessible(true);
-
-            $available = $method->invoke($domainSearch, $fullDomain);
+            $available = app(DomainAvailabilityService::class)
+                ->isAvailable($parsed['name'], $parsed['extension'], $fullDomain);
 
             $years = max(1, min(10, (int) $request->input('years', 1)));
 

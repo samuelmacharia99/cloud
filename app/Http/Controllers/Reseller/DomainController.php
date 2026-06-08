@@ -8,6 +8,7 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\DomainAvailabilityService;
 use App\Services\DomainRenewalService;
 use App\Services\ResellerCustomerOrderService;
 use App\Support\ResellerCartContext;
@@ -20,6 +21,7 @@ class DomainController extends Controller
     public function __construct(
         protected DomainRenewalService $renewalService,
         protected ResellerCustomerOrderService $customerOrders,
+        protected DomainAvailabilityService $availability,
     ) {}
 
     /**
@@ -81,6 +83,43 @@ class DomainController extends Controller
             'periods' => [1, 2, 3, 5, 10],
             'cartContext' => ResellerCartContext::summary(),
             'cartCustomers' => $cartCustomers,
+        ]);
+    }
+
+    /**
+     * Check whether a domain name is available to register.
+     */
+    public function checkAvailability(Request $request)
+    {
+        $validated = $request->validate([
+            'domain' => 'required|string|max:253',
+        ]);
+
+        $allowedExtensions = DomainExtension::query()
+            ->where('enabled', true)
+            ->pluck('extension')
+            ->all();
+
+        $check = $this->availability->checkInput($validated['domain'], null, $allowedExtensions);
+
+        if ($check === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Enter a valid domain with a supported extension.',
+                'available' => false,
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'available' => $check['available'],
+            'full_domain' => $check['full_domain'],
+            'name' => $check['name'],
+            'extension' => $check['extension'],
+            'source' => $check['source'],
+            'message' => $check['available']
+                ? 'Domain is available for registration.'
+                : 'Domain is already taken.',
         ]);
     }
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\DomainAvailabilityService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerScopeService;
 use App\Support\ResellerCartContext;
@@ -21,6 +22,7 @@ class CartController extends Controller
     public function __construct(
         private ResellerScopeService $scope,
         private ResellerCustomerOrderService $orders,
+        private DomainAvailabilityService $availability,
     ) {}
 
     public function index(): View
@@ -111,6 +113,13 @@ class CartController extends Controller
 
         if (! $extension) {
             return response()->json(['success' => false, 'message' => 'Extension not available.'], 422);
+        }
+
+        if (! $this->availability->isAvailable($validated['domain'], $validated['extension'])) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This domain is not available for registration.',
+            ], 422);
         }
 
         $expectedWholesaleTotal = $this->orders->wholesaleAmountForExtension($extension, (int) $validated['years']);

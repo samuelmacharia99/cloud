@@ -92,27 +92,37 @@
 
                 <div x-show="!searching && searchResults.length > 0">
                     <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-4">
-                        Available domains for <strong x-text="domainName"></strong>
+                        Results for <strong x-text="domainName"></strong>
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <template x-for="(result, idx) in searchResults" :key="idx">
-                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                            <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3"
+                                :class="result.domainAvailable ? 'border-emerald-200 dark:border-emerald-800/60' : 'border-slate-200 dark:border-slate-700'">
                                 <div>
-                                    <p class="font-medium text-slate-900 dark:text-white font-mono" x-text="result.domain"></p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <p class="font-medium text-slate-900 dark:text-white font-mono" x-text="result.domain"></p>
+                                        <span class="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full"
+                                            :class="result.domainAvailable ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'"
+                                            x-text="result.domainAvailable ? 'Available' : 'Taken'"></span>
+                                    </div>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-show="result.domainAvailable">
                                         <span class="text-xs font-semibold uppercase tracking-wide mr-1" :class="result.retail ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'" x-text="result.retail ? 'Retail' : 'Wholesale'"></span>
                                         <span x-text="result.currency + ' ' + parseFloat(result.lineTotal).toFixed(2)"></span>
                                         <span class="text-xs text-slate-500" x-text="'for ' + selectedPeriod + ' year' + (selectedPeriod > 1 ? 's' : '')"></span>
                                     </p>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" x-show="result.domainAvailable">
                                         <span x-text="result.currency + ' ' + parseFloat(result.price).toFixed(2)"></span>
                                         <span>/ year</span>
                                         <template x-if="!result.retail && result.wholesalePrice">
                                             <span class="ml-1">(your cost)</span>
                                         </template>
                                     </p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="!result.domainAvailable">
+                                        This domain is not available to register.
+                                    </p>
                                 </div>
-                                <button @click="addToCart(result.domain, result.extension, result.price, selectedPeriod)"
+                                <button type="button" @click="addToCart(result.domain, result.extension, result.price, selectedPeriod)"
+                                    x-show="result.domainAvailable"
                                     :disabled="adding"
                                     class="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-slate-400 text-white font-medium rounded-lg text-sm transition">
                                     <span x-show="!adding">Add to Cart</span>
@@ -124,7 +134,7 @@
                 </div>
 
                 <div x-show="!searching && searchResults.length === 0" class="text-center py-4">
-                    <p class="text-slate-600 dark:text-slate-400 text-sm">No available domains found for this search.</p>
+                    <p class="text-slate-600 dark:text-slate-400 text-sm">No results for this search. Check the domain format and extension.</p>
                 </div>
             </div>
         </div>
@@ -306,6 +316,10 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
             return `${base}/${encodeURIComponent(extension)}`;
         },
 
+        availabilityApiUrl(domain) {
+            return '{{ route('reseller.domains.check') }}?domain=' + encodeURIComponent(domain);
+        },
+
         async searchDomains() {
             const input = this.domainName.trim().toLowerCase();
 
@@ -336,34 +350,62 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
             this.searchResults = [];
 
             try {
-                const retailParam = this.customerMode ? '&retail=1' : '';
-                const pricingRes = await fetch(
-                    this.pricingApiUrl(extension) + '?period=' + this.selectedPeriod + retailParam,
-                    { headers: { 'Accept': 'application/json' } }
-                );
+                const availabilityRes = await fetch(this.availabilityApiUrl(input), {
+                    headers: { 'Accept': 'application/json' },
+                });
 
-                if (pricingRes.ok) {
-                    const pricingData = await pricingRes.json();
-                    if (pricingData.available) {
-                        const period = parseInt(this.selectedPeriod, 10);
-                        const lineTotal = parseFloat(pricingData.line_total ?? 0);
-                        const unitPrice = parseFloat(pricingData.price ?? (lineTotal / period));
-                        this.searchResults.push({
-                            domain: input,
-                            extension: extension,
-                            price: unitPrice,
-                            lineTotal: lineTotal,
-                            wholesalePrice: parseFloat(pricingData.wholesale_price ?? unitPrice),
-                            currency: pricingData.currency || 'KES',
-                            available: true,
-                            retail: Boolean(pricingData.retail),
-                        });
-                    } else {
-                        alert('Wholesale pricing is not configured for this extension and period.');
-                    }
-                } else {
-                    alert('Extension not found or pricing unavailable');
+                if (!availabilityRes.ok) {
+                    const errorData = await availabilityRes.json().catch(() => ({}));
+                    alert(errorData.message || 'Could not check this domain. Try a supported extension.');
+                    return;
                 }
+
+                const availabilityData = await availabilityRes.json();
+                const domainAvailable = Boolean(availabilityData.available);
+
+                let unitPrice = 0;
+                let lineTotal = 0;
+                let wholesalePrice = 0;
+                let currency = 'KES';
+                let retail = this.customerMode;
+
+                if (domainAvailable) {
+                    const retailParam = this.customerMode ? '&retail=1' : '';
+                    const pricingRes = await fetch(
+                        this.pricingApiUrl(extension) + '?period=' + this.selectedPeriod + retailParam,
+                        { headers: { 'Accept': 'application/json' } }
+                    );
+
+                    if (!pricingRes.ok) {
+                        alert('Extension not found or pricing unavailable');
+                        return;
+                    }
+
+                    const pricingData = await pricingRes.json();
+
+                    if (!pricingData.available) {
+                        alert('Wholesale pricing is not configured for this extension and period.');
+                        return;
+                    }
+
+                    const period = parseInt(this.selectedPeriod, 10);
+                    lineTotal = parseFloat(pricingData.line_total ?? 0);
+                    unitPrice = parseFloat(pricingData.price ?? (lineTotal / period));
+                    wholesalePrice = parseFloat(pricingData.wholesale_price ?? unitPrice);
+                    currency = pricingData.currency || 'KES';
+                    retail = Boolean(pricingData.retail);
+                }
+
+                this.searchResults.push({
+                    domain: input,
+                    extension: extension,
+                    price: unitPrice,
+                    lineTotal: lineTotal,
+                    wholesalePrice: wholesalePrice,
+                    currency: currency,
+                    domainAvailable: domainAvailable,
+                    retail: retail,
+                });
             } catch (error) {
                 console.error('Search error:', error);
                 alert('Error searching domains. Please try again.');

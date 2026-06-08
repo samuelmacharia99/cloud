@@ -4,21 +4,20 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
+use App\Services\DomainAvailabilityService;
 use App\Services\ResellerCustomerCatalogService;
 use Illuminate\Http\Request;
 
 class DomainSearchController extends Controller
 {
-    // Using WHOIS-based availability check
-    protected const WHOIS_TIMEOUT = 5;
+    public function __construct(
+        private DomainAvailabilityService $availability,
+    ) {}
 
     public function search(Request $request)
     {
         $query = $request->get('q', '');
-        $results = [];
-        $searchQuery = $query;
 
-        // Always return JSON for public search route (called via AJAX)
         if (empty($query)) {
             return response()->json([
                 'success' => false,
@@ -27,54 +26,52 @@ class DomainSearchController extends Controller
             ]);
         }
 
-        // Clean up the query - remove www and extract domain name
-        $query = str_replace(['www.', 'https://', 'http://'], '', strtolower($query));
-        $query = trim($query);
+        $query = str_replace(['www.', 'https://', 'http://'], '', strtolower(trim($query)));
 
         $catalogService = app(ResellerCustomerCatalogService::class);
         $user = auth()->user();
+        $allowedExtensions = DomainExtension::where('enabled', true)->pluck('extension')->all();
+        $results = [];
 
-        // If user included TLD (full domain), search only that domain
-        if (strpos($query, '.') !== false) {
-            [$domainName, $tld] = explode('.', $query, 2);
-            $extension = DomainExtension::where('extension', '.'.$tld)->first();
+        if (str_contains($query, '.')) {
+            $check = $this->availability->checkInput($query, null, $allowedExtensions);
 
-            if ($extension) {
-                $available = $this->checkAvailability($query);
-                $price = $catalogService->domainRegistrationPrice($user, $extension, 1) ?? 0;
+            if ($check) {
+                $extension = DomainExtension::where('extension', $check['extension'])->first();
 
-                $results[] = [
-                    'domain' => $domainName,
-                    'extension' => '.'.$tld,
-                    'full_domain' => $query,
-                    'available' => $available,
-                    'price' => $price,
-                    'currency' => 'KES',
-                    'years' => [1, 2, 3, 5],
-                ];
+                if ($extension) {
+                    $price = $catalogService->domainRegistrationPrice($user, $extension, 1) ?? 0;
+
+                    $results[] = [
+                        'domain' => $check['name'],
+                        'extension' => $check['extension'],
+                        'full_domain' => $check['full_domain'],
+                        'available' => $check['available'],
+                        'price' => $price,
+                        'currency' => 'KES',
+                        'years' => [1, 2, 3, 5],
+                    ];
+                }
             }
         } else {
-            // Search across all enabled extensions
-            $extensions = DomainExtension::where('enabled', true)->get();
+            foreach (DomainExtension::where('enabled', true)->get() as $ext) {
+                $check = $this->availability->checkInput($query, $ext->extension, $allowedExtensions);
 
-            foreach ($extensions as $ext) {
-                if (! $ext) {
+                if ($check === null) {
                     continue;
                 }
 
-                $fullDomain = $query.$ext->extension;
-                $available = $this->checkAvailability($fullDomain);
-
                 $price = $catalogService->domainRegistrationPrice($user, $ext, 1);
+
                 if ($price === null) {
                     continue;
                 }
 
                 $results[] = [
-                    'domain' => $query,
-                    'extension' => $ext->extension,
-                    'full_domain' => $fullDomain,
-                    'available' => $available,
+                    'domain' => $check['name'],
+                    'extension' => $check['extension'],
+                    'full_domain' => $check['full_domain'],
+                    'available' => $check['available'],
                     'price' => $price,
                     'currency' => 'KES',
                     'years' => [1, 2, 3, 5],
@@ -82,93 +79,11 @@ class DomainSearchController extends Controller
             }
         }
 
-        // Sort available domains first
         usort($results, fn ($a, $b) => $b['available'] <=> $a['available']);
 
-        // Always return JSON for public search route
         return response()->json([
             'success' => true,
             'results' => $results,
         ]);
-    }
-
-    /**
-     * Check domain availability via WHOIS lookup
-     * Returns true if domain appears to be available, false if taken or error
-     */
-    private function checkAvailability(string $domain): bool
-    {
-        try {
-            // Use whois.verisign.com for generic TLDs, nsec.online for others
-            $tld = substr($domain, strrpos($domain, '.') + 1);
-
-            $whoisServers = [
-                'com' => 'whois.verisign.com',
-                'net' => 'whois.verisign.com',
-                'org' => 'whois.pir.org',
-                'co' => 'whois.nic.co',
-                'io' => 'whois.nic.io',
-                'ke' => 'whois.kenic.or.ke',
-            ];
-
-            $whoisServer = $whoisServers[$tld] ?? 'whois.nic.'.$tld;
-
-            // Try socket connection for WHOIS
-            $conn = @fsockopen($whoisServer, 43, $errno, $errstr, self::WHOIS_TIMEOUT);
-
-            if (! $conn) {
-                // If we can't reach WHOIS, use DNS check as fallback
-                return $this->checkDNS($domain);
-            }
-
-            // Send WHOIS query
-            fwrite($conn, "$domain\r\n");
-            $response = '';
-            while (! feof($conn)) {
-                $response .= fgets($conn, 128);
-            }
-            fclose($conn);
-
-            // Check for "No Found" or "No Object" strings that indicate availability
-            // Different registries use different messages
-            $notFoundPatterns = [
-                'no found',
-                'no data found',
-                'no match',
-                'not found',
-                'object does not exist',
-                'domain status: no object',
-                'no entries found',
-            ];
-
-            $response_lower = strtolower($response);
-            foreach ($notFoundPatterns as $pattern) {
-                if (strpos($response_lower, $pattern) !== false) {
-                    return true; // Available
-                }
-            }
-
-            return false; // Taken (found in WHOIS)
-        } catch (\Exception $e) {
-            // Fallback: try DNS check
-            return $this->checkDNS($domain);
-        }
-    }
-
-    /**
-     * Fallback: Check if domain resolves via DNS (if it resolves, it's taken)
-     */
-    private function checkDNS(string $domain): bool
-    {
-        try {
-            // If DNS resolves, domain is taken. If not, it's available.
-            $ip = gethostbyname($domain);
-
-            // If gethostbyname returns the domain itself, DNS failed (available)
-            return $ip === $domain;
-        } catch (\Exception $e) {
-            // On error, assume taken to be safe
-            return false;
-        }
     }
 }
