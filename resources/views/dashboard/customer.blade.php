@@ -21,38 +21,61 @@
 
     <!-- Quick stats -->
     <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
-        <x-metric-card
-            title="Active Services"
-            :value="$activeServices->count()"
-            subtitle="Running now"
-            color="emerald"
-            :href="route('customer.services.index')"
-            :icon="'<svg class=\"w-6 h-6\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M13 10V3L4 14h7v7l9-11h-7z\"/></svg>'"
-        />
-        <x-metric-card
-            title="Unpaid Invoices"
-            :value="$upcomingDueInvoices->count()"
-            subtitle="Awaiting payment"
-            color="amber"
-            :href="route('customer.invoices.index')"
-            :icon="'<svg class=\"w-6 h-6\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z\"/></svg>'"
-        />
-        <x-metric-card
-            title="Outstanding Balance"
-            :value="'KES '.number_format($outstandingBalance, 0)"
-            :subtitle="$outstandingBalance > 0 ? 'Due soon' : 'All paid up'"
-            :color="$outstandingBalance > 0 ? 'amber' : 'emerald'"
-            :href="route('customer.invoices.index')"
-            :icon="'<svg class=\"w-6 h-6\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z\"/></svg>'"
-        />
-        <x-metric-card
-            title="Open Tickets"
-            :value="$openTickets->count()"
-            subtitle="Need help?"
-            color="red"
-            :href="route('customer.tickets.index')"
-            :icon="'<svg class=\"w-6 h-6\" fill=\"none\" stroke=\"currentColor\" viewBox=\"0 0 24 24\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"2\" d=\"M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z\"/></svg>'"
-        />
+        <div class="ui-card ui-card-interactive p-5 sm:p-6 group">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Active Services</p>
+                    <p class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-1.5">{{ $activeServices->count() }}</p>
+                    <p class="text-xs text-slate-500 mt-2">Running now</p>
+                </div>
+                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl ring-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+            </div>
+            <a href="{{ route('customer.services.index') }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 mt-4">View details <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></a>
+        </div>
+
+        <div class="ui-card ui-card-interactive p-5 sm:p-6 group">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Unpaid Invoices</p>
+                    <p class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-1.5">{{ $upcomingDueInvoices->count() }}</p>
+                    <p class="text-xs text-slate-500 mt-2">Awaiting payment</p>
+                </div>
+                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl ring-1 bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                </div>
+            </div>
+            <a href="{{ route('customer.invoices.index') }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 mt-4">View details <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></a>
+        </div>
+
+        <div class="ui-card ui-card-interactive p-5 sm:p-6 group">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Outstanding Balance</p>
+                    <p class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-1.5">KES {{ number_format($outstandingBalance, 0) }}</p>
+                    <p class="text-xs text-slate-500 mt-2">{{ $outstandingBalance > 0 ? 'Due soon' : 'All paid up' }}</p>
+                </div>
+                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl ring-1 {{ $outstandingBalance > 0 ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' }} flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+            </div>
+            <a href="{{ route('customer.invoices.index') }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 mt-4">View details <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></a>
+        </div>
+
+        <div class="ui-card ui-card-interactive p-5 sm:p-6 group">
+            <div class="flex items-start justify-between gap-4">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-slate-500 dark:text-slate-400">Open Tickets</p>
+                    <p class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white mt-1.5">{{ $openTickets->count() }}</p>
+                    <p class="text-xs text-slate-500 mt-2">Need help?</p>
+                </div>
+                <div class="w-11 h-11 sm:w-12 sm:h-12 rounded-xl ring-1 bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                </div>
+            </div>
+            <a href="{{ route('customer.tickets.index') }}" class="inline-flex items-center gap-1 text-sm font-semibold text-brand-600 dark:text-brand-400 hover:text-brand-700 mt-4">View details <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></a>
+        </div>
     </div>
 
     @if ($suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)

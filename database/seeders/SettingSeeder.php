@@ -79,8 +79,8 @@ class SettingSeeder extends Seeder
             ['key' => 'max_execution_time', 'value' => '120', 'description' => 'Maximum cron job execution time in seconds'],
 
             // Branding settings
-            ['key' => 'logo_url', 'value' => '/images/logo.png', 'description' => 'Logo image URL'],
-            ['key' => 'favicon_url', 'value' => '/images/favicon.ico', 'description' => 'Favicon URL'],
+            ['key' => 'logo_url', 'value' => '', 'description' => 'Logo image URL (upload via Admin → Settings)'],
+            ['key' => 'favicon_url', 'value' => '', 'description' => 'Favicon URL (upload via Admin → Settings)'],
             ['key' => 'primary_color', 'value' => '#2563eb', 'description' => 'Primary brand color'],
             ['key' => 'company_name', 'value' => 'Talksasa Cloud', 'description' => 'Company display name'],
             ['key' => 'footer_text', 'value' => '© 2026 Talksasa Cloud Limited. All rights reserved.', 'description' => 'Footer text'],

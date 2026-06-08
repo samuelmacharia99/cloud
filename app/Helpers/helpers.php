@@ -94,7 +94,9 @@ function branding_asset_url(?string $url): ?string
     }
 
     if (str_starts_with($url, '/')) {
-        return $url;
+        $localPath = public_path(ltrim($url, '/'));
+
+        return is_file($localPath) ? $url : null;
     }
 
     $path = parse_url($url, PHP_URL_PATH);
