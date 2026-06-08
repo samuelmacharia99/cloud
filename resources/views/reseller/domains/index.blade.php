@@ -38,8 +38,14 @@
     </div>
 
     <!-- Domain Search Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager({{ ($cartContext['mode'] ?? 'self') === 'customer' ? 'true' : 'false' }})">
-        <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-6">Register a New Domain</h2>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager({ customerMode: {{ ($cartContext['mode'] ?? 'self') === 'customer' ? 'true' : 'false' }}, knownExtensions: @json($knownExtensions) })">
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Register a New Domain</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="!customerMode">
+            Prices shown are your <strong class="text-purple-700 dark:text-purple-300">wholesale</strong> rates for your account.
+        </p>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="customerMode" x-cloak>
+            Prices shown are <strong class="text-purple-700 dark:text-purple-300">retail</strong> rates for billing the selected customer.
+        </p>
 
         <div class="space-y-6">
             <!-- Success Flash Message -->
@@ -90,12 +96,20 @@
                     </p>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <template x-for="(result, idx) in searchResults" :key="idx">
-                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 flex justify-between items-center">
+                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-4 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
                                 <div>
-                                    <p class="font-medium text-slate-900 dark:text-white" x-text="result.domain"></p>
-                                    <p class="text-sm text-slate-600 dark:text-slate-400">
+                                    <p class="font-medium text-slate-900 dark:text-white font-mono" x-text="result.domain"></p>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                        <span class="text-xs font-semibold uppercase tracking-wide mr-1" :class="result.retail ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'" x-text="result.retail ? 'Retail' : 'Wholesale'"></span>
+                                        <span x-text="result.currency + ' ' + parseFloat(result.lineTotal).toFixed(2)"></span>
+                                        <span class="text-xs text-slate-500" x-text="'for ' + selectedPeriod + ' year' + (selectedPeriod > 1 ? 's' : '')"></span>
+                                    </p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                                         <span x-text="result.currency + ' ' + parseFloat(result.price).toFixed(2)"></span>
-                                        <span class="text-xs text-slate-500">/ year</span>
+                                        <span>/ year</span>
+                                        <template x-if="!result.retail && result.wholesalePrice">
+                                            <span class="ml-1">(your cost)</span>
+                                        </template>
                                     </p>
                                 </div>
                                 <button @click="addToCart(result.domain, result.extension, result.price, selectedPeriod)"
@@ -121,141 +135,152 @@
         <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Your Domains</h2>
 
         @if($domains->count() > 0)
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                @foreach($domains as $domain)
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-lg dark:hover:shadow-2xl transition">
-                        <!-- Card Header -->
-                        <div class="bg-gradient-to-r {{ $domain->status === 'active' ? 'from-emerald-500 to-emerald-600' : ($domain->status === 'expired' ? 'from-red-500 to-red-600' : 'from-amber-500 to-amber-600') }} p-4">
-                            <h3 class="text-lg font-bold text-white break-all">{{ $domain->name }}{{ $domain->extension }}</h3>
-                        </div>
-
-                        <!-- Card Content -->
-                        <div class="p-6 space-y-4">
-                            <!-- Owner (if customer's domain) -->
-                            @if($domain->user_id !== auth()->id())
-                                <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
-                                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Customer</span>
-                                    <span class="text-sm text-slate-900 dark:text-white font-medium">{{ $domain->user->name }}</span>
-                                </div>
-                            @endif
-
-                            <!-- Status Badge -->
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Status</span>
-                                <span class="px-3 py-1 rounded-full text-xs font-medium {{ $domain->status === 'active' ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : ($domain->status === 'expired' ? 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300') }}">
-                                    {{ ucfirst($domain->status) }}
-                                </span>
-                            </div>
-
-                            <!-- Registration Date -->
-                            @if($domain->registered_at)
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Registered</span>
-                                    <span class="text-sm text-slate-900 dark:text-white">{{ $domain->registered_at->format('M d, Y') }}</span>
-                                </div>
-                            @endif
-
-                            <!-- Expiry Date -->
-                            @if($domain->expires_at)
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Expires</span>
-                                    <span class="text-sm {{ $domain->isExpired() ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-slate-900 dark:text-white' }}">
-                                        {{ $domain->expires_at->format('M d, Y') }}
-                                    </span>
-                                </div>
-                            @endif
-
-                            <!-- Registrar -->
-                            @if($domain->registrar)
-                                <div class="flex items-center justify-between">
-                                    <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Registrar</span>
-                                    <span class="text-sm text-slate-900 dark:text-white">{{ $domain->registrar }}</span>
-                                </div>
-                            @endif
-
-                            <!-- Auto Renew -->
-                            <div class="flex items-center justify-between">
-                                <span class="text-sm font-medium text-slate-600 dark:text-slate-400">Auto Renew</span>
-                                <span class="text-sm">
-                                    <span class="px-2 py-1 rounded-full text-xs font-medium {{ $domain->auto_renew ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' }}">
-                                        {{ $domain->auto_renew ? 'Enabled' : 'Disabled' }}
-                                    </span>
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Card Footer -->
-                        <div class="border-t border-slate-200 dark:border-slate-800 px-6 py-4 bg-slate-50 dark:bg-slate-800/50 flex gap-2"
-                             x-data="{ renewing: false, renewYears: '1' }">
-                            <a href="{{ route('reseller.cart.index') }}" class="flex-1 text-center px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-slate-700 rounded-lg transition">
-                                Cart
-                            </a>
-                            <button type="button"
-                                    @click="async () => {
-                                        renewing = true;
-                                        try {
-                                            const res = await fetch('{{ route('reseller.domains.renew', $domain) }}', {
-                                                method: 'POST',
-                                                headers: {
-                                                    'Content-Type': 'application/json',
-                                                    'Accept': 'application/json',
-                                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
-                                                },
-                                                body: JSON.stringify({ years: parseInt(renewYears, 10) })
-                                            });
-                                            const data = await res.json();
-                                            if (data.success) {
-                                                const badge = document.getElementById('cart-count-badge');
-                                                if (badge) {
-                                                    badge.textContent = data.item_count;
-                                                    badge.classList.remove('hidden');
-                                                }
-                                                window.location.href = data.redirect || '{{ route('reseller.cart.index') }}';
-                                            } else {
-                                                alert(data.message || 'Could not add renewal to cart');
-                                            }
-                                        } catch (e) {
-                                            alert('Error: ' + e.message);
-                                        } finally {
-                                            renewing = false;
-                                        }
-                                    }"
-                                    :disabled="renewing"
-                                    class="flex-1 text-center px-3 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-slate-700 rounded-lg transition disabled:opacity-50">
-                                <span x-show="!renewing">Renew</span>
-                                <span x-show="renewing">Adding...</span>
-                            </button>
-                            <select x-model="renewYears" class="w-20 px-2 py-2 text-xs border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
-                                @foreach($periods as $period)
-                                    <option value="{{ $period }}">{{ $period }}y</option>
-                                @endforeach
-                            </select>
-                        </div>
-                    </div>
-                @endforeach
+            <div class="ui-card overflow-hidden">
+                <div class="ui-table-wrap">
+                    <table class="ui-table">
+                        <thead>
+                            <tr>
+                                <th>Domain</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th>Registered</th>
+                                <th>Expires</th>
+                                <th>Auto renew</th>
+                                <th class="text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($domains as $domain)
+                                <tr>
+                                    <td>
+                                        <span class="font-semibold text-slate-900 dark:text-white font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</span>
+                                        @if($domain->registrar)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ $domain->registrar }}</p>
+                                        @endif
+                                    </td>
+                                    <td class="text-slate-600 dark:text-slate-400">
+                                        @if($domain->user_id !== auth()->id())
+                                            <span class="font-medium text-slate-900 dark:text-white">{{ $domain->user->name }}</span>
+                                            <p class="text-xs text-slate-500">{{ $domain->user->email }}</p>
+                                        @else
+                                            <span class="text-slate-400">My account</span>
+                                        @endif
+                                    </td>
+                                    <td><x-domain-status-badge :status="$domain->status" /></td>
+                                    <td class="text-slate-600 dark:text-slate-400 whitespace-nowrap">{{ $domain->registered_at?->format('M d, Y') ?? '—' }}</td>
+                                    <td class="whitespace-nowrap">
+                                        <span class="{{ $domain->isExpired() ? 'text-red-600 dark:text-red-400 font-medium' : 'text-slate-600 dark:text-slate-400' }}">
+                                            {{ $domain->expires_at?->format('M d, Y') ?? '—' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="text-xs font-semibold {{ $domain->auto_renew ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400' }}">
+                                            {{ $domain->auto_renew ? 'On' : 'Off' }}
+                                        </span>
+                                    </td>
+                                    <td class="text-right">
+                                        <div x-data="{ open: false, showRenewal: false, renewYears: '1', renewing: false }" class="relative inline-block text-left">
+                                            <button type="button" @click="open = !open" class="action-icon-btn text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Domain actions">
+                                                <svg fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+                                                </svg>
+                                            </button>
+                                            <div x-show="open" x-cloak @click.outside="open = false; showRenewal = false"
+                                                class="absolute right-0 mt-1 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden">
+                                                <div x-show="!showRenewal">
+                                                    <button type="button" @click="showRenewal = true"
+                                                        class="w-full text-left px-4 py-3 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 text-sm font-medium text-purple-700 dark:text-purple-300">
+                                                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                                        </svg>
+                                                        Renew domain
+                                                    </button>
+                                                    <a href="{{ route('reseller.cart.index') }}"
+                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300">
+                                                        View cart
+                                                    </a>
+                                                </div>
+                                                <div x-show="showRenewal" class="p-4">
+                                                    <button type="button" @click="showRenewal = false" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 hover:text-slate-700 dark:hover:text-slate-200">← Back</button>
+                                                    <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Renewal period</p>
+                                                    <div class="space-y-2 mb-4">
+                                                        @foreach($periods as $period)
+                                                            <label class="flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-sm transition"
+                                                                :class="renewYears == '{{ $period }}' ? 'border-purple-400 bg-purple-50 dark:bg-purple-950/40 dark:border-purple-600' : 'border-slate-200 dark:border-slate-700'">
+                                                                <input type="radio" value="{{ $period }}" x-model="renewYears" class="text-purple-600">
+                                                                {{ $period }} year{{ $period > 1 ? 's' : '' }}
+                                                            </label>
+                                                        @endforeach
+                                                    </div>
+                                                    <button type="button"
+                                                        @click="async () => {
+                                                            renewing = true;
+                                                            try {
+                                                                const res = await fetch('{{ route('reseller.domains.renew', $domain) }}', {
+                                                                    method: 'POST',
+                                                                    headers: {
+                                                                        'Content-Type': 'application/json',
+                                                                        'Accept': 'application/json',
+                                                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                                                                    },
+                                                                    body: JSON.stringify({ years: parseInt(renewYears, 10) })
+                                                                });
+                                                                const data = await res.json();
+                                                                if (data.success) {
+                                                                    const badge = document.getElementById('cart-count-badge');
+                                                                    if (badge) {
+                                                                        badge.textContent = data.item_count;
+                                                                        badge.classList.remove('hidden');
+                                                                    }
+                                                                    window.location.href = data.redirect || '{{ route('reseller.cart.index') }}';
+                                                                } else {
+                                                                    alert(data.message || 'Could not add renewal to cart');
+                                                                }
+                                                            } catch (e) {
+                                                                alert('Error: ' + e.message);
+                                                            } finally {
+                                                                renewing = false;
+                                                            }
+                                                        }"
+                                                        :disabled="renewing"
+                                                        class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-medium rounded-lg transition text-sm">
+                                                        <span x-show="!renewing">Add renewal to cart</span>
+                                                        <span x-show="renewing">Adding…</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <!-- Pagination -->
-            <div class="mt-8">
+            <div class="mt-6">
                 {{ $domains->links() }}
             </div>
         @else
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center">
-                <svg class="w-16 h-16 text-slate-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
-                </svg>
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">No Domains Yet</h3>
-                <p class="text-slate-600 dark:text-slate-400 mb-4">You haven't registered any domains. Use the search above to get started!</p>
+            <div class="ui-card">
+                <div class="p-12 text-center">
+                    <svg class="w-16 h-16 text-slate-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/>
+                    </svg>
+                    <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">No domains yet</h3>
+                    <p class="text-slate-600 dark:text-slate-400">Use the search above to register your first domain.</p>
+                </div>
             </div>
         @endif
     </div>
 </div>
 
 <script>
-function domainSearchManager(customerMode = false) {
+function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}) {
     return {
         customerMode: Boolean(customerMode),
+        knownExtensions: [...knownExtensions].sort((a, b) => b.length - a.length),
         domainName: '',
         selectedPeriod: '1',
         searching: false,
@@ -263,6 +288,15 @@ function domainSearchManager(customerMode = false) {
         searchResults: [],
         adding: false,
         addedMessage: '',
+
+        resolveExtension(input) {
+            return this.knownExtensions.find((ext) => input.endsWith(ext)) || null;
+        },
+
+        pricingApiUrl(extension) {
+            const base = '{{ url('api/reseller/domains/pricing') }}';
+            return `${base}/${encodeURIComponent(extension)}`;
+        },
 
         async searchDomains() {
             const input = this.domainName.trim().toLowerCase();
@@ -272,18 +306,19 @@ function domainSearchManager(customerMode = false) {
                 return;
             }
 
-            // Check if input contains a dot (extension)
             if (!input.includes('.')) {
-                alert('Please enter a full domain name with extension (e.g., example.com)');
+                alert('Please enter a full domain name with extension (e.g., example.com or example.co.ke)');
                 return;
             }
 
-            // Extract domain name and extension
-            const lastDotIndex = input.lastIndexOf('.');
-            const domainName = input.substring(0, lastDotIndex);
-            const extension = input.substring(lastDotIndex);
+            const extension = this.resolveExtension(input);
+            if (!extension) {
+                alert('Extension not supported. Try a TLD from your domain pricing list (e.g., .com, .co.ke).');
+                return;
+            }
 
-            if (!domainName) {
+            const domainName = input.slice(0, -extension.length);
+            if (!domainName || domainName.endsWith('.')) {
                 alert('Invalid domain name');
                 return;
             }
@@ -293,32 +328,30 @@ function domainSearchManager(customerMode = false) {
             this.searchResults = [];
 
             try {
-                // Get pricing for this extension (pass with dot, e.g., .com)
                 const retailParam = this.customerMode ? '&retail=1' : '';
                 const pricingRes = await fetch(
-                    `{{ route('reseller.domains.pricing.api', ['extension' => ':extension']) }}`.replace(':extension', extension)
-                        + '?period=' + this.selectedPeriod + retailParam,
-                    {
-                        headers: {
-                            'Accept': 'application/json',
-                        }
-                    }
+                    this.pricingApiUrl(extension) + '?period=' + this.selectedPeriod + retailParam,
+                    { headers: { 'Accept': 'application/json' } }
                 );
 
                 if (pricingRes.ok) {
                     const pricingData = await pricingRes.json();
                     if (pricingData.available) {
-                        const lineTotal = pricingData.line_total ?? (pricingData.price * this.selectedPeriod);
-                        const unitPrice = lineTotal / this.selectedPeriod;
+                        const period = parseInt(this.selectedPeriod, 10);
+                        const lineTotal = parseFloat(pricingData.line_total ?? 0);
+                        const unitPrice = parseFloat(pricingData.price ?? (lineTotal / period));
                         this.searchResults.push({
                             domain: input,
                             extension: extension,
                             price: unitPrice,
                             lineTotal: lineTotal,
-                            currency: pricingData.currency || 'KSH',
+                            wholesalePrice: parseFloat(pricingData.wholesale_price ?? unitPrice),
+                            currency: pricingData.currency || 'KES',
                             available: true,
-                            retail: pricingData.retail || this.customerMode,
+                            retail: Boolean(pricingData.retail),
                         });
+                    } else {
+                        alert('Wholesale pricing is not configured for this extension and period.');
                     }
                 } else {
                     alert('Extension not found or pricing unavailable');

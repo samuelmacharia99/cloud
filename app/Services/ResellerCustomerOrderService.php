@@ -468,6 +468,13 @@ class ResellerCustomerOrderService
         }
     }
 
+    public function wholesaleAmountForExtension(DomainExtension $extension, int $years): float
+    {
+        $wholesale = $extension->getWholesalePricing($years);
+
+        return $wholesale ? (float) $wholesale->price : 0.0;
+    }
+
     public function retailAmountForExtension(
         User $reseller,
         DomainExtension $extension,

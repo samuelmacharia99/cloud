@@ -43,7 +43,7 @@ class DomainController extends Controller
         })
             ->with('domainExtension', 'user')
             ->orderByDesc('created_at')
-            ->paginate(12);
+            ->paginate(15);
 
         // Get enabled domain extensions with wholesale and reseller pricing
         $extensions = DomainExtension::with([
@@ -73,6 +73,7 @@ class DomainController extends Controller
         return view('reseller.domains.index', [
             'domains' => $domains,
             'extensions' => $extensions,
+            'knownExtensions' => $extensions->pluck('extension')->values(),
             'selectedPeriod' => $selectedPeriod,
             'periods' => [1, 2, 3, 5, 10],
             'cartContext' => ResellerCartContext::summary(),
@@ -85,42 +86,33 @@ class DomainController extends Controller
      */
     public function getPricing(DomainExtension $extension, Request $request)
     {
-        $period = $request->get('period', 1);
-
-        // Get wholesale pricing from admin (resellers always pay wholesale)
-        $wholesalePricing = $extension->pricing()
-            ->where('tier', 'wholesale')
-            ->where('period_years', $period)
-            ->first();
-
-        $wholesalePrice = $wholesalePricing?->price ?? 0;
+        $period = max(1, (int) $request->get('period', 1));
         $reseller = auth()->user();
+
+        $wholesaleLineTotal = $this->customerOrders->wholesaleAmountForExtension($extension, $period);
         $useRetail = $request->boolean('retail') || ResellerCartContext::isCustomerMode();
 
-        $price = $wholesalePrice;
-        if ($useRetail && $reseller) {
-            $price = $this->customerOrders->retailAmountForExtension($reseller, $extension, (int) $period, (float) $wholesalePrice * (int) $period) / max(1, (int) $period);
-        }
+        $lineTotal = $useRetail && $reseller
+            ? $this->customerOrders->retailAmountForExtension($reseller, $extension, $period, $wholesaleLineTotal)
+            : $wholesaleLineTotal;
 
-        $renewalPricing = $extension->pricing()
-            ->where('tier', 'wholesale')
-            ->where('period_years', $period)
-            ->first();
+        $unitPrice = round($lineTotal / $period, 2);
+        $wholesaleUnitPrice = round($wholesaleLineTotal / $period, 2);
 
-        $renewalPrice = $renewalPricing
-            ? (float) ($renewalPricing->renewal_price ?? $renewalPricing->price)
+        $wholesalePricing = $extension->getWholesalePricing($period);
+        $renewalPrice = $wholesalePricing
+            ? (float) ($wholesalePricing->renewal_price ?? $wholesalePricing->price)
             : 0;
 
         return response()->json([
-            'price' => $price,
-            'line_total' => $useRetail
-                ? $this->customerOrders->retailAmountForExtension($reseller, $extension, (int) $period, (float) $wholesalePrice * (int) $period)
-                : (float) $wholesalePrice * (int) $period,
-            'wholesale_price' => $wholesalePrice,
+            'price' => $unitPrice,
+            'line_total' => $lineTotal,
+            'wholesale_price' => $wholesaleUnitPrice,
+            'wholesale_line_total' => $wholesaleLineTotal,
             'retail' => $useRetail,
             'renewal_price' => $renewalPrice,
             'currency' => 'KES',
-            'available' => $price > 0,
+            'available' => $wholesaleLineTotal > 0,
         ]);
     }
 

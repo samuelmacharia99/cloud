@@ -104,6 +104,28 @@ class CartController extends Controller
             return $this->addForCustomer($validated);
         }
 
+        $extension = DomainExtension::query()
+            ->where('extension', $validated['extension'])
+            ->where('enabled', true)
+            ->first();
+
+        if (! $extension) {
+            return response()->json(['success' => false, 'message' => 'Extension not available.'], 422);
+        }
+
+        $expectedWholesaleTotal = $this->orders->wholesaleAmountForExtension($extension, (int) $validated['years']);
+        if ($expectedWholesaleTotal <= 0) {
+            return response()->json(['success' => false, 'message' => 'Wholesale pricing not configured for this extension.'], 422);
+        }
+
+        $expectedUnitPrice = round($expectedWholesaleTotal / (int) $validated['years'], 2);
+        if (abs((float) $validated['price'] - $expectedUnitPrice) > 0.02) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Price mismatch. Refresh search and try again.',
+            ], 422);
+        }
+
         $cart = session()->get(self::CART_KEY, []);
         $key = uniqid();
 
@@ -112,7 +134,7 @@ class CartController extends Controller
             'domain' => strtolower($validated['domain']),
             'extension' => $validated['extension'],
             'years' => (int) $validated['years'],
-            'price' => (float) $validated['price'],
+            'price' => $expectedUnitPrice,
             'added_at' => now()->toIso8601String(),
         ];
 
