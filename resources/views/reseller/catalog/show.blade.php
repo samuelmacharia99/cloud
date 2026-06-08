@@ -1,3 +1,5 @@
+@use('App\Models\Product')
+
 @extends('layouts.reseller')
 
 @section('title', $catalogItem->name)

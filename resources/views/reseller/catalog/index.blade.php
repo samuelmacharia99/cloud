@@ -1,6 +1,6 @@
-@extends('layouts.reseller')
-
 @use('App\Models\Product')
+
+@extends('layouts.reseller')
 
 @section('title', 'My Catalog')
 
