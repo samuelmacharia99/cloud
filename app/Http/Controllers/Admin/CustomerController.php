@@ -57,9 +57,31 @@ class CustomerController extends Controller
             }
         }
 
-        $customers = $query->withCount('services', 'invoices')->paginate(15)->withQueryString();
+        // Owner filter (platform vs reseller-managed)
+        if ($request->filled('owner') && $request->owner !== 'all') {
+            if ($request->owner === 'platform') {
+                $query->whereNull('reseller_id');
+            } elseif ($request->owner === 'reseller') {
+                $query->whereNotNull('reseller_id');
+            }
+        }
 
-        return view('admin.customers.index', compact('customers'));
+        if ($request->filled('reseller_id')) {
+            $query->where('reseller_id', $request->reseller_id);
+        }
+
+        $customers = $query
+            ->with('reseller:id,name,email')
+            ->withCount('services', 'invoices')
+            ->paginate(15)
+            ->withQueryString();
+
+        $resellers = User::query()
+            ->where('is_reseller', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        return view('admin.customers.index', compact('customers', 'resellers'));
     }
 
     public function create()

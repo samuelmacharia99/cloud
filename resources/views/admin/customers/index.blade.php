@@ -24,7 +24,7 @@
 
     <!-- Filters -->
     <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
                 <input type="text" name="search" value="{{ request('search') }}" placeholder="Name, email, company..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
@@ -47,6 +47,23 @@
                     <option value="company" @selected(request('type') === 'company')>Company</option>
                 </select>
             </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Owner</label>
+                <select name="owner" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                    <option value="all" @selected(request('owner', 'all') === 'all')>All owners</option>
+                    <option value="platform" @selected(request('owner') === 'platform')>Platform (direct)</option>
+                    <option value="reseller" @selected(request('owner') === 'reseller')>Reseller-managed</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Reseller</label>
+                <select name="reseller_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                    <option value="">All resellers</option>
+                    @foreach ($resellers as $reseller)
+                        <option value="{{ $reseller->id }}" @selected((string) request('reseller_id') === (string) $reseller->id)>{{ $reseller->name }}</option>
+                    @endforeach
+                </select>
+            </div>
         </div>
         <button type="submit" class="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">Filter</button>
     </form>
@@ -58,6 +75,7 @@
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Customer</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Owner</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Country</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
@@ -79,6 +97,19 @@
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $customer->email }}</p>
                                     </div>
                                 </div>
+                            </td>
+                            <td class="px-6 py-4">
+                                @if ($customer->reseller_id && $customer->reseller)
+                                    <a href="{{ route('admin.resellers.show', $customer->reseller) }}" class="font-medium text-purple-700 dark:text-purple-300 hover:underline text-sm">
+                                        {{ $customer->reseller->name }}
+                                    </a>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Reseller</p>
+                                @else
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                                        Platform
+                                    </span>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Direct customer</p>
+                                @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {{ $customer->company ?: '-' }}
@@ -180,7 +211,7 @@
                                                 @csrf
                                                 <select name="target_reseller_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm mb-4" required>
                                                     <option value="">Select a reseller...</option>
-                                                    @foreach(\App\Models\User::where('is_reseller', true)->orderBy('name')->get() as $reseller)
+                                                    @foreach($resellers as $reseller)
                                                         <option value="{{ $reseller->id }}">{{ $reseller->name }} ({{ $reseller->email }})</option>
                                                     @endforeach
                                                 </select>
@@ -200,7 +231,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-6 py-12 text-center">
+                            <td colspan="8" class="px-6 py-12 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No customers found.</p>
                             </td>
                         </tr>
