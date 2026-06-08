@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\ResellerCustomerWelcomeService;
+use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\Request;
 
 class CustomerController extends Controller
@@ -65,16 +67,32 @@ class CustomerController extends Controller
             'vat_number' => 'nullable|string',
             'notes' => 'nullable|string',
             'status' => 'required|in:active,suspended,inactive',
+            'send_welcome_email' => 'sometimes|boolean',
         ]);
 
-        User::create([
+        $sendWelcomeEmail = $request->boolean('send_welcome_email');
+        $plainPassword = $validated['password'];
+        unset($validated['send_welcome_email']);
+
+        $customer = User::create([
             ...$validated,
             'reseller_id' => auth()->id(),
             'is_reseller' => false,
         ]);
 
+        $flash = 'Customer created successfully.';
+
+        if ($sendWelcomeEmail) {
+            try {
+                app(ResellerCustomerWelcomeService::class)->send(auth()->user(), $customer, $plainPassword);
+                $flash .= ' Welcome email sent.';
+            } catch (\Throwable $e) {
+                $flash .= ' Welcome email could not be sent: '.$e->getMessage();
+            }
+        }
+
         return redirect()->route('reseller.customers.index')
-            ->with('success', 'Customer created successfully.');
+            ->with('success', $flash);
     }
 
     public function show(User $customer)
@@ -88,7 +106,10 @@ class CustomerController extends Controller
             'domains'
         );
 
-        return view('reseller.customers.show', compact('customer'));
+        $enforcementAlerts = app(ServiceEnforcementInsightService::class)
+            ->alertsForCustomerServices($customer->services);
+
+        return view('reseller.customers.show', compact('customer', 'enforcementAlerts'));
     }
 
     public function edit(User $customer)

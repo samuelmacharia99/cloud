@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerScopeService;
+use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -51,6 +52,7 @@ class ManagedServiceController extends Controller
         $canTerminate = ! in_array($service->status->value ?? $service->status, ['terminated', 'cancelled'], true);
 
         $managementLinks = $this->managementLinks($service);
+        $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
 
         return view('reseller.services.show', compact(
             'service',
@@ -58,6 +60,7 @@ class ManagedServiceController extends Controller
             'canUnsuspend',
             'canTerminate',
             'managementLinks',
+            'enforcementInsight',
         ));
     }
 

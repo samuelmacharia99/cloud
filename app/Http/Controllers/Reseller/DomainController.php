@@ -11,8 +11,10 @@ use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainRenewalService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerDomainTransferService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class DomainController extends Controller
 {
@@ -22,6 +24,7 @@ class DomainController extends Controller
         protected DomainRenewalService $renewalService,
         protected ResellerCustomerOrderService $customerOrders,
         protected DomainAvailabilityService $availability,
+        protected ResellerDomainTransferService $domainTransfer,
     ) {}
 
     /**
@@ -156,6 +159,83 @@ class DomainController extends Controller
             'currency' => 'KES',
             'available' => $wholesaleLineTotal > 0,
         ]);
+    }
+
+    public function show(Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $domain->load(['user', 'dnsZones.records', 'pendingTransferRecipient']);
+        $domain->concealUpstreamProviderDetails();
+
+        $resellerId = auth()->id();
+        $transferTargets = User::query()
+            ->where('reseller_id', $resellerId)
+            ->where('id', '!=', $domain->user_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        $zone = $domain->dnsZones->first();
+        $dnsRecords = $zone?->records()->orderBy('type')->orderBy('name')->get() ?? collect();
+
+        return view('reseller.domains.show', compact('domain', 'transferTargets', 'dnsRecords'));
+    }
+
+    public function updateNameservers(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $validated = $request->validate([
+            'nameserver_1' => 'required|string|min:3|max:253',
+            'nameserver_2' => 'nullable|string|min:3|max:253',
+            'nameserver_3' => 'nullable|string|min:3|max:253',
+            'nameserver_4' => 'nullable|string|min:3|max:253',
+        ]);
+
+        $domain->update([
+            'nameserver_1' => $validated['nameserver_1'],
+            'nameserver_2' => $validated['nameserver_2'] ?? null,
+            'nameserver_3' => $validated['nameserver_3'] ?? null,
+            'nameserver_4' => $validated['nameserver_4'] ?? null,
+        ]);
+
+        return back()->with('success', 'Nameservers updated. Changes may take up to 48 hours to propagate.');
+    }
+
+    public function initiateTransfer(Request $request, Domain $domain)
+    {
+        $this->assertResellerCanManageDomain($domain);
+
+        $reseller = auth()->user();
+
+        if ($domain->pending_transfer_to_user_id) {
+            return back()->with('error', 'A transfer is already pending approval for this domain.');
+        }
+
+        $validated = $request->validate([
+            'to_customer_id' => [
+                'required',
+                'integer',
+                Rule::exists('users', 'id')->where(fn ($q) => $q
+                    ->where('reseller_id', $reseller->id)
+                    ->where('id', '!=', $domain->user_id)),
+            ],
+        ]);
+
+        $toCustomer = User::query()->findOrFail($validated['to_customer_id']);
+        $fromCustomer = $domain->user;
+
+        if (! $fromCustomer) {
+            return back()->with('error', 'Domain owner not found.');
+        }
+
+        try {
+            $this->domainTransfer->initiate($domain, $fromCustomer, $toCustomer, $reseller);
+
+            return back()->with('success', "Transfer request sent to {$toCustomer->name}. They must approve before ownership changes.");
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Could not initiate transfer: '.$e->getMessage());
+        }
     }
 
     public function destroy(Domain $domain)

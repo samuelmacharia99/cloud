@@ -31,6 +31,7 @@ use App\Http\Controllers\Customer\ContainerTerminalController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
 use App\Http\Controllers\Customer\HostingPanelController;
+use App\Http\Controllers\Customer\InterCustomerDomainTransferController;
 use App\Http\Controllers\Customer\PaymentController;
 use App\Http\Controllers\Customer\ResellerCatalogController;
 use App\Http\Controllers\Customer\ServiceBrowserController;
@@ -371,6 +372,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
                 ->parameters(['catalog' => 'catalogItem'])
                 ->names('reseller.catalog');
             Route::get('reseller/domains', [App\Http\Controllers\Reseller\DomainController::class, 'index'])->name('reseller.domains.index');
+            Route::get('reseller/domains/{domain}', [App\Http\Controllers\Reseller\DomainController::class, 'show'])->name('reseller.domains.show');
+            Route::put('reseller/domains/{domain}/nameservers', [App\Http\Controllers\Reseller\DomainController::class, 'updateNameservers'])->name('reseller.domains.nameservers');
+            Route::post('reseller/domains/{domain}/transfer', [App\Http\Controllers\Reseller\DomainController::class, 'initiateTransfer'])->name('reseller.domains.transfer');
             Route::post('reseller/domains/{domain}/renew', [App\Http\Controllers\Reseller\DomainController::class, 'addRenewalToCart'])->name('reseller.domains.renew');
             Route::delete('reseller/domains/{domain}', [App\Http\Controllers\Reseller\DomainController::class, 'destroy'])->name('reseller.domains.destroy');
             Route::get('reseller/domains-pricing', [DomainPricingController::class, 'index'])->name('reseller.domains.pricing');
@@ -459,6 +463,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/reseller-catalog', [ResellerCatalogController::class, 'index'])->name('customer.reseller-catalog.index');
         Route::post('/my/reseller-catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.reseller-catalog.add');
         Route::get('/my/domains', [App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
+        Route::get('/my/domains/transfer/approval/{token}', [InterCustomerDomainTransferController::class, 'show'])->name('customer.domains.inter-transfer.approval');
+        Route::post('/my/domains/transfer/approval/{token}/approve', [InterCustomerDomainTransferController::class, 'approve'])->name('customer.domains.inter-transfer.approve');
+        Route::post('/my/domains/transfer/approval/{token}/reject', [InterCustomerDomainTransferController::class, 'reject'])->name('customer.domains.inter-transfer.reject');
         Route::get('/my/domains/transfer', [App\Http\Controllers\Customer\DomainController::class, 'showTransferForm'])->name('customer.domains.transfer-form');
         Route::post('/my/domains/transfer', [App\Http\Controllers\Customer\DomainController::class, 'processTransfer'])->name('customer.domains.process-transfer');
         Route::get('/my/domains/transfer/checkout', [App\Http\Controllers\Customer\DomainController::class, 'showTransferCheckout'])->name('customer.domains.transfer-checkout');

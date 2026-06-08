@@ -163,7 +163,7 @@
                             @foreach($domains as $domain)
                                 <tr>
                                     <td>
-                                        <span class="font-semibold text-slate-900 dark:text-white font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</span>
+                                        <a href="{{ route('reseller.domains.show', $domain) }}" class="font-semibold text-purple-700 dark:text-purple-300 hover:underline font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</a>
                                     </td>
                                     <td class="text-slate-600 dark:text-slate-400">
                                         @if($domain->user_id !== auth()->id())
@@ -202,6 +202,10 @@
                                                         </svg>
                                                         Renew domain
                                                     </button>
+                                                    <a href="{{ route('reseller.domains.show', $domain) }}"
+                                                        class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
+                                                        Manage domain
+                                                    </a>
                                                     <a href="{{ route('reseller.cart.index') }}"
                                                         class="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition text-sm font-medium text-slate-700 dark:text-slate-300 border-b border-slate-100 dark:border-slate-800">
                                                         View cart

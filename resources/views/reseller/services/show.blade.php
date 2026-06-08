@@ -43,6 +43,8 @@
         </div>
     </div>
 
+    <x-service-enforcement-panel :insight="$enforcementInsight" />
+
     @if (!empty($managementLinks['username']) || !empty($managementLinks['panel_url']))
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
             <h2 class="font-semibold mb-3">Technical details</h2>

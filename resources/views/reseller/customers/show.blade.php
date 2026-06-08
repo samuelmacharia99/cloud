@@ -87,6 +87,20 @@
         </div>
     </div>
 
+    @if (!empty($enforcementAlerts))
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-amber-200 dark:border-amber-800 p-6">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-3">Enforcement alerts</h2>
+            <ul class="space-y-2">
+                @foreach ($enforcementAlerts as $alert)
+                    <li class="text-sm px-3 py-2 rounded-lg {{ $alert['level'] === 'danger' ? 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200' : 'bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200' }}">
+                        <a href="{{ route('reseller.services.show', $alert['service_id']) }}" class="font-medium hover:underline">{{ $alert['service_name'] }}</a>
+                        — {{ $alert['message'] }}
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <!-- Customer Details -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Contact Info -->

@@ -186,6 +186,18 @@
             </div>
         </div>
 
+        <!-- Welcome email -->
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <label class="flex items-start gap-3 cursor-pointer">
+                <input type="hidden" name="send_welcome_email" value="0">
+                <input type="checkbox" name="send_welcome_email" value="1" @checked(old('send_welcome_email')) class="mt-1 rounded text-purple-600">
+                <span>
+                    <span class="block text-sm font-medium text-slate-900 dark:text-white">Send welcome email</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1">Requires reseller SMTP under Settings → Email. Includes login URL and the password above.</span>
+                </span>
+            </label>
+        </div>
+
         <!-- Actions -->
         <div class="flex gap-3 justify-end">
             <a href="{{ route('reseller.customers.index') }}" class="px-6 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition">

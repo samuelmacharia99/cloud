@@ -164,6 +164,27 @@ class CronJobSeeder extends Seeder
                 'schedule' => '0 0 * * *',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Process Queued Domain Orders',
+                'description' => 'Process queued domain orders when resellers have sufficient wallet funds.',
+                'command' => 'cron:process-queued-domain-orders',
+                'schedule' => '0 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Expire Queued Domain Orders',
+                'description' => 'Expire queued domain orders that have passed their 10-day expiration window.',
+                'command' => 'cron:expire-queued-domain-orders',
+                'schedule' => '0 0 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Wallet Low Balance Alerts',
+                'description' => 'Send SMS/email alerts to resellers with low wallet balance.',
+                'command' => 'cron:wallet-low-balance-alerts',
+                'schedule' => '0 * * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {

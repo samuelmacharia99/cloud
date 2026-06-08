@@ -33,6 +33,10 @@ class Domain extends Model
         'transfer_completed_at',
         'transfer_notes',
         'transfer_authorization_code',
+        'domain_order_id',
+        'pending_transfer_to_user_id',
+        'transfer_token',
+        'transfer_requested_at',
         'notes',
     ];
 
@@ -43,6 +47,8 @@ class Domain extends Model
         'auto_renew' => 'boolean',
         'transfer_initiated_at' => 'datetime',
         'transfer_completed_at' => 'datetime',
+        'transfer_requested_at' => 'datetime',
+        'notes' => 'array',
     ];
 
     public function user()
