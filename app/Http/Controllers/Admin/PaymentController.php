@@ -11,6 +11,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
 use App\Notifications\ManualPaymentRejected;
+use App\Services\AdminActivityService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
@@ -361,6 +362,13 @@ class PaymentController extends Controller
                 'approved_by_admin_name' => auth()->user()->name,
                 'approved_at' => $paidAt,
             ]);
+
+            AdminActivityService::log(
+                'payment.manual_approve',
+                "Approved manual payment #{$payment->id} for {$payment->user->name} (KES {$payment->amount})",
+                $payment,
+                ['invoice_id' => $payment->invoice_id],
+            );
 
             return back()->with('success', 'Manual payment approved successfully. Services have been provisioned.');
         } catch (\Exception $e) {

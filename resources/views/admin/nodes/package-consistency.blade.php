@@ -222,5 +222,45 @@
             </div>
         @endif
     @endif
+
+    @if(isset($catalogPackages) && $catalogPackages->isNotEmpty())
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Push Catalog Limits to DirectAdmin</h2>
+                <p class="text-sm text-slate-500 mt-1">Update package quotas on the server from your local catalog records.</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 dark:bg-slate-800">
+                        <tr>
+                            <th class="px-6 py-3 text-left font-semibold">Package</th>
+                            <th class="px-6 py-3 text-left font-semibold">Node</th>
+                            <th class="px-6 py-3 text-left font-semibold">Disk (GB)</th>
+                            <th class="px-6 py-3 text-left font-semibold">Bandwidth (GB)</th>
+                            <th class="px-6 py-3 text-right font-semibold">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
+                        @foreach($catalogPackages as $package)
+                            <tr>
+                                <td class="px-6 py-3 font-medium text-slate-900 dark:text-white">{{ $package->name }}</td>
+                                <td class="px-6 py-3 text-slate-600">{{ $package->node?->name ?? '—' }}</td>
+                                <td class="px-6 py-3 text-slate-600">{{ $package->disk_quota }}</td>
+                                <td class="px-6 py-3 text-slate-600">{{ $package->bandwidth_quota ?? '∞' }}</td>
+                                <td class="px-6 py-3 text-right">
+                                    @if($package->node)
+                                        <form method="POST" action="{{ route('admin.direct-admin-packages.push-limits', $package) }}" class="inline">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg">Push limits</button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
 </div>
 @endsection

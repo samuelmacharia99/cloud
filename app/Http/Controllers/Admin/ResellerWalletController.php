@@ -2,12 +2,12 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Http\Requests\AdjustWalletBalanceRequest;
-use App\Models\ResellerWallet;
 use App\Models\User;
+use App\Services\AdminActivityService;
 use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class ResellerWalletController extends Controller
 {
@@ -32,7 +32,7 @@ class ResellerWalletController extends Controller
 
     public function show(User $reseller)
     {
-        abort_if(!$reseller->is_reseller, 404);
+        abort_if(! $reseller->is_reseller, 404);
 
         $wallet = $this->walletService->getOrCreate($reseller);
         $transactions = $wallet->transactions()->latest()->paginate(15);
@@ -43,7 +43,7 @@ class ResellerWalletController extends Controller
 
     public function adjust(AdjustWalletBalanceRequest $request, User $reseller)
     {
-        abort_if(!$reseller->is_reseller, 404);
+        abort_if(! $reseller->is_reseller, 404);
 
         $validated = $request->validated();
 
@@ -53,6 +53,16 @@ class ResellerWalletController extends Controller
                 $validated['amount'],
                 $validated['reason'],
                 auth()->user()
+            );
+
+            AdminActivityService::log(
+                'reseller.wallet_adjust',
+                "Adjusted wallet for {$reseller->name} by KES {$validated['amount']}",
+                $reseller,
+                [
+                    'amount' => $validated['amount'],
+                    'reason' => $validated['reason'],
+                ],
             );
 
             return redirect()->route('admin.reseller-wallets.show', $reseller)
@@ -65,7 +75,7 @@ class ResellerWalletController extends Controller
 
     public function exportPdf(User $reseller)
     {
-        abort_if(!$reseller->is_reseller, 404);
+        abort_if(! $reseller->is_reseller, 404);
 
         $wallet = $this->walletService->getOrCreate($reseller);
         $transactions = $wallet->transactions()->latest()->get();
@@ -76,6 +86,6 @@ class ResellerWalletController extends Controller
             'transactions' => $transactions,
         ]);
 
-        return $pdf->download("wallet-statement-{$reseller->id}-" . now()->format('Y-m-d') . '.pdf');
+        return $pdf->download("wallet-statement-{$reseller->id}-".now()->format('Y-m-d').'.pdf');
     }
 }

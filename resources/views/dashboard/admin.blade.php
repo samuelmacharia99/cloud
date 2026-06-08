@@ -17,7 +17,7 @@
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Customers</p>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers</p>
                     <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $totalCustomers }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-blue-100 dark:bg-blue-950 flex items-center justify-center">
@@ -26,7 +26,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Active accounts</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">{{ $platformCustomers }} platform · {{ $resellerManagedCustomers }} reseller-managed · {{ $totalResellers }} resellers</p>
         </div>
 
         <!-- Active Services -->

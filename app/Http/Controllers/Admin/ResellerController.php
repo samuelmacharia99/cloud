@@ -15,6 +15,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
+use App\Services\AdminActivityService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerPackageSubscriptionService;
@@ -271,6 +272,7 @@ class ResellerController extends Controller
             'notes' => 'nullable|string|max:1000',
             'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
             'reseller_node_id' => 'nullable|exists:nodes,id',
+            'commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
         // Only update password if provided
@@ -347,6 +349,12 @@ class ResellerController extends Controller
     public function impersonate(User $user)
     {
         abort_if(! $user->is_reseller, 404);
+
+        AdminActivityService::log(
+            'reseller.impersonate',
+            'Started impersonating reseller '.$user->name,
+            $user,
+        );
 
         // Store the admin ID in session for later exit
         session(['impersonating' => auth()->id(), 'impersonating_user_id' => $user->id]);

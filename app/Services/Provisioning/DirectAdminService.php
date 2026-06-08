@@ -308,6 +308,59 @@ class DirectAdminService
     }
 
     /**
+     * Reassign a hosting account to a different DirectAdmin reseller (admin API).
+     * Pass null to move the account back under admin/platform ownership.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function reassignUserReseller(string $username, ?string $newResellerUsername): array
+    {
+        if (! $this->isConfigured()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured.'];
+        }
+
+        if (blank($username)) {
+            return ['success' => false, 'message' => 'Hosting username is required.'];
+        }
+
+        try {
+            $payload = [
+                'action' => 'customize',
+                'user' => $username,
+                'reseller' => filled($newResellerUsername) ? $newResellerUsername : $this->username,
+            ];
+
+            $response = $this->httpClient()
+                ->asForm()
+                ->post(rtrim($this->apiUrl, '/').'/CMD_API_MODIFY_USER', $payload);
+
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            if ($parsed['success']) {
+                Log::info('DirectAdmin user reassigned to reseller', [
+                    'username' => $username,
+                    'reseller' => $payload['reseller'],
+                    'node_id' => $this->node?->id,
+                ]);
+            }
+
+            return $parsed;
+        } catch (\Exception $e) {
+            Log::error('Failed to reassign DirectAdmin user reseller', [
+                'username' => $username,
+                'new_reseller' => $newResellerUsername,
+                'node_id' => $this->node?->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to reassign hosting account: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Check whether a DirectAdmin user already exists.
      */
     public function accountExists(string $username): bool

@@ -141,6 +141,15 @@
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">You can change the package anytime.</p>
                     </div>
 
+                    <div>
+                        <label for="commission_rate" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Commission rate (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" id="commission_rate" name="commission_rate" value="{{ old('commission_rate', $user->commission_rate) }}" placeholder="e.g. 25" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm">
+                        @error('commission_rate')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Percentage of managed customer revenue attributed to this reseller (for reporting).</p>
+                    </div>
+
                     @include('admin.resellers.partials.directadmin-fields', ['user' => $user])
                 </div>
             </div>

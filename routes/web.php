@@ -1,8 +1,11 @@
 <?php
 
+use App\Http\Controllers\Admin\AdminActivityLogController;
+use App\Http\Controllers\Admin\AdminReportsController;
 use App\Http\Controllers\Admin\ContainerController;
 use App\Http\Controllers\Admin\ContainerMigrationController;
 use App\Http\Controllers\Admin\ContainerTemplateController;
+use App\Http\Controllers\Admin\CreditController;
 use App\Http\Controllers\Admin\CronController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\CustomerController;
@@ -139,6 +142,12 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/invoices/{invoice}/payments', [InvoiceController::class, 'addPayment'])->name('admin.invoices.add-payment');
         Route::post('admin/invoices/{invoice}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('admin.invoices.mark-paid');
         Route::resource('admin/payments', App\Http\Controllers\Admin\PaymentController::class)->names('admin.payments');
+        Route::resource('admin/credits', CreditController::class)->except(['edit', 'update'])->names('admin.credits');
+        Route::post('admin/credits/{credit}/apply', [CreditController::class, 'apply'])->name('admin.credits.apply');
+        Route::post('admin/credits/{credit}/remove', [CreditController::class, 'remove'])->name('admin.credits.remove');
+        Route::get('admin/customers/{user}/credits-report', [CreditController::class, 'customerReport'])->name('admin.credits.customer-report');
+        Route::get('admin/reports', [AdminReportsController::class, 'index'])->name('admin.reports.index');
+        Route::get('admin/activity-logs', [AdminActivityLogController::class, 'index'])->name('admin.activity-logs.index');
         Route::post('admin/payments/{payment}/approve-manual', [App\Http\Controllers\Admin\PaymentController::class, 'approveManual'])->name('admin.payments.approve-manual');
         Route::post('admin/payments/{payment}/reject-manual', [App\Http\Controllers\Admin\PaymentController::class, 'rejectManual'])->name('admin.payments.reject-manual');
         Route::resource('admin/services', ServiceController::class)->names('admin.services');
@@ -147,6 +156,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // DirectAdmin cross-node package consistency (must be registered BEFORE the
         // nodes resource route so /admin/nodes/{node} doesn't swallow the URL).
         Route::get('admin/shared-hosting/package-consistency', [NodeController::class, 'packageConsistency'])->name('admin.shared-hosting.package-consistency');
+        Route::post('admin/direct-admin-packages/{package}/push-limits', [NodeController::class, 'pushPackageLimits'])->name('admin.direct-admin-packages.push-limits');
         Route::resource('admin/nodes', NodeController::class)->names('admin.nodes');
         Route::post('admin/nodes/{node}/status', [NodeController::class, 'updateStatus'])->name('admin.nodes.update-status');
         Route::post('admin/nodes/{node}/test-connection', [NodeController::class, 'testConnection'])->name('admin.nodes.test-connection');

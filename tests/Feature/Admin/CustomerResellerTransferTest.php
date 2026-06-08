@@ -119,6 +119,44 @@ class CustomerResellerTransferTest extends TestCase
         $this->assertSame($resellerB->id, $domainOrder->reseller_id);
     }
 
+    public function test_admin_can_transfer_customer_back_to_platform(): void
+    {
+        $admin = $this->createAdmin();
+        $reseller = $this->createReseller();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.customers.transfer-to-reseller', $customer), [
+                'target_reseller_id' => 'platform',
+            ])
+            ->assertRedirect(route('admin.customers.index'))
+            ->assertSessionHas('success');
+
+        $customer->refresh();
+        $service->refresh();
+
+        $this->assertNull($customer->reseller_id);
+        $this->assertNull($service->reseller_id);
+    }
+
+    public function test_cannot_transfer_platform_customer_to_platform_again(): void
+    {
+        $admin = $this->createAdmin();
+        $customer = User::factory()->create(['reseller_id' => null]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.customers.transfer-to-reseller', $customer), [
+                'target_reseller_id' => 'platform',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+    }
+
     public function test_cannot_transfer_customer_to_same_reseller(): void
     {
         $admin = $this->createAdmin();

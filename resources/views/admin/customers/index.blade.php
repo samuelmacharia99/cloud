@@ -215,7 +215,10 @@
                                             <form method="POST" action="{{ route('admin.customers.transfer-to-reseller', $customer) }}">
                                                 @csrf
                                                 <select name="target_reseller_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm mb-4" required>
-                                                    <option value="">Select a reseller...</option>
+                                                    <option value="">Select destination...</option>
+                                                    @if($customer->reseller_id)
+                                                        <option value="platform">Platform (direct)</option>
+                                                    @endif
                                                     @foreach($resellers->where('id', '!=', $customer->reseller_id) as $reseller)
                                                         <option value="{{ $reseller->id }}">{{ $reseller->name }} ({{ $reseller->email }})</option>
                                                     @endforeach

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\Credit;
 use App\Models\User;
+use App\Services\AdminActivityService;
 use App\Services\CreditService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class CreditController extends Controller
 {
@@ -79,10 +81,16 @@ class CreditController extends Controller
             User::find($validated['user_id']),
             (float) $validated['amount'],
             $validated['notes'] ?? '',
-            $validated['expires_at'] ? \Carbon\Carbon::parse($validated['expires_at']) : null
+            $validated['expires_at'] ? Carbon::parse($validated['expires_at']) : null
         );
 
         $credit->update(['source' => $validated['source']]);
+
+        AdminActivityService::log(
+            'credit.issue',
+            "Issued KES {$validated['amount']} credit to ".User::find($validated['user_id'])->name,
+            $credit,
+        );
 
         return redirect()->route('admin.credits.show', $credit)
             ->with('success', 'Credit created successfully.');

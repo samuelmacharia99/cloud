@@ -13,6 +13,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
+use App\Services\AdminActivityService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
@@ -141,6 +142,7 @@ class CustomerController extends Controller
         }
 
         $customer->load(
+            'reseller:id,name,email',
             'services.product',
             'invoices',
             'payments',
@@ -236,6 +238,12 @@ class CustomerController extends Controller
         if ($customer->is_admin) {
             abort(404);
         }
+
+        AdminActivityService::log(
+            'customer.impersonate',
+            'Started impersonating customer '.$customer->name,
+            $customer,
+        );
 
         // Store the admin ID in session for later exit
         session(['impersonating' => auth()->id(), 'impersonating_user_id' => $customer->id]);
@@ -878,18 +886,26 @@ class CustomerController extends Controller
         }
 
         $validated = $request->validate([
-            'target_reseller_id' => 'required|exists:users,id',
+            'target_reseller_id' => 'required',
         ]);
 
-        $targetReseller = User::findOrFail($validated['target_reseller_id']);
+        $targetReseller = null;
+        if ($validated['target_reseller_id'] !== 'platform') {
+            $request->validate(['target_reseller_id' => 'exists:users,id']);
+            $targetReseller = User::findOrFail($validated['target_reseller_id']);
+        }
 
         try {
             $result = $transferService->transfer($customer, $targetReseller);
 
             $fromLabel = $result['from_reseller'] ?? 'Platform';
+            $flash = "'{$customer->name}' is now managed by {$result['to_reseller']} (previously {$fromLabel}). Services and domains were reassigned; billing history remains on the customer account.";
 
-            return redirect()->route('admin.customers.index')
-                ->with('success', "'{$customer->name}' is now managed by {$result['to_reseller']} (previously {$fromLabel}). Services and domains were reassigned; billing history remains on the customer account.");
+            if (! empty($result['da_warnings'])) {
+                $flash .= ' Some DirectAdmin accounts could not be moved: '.implode(' ', $result['da_warnings']);
+            }
+
+            return redirect()->route('admin.customers.index')->with('success', $flash);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {

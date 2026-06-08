@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
+use App\Services\NotificationService;
+use App\Services\SmsService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -23,33 +25,25 @@ class TicketController extends Controller
     {
         $this->authorize('viewAny', Ticket::class);
 
-        $query = Ticket::with('user', 'assignee')
-            ->latest()
-            ->paginate(15);
+        $query = Ticket::with('user', 'assignee')->latest();
 
-        // Handle filters
         if ($request->filled('status')) {
-            $query = Ticket::with('user', 'assignee')
-                ->where('status', $request->status)
-                ->latest()
-                ->paginate(15);
+            $query->where('status', $request->status);
         }
 
         if ($request->filled('priority')) {
-            $query = Ticket::with('user', 'assignee')
-                ->where('priority', $request->priority)
-                ->latest()
-                ->paginate(15);
+            $query->where('priority', $request->priority);
         }
 
         if ($request->filled('search')) {
             $search = $request->search;
-            $query = Ticket::with('user', 'assignee')
-                ->where('title', 'like', "%{$search}%")
-                ->orWhere('description', 'like', "%{$search}%")
-                ->latest()
-                ->paginate(15);
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
         }
+
+        $query = $query->paginate(15)->withQueryString();
 
         $statusOptions = ['open', 'in_progress', 'on_hold', 'closed'];
         $priorityOptions = ['low', 'medium', 'high', 'urgent'];
@@ -215,7 +209,7 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+        $notificationService = new NotificationService(new SmsService);
         $notificationService->notifyTicketCreated($ticket);
     }
 
@@ -226,7 +220,7 @@ class TicketController extends Controller
     {
         $latestReply = $ticket->replies()->latest()->first();
         if ($latestReply) {
-            $notificationService = new \App\Services\NotificationService(new \App\Services\SmsService());
+            $notificationService = new NotificationService(new SmsService);
             $notificationService->notifyTicketReplied($ticket, $latestReply);
         }
     }

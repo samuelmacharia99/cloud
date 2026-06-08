@@ -37,6 +37,17 @@
                         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
                             {{ !empty($customer->company) ? 'Company' : 'Individual' }}
                         </span>
+
+                        <!-- Owner -->
+                        @if($customer->reseller)
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                                Managed by <a href="{{ route('admin.resellers.show', $customer->reseller) }}" class="underline ml-1">{{ $customer->reseller->name }}</a>
+                            </span>
+                        @else
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                Platform (direct)
+                            </span>
+                        @endif
                     </div>
                 </div>
             </div>

@@ -33,8 +33,19 @@ class DashboardController extends Controller
 
     private function adminDashboard()
     {
-        // Key Metrics
-        $totalCustomers = User::where('is_admin', false)->count();
+        // Key Metrics — customers only (exclude reseller accounts)
+        $platformCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->whereNull('reseller_id')
+            ->count();
+        $resellerManagedCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->whereNotNull('reseller_id')
+            ->count();
+        $totalResellers = User::where('is_reseller', true)->count();
+        $totalCustomers = $platformCustomers + $resellerManagedCustomers;
         $serviceStatusCounts = Service::query()
             ->select('status', DB::raw('COUNT(*) as count'))
             ->whereIn('status', ['active', 'suspended', 'terminated', 'cancelled'])
@@ -67,7 +78,13 @@ class DashboardController extends Controller
         $urgentTickets = Ticket::where('status', '!=', 'closed')->where('priority', 'urgent')->count();
 
         // Recent Activity
-        $recentCustomers = User::where('is_admin', false)->latest()->take(8)->get();
+        $recentCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->with('reseller:id,name')
+            ->latest()
+            ->take(8)
+            ->get();
         $recentServices = Service::with('user', 'product')->latest()->take(8)->get();
         $recentInvoices = Invoice::with('user')->latest()->take(8)->get();
         $recentPayments = Payment::with('user', 'invoice')->latest()->take(8)->get();
@@ -118,6 +135,7 @@ class DashboardController extends Controller
         $dailySignups = User::query()
             ->selectRaw('DATE(created_at) as day, COUNT(*) as total')
             ->where('is_admin', false)
+            ->where('is_reseller', false)
             ->where('created_at', '>=', $signupStart)
             ->groupBy('day')
             ->pluck('total', 'day');
@@ -129,6 +147,9 @@ class DashboardController extends Controller
         return view('dashboard.admin', [
             // Metrics
             'totalCustomers' => $totalCustomers,
+            'platformCustomers' => $platformCustomers,
+            'resellerManagedCustomers' => $resellerManagedCustomers,
+            'totalResellers' => $totalResellers,
             'activeServices' => $activeServices,
             'totalServices' => $totalServices,
             'suspendedServices' => $suspendedServices,

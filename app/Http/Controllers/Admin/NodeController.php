@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\DirectAdminPackage;
 use App\Models\Node;
 use App\Models\NodeMonitoring;
 use App\Models\Service;
@@ -377,7 +378,14 @@ class NodeController extends Controller
             return $this->buildConsistencyReport();
         });
 
-        return view('admin.nodes.package-consistency', $report);
+        $catalogPackages = DirectAdminPackage::with('node')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.nodes.package-consistency', array_merge($report, [
+            'catalogPackages' => $catalogPackages,
+        ]));
     }
 
     /**
@@ -635,6 +643,36 @@ class NodeController extends Controller
             return back()->with('success', $message);
         } catch (\Exception $e) {
             return back()->with('error', 'Node health test failed: '.$e->getMessage());
+        }
+    }
+
+    public function pushPackageLimits(DirectAdminPackage $package)
+    {
+        $package->load('node');
+        $node = $package->node;
+
+        if (! $node || $node->type !== 'directadmin') {
+            return back()->with('error', 'Package is not linked to an active DirectAdmin node.');
+        }
+
+        try {
+            $service = new DirectAdminService($node);
+
+            if (! $service->isConfigured()) {
+                return back()->with('error', 'DirectAdmin API is not configured for this node.');
+            }
+
+            $result = $service->ensureUserPackage($package);
+
+            if (! $result['success']) {
+                return back()->with('error', "Failed to push limits for {$package->name}: {$result['message']}");
+            }
+
+            \Cache::forget('directadmin:package-consistency');
+
+            return back()->with('success', "Pushed package limits for \"{$package->name}\" to {$node->name}.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to push package limits: '.$e->getMessage());
         }
     }
 
