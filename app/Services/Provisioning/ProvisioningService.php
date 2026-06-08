@@ -249,6 +249,12 @@ class ProvisioningService
                 ->value('directadmin_username');
         }
 
+        $this->directAdminSetup->ensurePackageLimitsOnServer(
+            $daService,
+            $service,
+            filled($ownerReseller) ? (string) $ownerReseller : null,
+        );
+
         $result = $daService->createHostingAccount(
             $service,
             $username,

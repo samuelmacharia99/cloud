@@ -104,6 +104,61 @@ class DirectAdminSetupService
         return Setting::getValue('directadmin_default_package', 'default');
     }
 
+    public function resolvePackageRecord(Service $service): ?DirectAdminPackage
+    {
+        $productPackage = $service->product?->directAdminPackage;
+        if ($productPackage) {
+            return $productPackage;
+        }
+
+        $meta = $service->service_meta ?? [];
+        $nodeId = $service->node_id ?? ($meta['node_id'] ?? null);
+
+        if ($nodeId && ! empty($meta['package'])) {
+            $matched = DirectAdminPackage::where('node_id', $nodeId)
+                ->where('package_key', (string) $meta['package'])
+                ->first();
+
+            if ($matched) {
+                return $matched;
+            }
+        }
+
+        if ($nodeId && ! empty($meta['package_name'])) {
+            return DirectAdminPackage::where('node_id', $nodeId)
+                ->where('name', (string) $meta['package_name'])
+                ->first();
+        }
+
+        return null;
+    }
+
+    public function ensurePackageLimitsOnServer(
+        DirectAdminService $directAdmin,
+        Service $service,
+        ?string $ownerResellerUsername = null,
+    ): void {
+        $package = $this->resolvePackageRecord($service);
+
+        if (! $package) {
+            \Log::warning('Skipping DirectAdmin package limit sync — no local package record', [
+                'service_id' => $service->id,
+                'package_name' => $this->resolvePackageName($service),
+            ]);
+
+            return;
+        }
+
+        $result = $directAdmin->ensureUserPackage(
+            $package,
+            filled($ownerResellerUsername) ? $ownerResellerUsername : null,
+        );
+
+        if (! $result['success']) {
+            throw new \RuntimeException($result['message']);
+        }
+    }
+
     public function resolveCredentials(Service $service): array
     {
         $meta = $service->service_meta ?? [];

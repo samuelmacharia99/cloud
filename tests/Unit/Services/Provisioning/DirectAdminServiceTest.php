@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Provisioning;
 
+use App\Models\DirectAdminPackage;
 use App\Models\Node;
 use App\Models\Service;
 use App\Models\User;
@@ -183,6 +184,67 @@ class DirectAdminServiceTest extends TestCase
                 && ! isset($request['package'])
                 && ($request->header('Authorization')[0] ?? '') === $expectedAuth;
         });
+    }
+
+    public function test_ensure_user_package_pushes_disk_and_bandwidth_limits(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Saved', 200),
+        ]);
+
+        $package = new DirectAdminPackage([
+            'name' => 'Bronze',
+            'package_key' => 'bronze',
+            'disk_quota' => 5,
+            'bandwidth_quota' => 50,
+            'num_domains' => 1,
+            'num_ftp' => 2,
+            'num_email_accounts' => 10,
+            'num_databases' => 3,
+            'num_subdomains' => 5,
+            'features' => ['php' => true, 'ssl' => true],
+        ]);
+
+        $result = (new DirectAdminService($this->createDirectAdminNode()))->ensureUserPackage($package);
+
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_MANAGE_USER_PACKAGES')
+                && $request['packagename'] === 'Bronze'
+                && $request['add'] === 'Save'
+                && (int) $request['quota'] === 5120
+                && $request['uquota'] === 'OFF'
+                && (int) $request['bandwidth'] === 51200
+                && $request['ubandwidth'] === 'OFF'
+                && (int) $request['vdomains'] === 1
+                && (int) $request['mysql'] === 3;
+        });
+    }
+
+    public function test_get_packages_reads_quota_field_for_disk(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
+                return Http::response(json_encode(['list' => ['Starter']]), 200);
+            }
+
+            return Http::response(json_encode([
+                'quota' => '2048M',
+                'bandwidth' => '10240M',
+                'ftp' => '5',
+                'mysql' => '3',
+                'domainptr' => '1',
+                'subdomains' => '10',
+                'email' => '25',
+            ]), 200);
+        });
+
+        $packages = (new DirectAdminService($this->createDirectAdminNode()))->getPackages();
+
+        $this->assertCount(1, $packages);
+        $this->assertSame(2.0, $packages[0]['disk_quota']);
+        $this->assertSame(10.0, $packages[0]['bandwidth_quota']);
     }
 
     public function test_empty_api_body_is_treated_as_failure_for_create(): void

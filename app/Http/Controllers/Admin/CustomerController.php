@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\DirectAdminSetupService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -719,6 +720,8 @@ class CustomerController extends Controller
             if (! $packageName) {
                 return ['success' => false, 'message' => 'no DirectAdmin package resolved for this service'];
             }
+
+            app(DirectAdminSetupService::class)->ensurePackageLimitsOnServer($da, $service);
 
             $result = $da->createHostingAccount(
                 $service,

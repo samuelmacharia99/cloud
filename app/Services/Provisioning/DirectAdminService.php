@@ -148,6 +148,90 @@ class DirectAdminService
      * @param  string  $package  DirectAdmin package name
      * @return array ['success' => bool, 'message' => string, 'credentials' => array]
      */
+    /**
+     * Create or update a DirectAdmin user package so limits match our catalog record.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function ensureUserPackage(DirectAdminPackage $package, ?string $impersonateUsername = null): array
+    {
+        if (! $this->isConfigured()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured.'];
+        }
+
+        try {
+            $payload = array_merge(
+                $this->buildUserPackageManagePayload($package),
+                [
+                    'add' => 'Save',
+                    'packagename' => $package->name,
+                ],
+            );
+
+            $response = $this->httpClient($impersonateUsername)
+                ->asForm()
+                ->post(rtrim($this->apiUrl, '/').'/CMD_API_MANAGE_USER_PACKAGES', $payload);
+
+            $parsed = $this->parseApiResponse($response->body(), $response->status());
+
+            if (! $parsed['success']) {
+                Log::error('DirectAdmin package limit sync rejected', [
+                    'node_id' => $this->node?->id,
+                    'package' => $package->name,
+                    'impersonation' => filled($impersonateUsername) ? $this->username.'|'.$impersonateUsername : null,
+                    'message' => $parsed['message'],
+                ]);
+            } else {
+                Log::info('DirectAdmin package limits synced', [
+                    'node_id' => $this->node?->id,
+                    'package' => $package->name,
+                    'disk_quota_gb' => $package->disk_quota,
+                    'bandwidth_quota_gb' => $package->bandwidth_quota,
+                ]);
+            }
+
+            return $parsed;
+        } catch (\Exception $e) {
+            Log::error('Failed to sync DirectAdmin package limits', [
+                'node_id' => $this->node?->id,
+                'package' => $package->name,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to sync package limits: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    public function buildUserPackageManagePayload(DirectAdminPackage $package): array
+    {
+        $payload = array_merge(
+            $this->megabyteLimitFields('quota', 'uquota', (float) $package->disk_quota),
+            $this->megabyteLimitFields('bandwidth', 'ubandwidth', (float) ($package->bandwidth_quota ?? 0)),
+            $this->quantityLimitFields('vdomains', 'uvdomains', $package->num_domains),
+            $this->quantityLimitFields('ftp', 'uftp', $package->num_ftp),
+            $this->quantityLimitFields('mysql', 'umysql', $package->num_databases),
+            $this->quantityLimitFields('nemails', 'unemails', $package->num_email_accounts),
+            $this->quantityLimitFields('nsubdomains', 'unsubdomains', $package->num_subdomains),
+        );
+
+        $features = $package->features ?? [];
+
+        return array_merge($payload, [
+            'php' => ($features['php'] ?? true) ? 'ON' : 'OFF',
+            'ssl' => ($features['ssl'] ?? true) ? 'ON' : 'OFF',
+            'cgi' => 'ON',
+            'dnscontrol' => 'ON',
+            'cron' => ($features['cron_jobs'] ?? true) ? 'ON' : 'OFF',
+            'suspend_at_limit' => 'ON',
+        ]);
+    }
+
     public function createHostingAccount(
         Service $service,
         string $username,
@@ -866,7 +950,7 @@ class DirectAdminService
             'name' => $packageName,
             'package_key' => Str::slug($packageName),
             'description' => $data['description'] ?? null,
-            'disk_quota' => $this->convertToGb($data['disk'] ?? '0'),
+            'disk_quota' => $this->convertToGb($data['disk'] ?? $data['quota'] ?? '0'),
             'bandwidth_quota' => $this->convertToGb($data['bandwidth'] ?? '0'),
             'num_domains' => (int) ($data['domainptr'] ?? 1),
             'num_ftp' => (int) ($data['ftp'] ?? 1),
@@ -1141,6 +1225,36 @@ class DirectAdminService
         unset($parsed['error'], $parsed['text']);
 
         return $parsed;
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function megabyteLimitFields(string $quantityField, string $unlimitedField, float $gigabytes): array
+    {
+        if ($gigabytes < 0) {
+            return [$unlimitedField => 'ON'];
+        }
+
+        return [
+            $quantityField => max(1, (int) round($gigabytes * 1024)),
+            $unlimitedField => 'OFF',
+        ];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function quantityLimitFields(string $quantityField, string $unlimitedField, ?int $value): array
+    {
+        if ($value === null || $value < 0) {
+            return [$unlimitedField => 'ON'];
+        }
+
+        return [
+            $quantityField => max(0, $value),
+            $unlimitedField => 'OFF',
+        ];
     }
 
     private function toMegabytes(mixed $value): ?float
