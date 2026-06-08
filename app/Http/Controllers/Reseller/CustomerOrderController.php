@@ -152,7 +152,8 @@ class CustomerOrderController extends Controller
         $extensions = DomainExtension::with([
             'pricing' => fn ($q) => $q->where('tier', 'wholesale'),
             'resellerPricing' => fn ($q) => $q->where('reseller_id', $reseller->id)->where('enabled', true),
-        ])->where('enabled', true)->orderBy('extension')->get();
+        ])->where('enabled', true)->orderBy('extension')->get()
+            ->each->concealUpstreamProviderDetails();
 
         $selectedCustomer = $request->filled('customer')
             ? $customers->firstWhere('id', (int) $request->customer)

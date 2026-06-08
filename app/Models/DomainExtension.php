@@ -9,7 +9,9 @@ class DomainExtension extends Model
     protected $table = 'domain_extensions';
 
     protected $primaryKey = 'id';
+
     public $incrementing = true;
+
     protected $keyType = 'int';
 
     // Use 'extension' field for route model binding (e.g., .com, .co.ke)
@@ -84,6 +86,17 @@ class DomainExtension extends Model
         if ($user->is_reseller) {
             return $this->getWholesalePricing($periodYears) ?? $this->getRetailPricing($periodYears);
         }
+
         return $this->getRetailPricing($periodYears);
+    }
+
+    /**
+     * Hide upstream provider details from reseller-facing responses.
+     *
+     * @return $this
+     */
+    public function concealUpstreamProviderDetails(): static
+    {
+        return $this->makeHidden(['registrar']);
     }
 }

@@ -38,7 +38,7 @@
     </div>
 
     <!-- Domain Search Section -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager({ customerMode: {{ ($cartContext['mode'] ?? 'self') === 'customer' ? 'true' : 'false' }}, knownExtensions: @json($knownExtensions) })">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainSearchManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
         <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Register a New Domain</h2>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="!customerMode">
             Prices shown are your <strong class="text-purple-700 dark:text-purple-300">wholesale</strong> rates for your account.
@@ -63,7 +63,7 @@
                             @keyup.enter="searchDomains()"
                             placeholder="e.g., example.com"
                             class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">
-                        <button @click="searchDomains()"
+                        <button type="button" @click="searchDomains()"
                             class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
                             Search
                         </button>
@@ -154,9 +154,6 @@
                                 <tr>
                                     <td>
                                         <span class="font-semibold text-slate-900 dark:text-white font-mono text-sm">{{ $domain->name }}{{ $domain->extension }}</span>
-                                        @if($domain->registrar)
-                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ $domain->registrar }}</p>
-                                        @endif
                                     </td>
                                     <td class="text-slate-600 dark:text-slate-400">
                                         @if($domain->user_id !== auth()->id())
@@ -290,7 +287,18 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
         addedMessage: '',
 
         resolveExtension(input) {
-            return this.knownExtensions.find((ext) => input.endsWith(ext)) || null;
+            const known = this.knownExtensions.find((ext) => input.endsWith(ext));
+            if (known) {
+                return known;
+            }
+
+            // Fallback when extension list is unavailable: use last label as TLD
+            const lastDot = input.lastIndexOf('.');
+            if (lastDot > 0) {
+                return input.substring(lastDot);
+            }
+
+            return null;
         },
 
         pricingApiUrl(extension) {
@@ -368,8 +376,8 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
             this.adding = true;
 
             try {
-                // Extract domain name (without extension)
-                const domainName = domain.substring(0, domain.lastIndexOf('.'));
+                const resolvedExtension = this.resolveExtension(domain) || extension || domain.substring(domain.lastIndexOf('.'));
+                const domainName = domain.slice(0, -resolvedExtension.length);
 
                 const res = await fetch('{{ route("reseller.cart.add") }}', {
                     method: 'POST',
@@ -380,8 +388,8 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
                     },
                     body: JSON.stringify({
                         domain: domainName,
-                        extension: extension,
-                        years: parseInt(period),
+                        extension: resolvedExtension,
+                        years: parseInt(period, 10),
                         price: price
                     })
                 });

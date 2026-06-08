@@ -41,9 +41,11 @@ class DomainController extends Controller
                 ->orWhereIn('user_id', $customerIds)
                 ->orWhere('reseller_id', $resellerId);
         })
-            ->with('domainExtension', 'user')
+            ->with('user')
             ->orderByDesc('created_at')
             ->paginate(15);
+
+        $domains->getCollection()->each->concealUpstreamProviderDetails();
 
         // Get enabled domain extensions with wholesale and reseller pricing
         $extensions = DomainExtension::with([
@@ -52,7 +54,8 @@ class DomainController extends Controller
         ])
             ->where('enabled', true)
             ->orderBy('extension')
-            ->get();
+            ->get()
+            ->each->concealUpstreamProviderDetails();
 
         // Default period for pricing display
         $selectedPeriod = $request->get('period', 1);

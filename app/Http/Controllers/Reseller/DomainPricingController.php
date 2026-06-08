@@ -2,22 +2,23 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\ResellerDomainPricing;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class DomainPricingController extends Controller
 {
     public function index()
     {
         $extensions = DomainExtension::with([
-            'pricing' => fn($q) => $q->where('tier', 'wholesale'),
-            'resellerPricing' => fn($q) => $q->where('reseller_id', auth()->id()),
+            'pricing' => fn ($q) => $q->where('tier', 'wholesale'),
+            'resellerPricing' => fn ($q) => $q->where('reseller_id', auth()->id()),
         ])
-        ->where('enabled', true)
-        ->orderBy('extension')
-        ->get();
+            ->where('enabled', true)
+            ->orderBy('extension')
+            ->get()
+            ->each->concealUpstreamProviderDetails();
 
         $periods = [1, 2, 3, 5, 10];
 

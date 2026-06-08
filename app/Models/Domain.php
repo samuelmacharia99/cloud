@@ -112,6 +112,23 @@ class Domain extends Model
     }
 
     /**
+     * Hide upstream provider details from reseller-facing responses.
+     *
+     * @return $this
+     */
+    public function concealUpstreamProviderDetails(): static
+    {
+        return $this->makeHidden([
+            'registrar',
+            'old_registrar',
+            'old_registrar_url',
+            'epp_code',
+            'transfer_notes',
+            'transfer_authorization_code',
+        ]);
+    }
+
+    /**
      * Check if transfer is pending
      */
     public function isTransferPending(): bool

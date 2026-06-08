@@ -56,7 +56,7 @@
                     <option value="{{ $y }}" @selected(old('years', 1) == $y)>{{ $y }}</option>
                 @endforeach
             </select>
-            <p class="text-xs text-slate-500 mt-1">Used for wholesale pricing and registrar registration period.</p>
+            <p class="text-xs text-slate-500 mt-1">Used for wholesale pricing and the registration period.</p>
         </div>
 
         <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4 space-y-3">
