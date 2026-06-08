@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\ResellerEnforcementService;
 use App\Services\ServiceOverdueEnforcementService;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -138,6 +139,36 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
 
         $this->assertCount(1, $services);
         $this->assertSame($service->id, $services->first()->id);
+    }
+
+    public function test_suspension_enabled_when_admin_setting_saved_as_checkbox_value(): void
+    {
+        Setting::where('key', 'suspend_on_overdue')->update(['value' => '1']);
+
+        $this->assertTrue($this->enforcement->isSuspensionEnabled());
+    }
+
+    public function test_disk_overquota_suspension_blocks_payment_unsuspend(): void
+    {
+        $customer = User::factory()->create();
+        $product = Product::factory()->create();
+
+        $paidInvoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'paid',
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'invoice_id' => $paidInvoice->id,
+            'service_meta' => [
+                ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_DISK_OVERQUOTA,
+            ],
+        ]);
+
+        $this->assertFalse($this->enforcement->canAutoUnsuspendForPaidInvoice($service));
     }
 
     public function test_reseller_subscription_invoice_does_not_select_customer_services(): void

@@ -53,6 +53,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Enforce Disk Quotas',
+                'description' => 'Suspends DirectAdmin accounts over disk quota and restores them when usage drops (includes reseller customers).',
+                'command' => 'cron:enforce-disk-quotas',
+                'schedule' => '0 */6 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Terminate Services',
                 'description' => 'Terminates services whose invoice has remained unpaid for the configured number of months.',
                 'command' => 'cron:terminate-services',

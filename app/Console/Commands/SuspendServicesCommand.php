@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerEnforcementService;
 use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Support\Facades\Log;
 
@@ -23,11 +23,14 @@ class SuspendServicesCommand extends BaseCronCommand
         $services = $enforcement->activeServicesWithOverdueInvoicePastGraceQuery()->get();
 
         $count = 0;
-        $provisioningService = app(ProvisioningService::class);
+        $resellerEnforcement = app(ResellerEnforcementService::class);
 
         foreach ($services as $service) {
             try {
-                $provisioningService->suspend($service);
+                $resellerEnforcement->suspendServiceForEnforcement(
+                    $service,
+                    ResellerEnforcementService::REASON_INVOICE_OVERDUE
+                );
                 $count++;
             } catch (\Exception $e) {
                 Log::error("Failed to suspend service {$service->id}: {$e->getMessage()}");

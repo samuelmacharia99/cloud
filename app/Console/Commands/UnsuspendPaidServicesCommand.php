@@ -15,9 +15,8 @@ class UnsuspendPaidServicesCommand extends BaseCronCommand
 
     protected function handleCron(): string
     {
-        $services = app(ServiceOverdueEnforcementService::class)
-            ->suspendedServicesWithPaidBillingInvoiceQuery()
-            ->get();
+        $enforcement = app(ServiceOverdueEnforcementService::class);
+        $services = $enforcement->suspendedServicesWithPaidBillingInvoiceQuery()->get();
 
         if ($services->isEmpty()) {
             return 'No suspended services to unsuspend.';
@@ -29,8 +28,13 @@ class UnsuspendPaidServicesCommand extends BaseCronCommand
         $notificationService = app(NotificationService::class);
 
         foreach ($services as $service) {
+            if (! $enforcement->canAutoUnsuspendForPaidInvoice($service)) {
+                continue;
+            }
+
             try {
-                $provisioningService->unsuspend($service);
+                $enforcement->clearInvoiceSuspensionMeta($service);
+                $provisioningService->unsuspend($service->fresh());
                 $notificationService->notifyServiceUnsuspended($service->fresh());
 
                 Log::info('Service unsuspended - invoice paid', [

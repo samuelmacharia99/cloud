@@ -51,6 +51,7 @@ class SettingController extends Controller
             'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
             'reseller_suspend_on_overdue', 'reseller_cascade_suspend_on_overdue',
             'reseller_suspend_excess_services', 'reseller_enforce_limits_on_provision',
+            'suspend_on_disk_overquota', 'disk_overquota_threshold_percent',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',

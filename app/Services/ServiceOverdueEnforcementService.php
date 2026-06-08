@@ -20,7 +20,7 @@ class ServiceOverdueEnforcementService
 {
     public function isSuspensionEnabled(): bool
     {
-        return Setting::getValue('suspend_on_overdue', 'false') === 'true';
+        return in_array(Setting::getValue('suspend_on_overdue', 'false'), ['1', 'true', true], true);
     }
 
     public function gracePeriodDays(): int
@@ -80,9 +80,52 @@ class ServiceOverdueEnforcementService
             ->with(['user', 'invoice', 'product'])
             ->where('status', ServiceStatus::Suspended)
             ->where(function (Builder $query) {
+                $query->whereNull('service_meta->'.ResellerEnforcementService::META_SUSPENSION_REASON)
+                    ->orWhere('service_meta->'.ResellerEnforcementService::META_SUSPENSION_REASON, ResellerEnforcementService::REASON_INVOICE_OVERDUE);
+            })
+            ->where(function (Builder $query) {
                 $query->whereHas('invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q))
                     ->orWhereHas('invoiceItems.invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q));
             });
+    }
+
+    public function shouldSuspendForOverdueInvoice(Service $service): bool
+    {
+        if (! $this->isSuspensionEnabled()) {
+            return false;
+        }
+
+        $graceCutoff = $this->graceCutoffDate();
+        $today = now()->startOfDay()->toDateString();
+
+        return $this->serviceMatchesOverduePastGrace($service, $graceCutoff)
+            || $this->serviceMatchesUnpaidDueOn($service, $today);
+    }
+
+    public function canAutoUnsuspendForPaidInvoice(Service $service): bool
+    {
+        if ($service->status !== ServiceStatus::Suspended) {
+            return false;
+        }
+
+        $reason = $service->service_meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null;
+
+        if ($reason !== null && $reason !== ResellerEnforcementService::REASON_INVOICE_OVERDUE) {
+            return false;
+        }
+
+        return ! $this->shouldSuspendForOverdueInvoice($service);
+    }
+
+    public function clearInvoiceSuspensionMeta(Service $service): void
+    {
+        $meta = $service->service_meta ?? [];
+        if (($meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null) !== ResellerEnforcementService::REASON_INVOICE_OVERDUE) {
+            return;
+        }
+
+        unset($meta[ResellerEnforcementService::META_SUSPENSION_REASON]);
+        $service->update(['service_meta' => $meta ?: null]);
     }
 
     /**
@@ -167,5 +210,48 @@ class ServiceOverdueEnforcementService
         $this->applyBillingInvoiceScope($query);
         $query->whereIn('status', ['unpaid', 'overdue'])
             ->whereDate('due_date', '<=', $cutoffDate);
+    }
+
+    private function serviceMatchesOverduePastGrace(Service $service, Carbon $graceCutoff): bool
+    {
+        $service->loadMissing(['invoice', 'invoiceItems.invoice']);
+
+        $invoices = collect([$service->invoice])
+            ->merge($service->invoiceItems->pluck('invoice'))
+            ->filter();
+
+        foreach ($invoices as $invoice) {
+            if ($invoice->type === 'reseller_subscription') {
+                continue;
+            }
+
+            if ($invoice->status === 'overdue' && $invoice->due_date?->lt($graceCutoff)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function serviceMatchesUnpaidDueOn(Service $service, string $dueDate): bool
+    {
+        $service->loadMissing(['invoice', 'invoiceItems.invoice']);
+
+        $invoices = collect([$service->invoice])
+            ->merge($service->invoiceItems->pluck('invoice'))
+            ->filter();
+
+        foreach ($invoices as $invoice) {
+            if ($invoice->type === 'reseller_subscription') {
+                continue;
+            }
+
+            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+                && $invoice->due_date?->toDateString() === $dueDate) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

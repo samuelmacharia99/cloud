@@ -70,6 +70,8 @@ class SettingSeeder extends Seeder
             ['key' => 'reseller_cascade_suspend_on_overdue', 'value' => 'true', 'description' => 'Cascade suspend managed services when reseller is suspended'],
             ['key' => 'reseller_suspend_excess_services', 'value' => 'true', 'description' => 'Suspend services beyond reseller package service slot limit'],
             ['key' => 'reseller_enforce_limits_on_provision', 'value' => 'true', 'description' => 'Block provisioning when reseller is at limit or suspended'],
+            ['key' => 'suspend_on_disk_overquota', 'value' => 'true', 'description' => 'Suspend DirectAdmin hosting when disk quota is exceeded'],
+            ['key' => 'disk_overquota_threshold_percent', 'value' => '100', 'description' => 'Disk usage percentage of quota before auto-suspension (100 = at limit)'],
 
             // Cron settings
             ['key' => 'cron_timezone', 'value' => 'Africa/Nairobi', 'description' => 'Timezone for cron job scheduling'],

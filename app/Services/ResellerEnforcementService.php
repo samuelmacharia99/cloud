@@ -19,6 +19,10 @@ class ResellerEnforcementService
 
     public const REASON_PACKAGE_LIMIT = 'package_limit';
 
+    public const REASON_INVOICE_OVERDUE = 'invoice_overdue';
+
+    public const REASON_DISK_OVERQUOTA = 'disk_overquota';
+
     public const META_SUSPENSION_REASON = 'suspension_reason';
 
     public function __construct(
@@ -348,7 +352,7 @@ class ResellerEnforcementService
         return $count;
     }
 
-    protected function suspendServiceForEnforcement(Service $service, string $reason): void
+    public function suspendServiceForEnforcement(Service $service, string $reason): void
     {
         if ($service->status !== ServiceStatus::Active) {
             return;

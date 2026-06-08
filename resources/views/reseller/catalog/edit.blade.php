@@ -69,6 +69,15 @@
                             'directAdminPackagesError' => $directAdminPackagesError,
                             'selectedPackage' => old('direct_admin_package_name', $catalogItem->direct_admin_package_name),
                         ])
+
+                        <div class="mt-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                            <p class="text-xs font-semibold text-amber-900 dark:text-amber-300 uppercase tracking-wide mb-2">Automatic enforcement</p>
+                            <ul class="text-xs text-amber-900 dark:text-amber-300 space-y-1 list-disc list-inside">
+                                <li>Disk usage is checked every 6 hours against the DirectAdmin package limit you assign here.</li>
+                                <li>Accounts over quota are suspended on the server until usage drops.</li>
+                                <li>Customer hosting is also suspended automatically when their invoice is unpaid or overdue.</li>
+                            </ul>
+                        </div>
                     </div>
 
                     <!-- Base Product (if applicable) -->

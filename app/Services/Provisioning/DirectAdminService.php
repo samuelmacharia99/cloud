@@ -245,6 +245,39 @@ class DirectAdminService
     }
 
     /**
+     * @return array{used_mb: float, limit_mb: ?float}|null
+     */
+    public function getAccountDiskUsage(string $username): ?array
+    {
+        if (! $this->isConfigured() || blank($username)) {
+            return null;
+        }
+
+        $config = $this->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', ['user' => $username]);
+        if (! $config['success']) {
+            return null;
+        }
+
+        $stats = $this->executeAdminApiCall('CMD_API_USER_STATS', ['user' => $username]);
+        $usage = $stats['success'] ? $stats['data'] : [];
+
+        $diskQuota = $config['data']['quota'] ?? $config['data']['disk'] ?? $usage['quota'] ?? null;
+        $diskUsed = $usage['quota_used'] ?? $config['data']['quota_used'] ?? $usage['disk'] ?? null;
+
+        $usedMb = $this->toMegabytes($diskUsed);
+        $limitMb = $this->toMegabytes($diskQuota);
+
+        if ($usedMb === null) {
+            return null;
+        }
+
+        return [
+            'used_mb' => $usedMb,
+            'limit_mb' => $limitMb,
+        ];
+    }
+
+    /**
      * @return array{success: bool, message: string}
      */
     private function parseApiResponse(string $body, int $statusCode): array
@@ -1108,5 +1141,32 @@ class DirectAdminService
         unset($parsed['error'], $parsed['text']);
 
         return $parsed;
+    }
+
+    private function toMegabytes(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $raw = strtolower(trim((string) $value));
+        if (in_array($raw, ['unlimited', '-1'], true)) {
+            return null;
+        }
+
+        if (is_numeric($raw)) {
+            return round((float) $raw, 2);
+        }
+
+        preg_match('/^(\d+(?:\.\d+)?)\s*([kmg])?b?$/i', $raw, $matches);
+        $number = (float) ($matches[1] ?? 0);
+        $unit = strtoupper($matches[2] ?? 'M');
+
+        return match ($unit) {
+            'K' => round($number / 1024, 2),
+            'M' => round($number, 2),
+            'G' => round($number * 1024, 2),
+            default => round($number, 2),
+        };
     }
 }

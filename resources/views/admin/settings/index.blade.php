@@ -1024,9 +1024,23 @@
                             <div>
                                 <input type="hidden" name="settings[suspend_on_overdue]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[suspend_on_overdue]" value="1" @checked(($settings['suspend_on_overdue'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Suspend service on overdue invoice</span>
+                                    <input type="checkbox" name="settings[suspend_on_overdue]" value="1" @checked(in_array($settings['suspend_on_overdue'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Suspend service on overdue invoice (direct and reseller customers)</span>
                                 </label>
+                            </div>
+
+                            <div>
+                                <input type="hidden" name="settings[suspend_on_disk_overquota]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[suspend_on_disk_overquota]" value="1" @checked(in_array($settings['suspend_on_disk_overquota'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Suspend DirectAdmin hosting when disk quota is exceeded</span>
+                                </label>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Disk overquota threshold (%)</label>
+                                <input type="number" name="settings[disk_overquota_threshold_percent]" min="1" max="200" value="{{ $settings['disk_overquota_threshold_percent'] ?? '100' }}" class="block w-full max-w-xs px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">100 suspends at the package limit. Lower values suspend earlier; unlimited quotas are never auto-suspended.</p>
                             </div>
 
                             <div>

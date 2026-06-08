@@ -643,11 +643,17 @@ class PaymentController extends Controller
         try {
             $provisioningService = app(ProvisioningService::class);
             $notificationService = app(NotificationService::class);
-            $services = app(ServiceOverdueEnforcementService::class)->suspendedServicesForPaidInvoice($invoice);
+            $enforcement = app(ServiceOverdueEnforcementService::class);
+            $services = $enforcement->suspendedServicesForPaidInvoice($invoice);
 
             foreach ($services as $service) {
+                if (! $enforcement->canAutoUnsuspendForPaidInvoice($service)) {
+                    continue;
+                }
+
                 try {
-                    $provisioningService->unsuspend($service);
+                    $enforcement->clearInvoiceSuspensionMeta($service);
+                    $provisioningService->unsuspend($service->fresh());
                     $notificationService->notifyServiceUnsuspended($service->fresh());
 
                     Log::info('Service unsuspended - invoice paid', [
