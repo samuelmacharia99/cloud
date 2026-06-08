@@ -206,12 +206,17 @@
                                     <div x-show="transferModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="transferModal = false">
                                         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full">
                                             <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Transfer to Reseller</h3>
-                                            <p class="text-slate-600 dark:text-slate-400 mb-4 text-sm">Select a reseller to transfer <strong>{{ $customer->name }}</strong>'s services and accounts to:</p>
+                                            <p class="text-slate-600 dark:text-slate-400 mb-4 text-sm">Reassign <strong>{{ $customer->name }}</strong> to another reseller. The customer keeps their login and billing history; services and domains move to the new reseller's management.</p>
+                                            @if ($customer->reseller)
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Current owner: <strong>{{ $customer->reseller->name }}</strong></p>
+                                            @else
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Current owner: <strong>Platform (direct)</strong></p>
+                                            @endif
                                             <form method="POST" action="{{ route('admin.customers.transfer-to-reseller', $customer) }}">
                                                 @csrf
                                                 <select name="target_reseller_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm mb-4" required>
                                                     <option value="">Select a reseller...</option>
-                                                    @foreach($resellers as $reseller)
+                                                    @foreach($resellers->where('id', '!=', $customer->reseller_id) as $reseller)
                                                         <option value="{{ $reseller->id }}">{{ $reseller->name }} ({{ $reseller->email }})</option>
                                                     @endforeach
                                                 </select>

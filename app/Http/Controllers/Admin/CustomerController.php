@@ -8,12 +8,12 @@ use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Node;
-use App\Models\Payment;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
+use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
@@ -865,12 +865,16 @@ class CustomerController extends Controller
     }
 
     /**
-     * Transfer a customer's services and domains to another reseller
+     * Reassign a managed customer to another reseller (ownership stays with the customer).
      */
-    public function transferToReseller(Request $request, User $customer)
+    public function transferToReseller(Request $request, User $customer, CustomerResellerTransferService $transferService)
     {
         if ($customer->is_admin) {
             abort(404);
+        }
+
+        if ($customer->is_reseller) {
+            return back()->with('error', 'Reseller accounts cannot be transferred with this action.');
         }
 
         $validated = $request->validate([
@@ -879,38 +883,22 @@ class CustomerController extends Controller
 
         $targetReseller = User::findOrFail($validated['target_reseller_id']);
 
-        // Ensure target is a reseller
-        if (! $targetReseller->is_reseller) {
-            return back()->with('error', 'Target user is not a reseller.');
-        }
-
-        // Ensure they're not the same user
-        if ($customer->id === $targetReseller->id) {
-            return back()->with('error', 'Cannot transfer to the same reseller.');
-        }
-
         try {
-            DB::transaction(function () use ($customer, $targetReseller) {
-                // Transfer all services
-                Service::where('user_id', $customer->id)
-                    ->update(['user_id' => $targetReseller->id]);
+            $result = $transferService->transfer($customer, $targetReseller);
 
-                // Transfer all domains
-                Domain::where('user_id', $customer->id)
-                    ->update(['user_id' => $targetReseller->id]);
-
-                // Transfer all invoices
-                Invoice::where('user_id', $customer->id)
-                    ->update(['user_id' => $targetReseller->id]);
-
-                // Transfer all payments
-                Payment::where('user_id', $customer->id)
-                    ->update(['user_id' => $targetReseller->id]);
-            });
+            $fromLabel = $result['from_reseller'] ?? 'Platform';
 
             return redirect()->route('admin.customers.index')
-                ->with('success', "All services, domains, and invoices for '{$customer->name}' have been transferred to '{$targetReseller->name}' successfully.");
+                ->with('success', "'{$customer->name}' is now managed by {$result['to_reseller']} (previously {$fromLabel}). Services and domains were reassigned; billing history remains on the customer account.");
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {
+            Log::error('Customer reseller transfer failed', [
+                'customer_id' => $customer->id,
+                'target_reseller_id' => $targetReseller->id,
+                'error' => $e->getMessage(),
+            ]);
+
             return back()->with('error', 'Failed to transfer customer: '.$e->getMessage());
         }
     }
