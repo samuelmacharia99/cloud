@@ -308,4 +308,42 @@ class DomainPushService
             $this->notificationService->sendDomainFailedNotification($order);
         });
     }
+
+    public function cancelOrder(ResellerDomainOrder $order, ?string $reason = null): void
+    {
+        if (! $order->canCancel()) {
+            throw new \InvalidArgumentException('This order cannot be cancelled.');
+        }
+
+        $this->db->transaction(function () use ($order, $reason) {
+            $order->update([
+                'status' => 'cancelled',
+                'cancelled_at' => now(),
+                'failure_reason' => $reason ?? $order->failure_reason ?? 'Cancelled by reseller',
+            ]);
+
+            $this->removePendingDomain($order);
+        });
+    }
+
+    public function deleteOrder(ResellerDomainOrder $order): void
+    {
+        if (! $order->canDelete()) {
+            throw new \InvalidArgumentException('This order cannot be deleted.');
+        }
+
+        $this->db->transaction(function () use ($order) {
+            $this->removePendingDomain($order);
+            $order->delete();
+        });
+    }
+
+    protected function removePendingDomain(ResellerDomainOrder $order): void
+    {
+        $domain = $order->domain;
+
+        if ($domain && $domain->status === 'pending') {
+            $domain->delete();
+        }
+    }
 }

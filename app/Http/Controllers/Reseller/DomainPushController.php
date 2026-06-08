@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Http\Controllers\Controller;
 use App\Models\ResellerDomainOrder;
 use App\Services\DomainPushService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class DomainPushController extends Controller
 {
@@ -42,6 +42,11 @@ class DomainPushController extends Controller
     {
         abort_if($order->reseller_id !== auth()->id(), 403);
 
+        if ($order->status !== 'queued') {
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('error', 'Only queued orders can be pushed.');
+        }
+
         try {
             $this->domainPushService->pushOrder($order);
 
@@ -57,7 +62,7 @@ class DomainPushController extends Controller
     {
         abort_if($order->reseller_id !== auth()->id(), 403);
 
-        if (!$order->canRetry()) {
+        if (! $order->canRetry()) {
             return redirect()->route('reseller.domain-orders.index')
                 ->with('error', 'This order cannot be retried');
         }
@@ -70,6 +75,48 @@ class DomainPushController extends Controller
         } catch (\Exception $e) {
             return redirect()->route('reseller.domain-orders.index')
                 ->with('error', "Failed to retry domain: {$e->getMessage()}");
+        }
+    }
+
+    public function cancel(ResellerDomainOrder $order)
+    {
+        abort_if($order->reseller_id !== auth()->id(), 403);
+
+        if (! $order->canCancel()) {
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('error', 'This order cannot be cancelled.');
+        }
+
+        try {
+            $this->domainPushService->cancelOrder($order);
+
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('success', "Domain order {$order->domain_name}{$order->extension} has been cancelled.");
+        } catch (\Exception $e) {
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('error', "Failed to cancel order: {$e->getMessage()}");
+        }
+    }
+
+    public function destroy(ResellerDomainOrder $order)
+    {
+        abort_if($order->reseller_id !== auth()->id(), 403);
+
+        if (! $order->canDelete()) {
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('error', 'This order cannot be deleted.');
+        }
+
+        $label = "{$order->domain_name}{$order->extension}";
+
+        try {
+            $this->domainPushService->deleteOrder($order);
+
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('success', "Domain order {$label} has been removed.");
+        } catch (\Exception $e) {
+            return redirect()->route('reseller.domain-orders.index')
+                ->with('error', "Failed to delete order: {$e->getMessage()}");
         }
     }
 }

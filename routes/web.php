@@ -384,6 +384,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('reseller/domain-orders', [DomainPushController::class, 'index'])->name('reseller.domain-orders.index');
             Route::post('reseller/domain-orders/{order}/push', [DomainPushController::class, 'push'])->name('reseller.domain-orders.push');
             Route::post('reseller/domain-orders/{order}/retry', [DomainPushController::class, 'retry'])->name('reseller.domain-orders.retry');
+            Route::post('reseller/domain-orders/{order}/cancel', [DomainPushController::class, 'cancel'])->name('reseller.domain-orders.cancel');
+            Route::delete('reseller/domain-orders/{order}', [DomainPushController::class, 'destroy'])->name('reseller.domain-orders.destroy');
             Route::get('reseller/servers', [ServerController::class, 'index'])->name('reseller.servers.index');
             Route::post('reseller/servers/order', [ServerController::class, 'order'])->name('reseller.servers.order');
             Route::get('reseller/cart', [CartController::class, 'index'])->name('reseller.cart.index');

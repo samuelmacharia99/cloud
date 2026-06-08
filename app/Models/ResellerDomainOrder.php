@@ -26,6 +26,7 @@ class ResellerDomainOrder extends Model
         'pushed_at',
         'completed_at',
         'failed_at',
+        'cancelled_at',
         'failure_reason',
         'retry_count',
         'expires_at',
@@ -38,6 +39,7 @@ class ResellerDomainOrder extends Model
         'pushed_at' => 'datetime',
         'completed_at' => 'datetime',
         'failed_at' => 'datetime',
+        'cancelled_at' => 'datetime',
         'expires_at' => 'datetime',
     ];
 
@@ -91,5 +93,15 @@ class ResellerDomainOrder extends Model
     public function isQueued(): bool
     {
         return $this->status === 'queued';
+    }
+
+    public function canCancel(): bool
+    {
+        return in_array($this->status, ['queued', 'failed', 'expired'], true);
+    }
+
+    public function canDelete(): bool
+    {
+        return in_array($this->status, ['cancelled', 'failed', 'expired'], true);
     }
 }
