@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Resell platform VPS and dedicated servers, or create custom listings for container hosting and other services.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Add platform VPS, dedicated servers, and container packages to your catalog. Set your retail prices — container hosting is billed against your disk pool, not per-container wholesale.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -48,9 +48,10 @@
                     <!-- Left: Admin Product Selection -->
                     <div class="space-y-6">
                         <div>
-                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Server type</label>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product type</label>
                             <select x-model="serverFilter" @change="clearSelectionIfFilteredOut()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
-                                <option value="all">All servers</option>
+                                <option value="all">All products</option>
+                                <option value="container_hosting">Container hosting</option>
                                 <option value="vps">VPS</option>
                                 <option value="dedicated_server">Dedicated servers</option>
                             </select>
@@ -142,7 +143,30 @@
                                     <p class="font-medium text-slate-900 dark:text-white" x-text="productTypeLabel(selectedProduct?.type) || '—'"></p>
                                 </div>
 
-                                <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                <div x-show="selectedProduct?.type === 'container_hosting' && selectedProduct?.container_template">
+                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Tech stack</p>
+                                    <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.container_template?.name || '—'"></p>
+                                </div>
+
+                                <div x-show="selectedProduct?.type === 'container_hosting' && selectedProduct?.resource_limits" class="pt-4 border-t border-slate-200 dark:border-slate-700">
+                                    <p class="text-slate-600 dark:text-slate-400 mb-2">Package resources (set by admin)</p>
+                                    <div class="grid grid-cols-3 gap-2 text-xs">
+                                        <div>
+                                            <span class="text-slate-500">CPU</span>
+                                            <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.resource_limits?.cpu ?? '—'"></p>
+                                        </div>
+                                        <div>
+                                            <span class="text-slate-500">RAM (MB)</span>
+                                            <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.resource_limits?.memory ?? selectedProduct?.resource_limits?.memory_mb ?? '—'"></p>
+                                        </div>
+                                        <div>
+                                            <span class="text-slate-500">Disk (GB)</span>
+                                            <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.resource_limits?.disk ?? selectedProduct?.resource_limits?.disk_gb ?? '—'"></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 border-t border-slate-200 dark:border-slate-700" x-show="selectedProduct?.type !== 'container_hosting'">
                                     <p class="text-slate-600 dark:text-slate-400 mb-1">Your Cost (Wholesale)</p>
                                     <div class="space-y-1">
                                         <p class="font-medium text-slate-900 dark:text-white">
@@ -158,8 +182,19 @@
                             </div>
                         </div>
 
+                        <div class="bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg p-6" x-show="selectedProduct?.type === 'container_hosting'">
+                            <h3 class="text-sm font-semibold text-violet-900 dark:text-violet-200 mb-2">Container billing</h3>
+                            <p class="text-sm text-violet-800 dark:text-violet-300 mb-3">There is no per-container wholesale cost. Your platform subscription includes a disk pool; you set retail prices for your customers.</p>
+                            <p class="text-xs text-violet-700 dark:text-violet-400">
+                                Disk pool: <span class="font-semibold">{{ number_format($diskPoolUsage['used_gb'], 2) }} / {{ $diskPoolUsage['pool_gb'] }} GB</span> in use
+                                @if ($diskPoolUsage['pool_gb'] > 0)
+                                    ({{ number_format($diskPoolUsage['percent'], 1) }}%)
+                                @endif
+                            </p>
+                        </div>
+
                         <!-- Margin Preview -->
-                        <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-6" x-show="selectedProduct && (monthlyMargin !== null || yearlyMargin !== null)">
+                        <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg p-6" x-show="selectedProduct && selectedProduct.type !== 'container_hosting' && (monthlyMargin !== null || yearlyMargin !== null)">
                             <h3 class="text-sm font-semibold text-emerald-900 dark:text-emerald-300 mb-4">Your Margin</h3>
 
                             <div class="space-y-2 text-sm">
@@ -229,63 +264,6 @@
                             ])
                         </div>
 
-                        <div x-show="customType === 'container_hosting'" x-cloak class="space-y-4">
-                            <div class="p-4 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg text-sm text-violet-900 dark:text-violet-200">
-                                <p class="font-medium mb-1">Container hosting</p>
-                                <p class="text-violet-800 dark:text-violet-300">Pick the tech stack and database like the admin product flow. Your retail specs (CPU, RAM, disk) are what customers see; provisioning uses the matching platform template automatically.</p>
-                            </div>
-
-                            <div>
-                                <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Container template / tech stack</label>
-                                <select id="container_template_id" name="container_template_id" x-model="customContainerTemplateId" @change="onContainerTemplateChange()" :disabled="mode !== 'custom' || customType !== 'container_hosting'" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('container_template_id') border-red-500 @enderror">
-                                    <option value="">Select a container template...</option>
-                                    @foreach ($containerTemplates as $template)
-                                        <option value="{{ $template->id }}" @selected(old('container_template_id') == $template->id)>{{ $template->name }}</option>
-                                    @endforeach
-                                </select>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PHP, Node.js, Python, etc. — same list admins use when creating container products.</p>
-                                @error('container_template_id')
-                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div x-show="selectedTechStack && selectedTechStack.requires_database" x-cloak>
-                                <label for="database_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Database</label>
-                                <select id="database_template_id" name="database_template_id" x-model="customDatabaseTemplateId" :disabled="mode !== 'custom' || customType !== 'container_hosting'" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('database_template_id') border-red-500 @enderror">
-                                    <option value="">Select a database...</option>
-                                    <template x-for="database in availableDatabases" :key="database.id">
-                                        <option :value="database.id" x-text="database.name"></option>
-                                    </template>
-                                </select>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" x-show="availableDatabases.length === 0 && customContainerTemplateId">No databases are configured for this tech stack.</p>
-                                @error('database_template_id')
-                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                                @enderror
-                            </div>
-
-                            <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
-                                Your package disk pool: <span class="font-semibold text-slate-900 dark:text-white">{{ number_format($diskPoolUsage['used_gb'], 2) }} / {{ $diskPoolUsage['pool_gb'] }} GB</span> in use
-                            </div>
-
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <label for="container_cpu" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU cores</label>
-                                    <input type="number" id="container_cpu" name="resource_limits[cpu]" value="{{ old('resource_limits.cpu') }}" step="0.1" min="0.1" max="64" placeholder="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.cpu') border-red-500 @enderror">
-                                    @error('resource_limits.cpu')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
-                                </div>
-                                <div>
-                                    <label for="container_memory" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM (MB)</label>
-                                    <input type="number" id="container_memory" name="resource_limits[memory_mb]" value="{{ old('resource_limits.memory_mb') }}" step="128" min="128" placeholder="512" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.memory_mb') border-red-500 @enderror">
-                                    @error('resource_limits.memory_mb')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
-                                </div>
-                                <div>
-                                    <label for="container_disk" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk (GB)</label>
-                                    <input type="number" id="container_disk" name="resource_limits[disk_gb]" value="{{ old('resource_limits.disk_gb') }}" step="1" min="1" placeholder="10" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.disk_gb') border-red-500 @enderror">
-                                    @error('resource_limits.disk_gb')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
-                                </div>
-                            </div>
-                            <p class="text-xs text-slate-500 dark:text-slate-400">These specs are shown to your customers. Platform bills you on actual disk used across DirectAdmin and containers.</p>
-                        </div>
                     </div>
 
                     <div class="space-y-6">
@@ -355,8 +333,6 @@ function catalogForm() {
     return {
         mode: 'admin',
         serverFilter: 'all',
-        customContainerTemplateId: '{{ old('container_template_id') }}',
-        customDatabaseTemplateId: '{{ old('database_template_id') }}',
         selectedProductId: '{{ old('product_id') }}',
         selectedProduct: null,
         monthlyMargin: null,
@@ -375,26 +351,10 @@ function catalogForm() {
                 {{ $product->id }}: @json($product),
             @endforeach
         },
-        techStacks: @json($techStackConfig),
         productTypes: @json($productTypes),
         init() {
-            if (this.customType === 'container_hosting' && (this.customContainerTemplateId || this.customDatabaseTemplateId)) {
-                this.mode = 'custom';
-            }
             this.selectProduct();
             this.$nextTick(() => this.calculateMargin());
-        },
-        get selectedTechStack() {
-            if (!this.customContainerTemplateId) {
-                return null;
-            }
-
-            return this.techStacks.find(
-                (stack) => String(stack.id) === String(this.customContainerTemplateId)
-            ) || null;
-        },
-        get availableDatabases() {
-            return this.selectedTechStack?.databases || [];
         },
         get filteredProducts() {
             return Object.values(this.products).filter((product) => {
@@ -421,18 +381,6 @@ function catalogForm() {
             return Object.values(groups);
         },
         onCustomTypeChange() {
-            if (this.customType !== 'container_hosting') {
-                this.customContainerTemplateId = '';
-                this.customDatabaseTemplateId = '';
-            }
-        },
-        onContainerTemplateChange() {
-            const stillValid = this.availableDatabases.some(
-                (database) => String(database.id) === String(this.customDatabaseTemplateId)
-            );
-            if (!stillValid) {
-                this.customDatabaseTemplateId = '';
-            }
         },
         clearSelectionIfFilteredOut() {
             if (!this.selectedProductId) {
@@ -449,6 +397,10 @@ function catalogForm() {
             }
         },
         productOptionLabel(product) {
+            if (product.type === 'container_hosting' && product.container_template?.name) {
+                return product.container_template.name + ' — ' + product.name;
+            }
+
             return product.name;
         },
         selectProduct() {
@@ -457,7 +409,7 @@ function catalogForm() {
             this.selectedProduct = productId ? this.products[productId] : null;
         },
         calculateMargin() {
-            if (!this.selectedProduct) {
+            if (!this.selectedProduct || this.selectedProduct.type === 'container_hosting') {
                 this.monthlyMargin = null;
                 this.yearlyMargin = null;
                 this.monthlyMarginPercent = null;

@@ -192,6 +192,10 @@ class ResellerMarginService
             return 0.0;
         }
 
+        if ($product->type === 'container_hosting') {
+            return 0.0;
+        }
+
         $cycle = $this->inferBillingCycle($item->description);
 
         return match ($cycle) {

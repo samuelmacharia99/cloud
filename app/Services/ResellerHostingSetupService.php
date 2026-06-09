@@ -59,20 +59,21 @@ class ResellerHostingSetupService
                 );
             }
 
+            $adminProduct->loadMissing('containerTemplate');
+
             $meta = [];
             if (filled($primaryDomain)) {
                 $meta['primary_domain'] = strtolower(trim((string) $primaryDomain));
             }
 
-            if ($catalogProduct?->hasContainerResourceLimits()) {
-                $limits = $catalogProduct->containerResourceLimits();
-                $meta['reseller_catalog_limits'] = array_filter([
-                    'cpu' => $limits['cpu'],
-                    'memory_mb' => $limits['memory_mb'],
-                    'disk_gb' => $limits['disk_gb'],
-                ], fn ($value) => $value !== null);
+            if ($catalogProduct) {
                 $meta['reseller_product_id'] = $catalogProduct->id;
-                if ($limits['disk_gb'] !== null) {
+            }
+
+            $limits = $this->resolveContainerLimits($adminProduct, $catalogProduct);
+            if ($limits !== []) {
+                $meta['reseller_catalog_limits'] = $limits;
+                if (isset($limits['disk_gb']) && $limits['disk_gb'] !== null) {
                     $meta['disk_limit_gb'] = $limits['disk_gb'];
                 }
             }
@@ -170,5 +171,29 @@ class ResellerHostingSetupService
             'service_meta' => $meta,
             'provisioning_driver_key' => 'directadmin',
         ];
+    }
+
+    /**
+     * @return array<string, float|int>
+     */
+    private function resolveContainerLimits(Product $adminProduct, ?ResellerProduct $catalogProduct): array
+    {
+        if ($catalogProduct?->hasContainerResourceLimits()) {
+            $limits = $catalogProduct->containerResourceLimits();
+
+            return array_filter([
+                'cpu' => $limits['cpu'],
+                'memory_mb' => $limits['memory_mb'],
+                'disk_gb' => $limits['disk_gb'],
+            ], fn ($value) => $value !== null);
+        }
+
+        $included = $adminProduct->getIncludedContainerLimits($adminProduct->containerTemplate);
+
+        return array_filter([
+            'cpu' => $included['cpu'],
+            'memory_mb' => $included['memory_mb'],
+            'disk_gb' => $included['disk_gb'] > 0 ? $included['disk_gb'] : null,
+        ], fn ($value) => $value !== null);
     }
 }

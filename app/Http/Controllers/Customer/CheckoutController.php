@@ -19,6 +19,7 @@ use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\NodeNameserverService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
+use App\Services\ResellerHostingSetupService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -298,6 +299,8 @@ class CheckoutController extends Controller
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
 
+                            $serviceMeta = $this->applyResellerContainerServiceMeta($serviceMeta, $product, $user, $item);
+
                             // Optional app source to deploy into container filesystem.
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
                             if (! empty($sourceRepoUrl)) {
@@ -348,7 +351,7 @@ class CheckoutController extends Controller
                             'order_item_id' => $orderItem->id,
                             'invoice_id' => $invoice->id,
                             'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
-                            'name' => $product->name,
+                            'name' => $item['name'] ?? $product->name,
                             'status' => 'pending',
                             'billing_cycle' => $item['billing_cycle'],
                             'custom_price' => $item['unit_price'],
@@ -363,7 +366,7 @@ class CheckoutController extends Controller
                             'invoice_id' => $invoice->id,
                             'service_id' => $service->id,
                             'product_id' => $product->id,
-                            'description' => $product->name,
+                            'description' => $item['name'] ?? $product->name,
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
@@ -907,6 +910,8 @@ class CheckoutController extends Controller
                                 $serviceMeta['database_id'] = (int) $techstack['database_id'];
                             }
 
+                            $serviceMeta = $this->applyResellerContainerServiceMeta($serviceMeta, $product, $user, $item);
+
                             $sourceRepoUrl = $request->input("source_repo_url.{$item['key']}");
                             if (! empty($sourceRepoUrl)) {
                                 $serviceMeta['source_repo_url'] = $sourceRepoUrl;
@@ -949,7 +954,7 @@ class CheckoutController extends Controller
                             'order_item_id' => $orderItem->id,
                             'invoice_id' => $invoice->id,
                             'reseller_id' => $item['reseller_id'] ?? $user->reseller_id,
-                            'name' => $product->name,
+                            'name' => $item['name'] ?? $product->name,
                             'status' => 'pending',
                             'billing_cycle' => $item['billing_cycle'],
                             'custom_price' => $item['unit_price'],
@@ -964,7 +969,7 @@ class CheckoutController extends Controller
                             'invoice_id' => $invoice->id,
                             'service_id' => $service->id,
                             'product_id' => $product->id,
-                            'description' => $product->name,
+                            'description' => $item['name'] ?? $product->name,
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
@@ -1088,5 +1093,37 @@ class CheckoutController extends Controller
         );
 
         return app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder);
+    }
+
+    /**
+     * @param  array<string, mixed>  $serviceMeta
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function applyResellerContainerServiceMeta(
+        array $serviceMeta,
+        Product $product,
+        User $user,
+        array $item,
+    ): array {
+        if ($product->type !== 'container_hosting' || empty($item['reseller_product_id'])) {
+            return $serviceMeta;
+        }
+
+        $catalogProduct = ResellerProduct::find($item['reseller_product_id']);
+        $reseller = User::find($item['reseller_id'] ?? $user->reseller_id);
+        if (! $catalogProduct || ! $reseller) {
+            return $serviceMeta;
+        }
+
+        $hostingContext = app(ResellerHostingSetupService::class)->buildProvisioningContext(
+            $reseller,
+            $user,
+            $product,
+            null,
+            $catalogProduct,
+        );
+
+        return array_merge($serviceMeta, $hostingContext['service_meta']);
     }
 }

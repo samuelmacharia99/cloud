@@ -109,7 +109,7 @@ class ResellerProduct extends Model
 
     public function getWholesaleMonthlyCost(): ?float
     {
-        if ($this->isCustom()) {
+        if ($this->isCustom() || $this->type === 'container_hosting') {
             return null;
         }
 
@@ -118,7 +118,7 @@ class ResellerProduct extends Model
 
     public function getWholesaleYearlyCost(): ?float
     {
-        if ($this->isCustom()) {
+        if ($this->isCustom() || $this->type === 'container_hosting') {
             return null;
         }
 
