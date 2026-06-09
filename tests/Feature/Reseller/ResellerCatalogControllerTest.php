@@ -32,7 +32,7 @@ class ResellerCatalogControllerTest extends TestCase
         ]);
     }
 
-    public function test_create_page_shows_container_tech_stack_filters(): void
+    public function test_admin_catalog_section_only_lists_vps_and_dedicated_servers(): void
     {
         $reseller = $this->reseller();
         $template = ContainerTemplate::factory()->create(['name' => 'Node.js', 'is_active' => true]);
@@ -43,18 +43,35 @@ class ResellerCatalogControllerTest extends TestCase
             'container_template_id' => $template->id,
             'visible_to_resellers' => true,
             'is_active' => true,
-            'wholesale_monthly_price' => 20,
+        ]);
+
+        Product::factory()->create([
+            'name' => 'Basic VPS',
+            'type' => 'vps',
+            'visible_to_resellers' => true,
+            'is_active' => true,
+        ]);
+
+        Product::factory()->create([
+            'name' => 'Metal Box',
+            'type' => 'dedicated_server',
+            'visible_to_resellers' => true,
+            'is_active' => true,
         ]);
 
         $this->actingAs($reseller)
             ->get(route('reseller.catalog.create'))
             ->assertOk()
-            ->assertSee('Tech stack / language')
+            ->assertSee('Server type')
+            ->assertSee('Basic VPS')
+            ->assertSee('Metal Box')
+            ->assertSee('Platform container plan')
             ->assertSee('Node.js')
-            ->assertSee('How container catalog items work');
+            ->assertDontSee('Hosting category')
+            ->assertDontSee('Container hosting (tech stack plans)');
     }
 
-    public function test_reseller_can_add_container_product_linked_to_tech_stack(): void
+    public function test_reseller_can_add_container_product_via_custom_product_flow(): void
     {
         $reseller = $this->reseller();
         $template = ContainerTemplate::factory()->create(['name' => 'Python', 'is_active' => true]);
@@ -70,8 +87,8 @@ class ResellerCatalogControllerTest extends TestCase
         $this->actingAs($reseller)
             ->post(route('reseller.catalog.store'), [
                 'product_id' => $product->id,
-                'name' => $product->name,
-                'description' => $product->description,
+                'name' => 'Python Retail',
+                'description' => 'Retail Python hosting',
                 'type' => 'container_hosting',
                 'monthly_price' => 29.99,
                 'is_active' => true,
@@ -82,6 +99,21 @@ class ResellerCatalogControllerTest extends TestCase
         $this->assertNotNull($listing);
         $this->assertSame($product->id, $listing->product_id);
         $this->assertSame('container_hosting', $listing->type);
+        $this->assertSame('Python Retail', $listing->name);
+    }
+
+    public function test_container_listing_requires_platform_product_link(): void
+    {
+        $reseller = $this->reseller();
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'name' => 'Orphan Container',
+                'type' => 'container_hosting',
+                'monthly_price' => 19.99,
+                'is_active' => true,
+            ])
+            ->assertSessionHasErrors('product_id');
     }
 
     public function test_catalog_index_shows_tech_stack_for_container_listings(): void

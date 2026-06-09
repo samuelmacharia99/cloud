@@ -13,6 +13,9 @@ use Illuminate\Validation\ValidationException;
 
 class CatalogController extends Controller
 {
+    /** @var list<string> */
+    private const ADMIN_CATALOG_TYPES = ['vps', 'dedicated_server'];
+
     public function __construct(
         private ResellerDirectAdminService $resellerDirectAdmin,
     ) {}
@@ -102,8 +105,16 @@ class CatalogController extends Controller
         $adminProducts = Product::query()
             ->where('visible_to_resellers', true)
             ->where('is_active', true)
-            ->with('containerTemplate')
+            ->whereIn('type', self::ADMIN_CATALOG_TYPES)
             ->orderBy('type')
+            ->orderBy('order')
+            ->get();
+
+        $containerProducts = Product::query()
+            ->where('visible_to_resellers', true)
+            ->where('is_active', true)
+            ->where('type', 'container_hosting')
+            ->with('containerTemplate')
             ->orderBy('order')
             ->get();
 
@@ -111,11 +122,7 @@ class CatalogController extends Controller
             ->active()
             ->whereIn(
                 'id',
-                $adminProducts
-                    ->where('type', 'container_hosting')
-                    ->pluck('container_template_id')
-                    ->filter()
-                    ->unique()
+                $containerProducts->pluck('container_template_id')->filter()->unique()
             )
             ->orderBy('name')
             ->get();
@@ -123,10 +130,16 @@ class CatalogController extends Controller
         $reseller = auth()->user();
         $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
 
+        $customProductTypes = collect(Product::TYPES)
+            ->except(self::ADMIN_CATALOG_TYPES)
+            ->all();
+
         return [
             'adminProducts' => $adminProducts,
+            'containerProducts' => $containerProducts,
             'containerTechStacks' => $containerTechStacks,
             'productTypes' => Product::TYPES,
+            'customProductTypes' => $customProductTypes,
             'directAdminBinding' => $this->resellerDirectAdmin->hasDirectAdminBinding($reseller),
             'directAdminPackages' => $directAdminPackageResult['packages'],
             'directAdminPackagesError' => $directAdminPackageResult['error'],
@@ -161,11 +174,23 @@ class CatalogController extends Controller
             'is_active' => 'boolean',
         ]);
 
+        if (($validated['type'] ?? '') === 'container_hosting' && ! filled($validated['product_id'] ?? null)) {
+            throw ValidationException::withMessages([
+                'product_id' => 'Select the platform container plan and tech stack to provision behind this listing.',
+            ]);
+        }
+
         if (filled($validated['product_id'] ?? null)) {
             $product = Product::with('containerTemplate')->findOrFail($validated['product_id']);
-            if (! $product->visible_to_resellers) {
+            if (! $product->visible_to_resellers || ! $product->is_active) {
                 throw ValidationException::withMessages([
                     'product_id' => 'This product is not available for resellers.',
+                ]);
+            }
+
+            if (! in_array($product->type, [...self::ADMIN_CATALOG_TYPES, 'container_hosting'], true)) {
+                throw ValidationException::withMessages([
+                    'product_id' => 'This platform product cannot be added through the reseller catalog.',
                 ]);
             }
 

@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Link platform plans to your catalog — filter by hosting type and tech stack for container products.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Resell platform VPS and dedicated servers, or create custom listings for container hosting and other services.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -40,44 +40,26 @@
             <!-- Mode 1: Add from Admin Catalog -->
             <div x-show="mode === 'admin'" class="space-y-6">
                 <!-- Hidden fields for admin mode (name and type come from selected product) -->
-                <input type="hidden" name="name" x-bind:value="selectedProduct?.name || ''">
-                <input type="hidden" name="description" x-bind:value="selectedProduct?.description || ''">
-                <input type="hidden" name="type" x-bind:value="selectedProduct?.type || ''">
+                <input type="hidden" name="name" :disabled="mode !== 'admin'" x-bind:value="selectedProduct?.name || ''">
+                <input type="hidden" name="description" :disabled="mode !== 'admin'" x-bind:value="selectedProduct?.description || ''">
+                <input type="hidden" name="type" :disabled="mode !== 'admin'" x-bind:value="selectedProduct?.type || ''">
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <!-- Left: Admin Product Selection -->
                     <div class="space-y-6">
-                        <!-- Hosting filters -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting category</label>
-                                <select x-model="hostingFilter" @change="onHostingFilterChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
-                                    <option value="all">All products</option>
-                                    <option value="shared_hosting">Shared hosting (PHP / WordPress / Laravel shared)</option>
-                                    <option value="container_hosting">Container hosting (tech stack plans)</option>
-                                    <option value="other">Other services (SSL, email, servers…)</option>
-                                </select>
-                            </div>
-                            <div x-show="showTechStackFilter" x-cloak>
-                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Tech stack / language</label>
-                                <select x-model="techStackFilter" @change="onTechStackFilterChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
-                                    <option value="">All container languages</option>
-                                    @foreach ($containerTechStacks as $template)
-                                        <option value="{{ $template->id }}">{{ $template->name }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                        </div>
-
-                        <div x-show="hostingFilter === 'container_hosting'" x-cloak class="p-4 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg text-sm text-violet-900 dark:text-violet-200">
-                            <p class="font-medium mb-1">How container catalog items work</p>
-                            <p class="text-violet-800 dark:text-violet-300">Customers pick a language and database first. They only see container plans that match that tech stack — add one retail listing per platform container plan you want to sell.</p>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Server type</label>
+                            <select x-model="serverFilter" @change="clearSelectionIfFilteredOut()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                <option value="all">All servers</option>
+                                <option value="vps">VPS</option>
+                                <option value="dedicated_server">Dedicated servers</option>
+                            </select>
                         </div>
 
                         <!-- Select Admin Product -->
                         <div>
                             <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Platform product</label>
-                            <select id="product_id" name="product_id" @change="selectProduct(); $nextTick(() => calculateMargin())" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('product_id') border-red-500 @enderror">
+                            <select id="product_id" name="product_id" :disabled="mode !== 'admin'" @change="selectProduct(); $nextTick(() => calculateMargin())" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('product_id') border-red-500 @enderror">
                                 <option value="">Choose a product...</option>
                                 <template x-for="group in groupedFilteredProducts" :key="group.type">
                                     <optgroup :label="group.label">
@@ -91,15 +73,6 @@
                             @error('product_id')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
-                        </div>
-
-                        <div x-show="selectedProduct?.type === 'shared_hosting'" x-cloak>
-                            @include('reseller.catalog.partials.directadmin-package-field', [
-                                'directAdminBinding' => $directAdminBinding,
-                                'directAdminPackages' => $directAdminPackages,
-                                'directAdminPackagesError' => $directAdminPackagesError,
-                                'selectedPackage' => old('direct_admin_package_name'),
-                            ])
                         </div>
 
                         <!-- Your Pricing -->
@@ -169,17 +142,6 @@
                                     <p class="font-medium text-slate-900 dark:text-white" x-text="productTypeLabel(selectedProduct?.type) || '—'"></p>
                                 </div>
 
-                                <div x-show="selectedProduct?.type === 'container_hosting'" x-cloak>
-                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Tech stack</p>
-                                    <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.container_template?.name || '—'"></p>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown to customers after they choose this language in the deploy flow.</p>
-                                </div>
-
-                                <div x-show="selectedProduct?.type === 'shared_hosting'" x-cloak>
-                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Customer deploy path</p>
-                                    <p class="text-sm text-slate-700 dark:text-slate-300">Shared hosting via PHP, WordPress, or Laravel (shared) tech stack selection.</p>
-                                </div>
-
                                 <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
                                     <p class="text-slate-600 dark:text-slate-400 mb-1">Your Cost (Wholesale)</p>
                                     <div class="space-y-1">
@@ -229,7 +191,7 @@
                         <!-- Name -->
                         <div>
                             <label for="custom_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Name</label>
-                            <input type="text" id="custom_name" name="name" x-model="customName" placeholder="My Custom Product" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror">
+                            <input type="text" id="custom_name" name="name" :disabled="mode !== 'custom'" x-model="customName" placeholder="My Custom Product" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror">
                             @error('name')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -238,7 +200,7 @@
                         <!-- Description -->
                         <div>
                             <label for="custom_description" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Description <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
-                            <textarea id="custom_description" name="description" x-model="customDescription" rows="4" placeholder="Describe this product..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none @error('description') border-red-500 @enderror"></textarea>
+                            <textarea id="custom_description" name="description" :disabled="mode !== 'custom'" x-model="customDescription" rows="4" placeholder="Describe this product..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm resize-none @error('description') border-red-500 @enderror"></textarea>
                             @error('description')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -247,9 +209,9 @@
                         <!-- Type -->
                         <div>
                             <label for="custom_type" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product Type</label>
-                            <select id="custom_type" name="type" x-model="customType" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror">
+                            <select id="custom_type" name="type" :disabled="mode !== 'custom'" x-model="customType" @change="onCustomTypeChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror">
                                 <option value="">Select a type...</option>
-                                @foreach($productTypes as $key => $label)
+                                @foreach($customProductTypes as $key => $label)
                                     <option value="{{ $key }}">{{ $label }}</option>
                                 @endforeach
                             </select>
@@ -267,8 +229,35 @@
                             ])
                         </div>
 
-                        <div x-show="customType === 'container_hosting'" x-cloak class="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-900 dark:text-amber-200">
-                            Custom container listings cannot auto-provision. Use <strong>Add from Admin Catalog</strong> and link a platform container plan for each tech stack you sell.
+                        <div x-show="customType === 'container_hosting'" x-cloak class="space-y-4">
+                            <div class="p-4 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg text-sm text-violet-900 dark:text-violet-200">
+                                <p class="font-medium mb-1">Container hosting</p>
+                                <p class="text-violet-800 dark:text-violet-300">Link a platform container plan for each tech stack you sell. Customers only see plans that match the language they choose in the deploy flow.</p>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Tech stack / language</label>
+                                <select x-model="customTechStackFilter" @change="onCustomTechStackChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                    <option value="">All languages</option>
+                                    @foreach ($containerTechStacks as $template)
+                                        <option value="{{ $template->id }}">{{ $template->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="custom_product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Platform container plan</label>
+                                <select id="custom_product_id" name="product_id" :disabled="mode !== 'custom' || customType !== 'container_hosting'" x-model="customProductId" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('product_id') border-red-500 @enderror">
+                                    <option value="">Choose a platform plan...</option>
+                                    <template x-for="product in filteredContainerProducts" :key="product.id">
+                                        <option :value="product.id" x-text="containerProductLabel(product)"></option>
+                                    </template>
+                                </select>
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" x-show="filteredContainerProducts.length === 0">No container plans match this filter.</p>
+                                @error('product_id')
+                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                                @enderror
+                            </div>
                         </div>
                     </div>
 
@@ -338,8 +327,9 @@
 function catalogForm() {
     return {
         mode: 'admin',
-        hostingFilter: 'all',
-        techStackFilter: '',
+        serverFilter: 'all',
+        customTechStackFilter: '',
+        customProductId: '{{ old('product_id') }}',
         selectedProductId: '{{ old('product_id') }}',
         selectedProduct: null,
         monthlyMargin: null,
@@ -358,27 +348,32 @@ function catalogForm() {
                 {{ $product->id }}: @json($product),
             @endforeach
         },
+        containerProducts: {
+            @foreach($containerProducts as $product)
+                {{ $product->id }}: @json($product),
+            @endforeach
+        },
         productTypes: @json($productTypes),
         init() {
+            if (this.customType === 'container_hosting' && this.customProductId) {
+                this.mode = 'custom';
+            }
             this.selectProduct();
             this.$nextTick(() => this.calculateMargin());
         },
-        get showTechStackFilter() {
-            return this.hostingFilter === 'all' || this.hostingFilter === 'container_hosting';
-        },
         get filteredProducts() {
             return Object.values(this.products).filter((product) => {
-                if (this.hostingFilter === 'shared_hosting' && product.type !== 'shared_hosting') {
+                if (this.serverFilter !== 'all' && product.type !== this.serverFilter) {
                     return false;
                 }
-                if (this.hostingFilter === 'container_hosting' && product.type !== 'container_hosting') {
+
+                return true;
+            });
+        },
+        get filteredContainerProducts() {
+            return Object.values(this.containerProducts).filter((product) => {
+                if (this.customTechStackFilter && String(product.container_template_id) !== String(this.customTechStackFilter)) {
                     return false;
-                }
-                if (this.hostingFilter === 'other' && ['shared_hosting', 'container_hosting'].includes(product.type)) {
-                    return false;
-                }
-                if (this.techStackFilter && product.type === 'container_hosting') {
-                    return String(product.container_template_id) === String(this.techStackFilter);
                 }
 
                 return true;
@@ -399,14 +394,19 @@ function catalogForm() {
 
             return Object.values(groups);
         },
-        onHostingFilterChange() {
-            if (this.hostingFilter !== 'all' && this.hostingFilter !== 'container_hosting') {
-                this.techStackFilter = '';
+        onCustomTypeChange() {
+            if (this.customType !== 'container_hosting') {
+                this.customProductId = '';
+                this.customTechStackFilter = '';
             }
-            this.clearSelectionIfFilteredOut();
         },
-        onTechStackFilterChange() {
-            this.clearSelectionIfFilteredOut();
+        onCustomTechStackChange() {
+            const stillVisible = this.filteredContainerProducts.some(
+                (product) => String(product.id) === String(this.customProductId)
+            );
+            if (!stillVisible) {
+                this.customProductId = '';
+            }
         },
         clearSelectionIfFilteredOut() {
             if (!this.selectedProductId) {
@@ -423,12 +423,14 @@ function catalogForm() {
             }
         },
         productOptionLabel(product) {
-            let label = product.name;
-            if (product.type === 'container_hosting' && product.container_template?.name) {
-                label = product.container_template.name + ' — ' + label;
+            return product.name;
+        },
+        containerProductLabel(product) {
+            if (product.container_template?.name) {
+                return product.container_template.name + ' — ' + product.name;
             }
 
-            return label;
+            return product.name;
         },
         selectProduct() {
             const productId = document.getElementById('product_id')?.value;
