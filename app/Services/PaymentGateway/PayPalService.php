@@ -5,14 +5,18 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class PayPalService implements PaymentGatewayInterface
 {
     protected ?string $clientId;
+
     protected ?string $clientSecret;
+
     protected bool $isProduction;
+
     protected string $baseUrl;
 
     public function __construct()
@@ -31,13 +35,13 @@ class PayPalService implements PaymentGatewayInterface
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
         try {
-            if (!$this->isConfigured()) {
+            if (! $this->isConfigured()) {
                 throw new \Exception('PayPal is not configured');
             }
 
             // Get access token
             $token = $this->getAccessToken();
-            if (!$token) {
+            if (! $token) {
                 throw new \Exception('Failed to get PayPal access token');
             }
 
@@ -106,7 +110,7 @@ class PayPalService implements PaymentGatewayInterface
                 'Content-Type' => 'application/json',
             ])->post("{$this->baseUrl}/v2/checkout/orders", $payload);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::error('PayPal order creation failed', [
                     'invoice_id' => $invoice->id,
                     'response' => $response->json(),
@@ -117,7 +121,7 @@ class PayPalService implements PaymentGatewayInterface
             $data = $response->json();
             $orderId = $data['id'] ?? null;
 
-            if (!$orderId) {
+            if (! $orderId) {
                 throw new \Exception('No order ID from PayPal');
             }
 
@@ -159,7 +163,7 @@ class PayPalService implements PaymentGatewayInterface
 
             return [
                 'success' => false,
-                'message' => 'Payment initiation failed: ' . $e->getMessage(),
+                'message' => 'Payment initiation failed: '.$e->getMessage(),
             ];
         }
     }
@@ -170,12 +174,12 @@ class PayPalService implements PaymentGatewayInterface
     public function verify(string $transactionReference): array
     {
         try {
-            if (!$this->isConfigured()) {
+            if (! $this->isConfigured()) {
                 throw new \Exception('PayPal is not configured');
             }
 
             $token = $this->getAccessToken();
-            if (!$token) {
+            if (! $token) {
                 throw new \Exception('Failed to get access token');
             }
 
@@ -185,11 +189,16 @@ class PayPalService implements PaymentGatewayInterface
                 'Content-Type' => 'application/json',
             ])->post("{$this->baseUrl}/v2/checkout/orders/{$transactionReference}/capture", []);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
+                $errorBody = $response->json();
+                $message = $errorBody['details'][0]['description']
+                    ?? $errorBody['message']
+                    ?? 'PayPal capture failed';
+
                 return [
                     'success' => false,
-                    'status' => 'pending',
-                    'message' => 'Capture failed',
+                    'status' => 'failed',
+                    'message' => $message,
                 ];
             }
 
@@ -215,8 +224,8 @@ class PayPalService implements PaymentGatewayInterface
 
             return [
                 'success' => false,
-                'status' => $status,
-                'message' => 'Order not completed',
+                'status' => 'failed',
+                'message' => 'PayPal order was not completed.',
             ];
         } catch (\Exception $e) {
             Log::error('PayPal verify failed', [
@@ -240,7 +249,7 @@ class PayPalService implements PaymentGatewayInterface
     {
         try {
             $token = $this->getAccessToken();
-            if (!$token) {
+            if (! $token) {
                 return null;
             }
 
@@ -260,6 +269,7 @@ class PayPalService implements PaymentGatewayInterface
             return null;
         } catch (\Exception $e) {
             Log::error('PayPal getOrder exception', ['order_id' => $orderId, 'error' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -268,42 +278,45 @@ class PayPalService implements PaymentGatewayInterface
      * Verify a PayPal webhook event using the PayPal verify-webhook-signature API.
      * Returns true only when PayPal responds with verificationStatus == SUCCESS.
      */
-    public function verifyWebhook(\Illuminate\Http\Request $request): bool
+    public function verifyWebhook(Request $request): bool
     {
         try {
             $webhookId = Setting::getValue('paypal_webhook_id', '');
 
             if (empty($webhookId)) {
                 Log::warning('PayPal webhook_id setting is not configured — skipping signature verification');
+
                 return false;
             }
 
             $token = $this->getAccessToken();
-            if (!$token) {
+            if (! $token) {
                 Log::error('PayPal webhook verification: failed to obtain access token');
+
                 return false;
             }
 
             $payload = [
-                'auth_algo'        => $request->header('PAYPAL-AUTH-ALGO', ''),
-                'cert_url'         => $request->header('PAYPAL-CERT-URL', ''),
-                'transmission_id'  => $request->header('PAYPAL-TRANSMISSION-ID', ''),
+                'auth_algo' => $request->header('PAYPAL-AUTH-ALGO', ''),
+                'cert_url' => $request->header('PAYPAL-CERT-URL', ''),
+                'transmission_id' => $request->header('PAYPAL-TRANSMISSION-ID', ''),
                 'transmission_sig' => $request->header('PAYPAL-TRANSMISSION-SIG', ''),
-                'transmission_time'=> $request->header('PAYPAL-TRANSMISSION-TIME', ''),
-                'webhook_id'       => $webhookId,
-                'webhook_event'    => $request->json()->all(),
+                'transmission_time' => $request->header('PAYPAL-TRANSMISSION-TIME', ''),
+                'webhook_id' => $webhookId,
+                'webhook_event' => $request->json()->all(),
             ];
 
             $response = Http::withHeaders([
                 'Authorization' => "Bearer {$token}",
-                'Content-Type'  => 'application/json',
+                'Content-Type' => 'application/json',
             ])->post("{$this->baseUrl}/v1/notifications/verify-webhook-signature", $payload);
 
-            if (!$response->successful()) {
+            if (! $response->successful()) {
                 Log::warning('PayPal webhook verification API call failed', [
                     'status' => $response->status(),
-                    'body'   => $response->body(),
+                    'body' => $response->body(),
                 ]);
+
                 return false;
             }
 
@@ -313,12 +326,14 @@ class PayPalService implements PaymentGatewayInterface
                 Log::warning('PayPal webhook verification returned non-SUCCESS', [
                     'verification_status' => $verificationStatus,
                 ]);
+
                 return false;
             }
 
             return true;
         } catch (\Exception $e) {
             Log::error('PayPal webhook verification exception', ['error' => $e->getMessage()]);
+
             return false;
         }
     }
@@ -344,22 +359,22 @@ class PayPalService implements PaymentGatewayInterface
                 $orderId = $resource['id'] ?? null;
                 $status = $resource['status'] ?? null;
 
-                if (!$orderId) {
+                if (! $orderId) {
                     return ['success' => false, 'message' => 'No order ID'];
                 }
 
                 // Find or create payment
                 $payment = Payment::where('transaction_reference', $orderId)->first();
 
-                if (!$payment) {
+                if (! $payment) {
                     // Try to find by invoice
                     $invoiceId = $resource['custom_id'] ?? null;
-                    if (!$invoiceId) {
+                    if (! $invoiceId) {
                         return ['success' => false, 'message' => 'Invoice ID not found'];
                     }
 
                     $invoice = Invoice::find($invoiceId);
-                    if (!$invoice) {
+                    if (! $invoice) {
                         return ['success' => false, 'message' => 'Invoice not found'];
                     }
 
@@ -402,6 +417,26 @@ class PayPalService implements PaymentGatewayInterface
                 ];
             }
 
+            if (in_array($eventType, ['CHECKOUT.ORDER.VOIDED', 'PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED'], true)) {
+                $orderId = $resource['id'] ?? null;
+
+                if ($eventType === 'PAYMENT.CAPTURE.DENIED' || $eventType === 'PAYMENT.CAPTURE.DECLINED') {
+                    $orderId = $resource['supplementary_data']['related_ids']['order_id'] ?? $orderId;
+                }
+
+                if ($orderId) {
+                    $reason = match ($eventType) {
+                        'CHECKOUT.ORDER.VOIDED' => 'PayPal order was voided before capture.',
+                        'PAYMENT.CAPTURE.DENIED' => 'PayPal payment capture was denied.',
+                        default => 'PayPal payment capture was declined.',
+                    };
+
+                    app(OnlinePaymentFailureService::class)->recordAndNotifyByReference($orderId, $reason);
+                }
+
+                return ['success' => true, 'message' => 'Failure event processed'];
+            }
+
             return ['success' => true, 'message' => 'Event logged'];
         } catch (\Exception $e) {
             Log::error('PayPal webhook processing failed', [
@@ -439,6 +474,7 @@ class PayPalService implements PaymentGatewayInterface
             return null;
         } catch (\Exception $e) {
             Log::error('PayPal token generation failed', ['error' => $e->getMessage()]);
+
             return null;
         }
     }
@@ -451,7 +487,7 @@ class PayPalService implements PaymentGatewayInterface
     public function isConfigured(): bool
     {
         return Setting::getValue('paypal_enabled') == '1'
-            && !empty($this->clientId)
-            && !empty($this->clientSecret);
+            && ! empty($this->clientId)
+            && ! empty($this->clientSecret);
     }
 }

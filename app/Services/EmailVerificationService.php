@@ -98,6 +98,31 @@ class EmailVerificationService
 
     private function sendEmailCode(User $user, string $code): bool
     {
+        $mailable = new VerificationCodeMail($user->name, $code);
+
+        if ($user->reseller_id !== null) {
+            $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+
+            if ($reseller && $this->mailService->resellerSmtpEnabled($reseller)) {
+                try {
+                    $this->mailService->sendToCustomer($user, $mailable);
+
+                    return true;
+                } catch (\Throwable $e) {
+                    Log::error('Failed to send reseller-branded verification email', [
+                        'user_id' => $user->id,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    return false;
+                }
+            }
+
+            Log::warning('Verification email skipped — reseller SMTP not configured', ['user_id' => $user->id]);
+
+            return false;
+        }
+
         if (! $this->mailService->isConfigured()) {
             Log::warning('Verification email skipped — SMTP not configured', ['user_id' => $user->id]);
 
@@ -105,7 +130,7 @@ class EmailVerificationService
         }
 
         try {
-            Mail::to($user->email)->send(new VerificationCodeMail($user->name, $code));
+            Mail::to($user->email)->send($mailable);
 
             return true;
         } catch (\Throwable $e) {

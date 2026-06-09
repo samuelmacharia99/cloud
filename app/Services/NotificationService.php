@@ -14,12 +14,18 @@ use App\Mail\GenericNotificationMail;
 use App\Mail\InvoiceGeneratedMail;
 use App\Mail\InvoiceOverdueMail;
 use App\Mail\InvoiceReminderMail;
+use App\Mail\ManualPaymentRejectedMail;
 use App\Mail\OrderConfirmationMail;
+use App\Mail\PasswordChangedMail;
+use App\Mail\PaymentFailedMail;
 use App\Mail\PaymentReceivedMail;
+use App\Mail\ServerCredentialsMail;
 use App\Mail\ServiceActivatedMail;
+use App\Mail\ServiceProvisionFailedMail;
 use App\Mail\ServiceSuspendedMail;
 use App\Mail\ServiceTerminatedMail;
 use App\Mail\ServiceUnsuspendedMail;
+use App\Mail\SharedHostingCredentialsMail;
 use App\Mail\TicketCreatedMail;
 use App\Mail\TicketRepliedMail;
 use App\Models\ContainerBackup;
@@ -43,6 +49,7 @@ class NotificationService
         private NotificationPreferenceService $preferences,
         private ResellerBrandingResolver $brandingResolver,
         private TalksasaSmsService $talksasaSms,
+        private AuthCodeSmsService $authCodeSms,
     ) {}
 
     private function siteNameFor(User $customer): string
@@ -291,13 +298,13 @@ class NotificationService
         $subject = 'Service Suspension Notice: '.$service->name;
         $this->sendCustomerEmail($service->user, new ServiceSuspendedMail($service), $subject, $event);
 
-        if ($this->smsService->isConfigured() && $service->user->phone) {
+        if ($service->user->phone) {
             try {
                 $message = $this->renderTemplate('service_suspended', [
                     'customer_name' => $service->user->name,
                     'service_name' => $service->name,
                     'site_name' => $this->siteNameFor($service->user),
-                ], 'Your service "'.$service->name.'" has been suspended due to overdue payment. Pay now to restore service.');
+                ], 'Your service "'.$service->name.'" has been suspended. Contact support or pay outstanding invoices to restore service.');
                 $this->sendCustomerSms($service->user, $message, $event);
             } catch (\Exception $e) {
                 Log::error('Failed to send service suspended SMS', ['error' => $e->getMessage()]);
@@ -449,13 +456,13 @@ class NotificationService
             }
         }
 
-        if ($this->smsService->isConfigured() && $order->user->phone && $this->preferences->isSmsEnabledForUser($order->user, $customerEvent)) {
+        if ($order->user->phone && $this->preferences->isSmsEnabledForUser($order->user, $customerEvent)) {
             try {
                 $customerMessage = match ($paymentMethod) {
                     'manual' => 'Your order #'.$order->order_number.' (KES '.number_format($invoice->total, 0).') has been placed. Please complete your bank transfer. An admin will activate your service after payment verification.',
                     default => 'Your order #'.$order->order_number.' (KES '.number_format($invoice->total, 0).') has been placed and payment is being processed. Service credentials will be emailed once provisioned.',
                 };
-                $this->smsService->send($order->user->phone, $customerMessage);
+                $this->sendCustomerSms($order->user, $customerMessage, $customerEvent);
             } catch (\Exception $e) {
                 Log::error('Failed to send customer order notification SMS', [
                     'order_id' => $order->id,
@@ -660,5 +667,398 @@ class NotificationService
             $event,
             $body
         );
+    }
+
+    public function notifyServiceProvisionFailed(Service $service, string $reason): void
+    {
+        $service->loadMissing('user', 'product');
+        $event = NotificationEvent::ServiceProvisionFailed;
+
+        if ($this->preferences->isGloballyEnabled($event) && $this->emailDelivery->mailConfiguredFor($service->user)) {
+            $subject = 'Service setup failed — '.$service->name;
+            $this->sendCustomerEmail(
+                $service->user,
+                new ServiceProvisionFailedMail($service, $reason),
+                $subject,
+                $event,
+                $reason,
+            );
+
+            if ($service->user->phone) {
+                $message = $this->renderTemplate('service_provision_failed', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'reason' => Str::limit($reason, 120),
+                    'site_name' => $this->siteNameFor($service->user),
+                ], 'Setup for "'.$service->name.'" failed. Our team has been notified. Check your dashboard or contact support.');
+                $this->sendCustomerSms($service->user, $message, $event);
+            }
+        }
+
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $adminSubject = 'Provisioning failed — '.$service->name.' (#'.$service->id.')';
+        $adminBody = "Customer: {$service->user->name} ({$service->user->email})\n"
+            ."Service: {$service->name} (#{$service->id})\n"
+            ."Reason: {$reason}";
+
+        $this->emailDelivery->sendToAdmins(
+            new GenericNotificationMail($adminSubject, 'Service provisioning failed', $adminBody),
+            $adminSubject,
+            $event,
+            $adminBody,
+        );
+
+        if ($this->smsService->isConfigured()) {
+            foreach (User::where('is_admin', true)->whereNotNull('notification_phones')->get() as $admin) {
+                if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
+                    try {
+                        $this->smsService->send(
+                            $admin->notification_phones,
+                            'Provision failed: '.$service->name.' for '.$service->user->name.'. '.Str::limit($reason, 80),
+                        );
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send provision failure SMS to admin', ['error' => $e->getMessage()]);
+                    }
+                }
+            }
+        }
+    }
+
+    public function notifyPaymentFailed(Payment $payment, string $reason): void
+    {
+        $payment->loadMissing('invoice.user');
+        $invoice = $payment->invoice;
+        if (! $invoice?->user) {
+            return;
+        }
+
+        $event = NotificationEvent::PaymentFailed;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $subject = 'Payment failed — Invoice '.$invoice->invoice_number;
+        $this->sendCustomerEmail($invoice->user, new PaymentFailedMail($payment, $reason), $subject, $event, $reason);
+
+        if ($invoice->user->phone) {
+            $message = $this->renderTemplate('payment_failed', [
+                'customer_name' => $invoice->user->name,
+                'invoice_number' => $invoice->invoice_number,
+                'amount' => 'Ksh '.number_format($invoice->total, 2),
+                'site_name' => $this->siteNameFor($invoice->user),
+            ], 'Payment for invoice '.$invoice->invoice_number.' failed. Please retry from your dashboard.');
+            $this->sendCustomerSms($invoice->user, $message, $event);
+        }
+    }
+
+    public function notifySharedHostingCredentials(Service $service): void
+    {
+        $service->loadMissing('user', 'product');
+        if ($service->provisioning_driver_key !== 'directadmin' && $service->product?->provisioning_driver_key !== 'directadmin') {
+            return;
+        }
+
+        $event = NotificationEvent::ServiceActivated;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user)) {
+            return;
+        }
+
+        $subject = 'Hosting control panel login — '.$service->name;
+        $this->sendCustomerEmail($service->user, new SharedHostingCredentialsMail($service), $subject, $event);
+    }
+
+    public function notifyResellerSubscriptionInvoice(Invoice $invoice): void
+    {
+        if ($invoice->type !== 'reseller_subscription' || $invoice->isPaid()) {
+            return;
+        }
+
+        $this->notifyInvoiceGenerated($invoice);
+    }
+
+    public function notifyResellerSuspended(User $reseller, string $reason): void
+    {
+        $event = NotificationEvent::ResellerSuspended;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+        $packagesUrl = route('reseller.packages.index');
+
+        if ($reseller->email) {
+            $subject = 'Reseller account suspended — '.$company;
+            $body = "Hello {$reseller->name},\n\n"
+                ."Your reseller account has been suspended.\n\n"
+                ."Reason: {$reason}\n\n"
+                ."Pay your package subscription invoice to restore access:\n{$packagesUrl}";
+
+            $this->emailDelivery->sendPlatformMailable(
+                $reseller->email,
+                new GenericNotificationMail($subject, 'Reseller account suspended', $body),
+                $subject,
+                $event,
+                $reseller,
+                $body,
+            );
+        }
+
+        if ($reseller->phone && $this->smsService->isConfigured()) {
+            try {
+                $this->smsService->send(
+                    $reseller->phone,
+                    "{$company}: Your reseller account is suspended ({$reason}). Pay your package invoice to restore access: {$packagesUrl}",
+                );
+            } catch (\Exception $e) {
+                Log::error('Failed to send reseller suspension SMS', ['reseller_id' => $reseller->id, 'error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyResellerDiskPoolWarning(User $reseller, float $usedGb, float $poolGb): void
+    {
+        $event = NotificationEvent::ResellerDiskPoolWarning;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+        $used = number_format($usedGb, 1);
+        $pool = number_format($poolGb, 1);
+
+        if ($reseller->email) {
+            $subject = "Disk pool exceeded — {$company}";
+            $body = "Hello {$reseller->name},\n\n"
+                ."Your managed hosting disk usage ({$used} GB) exceeds your package pool ({$pool} GB).\n\n"
+                .'New customer provisioning may be blocked until usage is reduced or your package is upgraded.';
+
+            $this->emailDelivery->sendPlatformMailable(
+                $reseller->email,
+                new GenericNotificationMail($subject, 'Disk pool exceeded', $body),
+                $subject,
+                $event,
+                $reseller,
+                $body,
+            );
+        }
+
+        if ($reseller->phone && $this->smsService->isConfigured()) {
+            try {
+                $this->smsService->send(
+                    $reseller->phone,
+                    "{$company}: Disk pool exceeded ({$used}/{$pool} GB). Reduce usage or upgrade to avoid blocked orders.",
+                );
+            } catch (\Exception $e) {
+                Log::error('Failed to send disk pool warning SMS', ['reseller_id' => $reseller->id, 'error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyResellerDomainOrdersExpired(User $reseller, int $count): void
+    {
+        if ($count <= 0) {
+            return;
+        }
+
+        $event = NotificationEvent::ResellerDomainOrderExpired;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $ordersUrl = route('reseller.domain-orders.index');
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+
+        if ($reseller->email) {
+            $subject = "{$count} queued domain order(s) expired";
+            $body = "Hello {$reseller->name},\n\n"
+                ."{$count} queued domain registration order(s) expired because they were not pushed before the deadline.\n\n"
+                ."Review them here: {$ordersUrl}";
+
+            $this->emailDelivery->sendPlatformMailable(
+                $reseller->email,
+                new GenericNotificationMail($subject, 'Queued domain orders expired', $body),
+                $subject,
+                $event,
+                $reseller,
+                $body,
+            );
+        }
+
+        if ($reseller->phone && $this->smsService->isConfigured()) {
+            try {
+                $this->smsService->send(
+                    $reseller->phone,
+                    "{$company}: {$count} queued domain order(s) expired. Review: {$ordersUrl}",
+                );
+            } catch (\Exception $e) {
+                Log::error('Failed to send domain order expiry SMS', ['reseller_id' => $reseller->id, 'error' => $e->getMessage()]);
+            }
+        }
+    }
+
+    public function notifyDomainTransferCompleted(Domain $domain): void
+    {
+        $domain->loadMissing('user');
+        $event = NotificationEvent::DomainTransferCompleted;
+        if (! $domain->user || ! $this->emailDelivery->mailConfiguredFor($domain->user) || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $fqdn = $domain->name.$domain->extension;
+        $subject = 'Domain transfer completed — '.$fqdn;
+        $body = "Your domain transfer for {$fqdn} has completed successfully. The domain is now active on your account.";
+
+        $this->sendCustomerEmail(
+            $domain->user,
+            new GenericNotificationMail($subject, 'Domain transfer completed', $body),
+            $subject,
+            NotificationEvent::DomainTransfer,
+            $body,
+        );
+
+        if ($domain->user->phone) {
+            $this->sendCustomerSms(
+                $domain->user,
+                "Domain transfer completed: {$fqdn} is now active on your account.",
+                NotificationEvent::DomainTransfer,
+            );
+        }
+    }
+
+    public function notifyDomainTransferFailed(Domain $domain, string $reason): void
+    {
+        $domain->loadMissing('user');
+        if (! $domain->user || ! $this->emailDelivery->mailConfiguredFor($domain->user) || ! $this->preferences->isGloballyEnabled(NotificationEvent::DomainTransferFailed)) {
+            return;
+        }
+
+        $fqdn = $domain->name.$domain->extension;
+        $subject = 'Domain transfer failed — '.$fqdn;
+        $body = "Your domain transfer for {$fqdn} could not be completed.\n\nReason: {$reason}";
+
+        $this->sendCustomerEmail(
+            $domain->user,
+            new GenericNotificationMail($subject, 'Domain transfer failed', $body),
+            $subject,
+            NotificationEvent::DomainTransfer,
+            $body,
+        );
+
+        if ($domain->user->phone) {
+            $this->sendCustomerSms(
+                $domain->user,
+                "Domain transfer failed for {$fqdn}. {$reason}",
+                NotificationEvent::DomainTransfer,
+            );
+        }
+    }
+
+    public function notifyPasswordChanged(User $user): void
+    {
+        $event = NotificationEvent::PasswordChanged;
+        if ($this->emailDelivery->mailConfiguredFor($user) && $this->preferences->isGloballyEnabled($event)) {
+            $siteName = $this->siteNameFor($user);
+            $subject = 'Password changed — '.$siteName;
+            $this->sendCustomerEmail($user, new PasswordChangedMail($user), $subject, $event);
+        }
+
+        if ($this->authCodeSms->canSend($user)) {
+            $siteName = $this->authCodeSms->siteNameFor($user);
+            $this->authCodeSms->send(
+                $user,
+                "Your {$siteName} password was changed successfully. If this wasn't you, contact support immediately.",
+            );
+        }
+    }
+
+    public function notifyManualPaymentRejected(Payment $payment, string $rejectionReason): void
+    {
+        $payment->loadMissing('invoice.user');
+        $invoice = $payment->invoice;
+        if (! $invoice?->user) {
+            return;
+        }
+
+        $event = NotificationEvent::ManualPaymentRejected;
+        if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $subject = 'Manual payment rejected — Invoice '.$invoice->invoice_number;
+        $this->sendCustomerEmail(
+            $invoice->user,
+            new ManualPaymentRejectedMail($payment, $rejectionReason),
+            $subject,
+            $event,
+            $rejectionReason,
+        );
+
+        if ($invoice->user->phone) {
+            $message = $this->renderTemplate('manual_payment_rejected', [
+                'customer_name' => $invoice->user->name,
+                'invoice_number' => $invoice->invoice_number,
+                'amount' => 'Ksh '.number_format($payment->amount, 2),
+                'rejection_reason' => $rejectionReason,
+                'site_name' => $this->siteNameFor($invoice->user),
+            ], 'Your manual payment for invoice '.$invoice->invoice_number.' was rejected. Reason: '.$rejectionReason);
+            $this->sendCustomerSms($invoice->user, $message, $event);
+        }
+    }
+
+    public function notifyServerCredentials(Service $service): void
+    {
+        $service->loadMissing('user', 'product');
+        if (! $service->user) {
+            return;
+        }
+
+        $event = NotificationEvent::ServiceActivated;
+        if (! $this->emailDelivery->mailConfiguredFor($service->user)) {
+            return;
+        }
+
+        $subject = 'Your '.$service->product?->name.' is ready — login details inside';
+        $this->sendCustomerEmail($service->user, new ServerCredentialsMail($service), $subject, $event);
+    }
+
+    public function notifyResellerSslProvisionFailed(User $reseller, string $domain, string $reason): void
+    {
+        $event = NotificationEvent::ResellerSslProvisionFailed;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
+        $settingsUrl = route('reseller.settings.index');
+
+        if ($reseller->email && $this->emailDelivery->mailConfiguredFor(null)) {
+            $subject = 'SSL provisioning failed — '.$domain;
+            $body = "Hello {$reseller->name},\n\n"
+                ."SSL certificate provisioning failed for {$domain}.\n\n"
+                ."Reason: {$reason}\n\n"
+                ."Review DNS settings and retry from your reseller settings:\n{$settingsUrl}";
+
+            $this->sendPlatformEmail(
+                $reseller->email,
+                new GenericNotificationMail($subject, 'SSL provisioning failed', $body),
+                $subject,
+                $event,
+                $reseller,
+                $body,
+            );
+        }
+
+        if ($reseller->phone && $this->smsService->isConfigured()) {
+            $message = $this->renderTemplate('reseller_ssl_provision_failed', [
+                'reseller_name' => $reseller->name,
+                'domain' => $domain,
+                'reason' => $reason,
+                'site_name' => $company,
+            ], "SSL provisioning failed for {$domain}. {$reason}");
+            $this->smsService->send($reseller->phone, $message);
+        }
     }
 }

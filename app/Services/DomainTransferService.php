@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
+use App\Mail\DomainTransferInitiatedMail;
 use App\Models\Domain;
 use App\Models\User;
-use App\Mail\DomainTransferInitiatedMail;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class DomainTransferService
 {
@@ -42,14 +42,14 @@ class DomainTransferService
             'epp_code' => $eppCode,
             'old_registrar' => $oldRegistrar,
             'old_registrar_url' => $oldRegistrarUrl,
-            'transfer_notes' => "Transfer initiated on " . now()->format('Y-m-d H:i:s'),
+            'transfer_notes' => 'Transfer initiated on '.now()->format('Y-m-d H:i:s'),
             'expires_at' => null,
         ]);
 
         // Log the transfer request
         Log::info('Domain transfer requested', [
             'user_id' => $user->id,
-            'domain' => $domainName . '.' . $extension,
+            'domain' => $domainName.'.'.$extension,
             'old_registrar' => $oldRegistrar,
         ]);
 
@@ -66,7 +66,7 @@ class DomainTransferService
             $domain->update([
                 'transfer_status' => 'initiated',
                 'transfer_initiated_at' => now(),
-                'transfer_notes' => "Transfer initiated with {$domain->old_registrar} on " . now()->format('Y-m-d H:i:s'),
+                'transfer_notes' => "Transfer initiated with {$domain->old_registrar} on ".now()->format('Y-m-d H:i:s'),
             ]);
 
             // Send email to user
@@ -81,7 +81,7 @@ class DomainTransferService
 
             Log::info('Domain transfer initiated', [
                 'domain_id' => $domain->id,
-                'domain' => $domain->name . '.' . $domain->extension,
+                'domain' => $domain->name.'.'.$domain->extension,
             ]);
 
             return true;
@@ -134,13 +134,15 @@ class DomainTransferService
                 'registrar' => $newRegistrar,
                 'registered_at' => now(),
                 'expires_at' => now()->addYear(),
-                'transfer_notes' => "Transfer completed on " . now()->format('Y-m-d H:i:s') . ". Domain is now registered with {$newRegistrar}.",
+                'transfer_notes' => 'Transfer completed on '.now()->format('Y-m-d H:i:s').". Domain is now registered with {$newRegistrar}.",
             ]);
 
             Log::info('Domain transfer completed', [
                 'domain_id' => $domain->id,
                 'new_registrar' => $newRegistrar,
             ]);
+
+            app(NotificationService::class)->notifyDomainTransferCompleted($domain->fresh(['user']));
 
             return true;
         } catch (\Exception $e) {
@@ -169,6 +171,8 @@ class DomainTransferService
                 'domain_id' => $domain->id,
                 'reason' => $reason,
             ]);
+
+            app(NotificationService::class)->notifyDomainTransferFailed($domain->fresh(['user']), $reason);
 
             return true;
         } catch (\Exception $e) {
@@ -215,9 +219,9 @@ class DomainTransferService
     public static function getTransferInstructions(Domain $domain): array
     {
         return [
-            'step1' => 'Contact your current registrar (' . $domain->old_registrar . ')',
+            'step1' => 'Contact your current registrar ('.$domain->old_registrar.')',
             'step2' => 'Request authorization for domain transfer',
-            'step3' => 'Provide the EPP code: ' . substr($domain->epp_code, 0, 3) . '****' . substr($domain->epp_code, -3),
+            'step3' => 'Provide the EPP code: '.substr($domain->epp_code, 0, 3).'****'.substr($domain->epp_code, -3),
             'step4' => 'Wait for authorization (usually 3-5 business days)',
             'step5' => 'We will automatically complete the transfer once authorized',
             'registrar_url' => $domain->old_registrar_url,
@@ -230,7 +234,7 @@ class DomainTransferService
     public static function getEstimatedCompletionDate(Domain $domain): string
     {
         if ($domain->transfer_status === 'completed') {
-            return 'Completed on ' . $domain->transfer_completed_at->format('F d, Y');
+            return 'Completed on '.$domain->transfer_completed_at->format('F d, Y');
         }
 
         if ($domain->transfer_status === 'failed') {
@@ -240,7 +244,8 @@ class DomainTransferService
         // Estimated 5 business days from initiation
         if ($domain->transfer_initiated_at) {
             $estimated = $domain->transfer_initiated_at->addDays(5);
-            return 'Estimated: ' . $estimated->format('F d, Y');
+
+            return 'Estimated: '.$estimated->format('F d, Y');
         }
 
         return 'Pending initiation';

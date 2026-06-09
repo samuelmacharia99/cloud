@@ -58,6 +58,10 @@ class ResellerPackageSubscriptionService
 
         app(ResellerSubscriptionAutoPayService::class)->attempt($invoice);
 
+        if (! $invoice->fresh()->isPaid()) {
+            app(NotificationService::class)->notifyResellerSubscriptionInvoice($invoice->fresh(['user']));
+        }
+
         return $invoice->fresh(['items']);
     }
 

@@ -494,6 +494,19 @@ class ResellerSslService
             'last_attempt_at' => now()->toIso8601String(),
         ]);
 
+        try {
+            app(NotificationService::class)->notifyResellerSslProvisionFailed(
+                $reseller->fresh(),
+                $domain ?? 'your custom domain',
+                $message,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Failed to notify reseller of SSL provisioning failure', [
+                'reseller_id' => $reseller->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return [
             'success' => false,
             'message' => $message,

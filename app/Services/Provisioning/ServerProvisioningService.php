@@ -2,10 +2,12 @@
 
 namespace App\Services\Provisioning;
 
-use App\Mail\ServerCredentialsMail;
+use App\Enums\NotificationEvent;
 use App\Mail\AdminServerOrderMail;
 use App\Models\Service;
-use Illuminate\Support\Facades\Mail;
+use App\Models\Setting;
+use App\Services\EmailDeliveryService;
+use App\Services\NotificationService;
 use Illuminate\Support\Str;
 
 /**
@@ -18,33 +20,31 @@ class ServerProvisioningService
 {
     /**
      * Provision a server service with auto-generated credentials.
-     *
-     * @param Service $service
-     * @return void
      */
     public function provision(Service $service): void
     {
-        // Generate a secure 16-character password with letters, numbers, and symbols
         $password = Str::password(16);
 
-        // Store credentials in JSON format on the service
-        $credentials = [
-            'username' => 'root',
-            'password' => $password,
-        ];
-
         $service->update([
-            'credentials' => json_encode($credentials),
+            'credentials' => json_encode([
+                'username' => 'root',
+                'password' => $password,
+            ]),
             'status' => 'active',
         ]);
 
-        // Send credentials email to customer
-        Mail::to($service->user->email)->send(new ServerCredentialsMail($service));
+        $service->load(['user', 'product']);
+        $notifications = app(NotificationService::class);
+        $notifications->notifyServerCredentials($service);
 
-        // Send order notification email to admin
-        $adminEmail = \App\Models\Setting::where('key', 'admin_email')->value('value');
+        $adminEmail = Setting::getValue('admin_email');
         if ($adminEmail) {
-            Mail::to($adminEmail)->send(new AdminServerOrderMail($service));
+            app(EmailDeliveryService::class)->sendPlatformMailable(
+                $adminEmail,
+                new AdminServerOrderMail($service),
+                'New server order — '.$service->name,
+                NotificationEvent::AdminNewOrder,
+            );
         }
     }
 }

@@ -10,8 +10,8 @@ use App\Http\Requests\UpdatePaymentRequest;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
-use App\Notifications\ManualPaymentRejected;
 use App\Services\AdminActivityService;
+use App\Services\NotificationService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
@@ -448,14 +448,10 @@ class PaymentController extends Controller
 
             // Send rejection notification to customer
             try {
-                \Log::debug('Sending rejection notification to customer', [
-                    'payment_id' => $payment->id,
-                    'user_id' => $payment->user_id,
-                    'user_email' => $payment->user->email,
-                ]);
-
-                \Notification::route('mail', $payment->user->email)
-                    ->notify(new ManualPaymentRejected($payment));
+                app(NotificationService::class)->notifyManualPaymentRejected(
+                    $payment->fresh(['invoice.user']),
+                    $rejectionReason,
+                );
 
                 \Log::info('Rejection notification sent to customer', [
                     'payment_id' => $payment->id,

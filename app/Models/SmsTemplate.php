@@ -32,7 +32,7 @@ class SmsTemplate extends Model
         $body = $this->body;
 
         foreach ($data as $key => $value) {
-            $body = str_replace('{' . $key . '}', (string) $value, $body);
+            $body = str_replace('{'.$key.'}', (string) $value, $body);
         }
 
         return $body;
@@ -120,6 +120,86 @@ class SmsTemplate extends Model
                 'recipient_type' => 'customer',
                 'description' => 'Sent when a support ticket is created',
                 'available_variables' => ['customer_name', 'ticket_id', 'subject', 'site_name'],
+            ],
+            [
+                'event_key' => 'payment_failed',
+                'name' => 'Payment Failed',
+                'body' => 'Payment for invoice {invoice_number} ({amount}) failed. Please retry from your dashboard. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when an online payment fails',
+                'available_variables' => ['invoice_number', 'amount', 'site_name'],
+            ],
+            [
+                'event_key' => 'manual_payment_rejected',
+                'name' => 'Manual Payment Rejected',
+                'body' => 'Your manual payment for invoice {invoice_number} was rejected. Reason: {rejection_reason}. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when admin rejects manual payment proof',
+                'available_variables' => ['invoice_number', 'rejection_reason', 'site_name'],
+            ],
+            [
+                'event_key' => 'service_provision_failed',
+                'name' => 'Service Provision Failed',
+                'body' => 'Setup failed for {service_name}. Our team has been notified. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when auto-provisioning fails',
+                'available_variables' => ['service_name', 'site_name'],
+            ],
+            [
+                'event_key' => 'service_unsuspended',
+                'name' => 'Service Restored',
+                'body' => 'Hi {customer_name}, your {service_name} service has been restored. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when a suspended service is restored',
+                'available_variables' => ['customer_name', 'service_name', 'site_name'],
+            ],
+            [
+                'event_key' => 'reseller_suspended',
+                'name' => 'Reseller: Account Suspended',
+                'body' => 'Your reseller account has been suspended. Reason: {reason}. Pay your package invoice to restore access. -{site_name}',
+                'recipient_type' => 'reseller',
+                'description' => 'Sent when reseller is suspended',
+                'available_variables' => ['reason', 'site_name'],
+            ],
+            [
+                'event_key' => 'reseller_disk_pool_warning',
+                'name' => 'Reseller: Disk Pool Warning',
+                'body' => 'Disk pool usage ({used_gb} GB) exceeds your allocation ({pool_gb} GB). Review usage or upgrade. -{site_name}',
+                'recipient_type' => 'reseller',
+                'description' => 'Sent when disk pool is over limit',
+                'available_variables' => ['used_gb', 'pool_gb', 'site_name'],
+            ],
+            [
+                'event_key' => 'reseller_domain_order_expired',
+                'name' => 'Reseller: Domain Order Expired',
+                'body' => '{count} queued domain order(s) expired. Top up wallet and re-order if needed. -{site_name}',
+                'recipient_type' => 'reseller',
+                'description' => 'Sent when queued domain orders expire',
+                'available_variables' => ['count', 'site_name'],
+            ],
+            [
+                'event_key' => 'reseller_ssl_provision_failed',
+                'name' => 'Reseller: SSL Failed',
+                'body' => 'SSL provisioning failed for {domain}. {reason} -{site_name}',
+                'recipient_type' => 'reseller',
+                'description' => 'Sent when SSL provisioning fails',
+                'available_variables' => ['domain', 'reason', 'site_name'],
+            ],
+            [
+                'event_key' => 'domain_transfer_completed',
+                'name' => 'Domain Transfer Completed',
+                'body' => 'Domain transfer completed: {domain_name} is now active on your account. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when domain transfer completes',
+                'available_variables' => ['domain_name', 'site_name'],
+            ],
+            [
+                'event_key' => 'domain_transfer_failed',
+                'name' => 'Domain Transfer Failed',
+                'body' => 'Domain transfer failed for {domain_name}. {reason} -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when domain transfer fails',
+                'available_variables' => ['domain_name', 'reason', 'site_name'],
             ],
         ];
     }

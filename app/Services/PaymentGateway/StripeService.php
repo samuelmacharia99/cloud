@@ -147,7 +147,8 @@ class StripeService implements PaymentGatewayInterface
 
             return [
                 'success' => $isSuccessful,
-                'status' => $session->payment_status,
+                'status' => $isSuccessful ? 'completed' : ($session->payment_status === 'unpaid' ? 'pending' : 'failed'),
+                'message' => $isSuccessful ? null : 'Card payment was not completed.',
                 'amount' => $session->amount_total ? $session->amount_total / 100 : 0,
                 'currency' => $session->currency,
                 'payment_intent' => $session->payment_intent,
@@ -259,6 +260,41 @@ class StripeService implements PaymentGatewayInterface
                     'message' => 'Payment received',
                     'payment_id' => $payment->id,
                 ];
+            }
+
+            if (in_array($type, ['checkout.session.expired', 'checkout.session.async_payment_failed'], true)) {
+                $sessionId = $eventData['id'] ?? null;
+                if ($sessionId) {
+                    $reason = $type === 'checkout.session.expired'
+                        ? 'Stripe checkout session expired before payment was completed.'
+                        : 'Stripe async payment failed.';
+
+                    app(OnlinePaymentFailureService::class)->recordAndNotifyByReference($sessionId, $reason);
+                }
+
+                return ['success' => true, 'message' => 'Failure event processed'];
+            }
+
+            if ($type === 'payment_intent.payment_failed') {
+                $paymentIntentId = $eventData['id'] ?? null;
+                if ($paymentIntentId) {
+                    $payment = Payment::query()
+                        ->where('payment_method', 'stripe')
+                        ->where('status', 'pending')
+                        ->where('notes', 'like', '%'.$paymentIntentId.'%')
+                        ->latest()
+                        ->first();
+
+                    if ($payment) {
+                        $failureMessage = $eventData['last_payment_error']['message'] ?? 'Card payment was declined.';
+                        app(OnlinePaymentFailureService::class)->recordAndNotifyByReference(
+                            $payment->transaction_reference,
+                            $failureMessage,
+                        );
+                    }
+                }
+
+                return ['success' => true, 'message' => 'Failure event processed'];
             }
 
             return ['success' => true, 'message' => 'Event processed'];

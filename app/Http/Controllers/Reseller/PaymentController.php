@@ -12,6 +12,7 @@ use App\Models\Service;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
+use App\Services\PaymentGateway\OnlinePaymentFailureService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerWalletService;
@@ -247,13 +248,28 @@ class PaymentController extends Controller
                 $gateway = $this->gatewayFactory->make('stripe');
                 $result = $gateway->verify($payment->transaction_reference);
 
-                if ($result['status'] === 'completed') {
+                if ($result['success']) {
                     $this->processPaymentCompletion($payment, $invoice);
+
+                    return redirect()->route('reseller.invoices.show', $invoice)
+                        ->with('success', 'Payment received successfully!');
+                }
+
+                if (($result['status'] ?? null) === 'failed') {
+                    app(OnlinePaymentFailureService::class)->recordAndNotify(
+                        $invoice,
+                        'stripe',
+                        $result['message'] ?? 'Card payment was not completed.',
+                        $payment->transaction_reference,
+                    );
+
+                    return redirect()->route('reseller.payment.select-method', $invoice)
+                        ->with('error', $result['message'] ?? 'Payment verification failed.');
                 }
             }
 
             return redirect()->route('reseller.invoices.show', $invoice)
-                ->with('success', 'Payment received successfully!');
+                ->with('info', 'Payment is still being processed.');
         } catch (\Exception $e) {
             return redirect()->route('reseller.invoices.show', $invoice)
                 ->with('error', 'Payment verification failed: '.$e->getMessage());
@@ -263,6 +279,13 @@ class PaymentController extends Controller
     public function stripeCancel(Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
+
+        app(OnlinePaymentFailureService::class)->recordAndNotify(
+            $invoice,
+            'stripe',
+            'Stripe checkout was cancelled.',
+            request()->get('session_id'),
+        );
 
         return redirect()->route('reseller.payment.select-method', $invoice)
             ->with('warning', 'Payment was cancelled');
@@ -283,13 +306,28 @@ class PaymentController extends Controller
                 $gateway = $this->gatewayFactory->make('paypal');
                 $result = $gateway->verify($payment->transaction_reference);
 
-                if ($result['status'] === 'completed') {
+                if ($result['success']) {
                     $this->processPaymentCompletion($payment, $invoice);
+
+                    return redirect()->route('reseller.invoices.show', $invoice)
+                        ->with('success', 'Payment received successfully!');
+                }
+
+                if (($result['status'] ?? null) === 'failed') {
+                    app(OnlinePaymentFailureService::class)->recordAndNotify(
+                        $invoice,
+                        'paypal',
+                        $result['message'] ?? 'PayPal payment was not completed.',
+                        $payment->transaction_reference,
+                    );
+
+                    return redirect()->route('reseller.payment.select-method', $invoice)
+                        ->with('error', $result['message'] ?? 'Payment verification failed.');
                 }
             }
 
             return redirect()->route('reseller.invoices.show', $invoice)
-                ->with('success', 'Payment received successfully!');
+                ->with('info', 'Payment is still being processed.');
         } catch (\Exception $e) {
             return redirect()->route('reseller.invoices.show', $invoice)
                 ->with('error', 'Payment verification failed: '.$e->getMessage());
@@ -299,6 +337,13 @@ class PaymentController extends Controller
     public function paypalCancel(Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
+
+        app(OnlinePaymentFailureService::class)->recordAndNotify(
+            $invoice,
+            'paypal',
+            'PayPal checkout was cancelled.',
+            request()->get('token'),
+        );
 
         return redirect()->route('reseller.payment.select-method', $invoice)
             ->with('warning', 'PayPal payment was cancelled.');

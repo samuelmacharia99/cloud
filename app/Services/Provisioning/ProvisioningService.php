@@ -55,6 +55,9 @@ class ProvisioningService
             \Log::error("Provisioning failed for service {$service->id}: {$e->getMessage()}");
             $service->update(['status' => 'failed']);
 
+            $service->loadMissing('user', 'product');
+            app(NotificationService::class)->notifyServiceProvisionFailed($service->fresh(), $e->getMessage());
+
             throw $e;
         }
     }
@@ -141,6 +144,8 @@ class ProvisioningService
                     'suspend_date' => null,
                 ]);
             }
+
+            app(NotificationService::class)->notifyServiceUnsuspended($service->fresh(['user', 'product']));
         } catch (\Exception $e) {
             \Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
 
@@ -298,6 +303,8 @@ class ProvisioningService
                 'domain' => $domain,
                 'package' => $packageName,
             ]);
+
+            app(NotificationService::class)->notifySharedHostingCredentials($service->fresh(['user', 'product']));
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
         }

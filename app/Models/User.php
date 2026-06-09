@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use App\Notifications\ResetPasswordNotification;
+use App\Services\AuthEmailService;
 use App\Services\EmailVerificationService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
@@ -330,6 +330,6 @@ class User extends Authenticatable implements MustVerifyEmail
 
     public function sendPasswordResetNotification($token): void
     {
-        $this->notify(new ResetPasswordNotification($token));
+        app(AuthEmailService::class)->sendPasswordReset($this, $token);
     }
 }

@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\InvoiceStatus;
+use App\Enums\NotificationEvent;
 use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Mail\AdminServerOrderMail;
-use App\Mail\ServerCredentialsMail;
-use App\Mail\SharedHostingCredentialsMail;
 use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
@@ -15,6 +14,8 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\EmailDeliveryService;
+use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ServiceStatusSyncService;
@@ -526,13 +527,15 @@ class ServiceController extends Controller
 
     public function resendCredentials(Service $service)
     {
+        $notifications = app(NotificationService::class);
+
         if ($service->isSharedHosting()) {
             if (! $service->getHostingCredentials()) {
                 return back()->with('error', 'No DirectAdmin credentials found for this service.');
             }
 
             try {
-                \Mail::to($service->user->email)->send(new SharedHostingCredentialsMail($service));
+                $notifications->notifySharedHostingCredentials($service->fresh(['user', 'product']));
 
                 return back()->with('success', 'DirectAdmin credentials have been resent to the customer.');
             } catch (\Exception $e) {
@@ -551,13 +554,17 @@ class ServiceController extends Controller
         }
 
         try {
-            // Send credentials to customer
-            \Mail::to($service->user->email)->send(new ServerCredentialsMail($service));
+            $service->load(['user', 'product']);
+            $notifications->notifyServerCredentials($service);
 
-            // Send order notification to admin
             $adminEmail = Setting::getValue('admin_email');
             if ($adminEmail) {
-                \Mail::to($adminEmail)->send(new AdminServerOrderMail($service));
+                app(EmailDeliveryService::class)->sendPlatformMailable(
+                    $adminEmail,
+                    new AdminServerOrderMail($service),
+                    'Server credentials resent — '.$service->name,
+                    NotificationEvent::AdminNewOrder,
+                );
             }
 
             return back()->with('success', 'Credentials have been resent to the customer and admin.');

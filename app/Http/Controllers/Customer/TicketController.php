@@ -7,7 +7,6 @@ use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Services\NotificationService;
 use App\Services\ResellerScopeService;
-use App\Services\SmsService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -167,8 +166,7 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        $notificationService = new NotificationService(new SmsService);
-        $notificationService->notifyTicketCreated($ticket);
+        app(NotificationService::class)->notifyTicketCreated($ticket);
     }
 
     /**
@@ -178,8 +176,7 @@ class TicketController extends Controller
     {
         $latestReply = $ticket->replies()->latest()->first();
         if ($latestReply) {
-            $notificationService = new NotificationService(new SmsService);
-            $notificationService->notifyTicketReplied($ticket, $latestReply);
+            app(NotificationService::class)->notifyTicketReplied($ticket, $latestReply);
         }
     }
 }

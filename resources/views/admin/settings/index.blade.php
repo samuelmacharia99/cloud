@@ -1438,6 +1438,147 @@
                                     <span class="text-slate-700 dark:text-slate-300">Reseller: Low Wallet Balance</span>
                                 </label>
                             </div>
+
+                            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 pt-2">Customer</p>
+                            <div>
+                                <input type="hidden" name="settings[notify_payment_failed]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_payment_failed]" value="1" @checked(($settings['notify_payment_failed'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Payment Failed (M-Pesa / Stripe / PayPal)</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_manual_payment_rejected]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_manual_payment_rejected]" value="1" @checked(($settings['notify_manual_payment_rejected'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Manual Payment Rejected</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_service_provision_failed]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_service_provision_failed]" value="1" @checked(($settings['notify_service_provision_failed'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Service Provision Failed</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_password_changed]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_password_changed]" value="1" @checked(($settings['notify_password_changed'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Password Changed</span>
+                                </label>
+                            </div>
+
+                            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 pt-2">Containers</p>
+                            <div>
+                                <input type="hidden" name="settings[notify_container_backup]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_container_backup]" value="1" @checked(($settings['notify_container_backup'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Container Backup Completed</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_container_backup_failure]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_container_backup_failure]" value="1" @checked(($settings['notify_container_backup_failure'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Container Backup Failed</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_container_failure]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_container_failure]" value="1" @checked(($settings['notify_container_failure'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Container Failure</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_container_restart]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_container_restart]" value="1" @checked(($settings['notify_container_restart'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Container Auto-Restart</span>
+                                </label>
+                            </div>
+
+                            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 pt-2">Reseller</p>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_domain_queued]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_domain_queued]" value="1" @checked(($settings['notify_reseller_domain_queued'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Domain Order Queued</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_domain_pushed]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_domain_pushed]" value="1" @checked(($settings['notify_reseller_domain_pushed'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Domain Pushed to Admin</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_new_customer_order]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_new_customer_order]" value="1" @checked(($settings['notify_reseller_new_customer_order'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: New Customer Order</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_wallet_topup]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_wallet_topup]" value="1" @checked(($settings['notify_reseller_wallet_topup'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Wallet Top-up</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_wallet_adjustment]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_wallet_adjustment]" value="1" @checked(($settings['notify_reseller_wallet_adjustment'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Wallet Adjustment</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_suspended]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_suspended]" value="1" @checked(($settings['notify_reseller_suspended'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Account Suspended</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_disk_pool_warning]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_disk_pool_warning]" value="1" @checked(($settings['notify_reseller_disk_pool_warning'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Disk Pool Warning</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_domain_order_expired]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_domain_order_expired]" value="1" @checked(($settings['notify_reseller_domain_order_expired'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: Queued Domain Order Expired</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_reseller_ssl_provision_failed]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_reseller_ssl_provision_failed]" value="1" @checked(($settings['notify_reseller_ssl_provision_failed'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller: SSL Provisioning Failed</span>
+                                </label>
+                            </div>
+
+                            <p class="text-sm font-medium text-slate-500 dark:text-slate-400 pt-2">Admin</p>
+                            <div>
+                                <input type="hidden" name="settings[notify_admin_new_order]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_admin_new_order]" value="1" @checked(($settings['notify_admin_new_order'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: New Order</span>
+                                </label>
+                            </div>
+                            <div>
+                                <input type="hidden" name="settings[notify_admin_node_offline]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_admin_node_offline]" value="1" @checked(($settings['notify_admin_node_offline'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Container Node Offline</span>
+                                </label>
+                            </div>
                         </div>
                     </fieldset>
 

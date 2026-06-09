@@ -36,6 +36,14 @@ enum NotificationEvent: string
     case PasswordChanged = 'password_changed';
     case EmailVerification = 'email_verification';
     case DomainTransfer = 'domain_transfer';
+    case ServiceProvisionFailed = 'service_provision_failed';
+    case PaymentFailed = 'payment_failed';
+    case ResellerSuspended = 'reseller_suspended';
+    case ResellerDiskPoolWarning = 'reseller_disk_pool_warning';
+    case ResellerDomainOrderExpired = 'reseller_domain_order_expired';
+    case DomainTransferCompleted = 'domain_transfer_completed';
+    case DomainTransferFailed = 'domain_transfer_failed';
+    case ResellerSslProvisionFailed = 'reseller_ssl_provision_failed';
 
     public function settingKey(): string
     {
@@ -56,7 +64,7 @@ enum NotificationEvent: string
             self::ContainerFailed => 'notify_container_failure',
             self::ContainerRestart => 'notify_container_restart',
             self::ManualPaymentSubmitted => 'notify_admin_manual_payment',
-            self::ManualPaymentRejected => 'notify_payment',
+            self::ManualPaymentRejected => 'notify_manual_payment_rejected',
             self::ResellerDomainQueued => 'notify_reseller_domain_queued',
             self::ResellerDomainPushed => 'notify_reseller_domain_pushed',
             self::ResellerNewCustomerOrder => 'notify_reseller_new_customer_order',
@@ -71,6 +79,14 @@ enum NotificationEvent: string
             self::PasswordChanged => 'notify_password_changed',
             self::EmailVerification => 'notify_email_verification',
             self::DomainTransfer => 'notify_domain_transfer',
+            self::ServiceProvisionFailed => 'notify_service_provision_failed',
+            self::PaymentFailed => 'notify_payment_failed',
+            self::ResellerSuspended => 'notify_reseller_suspended',
+            self::ResellerDiskPoolWarning => 'notify_reseller_disk_pool_warning',
+            self::ResellerDomainOrderExpired => 'notify_reseller_domain_order_expired',
+            self::DomainTransferCompleted => 'notify_domain_transfer',
+            self::DomainTransferFailed => 'notify_domain_transfer',
+            self::ResellerSslProvisionFailed => 'notify_reseller_ssl_provision_failed',
         };
     }
 
@@ -83,13 +99,18 @@ enum NotificationEvent: string
             self::AdminNodeOffline,
             self::CronFailure,
             self::CronHealth,
-            self::ContainerBackupFailed => 'admin',
+            self::ContainerBackupFailed,
+            self::ServiceProvisionFailed => 'admin',
             self::ResellerDomainQueued,
             self::ResellerDomainPushed,
             self::ResellerNewCustomerOrder,
             self::ResellerWalletLow,
             self::ResellerWalletTopup,
-            self::ResellerWalletAdjustment => 'reseller',
+            self::ResellerWalletAdjustment,
+            self::ResellerSuspended,
+            self::ResellerDiskPoolWarning,
+            self::ResellerDomainOrderExpired,
+            self::ResellerSslProvisionFailed => 'reseller',
             default => 'customer',
         };
     }

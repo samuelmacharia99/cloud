@@ -122,6 +122,14 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_admin_reseller_domain_push', 'value' => 'true', 'description' => 'Email admins on reseller domain push'],
             ['key' => 'notify_admin_manual_payment', 'value' => 'true', 'description' => 'Email admins on manual payment submission'],
             ['key' => 'notify_admin_node_offline', 'value' => 'true', 'description' => 'Email admins when container node goes offline'],
+            ['key' => 'notify_service_provision_failed', 'value' => 'true', 'description' => 'Notify customer and admins when service auto-provisioning fails'],
+            ['key' => 'notify_payment_failed', 'value' => 'true', 'description' => 'Notify customer when an online payment fails'],
+            ['key' => 'notify_reseller_suspended', 'value' => 'true', 'description' => 'Notify reseller when their account is suspended for overdue package billing'],
+            ['key' => 'notify_reseller_disk_pool_warning', 'value' => 'true', 'description' => 'Notify reseller when disk pool usage is exceeded'],
+            ['key' => 'notify_reseller_domain_order_expired', 'value' => 'true', 'description' => 'Notify reseller when queued domain orders expire'],
+            ['key' => 'notify_password_changed', 'value' => 'true', 'description' => 'Notify customer when their password is changed'],
+            ['key' => 'notify_manual_payment_rejected', 'value' => 'true', 'description' => 'Notify customer when a manual payment submission is rejected'],
+            ['key' => 'notify_reseller_ssl_provision_failed', 'value' => 'true', 'description' => 'Notify reseller when custom domain SSL provisioning fails'],
             ['key' => 'email_queue_enabled', 'value' => 'true', 'description' => 'Queue outbound emails via Laravel queue'],
 
             // SMS settings

@@ -11,6 +11,7 @@ use App\Services\Billing\InvoiceSettlementService;
 use App\Services\CreditService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\BankTransferPaymentService;
+use App\Services\PaymentGateway\OnlinePaymentFailureService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\PaymentGateway\PayPalService;
 use App\Services\PaymentGateway\StripeService;
@@ -246,6 +247,10 @@ class PaymentController extends Controller
                             'result_code' => $result['response_code'] ?? null,
                         ]),
                     ]);
+                    app(NotificationService::class)->notifyPaymentFailed(
+                        $payment->fresh(['invoice.user']),
+                        $result['message'] ?? 'Payment was cancelled or failed.',
+                    );
                 }
 
                 return redirect()->route('customer.payment.select-method', $invoice)
@@ -339,8 +344,17 @@ class PaymentController extends Controller
                     ->with('success', 'Payment received successfully!');
             }
 
+            if (($result['status'] ?? null) === 'failed') {
+                app(OnlinePaymentFailureService::class)->recordAndNotify(
+                    $invoice,
+                    'stripe',
+                    $result['message'] ?? 'Card payment was not completed.',
+                    $sessionId,
+                );
+            }
+
             return redirect()->route('customer.invoices.show', $invoice)
-                ->with('error', 'Payment verification failed');
+                ->with('error', $result['message'] ?? 'Payment verification failed');
         } catch (\Exception $e) {
             Log::error('Stripe success callback error', [
                 'invoice_id' => $invoice->id,
@@ -358,6 +372,13 @@ class PaymentController extends Controller
     public function stripeCancel(Request $request, Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        app(OnlinePaymentFailureService::class)->recordAndNotify(
+            $invoice,
+            'stripe',
+            'Stripe checkout was cancelled.',
+            $request->get('session_id'),
+        );
 
         return redirect()->route('customer.payment.select-method', $invoice)
             ->with('info', 'Payment cancelled. You can try again later.');
@@ -425,8 +446,17 @@ class PaymentController extends Controller
                     ->with('success', 'Payment received successfully!');
             }
 
+            if (($result['status'] ?? null) === 'failed') {
+                app(OnlinePaymentFailureService::class)->recordAndNotify(
+                    $invoice,
+                    'paypal',
+                    $result['message'] ?? 'PayPal payment was not completed.',
+                    $orderId,
+                );
+            }
+
             return redirect()->route('customer.invoices.show', $invoice)
-                ->with('error', 'Payment verification failed');
+                ->with('error', $result['message'] ?? 'Payment verification failed');
         } catch (\Exception $e) {
             Log::error('PayPal success callback error', [
                 'invoice_id' => $invoice->id,
@@ -444,6 +474,13 @@ class PaymentController extends Controller
     public function paypalCancel(Request $request, Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        app(OnlinePaymentFailureService::class)->recordAndNotify(
+            $invoice,
+            'paypal',
+            'PayPal checkout was cancelled.',
+            $request->get('token'),
+        );
 
         return redirect()->route('customer.payment.select-method', $invoice)
             ->with('info', 'Payment cancelled. You can try again later.');
@@ -797,6 +834,10 @@ class PaymentController extends Controller
                             'result_code' => $result['response_code'] ?? null,
                         ]),
                     ]);
+                    app(NotificationService::class)->notifyPaymentFailed(
+                        $payment->fresh(['invoice.user']),
+                        $result['message'] ?? 'Payment was cancelled or failed.',
+                    );
                 }
 
                 return response()->json([

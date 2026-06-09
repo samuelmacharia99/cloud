@@ -192,6 +192,8 @@ class ResellerEnforcementService
             'reason' => $reason,
         ]);
 
+        app(NotificationService::class)->notifyResellerSuspended($reseller->fresh(), $reason);
+
         if (! $this->resellerDirectAdmin->suspendResellerAccount($reseller)) {
             Log::warning('DirectAdmin reseller suspend skipped or failed', [
                 'reseller_id' => $reseller->id,
