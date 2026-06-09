@@ -116,6 +116,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Collect Reseller Disk Usage',
+                'description' => 'Records daily DirectAdmin and container disk usage per reseller for pool billing.',
+                'command' => 'cron:collect-reseller-disk-usage',
+                'schedule' => '15 3 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Sync Service Live Status',
                 'description' => 'Probes DirectAdmin accounts and Docker containers to detect billing vs infrastructure status drift.',
                 'command' => 'cron:sync-service-live-status',

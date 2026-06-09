@@ -51,6 +51,8 @@ class DomainPushService
 
     public function handlePaidResellerInvoice(Invoice $invoice): void
     {
+        $invoice->loadMissing('items');
+
         foreach ($invoice->items as $item) {
             if ($item->product_type !== 'Domain' || ! isset($item->custom_options['domain_order_id'])) {
                 continue;
@@ -64,6 +66,24 @@ class DomainPushService
 
             $this->pushAfterWholesalePaidViaInvoice($order);
         }
+    }
+
+    /**
+     * Idempotent: push any queued domain orders on a paid reseller wholesale invoice.
+     */
+    public function ensurePaidInvoiceDomainOrdersPushed(Invoice $invoice): void
+    {
+        if (! $invoice->isPaid()) {
+            return;
+        }
+
+        $invoice->loadMissing('items', 'user');
+
+        if (! $invoice->user?->is_reseller) {
+            return;
+        }
+
+        $this->handlePaidResellerInvoice($invoice);
     }
 
     public function pushOrQueue(ResellerDomainOrder $order): bool
@@ -157,7 +177,9 @@ class DomainPushService
             'status' => 'paid',
             'payment_status' => 'paid',
             'total' => $domainOrder->wholesale_amount + $domainOrder->retail_amount,
-            'notes' => "Domain order {$domainOrder->domain_name}{$domainOrder->extension} for customer {$domainOrder->customer->name}",
+            'notes' => $domainOrder->isSelfOrder()
+                ? "Domain order {$domainOrder->fullDomainName()} (reseller self-registration)"
+                : "Domain order {$domainOrder->fullDomainName()} for customer {$domainOrder->customer->name}",
         ]);
 
         $invoiceNumber = 'PUSH-'.strtoupper(uniqid());

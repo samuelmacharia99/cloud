@@ -13,10 +13,13 @@ class ResellerProduct extends Model
     protected $fillable = [
         'reseller_id',
         'product_id',
+        'container_template_id',
         'name',
         'description',
         'type',
         'direct_admin_package_name',
+        'resource_limits',
+        'features',
         'monthly_price',
         'yearly_price',
         'setup_fee',
@@ -30,6 +33,8 @@ class ResellerProduct extends Model
             'monthly_price' => 'decimal:2',
             'yearly_price' => 'decimal:2',
             'setup_fee' => 'decimal:2',
+            'resource_limits' => 'array',
+            'features' => 'array',
         ];
     }
 
@@ -41,6 +46,36 @@ class ResellerProduct extends Model
     public function adminProduct()
     {
         return $this->belongsTo(Product::class, 'product_id');
+    }
+
+    public function containerTemplate()
+    {
+        return $this->belongsTo(ContainerTemplate::class);
+    }
+
+    /**
+     * @return array{cpu: float|null, memory_mb: int|null, disk_gb: float|null}
+     */
+    public function containerResourceLimits(): array
+    {
+        $limits = $this->resource_limits ?? [];
+
+        return [
+            'cpu' => isset($limits['cpu']) ? (float) $limits['cpu'] : null,
+            'memory_mb' => isset($limits['memory_mb']) ? (int) $limits['memory_mb'] : null,
+            'disk_gb' => isset($limits['disk_gb']) ? (float) $limits['disk_gb'] : null,
+        ];
+    }
+
+    public function hasContainerResourceLimits(): bool
+    {
+        if ($this->type !== 'container_hosting') {
+            return false;
+        }
+
+        $limits = $this->containerResourceLimits();
+
+        return $limits['cpu'] !== null || $limits['memory_mb'] !== null || $limits['disk_gb'] !== null;
     }
 
     public function isCustom(): bool

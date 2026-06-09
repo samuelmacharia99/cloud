@@ -106,6 +106,18 @@ class ResellerDomainOrder extends Model
         return in_array($this->status, ['cancelled', 'failed', 'expired'], true);
     }
 
+    public function isSelfOrder(): bool
+    {
+        return (int) $this->customer_id === (int) $this->reseller_id;
+    }
+
+    public function customerLabel(): string
+    {
+        return $this->isSelfOrder()
+            ? 'Reseller (self)'
+            : ($this->customer?->name ?? '—');
+    }
+
     public function fullDomainName(): string
     {
         $extension = (string) $this->extension;

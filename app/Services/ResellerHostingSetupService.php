@@ -64,6 +64,19 @@ class ResellerHostingSetupService
                 $meta['primary_domain'] = strtolower(trim((string) $primaryDomain));
             }
 
+            if ($catalogProduct?->hasContainerResourceLimits()) {
+                $limits = $catalogProduct->containerResourceLimits();
+                $meta['reseller_catalog_limits'] = array_filter([
+                    'cpu' => $limits['cpu'],
+                    'memory_mb' => $limits['memory_mb'],
+                    'disk_gb' => $limits['disk_gb'],
+                ], fn ($value) => $value !== null);
+                $meta['reseller_product_id'] = $catalogProduct->id;
+                if ($limits['disk_gb'] !== null) {
+                    $meta['disk_limit_gb'] = $limits['disk_gb'];
+                }
+            }
+
             return [
                 'service_meta' => $meta,
                 'provisioning_driver_key' => 'container',

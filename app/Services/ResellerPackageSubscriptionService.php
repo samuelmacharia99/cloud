@@ -54,9 +54,11 @@ class ResellerPackageSubscriptionService
             'notes' => $label.' '.self::PACKAGE_META_PREFIX.$package->id.']',
         ]);
 
+        app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, $renewal);
+
         app(ResellerSubscriptionAutoPayService::class)->attempt($invoice);
 
-        return $invoice->fresh();
+        return $invoice->fresh(['items']);
     }
 
     /**

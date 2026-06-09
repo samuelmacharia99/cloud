@@ -176,6 +176,19 @@
                             <span>{{ $customerCount }} / {{ $resellerPackage->max_users }}</span>
                         </div>
                     </div>
+                    @if (($diskPoolGb ?? 0) > 0)
+                        <div class="mt-4">
+                            <div class="flex justify-between text-xs text-slate-600 mb-1">
+                                <span>Disk pool</span>
+                                <span>{{ number_format($diskUsedGb ?? 0, 1) }} / {{ $diskPoolGb }} GB</span>
+                            </div>
+                            @php $diskPct = min(100, (float) ($diskPoolPercent ?? 0)); @endphp
+                            <div class="w-full h-2 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
+                                <div class="h-2 rounded-full {{ $diskPct >= 90 ? 'bg-amber-500' : 'bg-emerald-500' }}" style="width: {{ $diskPct }}%"></div>
+                            </div>
+                            <p class="text-[11px] text-slate-500 mt-1">DA {{ number_format($diskDirectAdminGb ?? 0, 1) }} GB · Containers {{ number_format($diskContainerGb ?? 0, 1) }} GB</p>
+                        </div>
+                    @endif
                 @else
                     <p class="text-sm text-amber-700 mb-4">No active package</p>
                     <a href="{{ route('reseller.packages.index') }}" class="block text-center px-4 py-2 bg-purple-600 text-white rounded-lg text-sm">Choose package</a>

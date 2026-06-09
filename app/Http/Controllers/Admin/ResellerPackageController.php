@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\ResellerPackage;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class ResellerPackageController extends Controller
 {
@@ -32,11 +32,15 @@ class ResellerPackageController extends Controller
             'name' => 'required|string|max:255|unique:reseller_packages,name',
             'description' => 'nullable|string|max:1000',
             'billing_cycle' => 'required|in:monthly,annually',
-            'storage_space' => 'required|integer|min:1|max:10000',
+            'max_services' => 'required|integer|min:1|max:10000',
+            'disk_pool_gb' => 'required|integer|min:1|max:100000',
+            'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
             'max_users' => 'required|integer|min:1|max:1000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
+
+        $validated['storage_space'] = $validated['disk_pool_gb'];
 
         ResellerPackage::create($validated);
 
@@ -52,14 +56,18 @@ class ResellerPackageController extends Controller
     public function update(Request $request, ResellerPackage $reseller_package)
     {
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:reseller_packages,name,' . $reseller_package->id,
+            'name' => 'required|string|max:255|unique:reseller_packages,name,'.$reseller_package->id,
             'description' => 'nullable|string|max:1000',
             'billing_cycle' => 'required|in:monthly,annually',
-            'storage_space' => 'required|integer|min:1|max:10000',
+            'max_services' => 'required|integer|min:1|max:10000',
+            'disk_pool_gb' => 'required|integer|min:1|max:100000',
+            'disk_overage_rate' => 'nullable|numeric|min:0|max:999999',
             'max_users' => 'required|integer|min:1|max:1000',
             'price' => 'required|numeric|min:0|max:999999.99',
             'active' => 'boolean',
         ]);
+
+        $validated['storage_space'] = $validated['disk_pool_gb'];
 
         $reseller_package->update($validated);
 

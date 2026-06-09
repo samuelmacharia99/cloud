@@ -102,6 +102,13 @@ class ResellerEnforcementService
                 "Provisioning blocked: reseller \"{$reseller->name}\" has reached the service limit ({$reseller->resellerPackage->max_services} slots)."
             );
         }
+
+        $diskUsage = app(ResellerDiskUsageService::class);
+        if ($diskUsage->isOverPool($reseller)) {
+            throw new \RuntimeException(
+                "Provisioning blocked: reseller \"{$reseller->name}\" has exceeded the disk pool ({$diskUsage->diskPoolGb($reseller)} GB included)."
+            );
+        }
     }
 
     /**

@@ -61,6 +61,10 @@ class ResellerAnalyticsService
         $billingHealth = $this->billingHealth($reseller);
         $actionQueue = $this->actionQueue($reseller, $customerIds, $managedInvoices);
         $marginSummary = $this->marginSummary($reseller);
+        $diskUsage = app(ResellerDiskUsageService::class);
+        $diskPoolGb = $diskUsage->diskPoolGb($reseller);
+        $diskUsageSnapshot = $diskUsage->collectCurrentUsage($reseller);
+        $diskPoolPercent = $diskUsage->poolUsagePercent($reseller, $diskUsageSnapshot);
         $ledgerMargin30d = $this->margins->ledgerTotals(
             $reseller,
             now()->subDays(30)->toDateString(),
@@ -94,6 +98,11 @@ class ResellerAnalyticsService
             'daysUntilPackageExpiry' => $reseller->package_expires_at
                 ? (int) now()->startOfDay()->diffInDays($reseller->package_expires_at->copy()->startOfDay(), false)
                 : null,
+            'diskPoolGb' => $diskPoolGb,
+            'diskUsedGb' => $diskUsageSnapshot['total_used_gb'],
+            'diskDirectAdminGb' => $diskUsageSnapshot['directadmin_used_gb'],
+            'diskContainerGb' => $diskUsageSnapshot['container_used_gb'],
+            'diskPoolPercent' => $diskPoolPercent,
         ];
     }
 
@@ -251,6 +260,21 @@ class ResellerAnalyticsService
                 'url' => route('reseller.domains.index'),
                 'severity' => 'info',
             ];
+        }
+
+        $diskUsage = app(ResellerDiskUsageService::class);
+        $poolGb = $diskUsage->diskPoolGb($reseller);
+        if ($poolGb > 0) {
+            $usage = $diskUsage->collectCurrentUsage($reseller);
+            $percent = $diskUsage->poolUsagePercent($reseller, $usage);
+            if ($percent !== null && $percent >= 90) {
+                $queue[] = [
+                    'label' => sprintf('Disk pool at %s%% (%s / %s GB)', rtrim(rtrim(number_format($percent, 1), '0'), '.'), number_format($usage['total_used_gb'], 1), $poolGb),
+                    'count' => 1,
+                    'url' => route('reseller.wallet.index'),
+                    'severity' => $percent >= 100 ? 'danger' : 'warning',
+                ];
+            }
         }
 
         $suspendedServicesCount = $this->scope->managedServicesQuery($reseller)

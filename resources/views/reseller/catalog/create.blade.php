@@ -258,6 +258,29 @@
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                                 @enderror
                             </div>
+
+                            <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-400">
+                                Your package disk pool: <span class="font-semibold text-slate-900 dark:text-white">{{ number_format($diskPoolUsage['used_gb'], 2) }} / {{ $diskPoolUsage['pool_gb'] }} GB</span> in use
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="container_cpu" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU cores</label>
+                                    <input type="number" id="container_cpu" name="resource_limits[cpu]" value="{{ old('resource_limits.cpu') }}" step="0.1" min="0.1" max="64" placeholder="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.cpu') border-red-500 @enderror">
+                                    @error('resource_limits.cpu')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+                                <div>
+                                    <label for="container_memory" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM (MB)</label>
+                                    <input type="number" id="container_memory" name="resource_limits[memory_mb]" value="{{ old('resource_limits.memory_mb') }}" step="128" min="128" placeholder="512" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.memory_mb') border-red-500 @enderror">
+                                    @error('resource_limits.memory_mb')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+                                <div>
+                                    <label for="container_disk" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk (GB)</label>
+                                    <input type="number" id="container_disk" name="resource_limits[disk_gb]" value="{{ old('resource_limits.disk_gb') }}" step="1" min="1" placeholder="10" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm @error('resource_limits.disk_gb') border-red-500 @enderror">
+                                    @error('resource_limits.disk_gb')<p class="mt-1 text-xs text-red-600">{{ $message }}</p>@enderror
+                                </div>
+                            </div>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">These specs are shown to your customers. Platform bills you on actual disk used across DirectAdmin and containers.</p>
                         </div>
                     </div>
 

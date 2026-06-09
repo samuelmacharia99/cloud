@@ -52,14 +52,24 @@
             @enderror
         </div>
 
-        <!-- Storage Space -->
+        <!-- Service slots & disk pool -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Max service slots</label>
+                <input type="number" name="max_services" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="1" max="10000" required value="{{ old('max_services', 50) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Concurrent hosting services the reseller may run</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk pool (GB)</label>
+                <input type="number" name="disk_pool_gb" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="1" max="100000" required value="{{ old('disk_pool_gb', 100) }}">
+                <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Included DirectAdmin + container disk before overage billing</p>
+            </div>
+        </div>
+
         <div>
-            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Storage Space (GB)</label>
-            <input type="number" name="storage_space" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500" placeholder="e.g., 100" min="1" max="10000" required value="{{ old('storage_space') }}">
-            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Amount of cloud storage space in gigabytes</p>
-            @error('storage_space')
-                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
-            @enderror
+            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Disk overage rate (KES/GB/month)</label>
+            <input type="number" name="disk_overage_rate" step="0.01" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" min="0" value="{{ old('disk_overage_rate') }}">
+            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Leave blank to use platform default</p>
         </div>
 
         <!-- Max Users -->

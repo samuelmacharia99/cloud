@@ -12,6 +12,9 @@ class ResellerPackage extends Model
         'description',
         'billing_cycle',
         'storage_space',
+        'max_services',
+        'disk_pool_gb',
+        'disk_overage_rate',
         'max_users',
         'price',
         'active',
@@ -21,6 +24,9 @@ class ResellerPackage extends Model
         'price' => 'decimal:2',
         'active' => 'boolean',
         'storage_space' => 'integer',
+        'max_services' => 'integer',
+        'disk_pool_gb' => 'integer',
+        'disk_overage_rate' => 'decimal:4',
         'max_users' => 'integer',
     ];
 
@@ -31,14 +37,29 @@ class ResellerPackage extends Model
 
     public function getStorageFormattedAttribute(): string
     {
-        return number_format($this->storage_space).' GB';
+        return number_format($this->disk_pool_gb ?: $this->storage_space).' GB';
     }
 
     /**
-     * Maximum concurrent active hosting services (stored in storage_space column historically).
+     * Maximum concurrent active hosting services.
      */
     public function getMaxServicesAttribute(): int
     {
+        if (isset($this->attributes['max_services']) && $this->attributes['max_services'] !== null) {
+            return (int) $this->attributes['max_services'];
+        }
+
+        return (int) $this->storage_space;
+    }
+
+    public function getDiskPoolGbAttribute(): int
+    {
+        $pool = $this->attributes['disk_pool_gb'] ?? null;
+
+        if ($pool !== null && (int) $pool > 0) {
+            return (int) $pool;
+        }
+
         return (int) $this->storage_space;
     }
 

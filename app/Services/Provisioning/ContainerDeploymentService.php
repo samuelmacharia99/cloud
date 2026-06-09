@@ -159,7 +159,7 @@ class ContainerDeploymentService
                             ->lockForUpdate()
                             ->first();
                         if ($existingDeployment) {
-                            $existingDeployment->update([
+                            $existingDeployment->update(array_merge([
                                 'node_id' => $node->id,
                                 'container_name' => $containerName,
                                 'status' => 'deploying',
@@ -167,12 +167,12 @@ class ContainerDeploymentService
                                 'assigned_port' => $port,
                                 'env_values' => $envVars,
                                 'selected_version' => $selectedVersion,
-                            ]);
+                            ], $this->containerResourceLimitsForService($service)));
 
                             return [$existingDeployment, $port, $envVars];
                         }
 
-                        $newDeployment = ContainerDeployment::create([
+                        $newDeployment = ContainerDeployment::create(array_merge([
                             'service_id' => $service->id,
                             'node_id' => $node->id,
                             'container_name' => $containerName,
@@ -181,7 +181,7 @@ class ContainerDeploymentService
                             'assigned_port' => $port,
                             'env_values' => $envVars,
                             'selected_version' => $selectedVersion,
-                        ]);
+                        ], $this->containerResourceLimitsForService($service)));
 
                         return [$newDeployment, $port, $envVars];
                     });
@@ -1754,5 +1754,26 @@ class ContainerDeploymentService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @return array{cpu_limit?: float, memory_limit_mb?: int}
+     */
+    private function containerResourceLimitsForService(Service $service): array
+    {
+        $meta = $service->service_meta ?? [];
+        $limits = $meta['reseller_catalog_limits'] ?? [];
+
+        $payload = [];
+
+        if (! empty($limits['cpu'])) {
+            $payload['cpu_limit'] = (float) $limits['cpu'];
+        }
+
+        if (! empty($limits['memory_mb'])) {
+            $payload['memory_limit_mb'] = (int) $limits['memory_mb'];
+        }
+
+        return $payload;
     }
 }

@@ -166,6 +166,11 @@ class PaymentController extends Controller
         }
 
         if ($payment->status->value === 'completed') {
+            $invoice->refresh(['items', 'user']);
+            if ($invoice->isPaid()) {
+                app(DomainPushService::class)->ensurePaidInvoiceDomainOrdersPushed($invoice);
+            }
+
             return response()->json(['status' => 'completed']);
         }
 
@@ -370,6 +375,7 @@ class PaymentController extends Controller
 
         try {
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice);
+            app(DomainPushService::class)->ensurePaidInvoiceDomainOrdersPushed($invoice->fresh(['items']));
         } catch (\Throwable $e) {
             Log::error('Domain push failed after reseller invoice paid', [
                 'invoice_id' => $invoice->id,

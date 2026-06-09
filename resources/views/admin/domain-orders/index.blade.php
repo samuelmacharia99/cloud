@@ -59,9 +59,14 @@
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($orders as $order)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                            <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">{{ $order->domain_name }}.{{ $order->extension }}</td>
+                            <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">{{ $order->fullDomainName() }}</td>
                             <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">{{ $order->reseller->name }}</td>
-                            <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">{{ $order->customer->name }}</td>
+                            <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">
+                                {{ $order->customerLabel() }}
+                                @if ($order->isSelfOrder())
+                                    <span class="ml-1 text-xs text-purple-600 dark:text-purple-400">(wholesale)</span>
+                                @endif
+                            </td>
                             <td class="px-6 py-4">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ match($order->status) {
                                     'queued' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',

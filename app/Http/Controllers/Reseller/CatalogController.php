@@ -7,6 +7,7 @@ use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerDiskUsageService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -129,6 +130,12 @@ class CatalogController extends Controller
 
         $reseller = auth()->user();
         $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
+        $diskUsage = app(ResellerDiskUsageService::class);
+        $diskPoolUsage = [
+            'pool_gb' => $diskUsage->diskPoolGb($reseller),
+            'used_gb' => $diskUsage->collectCurrentUsage($reseller)['total_used_gb'],
+            'percent' => $diskUsage->poolUsagePercent($reseller),
+        ];
 
         $customProductTypes = collect(Product::TYPES)
             ->except(self::ADMIN_CATALOG_TYPES)
@@ -143,6 +150,7 @@ class CatalogController extends Controller
             'directAdminBinding' => $this->resellerDirectAdmin->hasDirectAdminBinding($reseller),
             'directAdminPackages' => $directAdminPackageResult['packages'],
             'directAdminPackagesError' => $directAdminPackageResult['error'],
+            'diskPoolUsage' => $diskPoolUsage,
         ];
     }
 
@@ -172,12 +180,33 @@ class CatalogController extends Controller
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
             'is_active' => 'boolean',
+            'resource_limits' => 'nullable|array',
+            'resource_limits.cpu' => 'nullable|numeric|min:0.1|max:64',
+            'resource_limits.memory_mb' => 'nullable|integer|min:128|max:131072',
+            'resource_limits.disk_gb' => 'nullable|numeric|min:1|max:10000',
         ]);
 
         if (($validated['type'] ?? '') === 'container_hosting' && ! filled($validated['product_id'] ?? null)) {
             throw ValidationException::withMessages([
                 'product_id' => 'Select the platform container plan and tech stack to provision behind this listing.',
             ]);
+        }
+
+        if (($validated['type'] ?? '') === 'container_hosting') {
+            $limits = $validated['resource_limits'] ?? [];
+            if (empty($limits['cpu']) || empty($limits['memory_mb']) || empty($limits['disk_gb'])) {
+                throw ValidationException::withMessages([
+                    'resource_limits.disk_gb' => 'Set CPU, RAM, and disk specs for this container listing.',
+                ]);
+            }
+
+            $validated['resource_limits'] = [
+                'cpu' => (float) $limits['cpu'],
+                'memory_mb' => (int) $limits['memory_mb'],
+                'disk_gb' => (float) $limits['disk_gb'],
+            ];
+        } else {
+            $validated['resource_limits'] = null;
         }
 
         if (filled($validated['product_id'] ?? null)) {
@@ -205,6 +234,14 @@ class CatalogController extends Controller
                     'product_id' => 'This container plan is missing a tech stack on the platform. Choose another product or contact support.',
                 ]);
             }
+
+            if ($product->type === 'container_hosting') {
+                $validated['container_template_id'] = $product->container_template_id;
+            }
+        }
+
+        if (! filled($validated['product_id'] ?? null)) {
+            $validated['container_template_id'] = null;
         }
 
         if (($validated['type'] ?? '') !== 'shared_hosting') {

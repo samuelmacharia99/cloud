@@ -173,6 +173,9 @@ class CheckoutController extends Controller
                         'wholesale_amount' => $wholesaleAmount,
                         'retail_amount' => 0,
                         'status' => 'queued',
+                        'push_mode' => 'auto',
+                        'queued_at' => now(),
+                        'expires_at' => now()->addDays(10),
                     ]);
 
                     $domainOrders[] = $order->id;

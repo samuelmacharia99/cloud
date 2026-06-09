@@ -90,6 +90,11 @@ class ResellerCatalogControllerTest extends TestCase
                 'name' => 'Python Retail',
                 'description' => 'Retail Python hosting',
                 'type' => 'container_hosting',
+                'resource_limits' => [
+                    'cpu' => 1,
+                    'memory_mb' => 512,
+                    'disk_gb' => 10,
+                ],
                 'monthly_price' => 29.99,
                 'is_active' => true,
             ])
@@ -100,6 +105,7 @@ class ResellerCatalogControllerTest extends TestCase
         $this->assertSame($product->id, $listing->product_id);
         $this->assertSame('container_hosting', $listing->type);
         $this->assertSame('Python Retail', $listing->name);
+        $this->assertSame(10.0, (float) ($listing->resource_limits['disk_gb'] ?? 0));
     }
 
     public function test_container_listing_requires_platform_product_link(): void
