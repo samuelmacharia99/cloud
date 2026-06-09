@@ -5,6 +5,7 @@ namespace Tests\Feature\Reseller;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerPackage;
 use App\Models\User;
+use App\Services\ResellerAnalyticsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -66,6 +67,61 @@ class ResellerDomainOrdersIndexTest extends TestCase
         $response->assertSee('customer-brand.co.ke');
         $response->assertSee($customer->name);
         $response->assertDontSee('reseller-own.com');
+    }
+
+    public function test_action_queue_ignores_reseller_own_domain_orders(): void
+    {
+        $reseller = $this->reseller();
+
+        ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $reseller->id,
+            'domain_name' => 'reseller-own',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 500,
+            'retail_amount' => 0,
+            'status' => 'queued',
+            'queued_at' => now(),
+        ]);
+
+        $metrics = app(ResellerAnalyticsService::class)->dashboardMetrics($reseller);
+        $labels = collect($metrics['actionQueue'] ?? [])->pluck('label')->all();
+
+        $this->assertNotContains('1 domain order(s) need attention', $labels);
+
+        $this->actingAs($reseller)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertDontSee('domain order(s) need attention');
+    }
+
+    public function test_action_queue_includes_managed_customer_domain_orders(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'domain_name' => 'customer-brand',
+            'extension' => '.co.ke',
+            'years' => 1,
+            'wholesale_amount' => 800,
+            'retail_amount' => 700,
+            'status' => 'queued',
+            'queued_at' => now(),
+        ]);
+
+        $metrics = app(ResellerAnalyticsService::class)->dashboardMetrics($reseller);
+        $labels = collect($metrics['actionQueue'] ?? [])->pluck('label')->all();
+
+        $this->assertContains('1 domain order(s) need attention', $labels);
+
+        $this->actingAs($reseller)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('1 domain order(s) need attention');
     }
 
     public function test_index_can_filter_by_customer(): void

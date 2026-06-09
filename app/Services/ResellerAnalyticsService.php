@@ -229,7 +229,7 @@ class ResellerAnalyticsService
         }
 
         $failedOrders = ResellerDomainOrder::query()
-            ->where('reseller_id', $reseller->id)
+            ->forManagedCustomers($reseller)
             ->whereIn('status', ['failed', 'queued'])
             ->count();
 
