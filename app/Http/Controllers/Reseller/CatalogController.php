@@ -224,6 +224,29 @@ class CatalogController extends Controller
             }
         }
 
+        return $this->normalizePricingFields($validated);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, mixed>
+     */
+    private function normalizePricingFields(array $validated): array
+    {
+        foreach (['monthly_price', 'yearly_price'] as $field) {
+            if (! array_key_exists($field, $validated) || $validated[$field] === '' || $validated[$field] === null) {
+                $validated[$field] = null;
+
+                continue;
+            }
+
+            $validated[$field] = (float) $validated[$field];
+        }
+
+        $validated['setup_fee'] = filled($validated['setup_fee'] ?? null)
+            ? (float) $validated['setup_fee']
+            : 0.0;
+
         return $validated;
     }
 }

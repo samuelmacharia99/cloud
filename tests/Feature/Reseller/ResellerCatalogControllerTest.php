@@ -116,6 +116,36 @@ class ResellerCatalogControllerTest extends TestCase
         $this->assertSame(29.99, (float) $listing->monthly_price);
     }
 
+    public function test_reseller_can_add_container_package_without_setup_fee(): void
+    {
+        $reseller = $this->reseller();
+        $template = ContainerTemplate::factory()->create([
+            'name' => 'Node',
+            'slug' => 'node',
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ]);
+
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+            'visible_to_resellers' => true,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'product_id' => $product->id,
+                'name' => 'Node Retail',
+                'type' => 'container_hosting',
+                'is_active' => true,
+            ])
+            ->assertRedirect(route('reseller.catalog.index'));
+
+        $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
+        $this->assertNotNull($listing);
+        $this->assertSame(0.0, (float) $listing->setup_fee);
+    }
+
     public function test_container_listing_requires_admin_package(): void
     {
         $reseller = $this->reseller();
