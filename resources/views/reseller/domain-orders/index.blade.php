@@ -1,27 +1,35 @@
 @extends('layouts.reseller')
 
-@section('title', 'Domain Orders')
+@section('title', 'Customer Domain Orders')
 
 @section('content')
 <div class="space-y-6">
-    <!-- Header -->
     <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Orders</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage your customer domain orders.</p>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Customer Domain Orders</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Domains your customers registered or renewed — push queued orders to the platform when ready.</p>
     </div>
 
-    <!-- Filters -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <form method="GET" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
-                <input type="text" name="search" value="{{ request('search') }}" placeholder="Domain name or customer..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                <input type="text" name="search" value="{{ request('search') }}" placeholder="Domain or customer..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Customer</label>
+                <select name="customer_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                    <option value="">All customers</option>
+                    @foreach ($customers as $customer)
+                        <option value="{{ $customer->id }}" @selected((string) request('customer_id') === (string) $customer->id)>{{ $customer->name }}</option>
+                    @endforeach
+                </select>
             </div>
 
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
                 <select name="status" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
-                    <option value="all">All Status</option>
+                    <option value="all">All status</option>
                     <option value="queued" @selected(request('status') === 'queued')>Queued</option>
                     <option value="pushed" @selected(request('status') === 'pushed')>Pushed</option>
                     <option value="completed" @selected(request('status') === 'completed')>Completed</option>
@@ -37,17 +45,17 @@
         </form>
     </div>
 
-    <!-- Orders Table -->
     <div class="ui-card">
         <div class="ui-table-wrap overflow-visible">
-            <table class="ui-table min-w-[56rem]">
+            <table class="ui-table min-w-[64rem]">
                 <thead>
                     <tr>
                         <th>Domain</th>
                         <th>Customer</th>
                         <th>Status</th>
+                        <th class="text-right">Customer paid</th>
                         <th class="text-right">Wholesale</th>
-                        <th class="hidden lg:table-cell">Created</th>
+                        <th class="hidden lg:table-cell">Ordered</th>
                         <th class="text-right sticky right-0 z-20 min-w-[11rem] bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm shadow-[-8px_0_16px_-12px_rgba(15,23,42,0.2)] dark:shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.45)]">Actions</th>
                     </tr>
                 </thead>
@@ -58,15 +66,22 @@
                                 || ($order->status === 'failed' && $order->canRetry())
                                 || $order->canCancel()
                                 || $order->canDelete();
+                            $customerPaid = $order->customerInvoice
+                                ? (float) $order->customerInvoice->total
+                                : (float) $order->wholesale_amount + (float) $order->retail_amount;
                         @endphp
                         <tr class="group">
                             <td>
-                                <p class="font-semibold text-slate-900 dark:text-white">{{ $order->domain_name }}.{{ $order->extension }}</p>
+                                <p class="font-semibold text-slate-900 dark:text-white font-mono">{{ $order->fullDomainName() }}</p>
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ $order->years }} year(s)</p>
                             </td>
                             <td>
-                                <p class="font-medium text-slate-900 dark:text-white">{{ $order->customer->name }}</p>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 lg:hidden">{{ $order->created_at->format('M d, Y') }}</p>
+                                @if ($order->customer)
+                                    <a href="{{ route('reseller.customers.show', $order->customer) }}" class="font-medium text-purple-700 dark:text-purple-300 hover:underline">{{ $order->customer->name }}</a>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">{{ $order->customer->email }}</p>
+                                @else
+                                    <span class="text-slate-400">—</span>
+                                @endif
                             </td>
                             <td>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ match($order->status) {
@@ -81,7 +96,13 @@
                                     {{ ucfirst($order->status) }}
                                 </span>
                                 @if($order->status === 'queued' && $order->expires_at)
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Expires {{ $order->expires_at->format('M d') }}</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Expires {{ $order->expires_at->format('M d') }}</p>
+                                @endif
+                            </td>
+                            <td class="text-right whitespace-nowrap">
+                                <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($customerPaid, 2) }}</p>
+                                @if ($order->customerInvoice)
+                                    <a href="{{ route('reseller.customer-invoices.show', $order->customerInvoice) }}" class="text-xs text-purple-600 dark:text-purple-400 hover:underline">Invoice</a>
                                 @endif
                             </td>
                             <td class="text-right font-medium text-slate-900 dark:text-white whitespace-nowrap">KSH {{ number_format($order->wholesale_amount, 2) }}</td>
@@ -129,7 +150,9 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="py-12 text-center text-slate-600 dark:text-slate-400">No domain orders found.</td>
+                            <td colspan="7" class="py-12 text-center text-slate-600 dark:text-slate-400">
+                                No customer domain orders yet. Orders appear here when your customers register domains through their portal or you bill them for a domain.
+                            </td>
                         </tr>
                     @endforelse
                 </tbody>
@@ -137,7 +160,6 @@
         </div>
     </div>
 
-    <!-- Pagination -->
     <div class="mt-6">
         {{ $orders->links() }}
     </div>

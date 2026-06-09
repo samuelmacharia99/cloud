@@ -17,25 +17,37 @@ class DomainPushController extends Controller
     {
         $reseller = auth()->user();
 
-        $query = $reseller->domainOrders();
+        $query = ResellerDomainOrder::query()
+            ->forManagedCustomers($reseller)
+            ->with(['customer', 'customerInvoice', 'domain']);
 
         if ($request->filled('status') && $request->input('status') !== 'all') {
             $query->where('status', $request->input('status'));
+        }
+
+        if ($request->filled('customer_id')) {
+            $query->where('customer_id', $request->integer('customer_id'));
         }
 
         if ($request->filled('search')) {
             $search = $request->input('search');
             $query->where(function ($q) use ($search) {
                 $q->where('domain_name', 'like', "%{$search}%")
+                    ->orWhere('extension', 'like', "%{$search}%")
                     ->orWhereHas('customer', function ($subQuery) use ($search) {
-                        $subQuery->where('name', 'like', "%{$search}%");
+                        $subQuery->where('name', 'like', "%{$search}%")
+                            ->orWhere('email', 'like', "%{$search}%");
                     });
             });
         }
 
-        $orders = $query->latest()->paginate(15);
+        $orders = $query->latest()->paginate(15)->withQueryString();
 
-        return view('reseller.domain-orders.index', compact('orders'));
+        $customers = $reseller->customers()
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        return view('reseller.domain-orders.index', compact('orders', 'customers'));
     }
 
     public function push(ResellerDomainOrder $order)

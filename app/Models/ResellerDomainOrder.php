@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -103,5 +104,29 @@ class ResellerDomainOrder extends Model
     public function canDelete(): bool
     {
         return in_array($this->status, ['cancelled', 'failed', 'expired'], true);
+    }
+
+    public function fullDomainName(): string
+    {
+        $extension = (string) $this->extension;
+
+        if ($extension !== '' && ! str_starts_with($extension, '.')) {
+            $extension = '.'.$extension;
+        }
+
+        return $this->domain_name.$extension;
+    }
+
+    /**
+     * Domain registrations placed by customers managed by this reseller (not the reseller's own orders).
+     *
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeForManagedCustomers(Builder $query, User $reseller): Builder
+    {
+        return $query
+            ->where('reseller_id', $reseller->id)
+            ->whereHas('customer', fn (Builder $customerQuery) => $customerQuery->where('reseller_id', $reseller->id));
     }
 }
