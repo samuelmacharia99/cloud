@@ -1,11 +1,11 @@
 @extends('layouts.reseller')
 
-@section('title', 'Customer Domain Orders')
+@section('title', 'Domain Orders')
 
 @section('content')
 <div class="space-y-6">
     <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Customer Domain Orders</h1>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Orders</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">Domains your customers registered or renewed — push queued orders to the platform when ready.</p>
     </div>
 

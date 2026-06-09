@@ -62,7 +62,7 @@ class ResellerDomainOrdersIndexTest extends TestCase
         $response = $this->actingAs($reseller)->get(route('reseller.domain-orders.index'));
 
         $response->assertOk();
-        $response->assertSee('Customer Domain Orders');
+        $response->assertSee('Domain Orders');
         $response->assertSee('customer-brand.co.ke');
         $response->assertSee($customer->name);
         $response->assertDontSee('reseller-own.com');
