@@ -232,29 +232,33 @@
                         <div x-show="customType === 'container_hosting'" x-cloak class="space-y-4">
                             <div class="p-4 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg text-sm text-violet-900 dark:text-violet-200">
                                 <p class="font-medium mb-1">Container hosting</p>
-                                <p class="text-violet-800 dark:text-violet-300">Link a platform container plan for each tech stack you sell. Customers only see plans that match the language they choose in the deploy flow.</p>
+                                <p class="text-violet-800 dark:text-violet-300">Pick the tech stack and database like the admin product flow. Your retail specs (CPU, RAM, disk) are what customers see; provisioning uses the matching platform template automatically.</p>
                             </div>
 
                             <div>
-                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Tech stack / language</label>
-                                <select x-model="customTechStackFilter" @change="onCustomTechStackChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
-                                    <option value="">All languages</option>
-                                    @foreach ($containerTechStacks as $template)
-                                        <option value="{{ $template->id }}">{{ $template->name }}</option>
+                                <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Container template / tech stack</label>
+                                <select id="container_template_id" name="container_template_id" x-model="customContainerTemplateId" @change="onContainerTemplateChange()" :disabled="mode !== 'custom' || customType !== 'container_hosting'" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('container_template_id') border-red-500 @enderror">
+                                    <option value="">Select a container template...</option>
+                                    @foreach ($containerTemplates as $template)
+                                        <option value="{{ $template->id }}" @selected(old('container_template_id') == $template->id)>{{ $template->name }}</option>
                                     @endforeach
                                 </select>
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PHP, Node.js, Python, etc. — same list admins use when creating container products.</p>
+                                @error('container_template_id')
+                                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                                @enderror
                             </div>
 
-                            <div>
-                                <label for="custom_product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Platform container plan</label>
-                                <select id="custom_product_id" name="product_id" :disabled="mode !== 'custom' || customType !== 'container_hosting'" x-model="customProductId" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('product_id') border-red-500 @enderror">
-                                    <option value="">Choose a platform plan...</option>
-                                    <template x-for="product in filteredContainerProducts" :key="product.id">
-                                        <option :value="product.id" x-text="containerProductLabel(product)"></option>
+                            <div x-show="selectedTechStack && selectedTechStack.requires_database" x-cloak>
+                                <label for="database_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Database</label>
+                                <select id="database_template_id" name="database_template_id" x-model="customDatabaseTemplateId" :disabled="mode !== 'custom' || customType !== 'container_hosting'" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('database_template_id') border-red-500 @enderror">
+                                    <option value="">Select a database...</option>
+                                    <template x-for="database in availableDatabases" :key="database.id">
+                                        <option :value="database.id" x-text="database.name"></option>
                                     </template>
                                 </select>
-                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" x-show="filteredContainerProducts.length === 0">No container plans match this filter.</p>
-                                @error('product_id')
+                                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" x-show="availableDatabases.length === 0 && customContainerTemplateId">No databases are configured for this tech stack.</p>
+                                @error('database_template_id')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                                 @enderror
                             </div>
@@ -351,8 +355,8 @@ function catalogForm() {
     return {
         mode: 'admin',
         serverFilter: 'all',
-        customTechStackFilter: '',
-        customProductId: '{{ old('product_id') }}',
+        customContainerTemplateId: '{{ old('container_template_id') }}',
+        customDatabaseTemplateId: '{{ old('database_template_id') }}',
         selectedProductId: '{{ old('product_id') }}',
         selectedProduct: null,
         monthlyMargin: null,
@@ -371,31 +375,30 @@ function catalogForm() {
                 {{ $product->id }}: @json($product),
             @endforeach
         },
-        containerProducts: {
-            @foreach($containerProducts as $product)
-                {{ $product->id }}: @json($product),
-            @endforeach
-        },
+        techStacks: @json($techStackConfig),
         productTypes: @json($productTypes),
         init() {
-            if (this.customType === 'container_hosting' && this.customProductId) {
+            if (this.customType === 'container_hosting' && (this.customContainerTemplateId || this.customDatabaseTemplateId)) {
                 this.mode = 'custom';
             }
             this.selectProduct();
             this.$nextTick(() => this.calculateMargin());
         },
+        get selectedTechStack() {
+            if (!this.customContainerTemplateId) {
+                return null;
+            }
+
+            return this.techStacks.find(
+                (stack) => String(stack.id) === String(this.customContainerTemplateId)
+            ) || null;
+        },
+        get availableDatabases() {
+            return this.selectedTechStack?.databases || [];
+        },
         get filteredProducts() {
             return Object.values(this.products).filter((product) => {
                 if (this.serverFilter !== 'all' && product.type !== this.serverFilter) {
-                    return false;
-                }
-
-                return true;
-            });
-        },
-        get filteredContainerProducts() {
-            return Object.values(this.containerProducts).filter((product) => {
-                if (this.customTechStackFilter && String(product.container_template_id) !== String(this.customTechStackFilter)) {
                     return false;
                 }
 
@@ -419,16 +422,16 @@ function catalogForm() {
         },
         onCustomTypeChange() {
             if (this.customType !== 'container_hosting') {
-                this.customProductId = '';
-                this.customTechStackFilter = '';
+                this.customContainerTemplateId = '';
+                this.customDatabaseTemplateId = '';
             }
         },
-        onCustomTechStackChange() {
-            const stillVisible = this.filteredContainerProducts.some(
-                (product) => String(product.id) === String(this.customProductId)
+        onContainerTemplateChange() {
+            const stillValid = this.availableDatabases.some(
+                (database) => String(database.id) === String(this.customDatabaseTemplateId)
             );
-            if (!stillVisible) {
-                this.customProductId = '';
+            if (!stillValid) {
+                this.customDatabaseTemplateId = '';
             }
         },
         clearSelectionIfFilteredOut() {
@@ -446,13 +449,6 @@ function catalogForm() {
             }
         },
         productOptionLabel(product) {
-            return product.name;
-        },
-        containerProductLabel(product) {
-            if (product.container_template?.name) {
-                return product.container_template.name + ' — ' + product.name;
-            }
-
             return product.name;
         },
         selectProduct() {

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Reseller;
 
 use App\Models\ContainerTemplate;
+use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
@@ -32,10 +33,32 @@ class ResellerCatalogControllerTest extends TestCase
         ]);
     }
 
+    private function containerDatabase(string $slug = 'postgresql-test'): DatabaseTemplate
+    {
+        return DatabaseTemplate::create([
+            'name' => 'PostgreSQL',
+            'slug' => $slug,
+            'description' => 'Test database',
+            'type' => 'postgresql',
+            'versions' => ['16'],
+            'docker_image' => 'postgres:16',
+            'default_port' => 5432,
+            'required_ram_mb' => 256,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+    }
+
     public function test_admin_catalog_section_only_lists_vps_and_dedicated_servers(): void
     {
         $reseller = $this->reseller();
-        $template = ContainerTemplate::factory()->create(['name' => 'Node.js', 'is_active' => true]);
+        $template = ContainerTemplate::factory()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs',
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ]);
 
         Product::factory()->create([
             'name' => 'Node Starter',
@@ -65,8 +88,9 @@ class ResellerCatalogControllerTest extends TestCase
             ->assertSee('Server type')
             ->assertSee('Basic VPS')
             ->assertSee('Metal Box')
-            ->assertSee('Platform container plan')
+            ->assertSee('Container template / tech stack')
             ->assertSee('Node.js')
+            ->assertDontSee('Platform container plan')
             ->assertDontSee('Hosting category')
             ->assertDontSee('Container hosting (tech stack plans)');
     }
@@ -74,19 +98,26 @@ class ResellerCatalogControllerTest extends TestCase
     public function test_reseller_can_add_container_product_via_custom_product_flow(): void
     {
         $reseller = $this->reseller();
-        $template = ContainerTemplate::factory()->create(['name' => 'Python', 'is_active' => true]);
+        $template = ContainerTemplate::factory()->create([
+            'name' => 'Python',
+            'slug' => 'python',
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ]);
+        $database = $this->containerDatabase('postgresql-python-test');
 
         $product = Product::factory()->containerHosting()->create([
             'name' => 'Python Basic',
             'container_template_id' => $template->id,
-            'visible_to_resellers' => true,
+            'visible_to_resellers' => false,
             'is_active' => true,
             'wholesale_monthly_price' => 15,
         ]);
 
         $this->actingAs($reseller)
             ->post(route('reseller.catalog.store'), [
-                'product_id' => $product->id,
+                'container_template_id' => $template->id,
+                'database_template_id' => $database->id,
                 'name' => 'Python Retail',
                 'description' => 'Retail Python hosting',
                 'type' => 'container_hosting',
@@ -103,12 +134,14 @@ class ResellerCatalogControllerTest extends TestCase
         $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
         $this->assertNotNull($listing);
         $this->assertSame($product->id, $listing->product_id);
+        $this->assertSame($template->id, $listing->container_template_id);
+        $this->assertSame($database->id, $listing->database_template_id);
         $this->assertSame('container_hosting', $listing->type);
         $this->assertSame('Python Retail', $listing->name);
         $this->assertSame(10.0, (float) ($listing->resource_limits['disk_gb'] ?? 0));
     }
 
-    public function test_container_listing_requires_platform_product_link(): void
+    public function test_container_listing_requires_tech_stack_and_database(): void
     {
         $reseller = $this->reseller();
 
@@ -119,13 +152,18 @@ class ResellerCatalogControllerTest extends TestCase
                 'monthly_price' => 19.99,
                 'is_active' => true,
             ])
-            ->assertSessionHasErrors('product_id');
+            ->assertSessionHasErrors('container_template_id');
     }
 
     public function test_catalog_index_shows_tech_stack_for_container_listings(): void
     {
         $reseller = $this->reseller();
-        $template = ContainerTemplate::factory()->create(['name' => 'Go', 'is_active' => true]);
+        $template = ContainerTemplate::factory()->create([
+            'name' => 'Go',
+            'slug' => 'go',
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ]);
 
         $product = Product::factory()->containerHosting()->create([
             'container_template_id' => $template->id,
@@ -136,6 +174,7 @@ class ResellerCatalogControllerTest extends TestCase
         ResellerProduct::create([
             'reseller_id' => $reseller->id,
             'product_id' => $product->id,
+            'container_template_id' => $template->id,
             'name' => 'Go Retail Plan',
             'type' => 'container_hosting',
             'monthly_price' => 39,

@@ -132,6 +132,7 @@ class ServiceBrowserController extends Controller
         $products = $this->catalogService->mapProductsForTechstackDisplay(
             $user,
             $productsQuery->orderBy('order')->get(),
+            $database?->id,
         );
 
         if ($products->isEmpty()) {
@@ -190,6 +191,7 @@ class ServiceBrowserController extends Controller
         $request->validate([
             'type' => 'required|in:shared_hosting,container_hosting',
             'template_id' => 'nullable|exists:container_templates,id',
+            'database_id' => 'nullable|exists:database_templates,id',
         ]);
 
         $query = Product::where('type', $request->type)
@@ -204,6 +206,7 @@ class ServiceBrowserController extends Controller
         $products = $this->catalogService->mapProductsForTechstackDisplay(
             $user,
             $query->orderBy('order')->get(),
+            $request->integer('database_id') ?: null,
         );
 
         return response()->json([

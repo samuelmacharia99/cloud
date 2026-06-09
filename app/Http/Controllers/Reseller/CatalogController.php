@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
+use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerDiskUsageService;
+use App\Services\TechStackRoutingService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -78,7 +80,7 @@ class CatalogController extends Controller
             abort(404);
         }
 
-        $validated = $this->validateCatalogItem($request);
+        $validated = $this->validateCatalogItem($request, $catalogItem);
 
         $catalogItem->update($validated);
 
@@ -111,22 +113,32 @@ class CatalogController extends Controller
             ->orderBy('order')
             ->get();
 
-        $containerProducts = Product::query()
-            ->where('visible_to_resellers', true)
-            ->where('is_active', true)
-            ->where('type', 'container_hosting')
-            ->with('containerTemplate')
-            ->orderBy('order')
-            ->get();
-
-        $containerTechStacks = ContainerTemplate::query()
+        $containerTemplates = ContainerTemplate::query()
             ->active()
-            ->whereIn(
-                'id',
-                $containerProducts->pluck('container_template_id')->filter()->unique()
-            )
             ->orderBy('name')
             ->get();
+
+        $techStackConfig = $containerTemplates->map(function (ContainerTemplate $template) {
+            $isStatic = strtolower($template->slug) === 'static-site';
+
+            return [
+                'id' => $template->id,
+                'name' => $template->name,
+                'slug' => $template->slug,
+                'description' => $template->description,
+                'requires_database' => ! $isStatic,
+                'databases' => $isStatic
+                    ? []
+                    : TechStackRoutingService::getAvailableDatabasesForLanguage($template, 'container')
+                        ->map(fn (DatabaseTemplate $database) => [
+                            'id' => $database->id,
+                            'name' => $database->name,
+                            'type' => $database->type,
+                        ])
+                        ->values()
+                        ->all(),
+            ];
+        })->values();
 
         $reseller = auth()->user();
         $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
@@ -143,8 +155,8 @@ class CatalogController extends Controller
 
         return [
             'adminProducts' => $adminProducts,
-            'containerProducts' => $containerProducts,
-            'containerTechStacks' => $containerTechStacks,
+            'containerTemplates' => $containerTemplates,
+            'techStackConfig' => $techStackConfig,
             'productTypes' => Product::TYPES,
             'customProductTypes' => $customProductTypes,
             'directAdminBinding' => $this->resellerDirectAdmin->hasDirectAdminBinding($reseller),
@@ -157,7 +169,7 @@ class CatalogController extends Controller
     /**
      * @return array<string, mixed>
      */
-    private function validateCatalogItem(Request $request): array
+    private function validateCatalogItem(Request $request, ?ResellerProduct $existing = null): array
     {
         $reseller = auth()->user();
         $packageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
@@ -167,6 +179,8 @@ class CatalogController extends Controller
 
         $validated = $request->validate([
             'product_id' => 'nullable|exists:products,id',
+            'container_template_id' => 'nullable|exists:container_templates,id',
+            'database_template_id' => 'nullable|exists:database_templates,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'type' => 'required|in:'.implode(',', array_keys(Product::TYPES)),
@@ -186,38 +200,32 @@ class CatalogController extends Controller
             'resource_limits.disk_gb' => 'nullable|numeric|min:1|max:10000',
         ]);
 
-        if (($validated['type'] ?? '') === 'container_hosting' && ! filled($validated['product_id'] ?? null)) {
-            throw ValidationException::withMessages([
-                'product_id' => 'Select the platform container plan and tech stack to provision behind this listing.',
-            ]);
+        if (($validated['type'] ?? '') === 'container_hosting' && $existing && ! $request->has('container_template_id')) {
+            $validated['container_template_id'] = $existing->container_template_id;
+            $validated['database_template_id'] = $existing->database_template_id;
+            $validated['product_id'] = $existing->product_id;
+            if (! $request->has('resource_limits')) {
+                $validated['resource_limits'] = $existing->resource_limits;
+            }
         }
 
         if (($validated['type'] ?? '') === 'container_hosting') {
-            $limits = $validated['resource_limits'] ?? [];
-            if (empty($limits['cpu']) || empty($limits['memory_mb']) || empty($limits['disk_gb'])) {
-                throw ValidationException::withMessages([
-                    'resource_limits.disk_gb' => 'Set CPU, RAM, and disk specs for this container listing.',
-                ]);
-            }
-
-            $validated['resource_limits'] = [
-                'cpu' => (float) $limits['cpu'],
-                'memory_mb' => (int) $limits['memory_mb'],
-                'disk_gb' => (float) $limits['disk_gb'],
-            ];
+            $this->validateContainerHostingListing($validated);
         } else {
             $validated['resource_limits'] = null;
+            $validated['container_template_id'] = null;
+            $validated['database_template_id'] = null;
         }
 
-        if (filled($validated['product_id'] ?? null)) {
-            $product = Product::with('containerTemplate')->findOrFail($validated['product_id']);
+        if (filled($validated['product_id'] ?? null) && ($validated['type'] ?? '') !== 'container_hosting') {
+            $product = Product::findOrFail($validated['product_id']);
             if (! $product->visible_to_resellers || ! $product->is_active) {
                 throw ValidationException::withMessages([
                     'product_id' => 'This product is not available for resellers.',
                 ]);
             }
 
-            if (! in_array($product->type, [...self::ADMIN_CATALOG_TYPES, 'container_hosting'], true)) {
+            if (! in_array($product->type, self::ADMIN_CATALOG_TYPES, true)) {
                 throw ValidationException::withMessages([
                     'product_id' => 'This platform product cannot be added through the reseller catalog.',
                 ]);
@@ -228,20 +236,6 @@ class CatalogController extends Controller
                     'product_id' => 'Selected platform product does not match the catalog item type.',
                 ]);
             }
-
-            if ($product->type === 'container_hosting' && ! $product->container_template_id) {
-                throw ValidationException::withMessages([
-                    'product_id' => 'This container plan is missing a tech stack on the platform. Choose another product or contact support.',
-                ]);
-            }
-
-            if ($product->type === 'container_hosting') {
-                $validated['container_template_id'] = $product->container_template_id;
-            }
-        }
-
-        if (! filled($validated['product_id'] ?? null)) {
-            $validated['container_template_id'] = null;
         }
 
         if (($validated['type'] ?? '') !== 'shared_hosting') {
@@ -256,5 +250,65 @@ class CatalogController extends Controller
         }
 
         return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function validateContainerHostingListing(array &$validated): void
+    {
+        if (empty($validated['container_template_id'])) {
+            throw ValidationException::withMessages([
+                'container_template_id' => 'Select the tech stack (container template) for this listing.',
+            ]);
+        }
+
+        $template = ContainerTemplate::query()->findOrFail($validated['container_template_id']);
+        $isStatic = strtolower($template->slug) === 'static-site';
+
+        if ($isStatic) {
+            $validated['database_template_id'] = null;
+        } elseif (empty($validated['database_template_id'])) {
+            throw ValidationException::withMessages([
+                'database_template_id' => 'Select a database for this tech stack.',
+            ]);
+        } else {
+            $database = DatabaseTemplate::query()->findOrFail($validated['database_template_id']);
+            if (! TechStackRoutingService::isValidCombination($template, $database)) {
+                throw ValidationException::withMessages([
+                    'database_template_id' => 'This database is not compatible with the selected tech stack.',
+                ]);
+            }
+        }
+
+        $limits = $validated['resource_limits'] ?? [];
+        if (empty($limits['cpu']) || empty($limits['memory_mb']) || empty($limits['disk_gb'])) {
+            throw ValidationException::withMessages([
+                'resource_limits.disk_gb' => 'Set CPU, RAM, and disk specs for this container listing.',
+            ]);
+        }
+
+        $validated['resource_limits'] = [
+            'cpu' => (float) $limits['cpu'],
+            'memory_mb' => (int) $limits['memory_mb'],
+            'disk_gb' => (float) $limits['disk_gb'],
+        ];
+
+        $platformProduct = Product::query()
+            ->where('type', 'container_hosting')
+            ->where('container_template_id', $template->id)
+            ->where('is_active', true)
+            ->orderByDesc('visible_to_resellers')
+            ->orderBy('order')
+            ->first();
+
+        if (! $platformProduct) {
+            throw ValidationException::withMessages([
+                'container_template_id' => 'No platform container product exists for this tech stack. Ask your administrator to create one first.',
+            ]);
+        }
+
+        $validated['product_id'] = $platformProduct->id;
+        $validated['container_template_id'] = $template->id;
     }
 }

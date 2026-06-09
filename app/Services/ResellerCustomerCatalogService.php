@@ -154,7 +154,7 @@ class ResellerCustomerCatalogService
      *     slug: string|null
      * }>
      */
-    public function mapProductsForTechstackDisplay(User $user, Collection $products): Collection
+    public function mapProductsForTechstackDisplay(User $user, Collection $products, ?int $databaseId = null): Collection
     {
         if (! $this->isResellerCustomer($user)) {
             return $products->map(fn (Product $product) => (object) [
@@ -169,25 +169,35 @@ class ResellerCustomerCatalogService
             ]);
         }
 
-        $listings = $this->activeCatalogKeyedByProductId($user);
+        $listings = $this->activeCatalog($user)
+            ->filter(fn (ResellerProduct $item) => $item->product_id !== null);
 
         return $products
-            ->filter(fn (Product $product) => $listings->has($product->id))
-            ->map(function (Product $product) use ($listings) {
-                $listing = $listings->get($product->id);
-
-                return (object) [
-                    'id' => $product->id,
-                    'reseller_product_id' => $listing->id,
-                    'name' => $listing->name,
-                    'description' => $listing->description ?? $product->description,
-                    'monthly_price' => (float) ($listing->monthly_price ?? 0),
-                    'yearly_price' => $listing->yearly_price !== null ? (float) $listing->yearly_price : null,
-                    'features' => $product->features ?? [],
-                    'slug' => $product->slug,
-                ];
+            ->flatMap(function (Product $product) use ($listings, $databaseId) {
+                return $listings
+                    ->where('product_id', $product->id)
+                    ->filter(fn (ResellerProduct $listing) => $this->listingMatchesDatabase($listing, $databaseId))
+                    ->map(fn (ResellerProduct $listing) => (object) [
+                        'id' => $product->id,
+                        'reseller_product_id' => $listing->id,
+                        'name' => $listing->name,
+                        'description' => $listing->description ?? $product->description,
+                        'monthly_price' => (float) ($listing->monthly_price ?? 0),
+                        'yearly_price' => $listing->yearly_price !== null ? (float) $listing->yearly_price : null,
+                        'features' => $product->features ?? [],
+                        'slug' => $product->slug,
+                    ]);
             })
             ->values();
+    }
+
+    private function listingMatchesDatabase(ResellerProduct $listing, ?int $databaseId): bool
+    {
+        if ($listing->database_template_id === null) {
+            return true;
+        }
+
+        return $databaseId !== null && $listing->database_template_id === $databaseId;
     }
 
     public function isHostingCatalogType(?string $type): bool

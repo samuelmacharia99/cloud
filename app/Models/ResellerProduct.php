@@ -14,6 +14,7 @@ class ResellerProduct extends Model
         'reseller_id',
         'product_id',
         'container_template_id',
+        'database_template_id',
         'name',
         'description',
         'type',
@@ -51,6 +52,11 @@ class ResellerProduct extends Model
     public function containerTemplate()
     {
         return $this->belongsTo(ContainerTemplate::class);
+    }
+
+    public function databaseTemplate()
+    {
+        return $this->belongsTo(DatabaseTemplate::class);
     }
 
     /**
