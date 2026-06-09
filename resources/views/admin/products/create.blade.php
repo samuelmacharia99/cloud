@@ -203,10 +203,13 @@
                             <input type="checkbox" name="featured" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('featured') === '1' || old('featured') === true)>
                             <span class="text-sm text-slate-700 dark:text-slate-300">Featured Product</span>
                         </label>
-                        <label class="flex items-center gap-3 cursor-pointer" x-show="productType !== 'container_hosting'">
+                        <label class="flex items-center gap-3 cursor-pointer">
                             <input type="checkbox" name="visible_to_resellers" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('visible_to_resellers') === '1' || old('visible_to_resellers') === true)>
                             <span class="text-sm text-slate-700 dark:text-slate-300">Visible to Resellers</span>
                         </label>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 ml-7" x-show="productType === 'container_hosting'">
+                            Lets resellers add this container package to their catalog and set retail prices. Resellers are billed on disk pool usage, not per-container wholesale.
+                        </p>
                     </div>
                 </div>
             </div>
