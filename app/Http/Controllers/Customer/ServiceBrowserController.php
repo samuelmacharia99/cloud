@@ -117,26 +117,36 @@ class ServiceBrowserController extends Controller
             $request->deployment_platform
         );
 
-        // Get all available products for this hosting type
-        $productsQuery = Product::where('is_active', true);
+        $user = $request->user();
 
-        if ($routing['hosting_type'] === 'directadmin') {
-            $productsQuery->where('type', 'shared_hosting');
+        if ($this->catalogService->isResellerCustomer($user)) {
+            $products = $this->catalogService->resolveTechstackProductsForResellerCustomer(
+                $user,
+                $language,
+                $database,
+                $routing,
+            );
         } else {
-            $productsQuery->where('type', 'container_hosting')
-                ->where('container_template_id', $language->id);
+            $productsQuery = Product::where('is_active', true);
+
+            if ($routing['hosting_type'] === 'directadmin') {
+                $productsQuery->where('type', 'shared_hosting');
+            } else {
+                $productsQuery->where('type', 'container_hosting')
+                    ->where('container_template_id', $language->id);
+            }
+
+            $products = $this->catalogService->mapProductsForTechstackDisplay(
+                $user,
+                $productsQuery->orderBy('order')->get(),
+                $database?->id,
+            );
         }
 
-        $user = $request->user();
-        $productsQuery = $this->catalogService->scopePlatformProducts($productsQuery, $user);
-        $products = $this->catalogService->mapProductsForTechstackDisplay(
-            $user,
-            $productsQuery->orderBy('order')->get(),
-            $database?->id,
-        );
-
         if ($products->isEmpty()) {
-            $message = 'No hosting plans are available for this tech stack.';
+            $message = $this->catalogService->isResellerCustomer($user)
+                ? $this->catalogService->techstackEmptyMessage($user, $language, $routing)
+                : 'No hosting plans are available for this tech stack.';
 
             return back()->with('error', $message);
         }
@@ -194,20 +204,36 @@ class ServiceBrowserController extends Controller
             'database_id' => 'nullable|exists:database_templates,id',
         ]);
 
-        $query = Product::where('type', $request->type)
-            ->where('is_active', true);
-
-        if ($request->template_id) {
-            $query->where('container_template_id', $request->template_id);
-        }
-
         $user = $request->user();
-        $query = $this->catalogService->scopePlatformProducts($query, $user);
-        $products = $this->catalogService->mapProductsForTechstackDisplay(
-            $user,
-            $query->orderBy('order')->get(),
-            $request->integer('database_id') ?: null,
-        );
+
+        if ($this->catalogService->isResellerCustomer($user) && $request->template_id) {
+            $language = ContainerTemplate::findOrFail($request->template_id);
+            $database = $request->database_id
+                ? DatabaseTemplate::findOrFail($request->database_id)
+                : null;
+            $routing = ['hosting_type' => $request->type === 'shared_hosting' ? 'directadmin' : 'container'];
+
+            $products = $this->catalogService->resolveTechstackProductsForResellerCustomer(
+                $user,
+                $language,
+                $database,
+                $routing,
+            );
+        } else {
+            $query = Product::where('type', $request->type)
+                ->where('is_active', true);
+
+            if ($request->template_id) {
+                $query->where('container_template_id', $request->template_id);
+            }
+
+            $query = $this->catalogService->scopePlatformProducts($query, $user);
+            $products = $this->catalogService->mapProductsForTechstackDisplay(
+                $user,
+                $query->orderBy('order')->get(),
+                $request->integer('database_id') ?: null,
+            );
+        }
 
         return response()->json([
             'products' => $products->map(fn ($p) => [

@@ -81,6 +81,106 @@ class ResellerCustomerCatalogAccessTest extends TestCase
             ->assertRedirect('/my/catalog');
     }
 
+    public function test_reseller_customer_container_tech_stack_shows_reseller_container_listing(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $language = ContainerTemplate::factory()->create([
+            'name' => 'Node.js',
+            'slug' => 'nodejs',
+            'hosting_type' => 'container',
+            'is_active' => true,
+        ]);
+
+        $database = DatabaseTemplate::create([
+            'name' => 'PostgreSQL',
+            'slug' => 'postgresql-reseller-test',
+            'type' => 'postgresql',
+            'hosting_type' => 'container',
+            'default_port' => 5432,
+            'required_ram_mb' => 256,
+            'is_active' => true,
+            'order' => 0,
+        ]);
+
+        $adminProduct = Product::factory()->containerHosting()->create([
+            'name' => 'Node Basic',
+            'container_template_id' => $language->id,
+            'is_active' => true,
+            'visible_to_resellers' => true,
+            'monthly_price' => 500,
+        ]);
+
+        ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'container_template_id' => $language->id,
+            'name' => 'Droplet1',
+            'type' => 'container_hosting',
+            'monthly_price' => 1200,
+            'setup_fee' => 0,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack'), [
+                'language_id' => $language->id,
+                'database_id' => $database->id,
+            ])
+            ->assertOk()
+            ->assertSee('Droplet1')
+            ->assertDontSee('Node Basic');
+    }
+
+    public function test_reseller_customer_php_shared_route_falls_back_to_container_listing(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $language = ContainerTemplate::factory()->create([
+            'name' => 'PHP',
+            'slug' => 'php',
+            'hosting_type' => 'directadmin',
+            'is_active' => true,
+        ]);
+
+        $database = DatabaseTemplate::create([
+            'name' => 'MySQL Shared',
+            'slug' => 'mysql-shared-fallback-test',
+            'type' => 'mysql',
+            'hosting_type' => 'directadmin',
+            'default_port' => 3306,
+            'required_ram_mb' => 256,
+            'is_active' => true,
+            'order' => 0,
+        ]);
+
+        $adminProduct = Product::factory()->containerHosting()->create([
+            'container_template_id' => $language->id,
+            'is_active' => true,
+        ]);
+
+        ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'container_template_id' => $language->id,
+            'name' => 'PHP Container Plan',
+            'type' => 'container_hosting',
+            'monthly_price' => 900,
+            'setup_fee' => 0,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack'), [
+                'language_id' => $language->id,
+                'database_id' => $database->id,
+            ])
+            ->assertOk()
+            ->assertSee('PHP Container Plan');
+    }
+
     public function test_reseller_customer_can_access_tech_stack_selection(): void
     {
         $reseller = User::factory()->create(['is_reseller' => true]);
