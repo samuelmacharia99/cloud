@@ -30,7 +30,7 @@
             </div>
             <div>
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Database</p>
-                <p class="font-semibold text-slate-900 dark:text-white">{{ $database->name }}</p>
+                <p class="font-semibold text-slate-900 dark:text-white">{{ $database?->name ?? 'None' }}</p>
             </div>
             <div>
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Hosting Type</p>
@@ -47,7 +47,7 @@
         @foreach($products as $product)
         <button
             type="button"
-            @click="selectProduct({{ $product->id }}, '{{ $product->name }}', {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }})"
+            @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }})"
             class="relative group overflow-hidden rounded-xl border-2 transition-all duration-300 p-6 text-left hover:shadow-lg"
             :class="selectedProductId === {{ $product->id }}
                 ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-lg'
@@ -105,8 +105,12 @@
 
         <form action="{{ route('customer.cart.add') }}" method="POST" class="space-y-4" x-init="updatePrice()">
             @csrf
-            <input type="hidden" name="type" value="product">
-            <input type="hidden" name="product_id" :value="selectedProductId">
+            <input type="hidden" name="type" value="{{ $isResellerCustomer ? 'reseller_product' : 'product' }}">
+            @if ($isResellerCustomer)
+                <input type="hidden" name="reseller_product_id" :value="selectedResellerProductId">
+            @else
+                <input type="hidden" name="product_id" :value="selectedProductId">
+            @endif
             <input type="hidden" name="billing_cycle" x-bind:value="cycle">
             @if($language->versions && count($language->versions) > 0)
                 <input type="hidden" name="version" x-bind:value="version">
@@ -200,6 +204,7 @@ function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
 
         // Package Selection
         selectedProductId: null,
+        selectedResellerProductId: null,
         selectedProductName: '',
         selectedProductPrice: 0,
 
@@ -212,8 +217,9 @@ function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
         billingMonths: 1,
 
         // Select a product
-        selectProduct(productId, productName, productPrice) {
+        selectProduct(productId, resellerProductId, productName, productPrice) {
             this.selectedProductId = productId;
+            this.selectedResellerProductId = resellerProductId;
             this.selectedProductName = productName;
             this.selectedProductPrice = productPrice;
             this.basePrice = productPrice;

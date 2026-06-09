@@ -135,11 +135,63 @@ class ResellerCustomerCatalogService
     public function isPlatformCatalogRoute(string $routeName): bool
     {
         return in_array($routeName, [
-            'customer.select-techstack',
-            'customer.confirm-techstack',
             'customer.deploy-service',
             'customer.browse-services',
             'api.products',
         ], true);
+    }
+
+    /**
+     * @param  Collection<int, Product>  $products
+     * @return Collection<int, object{
+     *     id: int,
+     *     reseller_product_id: int|null,
+     *     name: string,
+     *     description: string|null,
+     *     monthly_price: float,
+     *     yearly_price: float|null,
+     *     features: array<int, string>,
+     *     slug: string|null
+     * }>
+     */
+    public function mapProductsForTechstackDisplay(User $user, Collection $products): Collection
+    {
+        if (! $this->isResellerCustomer($user)) {
+            return $products->map(fn (Product $product) => (object) [
+                'id' => $product->id,
+                'reseller_product_id' => null,
+                'name' => $product->name,
+                'description' => $product->description,
+                'monthly_price' => (float) $product->monthly_price,
+                'yearly_price' => $product->yearly_price !== null ? (float) $product->yearly_price : null,
+                'features' => $product->features ?? [],
+                'slug' => $product->slug,
+            ]);
+        }
+
+        $listings = $this->activeCatalogKeyedByProductId($user);
+
+        return $products
+            ->filter(fn (Product $product) => $listings->has($product->id))
+            ->map(function (Product $product) use ($listings) {
+                $listing = $listings->get($product->id);
+
+                return (object) [
+                    'id' => $product->id,
+                    'reseller_product_id' => $listing->id,
+                    'name' => $listing->name,
+                    'description' => $listing->description ?? $product->description,
+                    'monthly_price' => (float) ($listing->monthly_price ?? 0),
+                    'yearly_price' => $listing->yearly_price !== null ? (float) $listing->yearly_price : null,
+                    'features' => $product->features ?? [],
+                    'slug' => $product->slug,
+                ];
+            })
+            ->values();
+    }
+
+    public function isHostingCatalogType(?string $type): bool
+    {
+        return in_array($type, ['shared_hosting', 'container_hosting'], true);
     }
 }

@@ -103,13 +103,13 @@
     <!-- Quick actions -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         @if ($isResellerManaged)
-        <a href="{{ route('customer.reseller-catalog.index') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
+        <a href="{{ route('customer.select-techstack') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
             <span class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m0 0l8-4m0 0v10l-8 4m0-10L4 7m0 10v10l8 4m8-4v-10l-8-4"/></svg>
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             </span>
             <div>
-                <p class="font-semibold text-slate-900 dark:text-white text-sm">Order services</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400">Reseller catalog</p>
+                <p class="font-semibold text-slate-900 dark:text-white text-sm">Deploy service</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Choose tech stack &amp; plan</p>
             </div>
         </a>
         @else

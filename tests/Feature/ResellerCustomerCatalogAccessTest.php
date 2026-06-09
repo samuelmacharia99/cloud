@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Http\Controllers\Customer\CartController;
+use App\Models\ContainerTemplate;
+use App\Models\DatabaseTemplate;
 use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerDomainPricing;
@@ -30,14 +32,18 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         $reseller = User::factory()->create(['is_reseller' => true]);
         $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
 
-        $adminProduct = Product::factory()->create(['is_active' => true, 'monthly_price' => 999]);
+        $adminProduct = Product::factory()->create([
+            'is_active' => true,
+            'monthly_price' => 999,
+            'type' => 'ssl',
+        ]);
         $otherReseller = User::factory()->create(['is_reseller' => true]);
 
         ResellerProduct::create([
             'reseller_id' => $reseller->id,
             'product_id' => $adminProduct->id,
             'name' => 'Reseller Plan',
-            'type' => $adminProduct->type,
+            'type' => 'ssl',
             'monthly_price' => 49.99,
             'is_active' => true,
         ]);
@@ -56,9 +62,80 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         $response->assertOk();
         $response->assertSee('Reseller Plan');
         $response->assertSee('49.99');
+        $response->assertSee('Other services');
         $response->assertDontSee('Other Reseller Plan');
         $response->assertDontSee('KES 999');
         $response->assertDontSee('19.99');
+    }
+
+    public function test_reseller_customer_can_access_tech_stack_selection(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.select-techstack'))
+            ->assertOk();
+    }
+
+    public function test_reseller_customer_tech_stack_flow_uses_reseller_pricing_in_cart(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $language = ContainerTemplate::factory()->create([
+            'slug' => 'php',
+            'is_active' => true,
+        ]);
+        $language->forceFill(['hosting_type' => 'directadmin'])->save();
+
+        $database = DatabaseTemplate::create([
+            'name' => 'MySQL',
+            'slug' => 'mysql-shared-test',
+            'type' => 'mysql',
+            'hosting_type' => 'directadmin',
+            'default_port' => 3306,
+            'required_ram_mb' => 256,
+            'is_active' => true,
+            'order' => 0,
+        ]);
+
+        $adminProduct = Product::factory()->create([
+            'type' => 'shared_hosting',
+            'is_active' => true,
+            'monthly_price' => 999,
+        ]);
+
+        $listing = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $adminProduct->id,
+            'name' => 'Reseller Starter',
+            'type' => 'shared_hosting',
+            'monthly_price' => 79.99,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack'), [
+                'language_id' => $language->id,
+                'database_id' => $database->id,
+            ])
+            ->assertOk()
+            ->assertSee('Reseller Starter')
+            ->assertDontSee('KES 999');
+
+        $this->actingAs($customer)
+            ->post(route('customer.cart.add'), [
+                'type' => 'reseller_product',
+                'reseller_product_id' => $listing->id,
+                'billing_cycle' => 'monthly',
+            ])
+            ->assertRedirect(route('customer.cart.index'));
+
+        $cart = session(CartController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $this->assertSame('reseller_product', array_values($cart)[0]['type']);
+        $this->assertSame($listing->id, array_values($cart)[0]['reseller_product_id']);
     }
 
     public function test_reseller_customer_cannot_add_platform_product_to_cart(): void

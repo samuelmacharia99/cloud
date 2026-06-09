@@ -139,6 +139,48 @@ class CartController extends Controller
                 'product_id' => $request->product_id,
                 'billing_cycle' => $request->billing_cycle,
             ];
+        } elseif ($type === 'reseller_product') {
+            if (! $catalogService->isResellerCustomer($user)) {
+                $response = [
+                    'success' => false,
+                    'message' => 'Reseller catalog items are only available to reseller customers.',
+                ];
+
+                if ($request->expectsJson()) {
+                    return response()->json($response, 403);
+                }
+
+                return back()->with('error', $response['message']);
+            }
+
+            $request->validate([
+                'reseller_product_id' => 'required|exists:reseller_products,id',
+                'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
+            ]);
+
+            $listing = ResellerProduct::query()
+                ->where('id', $request->reseller_product_id)
+                ->where('reseller_id', $user->reseller_id)
+                ->where('is_active', true)
+                ->first();
+
+            if (! $listing || ! $listing->product_id) {
+                $message = 'This catalog item is not available for ordering.';
+
+                if ($request->expectsJson()) {
+                    return response()->json(['success' => false, 'message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
+
+            $item = [
+                'type' => 'reseller_product',
+                'reseller_product_id' => $listing->id,
+                'product_id' => $listing->product_id,
+                'reseller_id' => $listing->reseller_id,
+                'billing_cycle' => $request->billing_cycle,
+            ];
         } elseif ($type === 'domain') {
             $request->validate([
                 'domain' => 'required|string|regex:/^[a-z0-9-]+$/i',

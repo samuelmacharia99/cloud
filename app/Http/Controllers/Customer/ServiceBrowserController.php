@@ -8,11 +8,16 @@ use App\Models\Currency;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
 use Illuminate\Http\Request;
 
 class ServiceBrowserController extends Controller
 {
+    public function __construct(
+        private ResellerCustomerCatalogService $catalogService,
+    ) {}
+
     /**
      * Show techstack selection (language + database)
      */
@@ -122,10 +127,19 @@ class ServiceBrowserController extends Controller
                 ->where('container_template_id', $language->id);
         }
 
-        $products = $productsQuery->orderBy('order')->get();
+        $user = $request->user();
+        $productsQuery = $this->catalogService->scopePlatformProducts($productsQuery, $user);
+        $products = $this->catalogService->mapProductsForTechstackDisplay(
+            $user,
+            $productsQuery->orderBy('order')->get(),
+        );
 
         if ($products->isEmpty()) {
-            return back()->with('error', 'No hosting plans available for this techstack');
+            $message = $this->catalogService->isResellerCustomer($user)
+                ? 'Your reseller has no plans available for this tech stack.'
+                : 'No hosting plans available for this techstack';
+
+            return back()->with('error', $message);
         }
 
         // Store selection in session temporarily
@@ -154,6 +168,7 @@ class ServiceBrowserController extends Controller
             'database' => $database,
             'routing' => $routing,
             'products' => $products,
+            'isResellerCustomer' => $this->catalogService->isResellerCustomer($user),
             'cartCount' => $cartCount,
             'currency' => $currency,
             'currencyCode' => $currencyCode,
@@ -186,11 +201,17 @@ class ServiceBrowserController extends Controller
             $query->where('container_template_id', $request->template_id);
         }
 
-        $products = $query->orderBy('order')->get();
+        $user = $request->user();
+        $query = $this->catalogService->scopePlatformProducts($query, $user);
+        $products = $this->catalogService->mapProductsForTechstackDisplay(
+            $user,
+            $query->orderBy('order')->get(),
+        );
 
         return response()->json([
             'products' => $products->map(fn ($p) => [
                 'id' => $p->id,
+                'reseller_product_id' => $p->reseller_product_id,
                 'name' => $p->name,
                 'slug' => $p->slug,
                 'description' => $p->description,
