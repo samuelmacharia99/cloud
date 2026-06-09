@@ -24,7 +24,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
 
         $this->actingAs($customer)
             ->get(route('customer.browse-services'))
-            ->assertRedirect(route('customer.reseller-catalog.index'));
+            ->assertRedirect(route('customer.catalog.index'));
     }
 
     public function test_reseller_customer_sees_only_reseller_catalog_products(): void
@@ -57,7 +57,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
             'is_active' => true,
         ]);
 
-        $response = $this->actingAs($customer)->get(route('customer.reseller-catalog.index'));
+        $response = $this->actingAs($customer)->get(route('customer.catalog.index'));
 
         $response->assertOk();
         $response->assertSee('Reseller Plan');
@@ -66,6 +66,19 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         $response->assertDontSee('Other Reseller Plan');
         $response->assertDontSee('KES 999');
         $response->assertDontSee('19.99');
+        $response->assertDontSee('Reseller Catalog');
+        $response->assertDontSee('your reseller');
+        $response->assertDontSee('platform catalog');
+    }
+
+    public function test_legacy_reseller_catalog_url_redirects_to_neutral_catalog_path(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($customer)
+            ->get('/my/reseller-catalog')
+            ->assertRedirect('/my/catalog');
     }
 
     public function test_reseller_customer_can_access_tech_stack_selection(): void
@@ -150,7 +163,7 @@ class ResellerCustomerCatalogAccessTest extends TestCase
                 'product_id' => $product->id,
                 'billing_cycle' => 'monthly',
             ])
-            ->assertRedirect(route('customer.reseller-catalog.index'));
+            ->assertRedirect(route('customer.catalog.index'));
 
         $this->assertEmpty(session(CartController::CART_SESSION_KEY, []));
     }

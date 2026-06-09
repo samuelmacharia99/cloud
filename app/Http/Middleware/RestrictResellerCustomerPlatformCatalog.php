@@ -24,8 +24,8 @@ class RestrictResellerCustomerPlatformCatalog
 
             if ($this->catalogService->isPlatformCatalogRoute($routeName)) {
                 return redirect()
-                    ->route('customer.reseller-catalog.index')
-                    ->with('info', 'Order products and services from your reseller catalog.');
+                    ->route('customer.catalog.index')
+                    ->with('info', 'Browse available services to place your order.');
             }
         }
 

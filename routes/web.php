@@ -478,8 +478,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');
         Route::get('/deploy-service', [ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
-        Route::get('/my/reseller-catalog', [ResellerCatalogController::class, 'index'])->name('customer.reseller-catalog.index');
-        Route::post('/my/reseller-catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.reseller-catalog.add');
+        Route::redirect('/my/reseller-catalog', '/my/catalog');
+        Route::get('/my/catalog', [ResellerCatalogController::class, 'index'])->name('customer.catalog.index');
+        Route::post('/my/catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.catalog.add');
         Route::get('/my/domains', [App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
         Route::get('/my/domains/transfer/approval/{token}', [InterCustomerDomainTransferController::class, 'show'])->name('customer.domains.inter-transfer.approval');
         Route::post('/my/domains/transfer/approval/{token}/approve', [InterCustomerDomainTransferController::class, 'approve'])->name('customer.domains.inter-transfer.approve');

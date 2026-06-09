@@ -135,9 +135,7 @@ class ServiceBrowserController extends Controller
         );
 
         if ($products->isEmpty()) {
-            $message = $this->catalogService->isResellerCustomer($user)
-                ? 'Your reseller has no plans available for this tech stack.'
-                : 'No hosting plans available for this techstack';
+            $message = 'No hosting plans are available for this tech stack.';
 
             return back()->with('error', $message);
         }

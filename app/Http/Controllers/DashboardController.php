@@ -192,8 +192,6 @@ class DashboardController extends Controller
 
     private function customerDashboard($user)
     {
-        $isResellerManaged = filled($user->reseller_id);
-
         return view('dashboard.customer', [
             'activeServices' => $user->services()->where('status', 'active')->with('product')->get(),
             'suspendedServices' => $user->services()->where('status', 'suspended')->with('product')->get(),
@@ -213,7 +211,6 @@ class DashboardController extends Controller
                 ->orderBy('expires_at')
                 ->get(),
             'creditBalance' => CreditService::getAvailableBalance($user),
-            'isResellerManaged' => $isResellerManaged,
         ]);
     }
 }

@@ -106,8 +106,8 @@ class ServerController extends Controller
 
         $listing = $catalogService->findListingForProduct($user, $product->id);
         if ($catalogService->isResellerCustomer($user) && ! $listing) {
-            return redirect()->route('customer.reseller-catalog.index')
-                ->with('error', 'This server is not offered by your reseller.');
+            return redirect()->route('customer.catalog.index')
+                ->with('error', 'This server plan is not available for ordering.');
         }
 
         if ($validated['billing_cycle'] === 'annual') {

@@ -56,6 +56,6 @@ class ResellerCatalogController extends Controller
         session([CartController::CART_SESSION_KEY => $cart]);
 
         return redirect()->route('customer.cart.index')
-            ->with('success', 'Reseller catalog item added to cart.');
+            ->with('success', 'Item added to cart.');
     }
 }

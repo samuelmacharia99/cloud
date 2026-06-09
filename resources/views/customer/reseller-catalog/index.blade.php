@@ -1,6 +1,6 @@
 @extends('layouts.customer')
 
-@section('title', 'Reseller Catalog')
+@section('title', 'Services & Plans')
 
 @section('content')
 @php
@@ -11,7 +11,7 @@
 <div class="space-y-6">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Services &amp; Plans</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Products and pricing from your provider — not the platform catalog.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Browse available services and add-ons for your account.</p>
     </div>
 
     @if ($hostingProducts->isNotEmpty())
@@ -20,7 +20,7 @@
                 <div>
                     <h2 class="text-xl font-semibold text-slate-900 dark:text-white">Deploy hosting</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-xl">
-                        Choose your language, database, and hosting package — the same guided flow as platform customers, with your reseller&apos;s pricing.
+                        Choose your language, database, and hosting package to get started.
                     </p>
                 </div>
                 <a href="{{ route('customer.select-techstack') }}" class="inline-flex items-center justify-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition shrink-0">
@@ -42,7 +42,7 @@
                         @endif
                         <p class="mt-4 text-2xl font-bold text-blue-600">KES {{ number_format($product->monthly_price ?? 0, 2) }}<span class="text-sm font-normal text-slate-500">/mo</span></p>
                         @if ($product->product_id)
-                            <form action="{{ route('customer.reseller-catalog.add', $product) }}" method="POST" class="mt-4 space-y-3">
+                            <form action="{{ route('customer.catalog.add', $product) }}" method="POST" class="mt-4 space-y-3">
                                 @csrf
                                 <select name="billing_cycle" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-sm">
                                     <option value="monthly">Monthly</option>
@@ -53,14 +53,14 @@
                                 <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium">Add to Cart</button>
                             </form>
                         @else
-                            <p class="mt-4 text-sm text-amber-600">Contact your reseller to order this custom plan.</p>
+                            <p class="mt-4 text-sm text-amber-600">Contact support to order this plan.</p>
                         @endif
                     </div>
                 @endforeach
             </div>
         </div>
     @elseif ($hostingProducts->isEmpty())
-        <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border text-slate-500">Your reseller has not published any catalog items yet.</div>
+        <div class="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border text-slate-500">No services are available to order right now.</div>
     @endif
 </div>
 @endsection

@@ -119,14 +119,14 @@ class CartController extends Controller
             if ($catalogService->isResellerCustomer($user)) {
                 $response = [
                     'success' => false,
-                    'message' => 'Order hosting from your reseller catalog instead of platform pricing.',
+                    'message' => 'Please order hosting through Deploy New Service or the services catalog.',
                 ];
 
                 if ($request->expectsJson()) {
                     return response()->json($response, 403);
                 }
 
-                return redirect()->route('customer.reseller-catalog.index')->with('error', $response['message']);
+                return redirect()->route('customer.catalog.index')->with('error', $response['message']);
             }
 
             $request->validate([
@@ -213,7 +213,7 @@ class CartController extends Controller
             $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $request->years);
             if ($price === null) {
                 $message = $catalogService->isResellerCustomer($user)
-                    ? 'Your reseller has not set pricing for this domain extension.'
+                    ? 'This domain extension is not available for registration. Please contact support.'
                     : 'Pricing not available for this registration period';
 
                 if ($request->expectsJson()) {
