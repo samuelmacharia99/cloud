@@ -108,12 +108,14 @@
                     </form>
                 @endif
 
-                <form method="POST" action="{{ route('admin.services.refresh-status', $service) }}" class="inline">
-                    @csrf
-                    <button type="submit" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition text-sm">
-                        Refresh Status
-                    </button>
-                </form>
+                @if ($service->supportsLiveStatusProbe())
+                    <form method="POST" action="{{ route('admin.services.refresh-status', $service) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition text-sm">
+                            Refresh Live Status
+                        </button>
+                    </form>
+                @endif
             </div>
         </div>
     </div>
@@ -133,9 +135,22 @@
                 </div>
                 <div class="grid grid-cols-2 gap-6">
                     <div>
-                        <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Status</p>
+                        <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Platform Status</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">{{ ucfirst($service->status->value) }}</p>
                     </div>
+                    @if ($service->supportsLiveStatusProbe())
+                        <div>
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live Infrastructure</p>
+                            <div class="mt-1">
+                                @include('admin.services.partials.live-status-badge', ['service' => $service])
+                            </div>
+                            @if ($service->live_status_mismatch)
+                                <p class="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                                    Platform status does not match what DirectAdmin or Docker reports. Use Refresh Status to re-check and heal provisioning drift.
+                                </p>
+                            @endif
+                        </div>
+                    @endif
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Billing Cycle</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">{{ ucfirst($service->billing_cycle) }}</p>

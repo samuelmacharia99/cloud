@@ -251,6 +251,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/unsuspend', [ServiceController::class, 'unsuspend'])->name('admin.services.unsuspend');
         Route::post('admin/services/{service}/terminate', [ServiceController::class, 'terminate'])->name('admin.services.terminate');
         Route::post('admin/services/{service}/cancel', [ServiceController::class, 'cancel'])->name('admin.services.cancel');
+        Route::post('admin/services/refresh-live-status', [ServiceController::class, 'refreshLiveStatusBulk'])->name('admin.services.refresh-live-status');
         Route::post('admin/services/{service}/refresh-status', [ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
         Route::post('admin/services/{service}/test-directadmin', [ServiceController::class, 'testDirectAdminConnection'])->name('admin.services.test-directadmin');
         Route::post('admin/services/{service}/resend-credentials', [ServiceController::class, 'resendCredentials'])->name('admin.services.resend-credentials');

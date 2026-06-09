@@ -431,6 +431,58 @@ class DirectAdminService
     }
 
     /**
+     * Read the current DirectAdmin account state for live status reconciliation.
+     *
+     * @return array{live_status: string, label: string, detail: array<string, mixed>}
+     */
+    public function getAccountLiveStatus(string $username): array
+    {
+        if (! $this->isConfigured() || blank($username)) {
+            return [
+                'live_status' => 'unavailable',
+                'label' => 'DirectAdmin API not configured',
+                'detail' => [],
+            ];
+        }
+
+        if (! $this->accountExists($username)) {
+            return [
+                'live_status' => 'terminated',
+                'label' => 'Account not found on DirectAdmin',
+                'detail' => ['username' => $username],
+            ];
+        }
+
+        $config = $this->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', ['user' => $username]);
+        if (! $config['success']) {
+            return [
+                'live_status' => 'unknown',
+                'label' => $config['message'] ?? 'Could not read DirectAdmin account',
+                'detail' => [],
+            ];
+        }
+
+        $data = $config['data'];
+        $suspended = $this->isDirectAdminSuspendedFlag($data['suspended'] ?? null);
+
+        return [
+            'live_status' => $suspended ? 'suspended' : 'active',
+            'label' => $suspended ? 'Suspended on DirectAdmin' : 'Active on DirectAdmin',
+            'detail' => [
+                'username' => $username,
+                'suspended' => $data['suspended'] ?? null,
+                'domain' => $data['domain'] ?? null,
+                'package' => $data['package'] ?? null,
+            ],
+        ];
+    }
+
+    private function isDirectAdminSuspendedFlag(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string) $value)), ['yes', '1', 'on', 'true'], true);
+    }
+
+    /**
      * @return array{used_mb: float, limit_mb: ?float}|null
      */
     public function getAccountDiskUsage(string $username): ?array

@@ -29,9 +29,26 @@
     }
 }">
     <!-- Header -->
-    <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Services</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Manage customer services and subscriptions.</p>
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Services</h1>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage customer services and subscriptions.</p>
+            @if (($mismatchCount ?? 0) > 0)
+                <p class="mt-2 text-sm text-amber-600 dark:text-amber-400">
+                    {{ $mismatchCount }} service(s) have platform vs infrastructure status drift.
+                    <a href="{{ request()->fullUrlWithQuery(['mismatch' => 1]) }}" class="underline font-medium">Show mismatches</a>
+                </p>
+            @endif
+        </div>
+        <form method="POST" action="{{ route('admin.services.refresh-live-status') }}" class="flex flex-wrap gap-2">
+            @csrf
+            @foreach (request()->query() as $key => $value)
+                <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+            @endforeach
+            <button type="submit" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg transition">
+                Refresh live status (page)
+            </button>
+        </form>
     </div>
 
     <!-- Filters -->
@@ -65,8 +82,12 @@
                     <option value="hotspot_plan" @selected(request('type') === 'hotspot_plan')>Hotspot Plan</option>
                 </select>
             </div>
-            <div class="flex items-end">
-                <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">Filter</button>
+            <div class="flex items-end gap-3">
+                <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 pb-2">
+                    <input type="checkbox" name="mismatch" value="1" @checked(request()->boolean('mismatch')) class="rounded border-slate-300 dark:border-slate-600">
+                    Drift only
+                </label>
+                <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">Filter</button>
             </div>
         </div>
     </form>
@@ -81,7 +102,8 @@
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Customer</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Product</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Billing Cycle</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Platform</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Live (DA / Container)</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Next Due</th>
                         <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Actions</th>
                     </tr>
@@ -121,6 +143,12 @@
                                 ">
                                     {{ ucfirst($service->status->value) }}
                                 </span>
+                                @if ($service->live_status_mismatch)
+                                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">≠ live</p>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4">
+                                @include('admin.services.partials.live-status-badge', ['service' => $service])
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {{ $service->next_due_date?->format('M d, Y') ?? '-' }}
@@ -169,7 +197,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-6 py-12 text-center">
+                            <td colspan="8" class="px-6 py-12 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No services found.</p>
                             </td>
                         </tr>

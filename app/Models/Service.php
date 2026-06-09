@@ -20,6 +20,12 @@ class Service extends Model
         'name',
         'provisioning_driver_key',
         'status',
+        'live_status',
+        'live_status_label',
+        'live_status_source',
+        'live_status_checked_at',
+        'live_status_detail',
+        'live_status_mismatch',
         'billing_cycle',
         'custom_price',
         'next_due_date',
@@ -40,6 +46,9 @@ class Service extends Model
         'terminate_date' => 'datetime',
         'custom_price' => 'decimal:2',
         'status' => ServiceStatus::class,
+        'live_status_checked_at' => 'datetime',
+        'live_status_detail' => 'array',
+        'live_status_mismatch' => 'boolean',
     ];
 
     // Relationships
@@ -121,11 +130,31 @@ class Service extends Model
         return $this->status === ServiceStatus::Failed;
     }
 
+    public function provisioningDriver(): ?string
+    {
+        return $this->provisioning_driver_key ?: $this->product?->provisioning_driver_key;
+    }
+
     public function isSharedHosting(): bool
     {
         return $this->product?->type === 'shared_hosting'
-            && ($this->provisioning_driver_key === 'directadmin'
-                || $this->product?->provisioning_driver_key === 'directadmin');
+            && $this->provisioningDriver() === 'directadmin';
+    }
+
+    public function isContainerHosting(): bool
+    {
+        return $this->product?->type === 'container_hosting'
+            || $this->provisioningDriver() === 'container';
+    }
+
+    public function supportsLiveStatusProbe(): bool
+    {
+        return $this->isSharedHosting() || $this->isContainerHosting();
+    }
+
+    public function hasLiveStatusMismatch(): bool
+    {
+        return (bool) $this->live_status_mismatch;
     }
 
     /**

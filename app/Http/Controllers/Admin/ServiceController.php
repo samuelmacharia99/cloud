@@ -17,6 +17,8 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ServiceStatusSyncService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -24,41 +26,41 @@ class ServiceController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Service::with(['user', 'product'])
-            ->whereHas('product', function ($q) {
-                $q->where('type', '!=', 'domain');
-            });
+        $services = $this->filteredIndexQuery($request)
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
 
-        // Search by customer name or service ID
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('id', 'like', "%{$request->search}%")
-                    ->orWhereHas('user', function ($userQuery) use ($request) {
-                        $userQuery->where('name', 'like', "%{$request->search}%");
-                    });
-            });
+        $mismatchCount = Service::query()
+            ->where('live_status_mismatch', true)
+            ->whereHas('product', fn ($q) => $q->where('type', '!=', 'domain'))
+            ->count();
+
+        return view('admin.services.index', compact('services', 'mismatchCount'));
+    }
+
+    public function refreshLiveStatusBulk(Request $request, ServiceStatusSyncService $syncService)
+    {
+        $this->authorize('viewAny', Service::class);
+
+        $page = max(1, (int) $request->input('page', 1));
+        $perPage = 15;
+
+        $services = $this->filteredIndexQuery($request)
+            ->whereHas('product', fn ($q) => $q->whereIn('type', ['shared_hosting', 'container_hosting']))
+            ->forPage($page, $perPage)
+            ->get();
+
+        if ($services->isEmpty()) {
+            return back()->with('warning', 'No shared hosting or container services matched your filters.');
         }
 
-        // Filter by status
-        if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
-        }
+        $summary = $syncService->syncMany($services, $request->boolean('heal'));
 
-        // Filter by product type
-        if ($request->filled('type') && $request->type !== 'all') {
-            $query->whereHas('product', function ($q) use ($request) {
-                $q->where('type', $request->type);
-            });
-        }
-
-        // Filter by customer
-        if ($request->filled('customer')) {
-            $query->where('user_id', $request->customer);
-        }
-
-        $services = $query->latest()->paginate(15)->withQueryString();
-
-        return view('admin.services.index', compact('services'));
+        return back()->with(
+            'success',
+            "Live status refreshed for {$summary['checked']} service(s): {$summary['mismatches']} mismatch(es), {$summary['errors']} probe error(s)."
+        );
     }
 
     public function create()
@@ -170,9 +172,22 @@ class ServiceController extends Controller
         }
     }
 
-    public function show(Service $service)
+    public function show(Service $service, ServiceStatusSyncService $syncService)
     {
-        $service->load(['user', 'product', 'invoice', 'node']);
+        $service->load(['user', 'product', 'invoice', 'node', 'containerDeployment.node']);
+
+        $liveStatus = null;
+        if ($service->supportsLiveStatusProbe()) {
+            try {
+                $liveStatus = $syncService->sync($service);
+                $service->refresh();
+            } catch (\Throwable $e) {
+                \Log::warning('Live status sync failed on service show', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         $sameTypeProducts = Product::where('type', $service->product->type)
             ->where('is_active', true)
@@ -181,7 +196,7 @@ class ServiceController extends Controller
 
         $currencyCode = Setting::getValue('currency', 'KES');
 
-        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode'));
+        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode', 'liveStatus'));
     }
 
     public function provision(Service $service)
@@ -405,10 +420,65 @@ class ServiceController extends Controller
             ->with('success', "Service #{$service->id} deleted.");
     }
 
-    public function refreshStatus(Service $service)
+    public function refreshStatus(Service $service, ServiceStatusSyncService $syncService)
     {
-        // Placeholder for checking actual service status with provisioning driver
-        return back()->with('success', 'Service status refreshed.');
+        $this->authorize('refreshStatus', $service);
+
+        if (! $service->supportsLiveStatusProbe()) {
+            return back()->with('warning', 'Live status checks are only available for DirectAdmin and container hosting services.');
+        }
+
+        try {
+            $result = $syncService->sync($service, applyHealing: true);
+            $service->refresh();
+
+            $message = "Live status: {$result->label}.";
+
+            if ($service->live_status_mismatch) {
+                $message .= ' Platform status ('.ucfirst($service->status->value).') does not match infrastructure.';
+            }
+
+            return back()->with($service->live_status_mismatch ? 'warning' : 'success', $message);
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Live status refresh failed: '.$e->getMessage());
+        }
+    }
+
+    private function filteredIndexQuery(Request $request): Builder
+    {
+        $query = Service::with(['user', 'product'])
+            ->whereHas('product', function ($q) {
+                $q->where('type', '!=', 'domain');
+            });
+
+        if ($request->filled('search')) {
+            $query->where(function ($q) use ($request) {
+                $q->where('id', 'like', "%{$request->search}%")
+                    ->orWhereHas('user', function ($userQuery) use ($request) {
+                        $userQuery->where('name', 'like', "%{$request->search}%");
+                    });
+            });
+        }
+
+        if ($request->filled('status') && $request->status !== 'all') {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('type') && $request->type !== 'all') {
+            $query->whereHas('product', function ($q) use ($request) {
+                $q->where('type', $request->type);
+            });
+        }
+
+        if ($request->filled('customer')) {
+            $query->where('user_id', $request->customer);
+        }
+
+        if ($request->boolean('mismatch')) {
+            $query->where('live_status_mismatch', true);
+        }
+
+        return $query;
     }
 
     /**

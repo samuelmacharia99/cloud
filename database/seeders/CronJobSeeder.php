@@ -116,6 +116,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Sync Service Live Status',
+                'description' => 'Probes DirectAdmin accounts and Docker containers to detect billing vs infrastructure status drift.',
+                'command' => 'cron:sync-service-live-status',
+                'schedule' => '*/15 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Provision Reseller SSL',
                 'description' => 'Automatically issues and renews Let\'s Encrypt SSL for reseller custom domains.',
                 'command' => 'cron:provision-reseller-ssl',
