@@ -44,7 +44,7 @@ class ProductionCommandGuardTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('not allowlisted');
 
-        ProductionCommandGuard::assertCommandAllowed('db:seed', ['class' => 'SettingSeeder']);
+        ProductionCommandGuard::assertCommandAllowed('db:seed', ['class' => 'DatabaseSeeder']);
     }
 
     public function test_allows_cron_job_seeder(): void
@@ -52,6 +52,17 @@ class ProductionCommandGuardTest extends TestCase
         $this->asProduction();
 
         ProductionCommandGuard::assertCommandAllowed('db:seed', ['class' => 'CronJobSeeder']);
+
+        $this->assertTrue(true);
+    }
+
+    public function test_allows_production_safe_config_seeders(): void
+    {
+        $this->asProduction();
+
+        foreach (['SettingSeeder', 'EmailTemplateSeeder', 'SmsTemplateSeeder'] as $seeder) {
+            ProductionCommandGuard::assertCommandAllowed('db:seed', ['class' => $seeder]);
+        }
 
         $this->assertTrue(true);
     }

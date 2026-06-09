@@ -10,6 +10,15 @@ class SmsTemplateSeeder extends Seeder
     public function run(): void
     {
         foreach (SmsTemplate::defaultTemplates() as $template) {
+            if (app()->environment('production')) {
+                SmsTemplate::firstOrCreate(
+                    ['event_key' => $template['event_key']],
+                    $template
+                );
+
+                continue;
+            }
+
             SmsTemplate::updateOrCreate(
                 ['event_key' => $template['event_key']],
                 $template

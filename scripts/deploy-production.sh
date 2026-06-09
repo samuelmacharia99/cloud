@@ -54,8 +54,11 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 
-log "Syncing allowlisted cron job definitions (CronJobSeeder only)"
+log "Syncing allowlisted seeders (cron jobs, new settings keys, notification templates)"
 php artisan db:seed --class=CronJobSeeder --force
+php artisan db:seed --class=SettingSeeder --force
+php artisan db:seed --class=EmailTemplateSeeder --force
+php artisan db:seed --class=SmsTemplateSeeder --force
 
 if command -v npm >/dev/null 2>&1 && [[ -f package.json ]]; then
   log "Building frontend assets"
