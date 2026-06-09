@@ -179,7 +179,8 @@ class PaymentController extends Controller
         }
 
         try {
-            $gateway = $this->gatewayFactory->make('mpesa', auth()->user());
+            // Reseller wholesale invoices always use platform M-Pesa (same as initiate()).
+            $gateway = $this->gatewayFactory->make('mpesa');
             $result = $gateway->verify($payment->transaction_reference);
 
             if ($result['status'] === 'completed') {
