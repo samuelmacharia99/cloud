@@ -92,112 +92,78 @@
         </div>
     </form>
 
-    <!-- Services Table -->
+    <!-- Services list -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full">
-                <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
+        <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <p class="text-sm text-slate-600 dark:text-slate-400">
+                <span class="font-semibold text-slate-900 dark:text-white">{{ $services->total() }}</span> service(s)
+                @if (request()->boolean('mismatch'))
+                    <span class="text-amber-600 dark:text-amber-400">· drift filter on</span>
+                @endif
+            </p>
+            <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
+                Platform = billing record · Live = DirectAdmin / Docker
+            </p>
+        </div>
+
+        <div class="ui-table-wrap">
+            <table class="ui-table min-w-[880px]">
+                <thead>
                     <tr>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Service ID</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Customer</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Product</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Billing Cycle</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Platform</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Live (DA / Container)</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Next Due</th>
-                        <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Actions</th>
+                        <th class="min-w-[200px]">Service</th>
+                        <th class="min-w-[180px]">Customer</th>
+                        <th class="whitespace-nowrap">Billing</th>
+                        <th class="min-w-[160px]">Status</th>
+                        <th class="text-right w-28 sticky right-0 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                <tbody>
                     @forelse ($services as $service)
-                        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                            <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ $service->id }}</td>
-                            <td class="px-6 py-4">
-                                <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $service->user->name }}</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">{{ $service->user->email }}</p>
+                        <tr class="{{ $service->live_status_mismatch ? 'bg-amber-50/40 dark:bg-amber-950/10' : '' }}">
+                            <td>
+                                <div class="min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <a href="{{ route('admin.services.show', $service) }}" class="font-semibold text-slate-900 dark:text-white hover:text-brand-600 dark:hover:text-brand-400">
+                                            #{{ $service->id }}
+                                        </a>
+                                        <span class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ $service->product->name }}</span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 capitalize">
+                                        {{ str_replace('_', ' ', $service->product->type) }}
+                                    </p>
                                 </div>
                             </td>
-                            <td class="px-6 py-4">
-                                <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $service->product->name }}</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
+                            <td>
+                                <div class="min-w-0">
+                                    <p class="font-medium text-slate-900 dark:text-white truncate">{{ $service->user->name }}</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ $service->user->email }}</p>
                                 </div>
                             </td>
-                            <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ ucfirst($service->billing_cycle) }}</td>
-                            <td class="px-6 py-4">
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                    @if($service->status->value === 'active')
-                                        bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                    @elseif($service->status->value === 'pending')
-                                        bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                    @elseif($service->status->value === 'provisioning')
-                                        bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                    @elseif($service->status->value === 'suspended')
-                                        bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                                    @elseif($service->status->value === 'terminated')
-                                        bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                    @elseif($service->status->value === 'failed')
-                                        bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                    @endif
-                                ">
-                                    {{ ucfirst($service->status->value) }}
-                                </span>
-                                @if ($service->live_status_mismatch)
-                                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">≠ live</p>
-                                @endif
+                            <td class="whitespace-nowrap">
+                                <p class="text-sm text-slate-800 dark:text-slate-200 capitalize">{{ $service->billing_cycle }}</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Due {{ $service->next_due_date?->format('M j, Y') ?? '—' }}
+                                </p>
                             </td>
-                            <td class="px-6 py-4">
-                                @include('admin.services.partials.live-status-badge', ['service' => $service])
-                            </td>
-                            <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                {{ $service->next_due_date?->format('M d, Y') ?? '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-right">
-                                <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('admin.services.show', $service) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
-                                        View
-                                    </a>
-
-                                    @php
-                                        $credentials = is_string($service->credentials) ? json_decode($service->credentials, true) : ($service->credentials ?? []);
-                                        $credUsername = $credentials['username'] ?? '';
-                                        $credPassword = $credentials['password'] ?? '';
-                                    @endphp
-
-                                    <button @click="openEdit({{ $service->id }}, '{{ $service->status->value }}', '{{ addslashes($service->billing_cycle) }}', '{{ $service->next_due_date?->format('Y-m-d') }}', '{{ $service->commenced_at?->format('Y-m-d') }}', '{{ addslashes($credUsername) }}', '{{ addslashes($credPassword) }}')" class="px-3 py-1.5 text-sm font-medium text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 transition">
-                                        Edit
-                                    </button>
-
-                                    @if($service->status->value === 'suspended')
-                                        <form method="POST" action="{{ route('admin.services.unsuspend', $service) }}" class="inline">
-                                            @csrf
-                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition">
-                                                Unsuspend
-                                            </button>
-                                        </form>
-                                    @elseif(in_array($service->status->value, ['active', 'pending', 'provisioning', 'failed']))
-                                        <form method="POST" action="{{ route('admin.services.suspend', $service) }}" class="inline">
-                                            @csrf
-                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 transition">
-                                                Suspend
-                                            </button>
-                                        </form>
-                                    @endif
-
-                                    <form method="POST" action="{{ route('admin.services.destroy', $service) }}" class="inline" data-confirm='Delete service #{{ $service->id }}? This cannot be undone.'>
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">
-                                            Delete
-                                        </button>
-                                    </form>
+                            <td>
+                                <div class="flex flex-col gap-1.5 items-start">
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 w-14 shrink-0">Platform</span>
+                                        @include('admin.services.partials.platform-status-badge', ['service' => $service])
+                                    </div>
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 w-14 shrink-0">Live</span>
+                                        @include('admin.services.partials.live-status-badge', ['service' => $service, 'compact' => true])
+                                    </div>
                                 </div>
+                            </td>
+                            <td class="text-right sticky right-0 bg-white dark:bg-slate-900 {{ $service->live_status_mismatch ? 'bg-amber-50/40 dark:bg-amber-950/10' : '' }}">
+                                @include('admin.services.partials.row-actions', ['service' => $service])
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-6 py-12 text-center">
+                            <td colspan="5" class="py-16 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No services found.</p>
                             </td>
                         </tr>
@@ -205,11 +171,12 @@
                 </tbody>
             </table>
         </div>
-    </div>
 
-    <!-- Pagination -->
-    <div class="mt-6">
-        {{ $services->links() }}
+        @if ($services->hasPages())
+            <div class="px-5 py-4 border-t border-slate-200 dark:border-slate-800">
+                {{ $services->links() }}
+            </div>
+        @endif
     </div>
 
     <!-- Edit Service Modal -->
