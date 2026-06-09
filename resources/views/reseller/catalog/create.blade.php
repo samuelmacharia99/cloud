@@ -13,11 +13,11 @@
 @endsection
 
 @section('content')
-<div class="space-y-6" x-data="catalogForm()">
+<div class="space-y-6" x-data="catalogForm()" x-init="init()">
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Choose from admin products or create custom ones.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Link platform plans to your catalog — filter by hosting type and tech stack for container products.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -47,17 +47,47 @@
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     <!-- Left: Admin Product Selection -->
                     <div class="space-y-6">
+                        <!-- Hosting filters -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting category</label>
+                                <select x-model="hostingFilter" @change="onHostingFilterChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                    <option value="all">All products</option>
+                                    <option value="shared_hosting">Shared hosting (PHP / WordPress / Laravel shared)</option>
+                                    <option value="container_hosting">Container hosting (tech stack plans)</option>
+                                    <option value="other">Other services (SSL, email, servers…)</option>
+                                </select>
+                            </div>
+                            <div x-show="showTechStackFilter" x-cloak>
+                                <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Tech stack / language</label>
+                                <select x-model="techStackFilter" @change="onTechStackFilterChange()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                    <option value="">All container languages</option>
+                                    @foreach ($containerTechStacks as $template)
+                                        <option value="{{ $template->id }}">{{ $template->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
+
+                        <div x-show="hostingFilter === 'container_hosting'" x-cloak class="p-4 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 rounded-lg text-sm text-violet-900 dark:text-violet-200">
+                            <p class="font-medium mb-1">How container catalog items work</p>
+                            <p class="text-violet-800 dark:text-violet-300">Customers pick a language and database first. They only see container plans that match that tech stack — add one retail listing per platform container plan you want to sell.</p>
+                        </div>
+
                         <!-- Select Admin Product -->
                         <div>
-                            <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Select Product</label>
+                            <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Platform product</label>
                             <select id="product_id" name="product_id" @change="selectProduct(); $nextTick(() => calculateMargin())" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('product_id') border-red-500 @enderror">
                                 <option value="">Choose a product...</option>
-                                @foreach($adminProducts as $product)
-                                    <option value="{{ $product->id }}" @selected(old('product_id') == $product->id)>
-                                        {{ $product->name }}
-                                    </option>
-                                @endforeach
+                                <template x-for="group in groupedFilteredProducts" :key="group.type">
+                                    <optgroup :label="group.label">
+                                        <template x-for="product in group.products" :key="product.id">
+                                            <option :value="product.id" x-text="productOptionLabel(product)" :selected="String(product.id) === String(selectedProductId)"></option>
+                                        </template>
+                                    </optgroup>
+                                </template>
                             </select>
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" x-show="filteredProducts.length === 0">No platform products match these filters.</p>
                             @error('product_id')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror
@@ -137,6 +167,17 @@
                                 <div>
                                     <p class="text-slate-600 dark:text-slate-400 mb-1">Type</p>
                                     <p class="font-medium text-slate-900 dark:text-white" x-text="productTypeLabel(selectedProduct?.type) || '—'"></p>
+                                </div>
+
+                                <div x-show="selectedProduct?.type === 'container_hosting'" x-cloak>
+                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Tech stack</p>
+                                    <p class="font-medium text-slate-900 dark:text-white" x-text="selectedProduct?.container_template?.name || '—'"></p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Shown to customers after they choose this language in the deploy flow.</p>
+                                </div>
+
+                                <div x-show="selectedProduct?.type === 'shared_hosting'" x-cloak>
+                                    <p class="text-slate-600 dark:text-slate-400 mb-1">Customer deploy path</p>
+                                    <p class="text-sm text-slate-700 dark:text-slate-300">Shared hosting via PHP, WordPress, or Laravel (shared) tech stack selection.</p>
                                 </div>
 
                                 <div class="pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -225,6 +266,10 @@
                                 'selectedPackage' => old('direct_admin_package_name'),
                             ])
                         </div>
+
+                        <div x-show="customType === 'container_hosting'" x-cloak class="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-900 dark:text-amber-200">
+                            Custom container listings cannot auto-provision. Use <strong>Add from Admin Catalog</strong> and link a platform container plan for each tech stack you sell.
+                        </div>
                     </div>
 
                     <div class="space-y-6">
@@ -293,6 +338,9 @@
 function catalogForm() {
     return {
         mode: 'admin',
+        hostingFilter: 'all',
+        techStackFilter: '',
+        selectedProductId: '{{ old('product_id') }}',
         selectedProduct: null,
         monthlyMargin: null,
         yearlyMargin: null,
@@ -311,8 +359,80 @@ function catalogForm() {
             @endforeach
         },
         productTypes: @json($productTypes),
+        init() {
+            this.selectProduct();
+            this.$nextTick(() => this.calculateMargin());
+        },
+        get showTechStackFilter() {
+            return this.hostingFilter === 'all' || this.hostingFilter === 'container_hosting';
+        },
+        get filteredProducts() {
+            return Object.values(this.products).filter((product) => {
+                if (this.hostingFilter === 'shared_hosting' && product.type !== 'shared_hosting') {
+                    return false;
+                }
+                if (this.hostingFilter === 'container_hosting' && product.type !== 'container_hosting') {
+                    return false;
+                }
+                if (this.hostingFilter === 'other' && ['shared_hosting', 'container_hosting'].includes(product.type)) {
+                    return false;
+                }
+                if (this.techStackFilter && product.type === 'container_hosting') {
+                    return String(product.container_template_id) === String(this.techStackFilter);
+                }
+
+                return true;
+            });
+        },
+        get groupedFilteredProducts() {
+            const groups = {};
+            this.filteredProducts.forEach((product) => {
+                if (!groups[product.type]) {
+                    groups[product.type] = {
+                        type: product.type,
+                        label: this.productTypeLabel(product.type),
+                        products: [],
+                    };
+                }
+                groups[product.type].products.push(product);
+            });
+
+            return Object.values(groups);
+        },
+        onHostingFilterChange() {
+            if (this.hostingFilter !== 'all' && this.hostingFilter !== 'container_hosting') {
+                this.techStackFilter = '';
+            }
+            this.clearSelectionIfFilteredOut();
+        },
+        onTechStackFilterChange() {
+            this.clearSelectionIfFilteredOut();
+        },
+        clearSelectionIfFilteredOut() {
+            if (!this.selectedProductId) {
+                return;
+            }
+            const stillVisible = this.filteredProducts.some((product) => String(product.id) === String(this.selectedProductId));
+            if (!stillVisible) {
+                this.selectedProductId = '';
+                const select = document.getElementById('product_id');
+                if (select) {
+                    select.value = '';
+                }
+                this.selectProduct();
+            }
+        },
+        productOptionLabel(product) {
+            let label = product.name;
+            if (product.type === 'container_hosting' && product.container_template?.name) {
+                label = product.container_template.name + ' — ' + label;
+            }
+
+            return label;
+        },
         selectProduct() {
             const productId = document.getElementById('product_id')?.value;
+            this.selectedProductId = productId || '';
             this.selectedProduct = productId ? this.products[productId] : null;
         },
         calculateMargin() {

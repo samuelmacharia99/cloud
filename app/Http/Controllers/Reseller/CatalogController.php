@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
+use App\Models\ContainerTemplate;
 use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Services\ResellerDirectAdminService;
@@ -19,7 +20,7 @@ class CatalogController extends Controller
     public function index()
     {
         $catalogItems = ResellerProduct::where('reseller_id', auth()->id())
-            ->with('adminProduct')
+            ->with('adminProduct.containerTemplate')
             ->paginate(15);
 
         return view('reseller.catalog.index', compact('catalogItems'));
@@ -27,22 +28,7 @@ class CatalogController extends Controller
 
     public function create()
     {
-        $adminProducts = Product::where('visible_to_resellers', true)
-            ->where('is_active', true)
-            ->get();
-
-        $productTypes = Product::TYPES;
-        $reseller = auth()->user();
-        $directAdminBinding = $this->resellerDirectAdmin->hasDirectAdminBinding($reseller);
-        $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
-
-        return view('reseller.catalog.create', [
-            'adminProducts' => $adminProducts,
-            'productTypes' => $productTypes,
-            'directAdminBinding' => $directAdminBinding,
-            'directAdminPackages' => $directAdminPackageResult['packages'],
-            'directAdminPackagesError' => $directAdminPackageResult['error'],
-        ]);
+        return view('reseller.catalog.create', $this->catalogFormViewData());
     }
 
     public function store(Request $request)
@@ -63,7 +49,7 @@ class CatalogController extends Controller
             abort(404);
         }
 
-        $catalogItem->load('adminProduct');
+        $catalogItem->load('adminProduct.containerTemplate');
 
         return view('reseller.catalog.show', compact('catalogItem'));
     }
@@ -74,25 +60,12 @@ class CatalogController extends Controller
             abort(404);
         }
 
-        $adminProducts = Product::where('visible_to_resellers', true)
-            ->where('is_active', true)
-            ->get();
+        $catalogItem->load('adminProduct.containerTemplate');
 
-        $productTypes = Product::TYPES;
-        $reseller = auth()->user();
-        $directAdminBinding = $this->resellerDirectAdmin->hasDirectAdminBinding($reseller);
-        $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
-
-        $catalogItem->load('adminProduct');
-
-        return view('reseller.catalog.edit', [
-            'catalogItem' => $catalogItem,
-            'adminProducts' => $adminProducts,
-            'productTypes' => $productTypes,
-            'directAdminBinding' => $directAdminBinding,
-            'directAdminPackages' => $directAdminPackageResult['packages'],
-            'directAdminPackagesError' => $directAdminPackageResult['error'],
-        ]);
+        return view('reseller.catalog.edit', array_merge(
+            $this->catalogFormViewData(),
+            ['catalogItem' => $catalogItem],
+        ));
     }
 
     public function update(Request $request, ResellerProduct $catalogItem)
@@ -124,6 +97,45 @@ class CatalogController extends Controller
     /**
      * @return array<string, mixed>
      */
+    private function catalogFormViewData(): array
+    {
+        $adminProducts = Product::query()
+            ->where('visible_to_resellers', true)
+            ->where('is_active', true)
+            ->with('containerTemplate')
+            ->orderBy('type')
+            ->orderBy('order')
+            ->get();
+
+        $containerTechStacks = ContainerTemplate::query()
+            ->active()
+            ->whereIn(
+                'id',
+                $adminProducts
+                    ->where('type', 'container_hosting')
+                    ->pluck('container_template_id')
+                    ->filter()
+                    ->unique()
+            )
+            ->orderBy('name')
+            ->get();
+
+        $reseller = auth()->user();
+        $directAdminPackageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
+
+        return [
+            'adminProducts' => $adminProducts,
+            'containerTechStacks' => $containerTechStacks,
+            'productTypes' => Product::TYPES,
+            'directAdminBinding' => $this->resellerDirectAdmin->hasDirectAdminBinding($reseller),
+            'directAdminPackages' => $directAdminPackageResult['packages'],
+            'directAdminPackagesError' => $directAdminPackageResult['error'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function validateCatalogItem(Request $request): array
     {
         $reseller = auth()->user();
@@ -150,10 +162,22 @@ class CatalogController extends Controller
         ]);
 
         if (filled($validated['product_id'] ?? null)) {
-            $product = Product::findOrFail($validated['product_id']);
+            $product = Product::with('containerTemplate')->findOrFail($validated['product_id']);
             if (! $product->visible_to_resellers) {
                 throw ValidationException::withMessages([
                     'product_id' => 'This product is not available for resellers.',
+                ]);
+            }
+
+            if ($product->type !== $validated['type']) {
+                throw ValidationException::withMessages([
+                    'product_id' => 'Selected platform product does not match the catalog item type.',
+                ]);
+            }
+
+            if ($product->type === 'container_hosting' && ! $product->container_template_id) {
+                throw ValidationException::withMessages([
+                    'product_id' => 'This container plan is missing a tech stack on the platform. Choose another product or contact support.',
                 ]);
             }
         }

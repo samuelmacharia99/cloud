@@ -85,6 +85,11 @@
                         <div class="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                             <p class="text-xs font-semibold text-blue-900 dark:text-blue-300 uppercase tracking-wide mb-2">Based on Admin Product</p>
                             <p class="text-sm font-medium text-blue-900 dark:text-blue-300">{{ $catalogItem->adminProduct?->name }}</p>
+                            @if ($catalogItem->type === 'container_hosting' && $catalogItem->adminProduct?->containerTemplate)
+                                <p class="text-xs text-blue-800 dark:text-blue-400 mt-2">
+                                    Tech stack: <span class="font-medium">{{ $catalogItem->adminProduct->containerTemplate->name }}</span>
+                                </p>
+                            @endif
                             <p class="text-xs text-blue-800 dark:text-blue-400 mt-2">
                                 Wholesale: <span class="font-medium">KSH {{ number_format($catalogItem->adminProduct?->wholesale_monthly_price, 2) }}/mo</span>
                             </p>

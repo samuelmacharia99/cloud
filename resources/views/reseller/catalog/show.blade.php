@@ -57,6 +57,14 @@
                         <p class="text-slate-900 dark:text-white">{{ Product::typeLabel($catalogItem->type) }}</p>
                     </div>
 
+                    @if ($catalogItem->type === 'container_hosting' && $catalogItem->adminProduct?->containerTemplate)
+                    <div>
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Tech stack</p>
+                        <p class="text-slate-900 dark:text-white">{{ $catalogItem->adminProduct->containerTemplate->name }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Customers see this plan after choosing this language in the deploy flow.</p>
+                    </div>
+                    @endif
+
                     @if ($catalogItem->direct_admin_package_name)
                     <div>
                         <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">DirectAdmin package</p>
