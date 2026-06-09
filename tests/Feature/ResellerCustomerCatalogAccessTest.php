@@ -251,6 +251,60 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         $this->assertSame($listing->id, array_values($cart)[0]['reseller_product_id']);
     }
 
+    public function test_reseller_customer_directadmin_only_shared_listing_is_orderable(): void
+    {
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $language = ContainerTemplate::factory()->create([
+            'name' => 'PHP',
+            'slug' => 'php',
+            'is_active' => true,
+        ]);
+        $language->forceFill(['hosting_type' => 'directadmin'])->save();
+
+        $database = DatabaseTemplate::create([
+            'name' => 'MySQL',
+            'slug' => 'mysql-da-only-test',
+            'type' => 'mysql',
+            'hosting_type' => 'directadmin',
+            'default_port' => 3306,
+            'required_ram_mb' => 256,
+            'is_active' => true,
+            'order' => 0,
+        ]);
+
+        $listing = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => null,
+            'name' => 'Bronze DA',
+            'type' => 'shared_hosting',
+            'direct_admin_package_name' => 'Bronze',
+            'monthly_price' => 59.99,
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.confirm-techstack'), [
+                'language_id' => $language->id,
+                'database_id' => $database->id,
+            ])
+            ->assertOk()
+            ->assertSee('Bronze DA');
+
+        $this->actingAs($customer)
+            ->post(route('customer.cart.add'), [
+                'type' => 'reseller_product',
+                'reseller_product_id' => $listing->id,
+                'billing_cycle' => 'monthly',
+            ])
+            ->assertRedirect(route('customer.cart.index'));
+
+        $cart = session(CartController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $this->assertNotNull(array_values($cart)[0]['product_id']);
+    }
+
     public function test_reseller_customer_cannot_add_platform_product_to_cart(): void
     {
         $reseller = User::factory()->create(['is_reseller' => true]);

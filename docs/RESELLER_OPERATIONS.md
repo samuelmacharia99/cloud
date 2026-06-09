@@ -32,6 +32,7 @@ Resellers should complete:
 
 | Command | Purpose |
 |---------|---------|
+| `cron:collect-reseller-disk-usage` | Measure reseller container disk pool usage for overage billing |
 | `cron:generate-reseller-invoices` | Package renewal invoices |
 | `cron:suspend-resellers` / `cron:unsuspend-resellers` | Package billing enforcement |
 | `cron:enforce-reseller-package-limits` | Service slot limits |

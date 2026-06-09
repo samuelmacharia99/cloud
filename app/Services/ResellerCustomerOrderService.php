@@ -47,9 +47,9 @@ class ResellerCustomerOrderService
             throw new \InvalidArgumentException('You have reached your package service limit. Upgrade to add more services.');
         }
 
-        $adminProduct = $catalogProduct->adminProduct;
+        $adminProduct = app(ResellerProvisionProductResolver::class)->resolve($catalogProduct);
         if (! $adminProduct instanceof Product) {
-            throw new \InvalidArgumentException('This catalog item is custom and cannot be auto-provisioned. Create a manual invoice instead.');
+            throw new \InvalidArgumentException('This catalog item cannot be auto-provisioned. Create a manual invoice instead.');
         }
 
         $retailPrice = $catalogProduct->priceForBillingCycle($billingCycle);
@@ -120,7 +120,7 @@ class ResellerCustomerOrderService
             throw new \InvalidArgumentException('You have reached your package service limit. Upgrade to add more services.');
         }
 
-        $adminProduct = $catalogProduct->adminProduct;
+        $adminProduct = app(ResellerProvisionProductResolver::class)->resolve($catalogProduct);
         if (! $adminProduct instanceof Product) {
             throw new \InvalidArgumentException('This catalog item cannot be auto-provisioned. Bill the customer or choose a linked platform product.');
         }

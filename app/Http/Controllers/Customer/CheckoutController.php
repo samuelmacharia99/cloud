@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\NodeNameserverService;
+use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
@@ -60,6 +61,14 @@ class CheckoutController extends Controller
         }
 
         $user = auth()->user();
+
+        if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+            try {
+                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+            } catch (\InvalidArgumentException $e) {
+                return redirect()->route('customer.cart.index')->with('error', $e->getMessage());
+            }
+        }
 
         // Prepare cart items with details
         $cartItems = [];
@@ -172,6 +181,14 @@ class CheckoutController extends Controller
 
         $user = auth()->user();
 
+        if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+            try {
+                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+            } catch (\InvalidArgumentException $e) {
+                return back()->with('error', $e->getMessage());
+            }
+        }
+
         app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
 
         try {
@@ -259,14 +276,14 @@ class CheckoutController extends Controller
 
                 // Create OrderItems, Services, and Domains
                 foreach ($cartItems as $item) {
-                    if ($item['type'] === 'product') {
+                    if ($this->isProductCheckoutItem($item['type'] ?? null)) {
                         $product = Product::find($item['product_id']);
 
                         // Create OrderItem
                         $orderItem = OrderItem::create([
                             'order_id' => $order->id,
                             'product_id' => $product->id,
-                            'description' => $product->name,
+                            'description' => $item['name'] ?? $product->name,
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
@@ -311,13 +328,18 @@ class CheckoutController extends Controller
 
                         // For DirectAdmin shared hosting, collect domain + credentials from checkout form
                         if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin') {
+                            $resellerProduct = ! empty($item['reseller_product_id'])
+                                ? ResellerProduct::find($item['reseller_product_id'])
+                                : null;
+
                             $hostingContext = app(SharedHostingCheckoutService::class)->buildSharedHostingContext(
                                 $request,
                                 $item['key'],
                                 $user,
                                 $product,
                                 $invoice,
-                                $order
+                                $order,
+                                $resellerProduct,
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];
@@ -493,7 +515,7 @@ class CheckoutController extends Controller
     private function prepareResellerProductCartItem(array $item): ?array
     {
         $resellerProduct = ResellerProduct::with('adminProduct')->find($item['reseller_product_id'] ?? null);
-        if (! $resellerProduct || ! $resellerProduct->product_id || ! $resellerProduct->is_active) {
+        if (! $resellerProduct || ! $resellerProduct->isOrderable()) {
             return null;
         }
 
@@ -502,13 +524,13 @@ class CheckoutController extends Controller
             return null;
         }
 
-        $product = Product::find($resellerProduct->product_id);
+        $product = $resellerProduct->provisionProduct();
         if (! $product) {
             return null;
         }
 
         $unitPrice = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
-        $item['type'] = 'product';
+        $item['type'] = $product->type === 'shared_hosting' ? 'shared_hosting' : 'product';
         $item['product_id'] = $product->id;
         $item['reseller_id'] = $resellerProduct->reseller_id;
         $item['reseller_product_id'] = $resellerProduct->id;
@@ -522,6 +544,11 @@ class CheckoutController extends Controller
         }
 
         return $item;
+    }
+
+    private function isProductCheckoutItem(?string $type): bool
+    {
+        return in_array($type, ['product', 'shared_hosting'], true);
     }
 
     /**
@@ -776,6 +803,10 @@ class CheckoutController extends Controller
     private function processCheckout(User $user, array $cart, ?Request $request = null)
     {
         try {
+            if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+                app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
+            }
+
             if ($request) {
                 $request->validate([
                     'source_repo_url.*' => 'nullable|url|max:500',
@@ -870,14 +901,14 @@ class CheckoutController extends Controller
 
                 // Create OrderItems, Services, and Domains
                 foreach ($cartItems as $item) {
-                    if ($item['type'] === 'product') {
+                    if ($this->isProductCheckoutItem($item['type'] ?? null)) {
                         $product = Product::find($item['product_id']);
 
                         // Create OrderItem
                         $orderItem = OrderItem::create([
                             'order_id' => $order->id,
                             'product_id' => $product->id,
-                            'description' => $product->name,
+                            'description' => $item['name'] ?? $product->name,
                             'quantity' => 1,
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
@@ -920,13 +951,18 @@ class CheckoutController extends Controller
                         }
 
                         if ($product->type === 'shared_hosting' && $product->provisioning_driver_key === 'directadmin' && $request) {
+                            $resellerProduct = ! empty($item['reseller_product_id'])
+                                ? ResellerProduct::find($item['reseller_product_id'])
+                                : null;
+
                             $hostingContext = app(SharedHostingCheckoutService::class)->buildSharedHostingContext(
                                 $request,
                                 $item['key'],
                                 $user,
                                 $product,
                                 $invoice,
-                                $order
+                                $order,
+                                $resellerProduct,
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];

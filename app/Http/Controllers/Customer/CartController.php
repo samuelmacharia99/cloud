@@ -164,7 +164,7 @@ class CartController extends Controller
                 ->where('is_active', true)
                 ->first();
 
-            if (! $listing || ! $listing->product_id) {
+            if (! $listing || ! $listing->isOrderable()) {
                 $message = 'This catalog item is not available for ordering.';
 
                 if ($request->expectsJson()) {
@@ -174,10 +174,11 @@ class CartController extends Controller
                 return back()->with('error', $message);
             }
 
+            $provisionProduct = $listing->provisionProduct();
             $item = [
                 'type' => 'reseller_product',
                 'reseller_product_id' => $listing->id,
-                'product_id' => $listing->product_id,
+                'product_id' => $provisionProduct?->id,
                 'reseller_id' => $listing->reseller_id,
                 'billing_cycle' => $request->billing_cycle,
             ];

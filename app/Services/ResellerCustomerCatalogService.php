@@ -104,7 +104,7 @@ class ResellerCustomerCatalogService
                     ->where('is_active', true)
                     ->first();
 
-                if (! $listing || ! $listing->product_id) {
+                if (! $listing || ! $listing->isOrderable()) {
                     unset($cart[$key]);
                     $changed = true;
                 }
@@ -162,8 +162,8 @@ class ResellerCustomerCatalogService
         array $routing,
     ): Collection {
         $listings = $this->activeCatalog($user)
-            ->filter(fn (ResellerProduct $listing) => $listing->product_id !== null)
-            ->filter(fn (ResellerProduct $listing) => $listing->adminProduct?->is_active)
+            ->filter(fn (ResellerProduct $listing) => $listing->isOrderable())
+            ->filter(fn (ResellerProduct $listing) => $this->listingIsActiveForTechstack($listing))
             ->filter(fn (ResellerProduct $listing) => $this->listingMatchesDatabase($listing, $database?->id));
 
         $isDirectAdmin = ($routing['hosting_type'] ?? '') === 'directadmin';
@@ -248,6 +248,15 @@ class ResellerCustomerCatalogService
             ->values();
     }
 
+    private function listingIsActiveForTechstack(ResellerProduct $listing): bool
+    {
+        if ($listing->usesDirectAdminPackage()) {
+            return true;
+        }
+
+        return (bool) $listing->adminProduct?->is_active;
+    }
+
     private function listingMatchesLanguageTemplate(ResellerProduct $listing, ContainerTemplate $language): bool
     {
         $templateId = $listing->container_template_id ?? $listing->adminProduct?->container_template_id;
@@ -269,17 +278,17 @@ class ResellerCustomerCatalogService
      */
     private function mapListingToTechstackProduct(ResellerProduct $listing): object
     {
-        $product = $listing->adminProduct;
+        $product = $listing->provisionProduct();
 
         return (object) [
             'id' => $product->id,
             'reseller_product_id' => $listing->id,
             'name' => $listing->name,
-            'description' => $listing->description ?? $product->description,
+            'description' => $listing->description ?? $product?->description,
             'monthly_price' => (float) ($listing->monthly_price ?? 0),
             'yearly_price' => $listing->yearly_price !== null ? (float) $listing->yearly_price : null,
-            'features' => $product->features ?? [],
-            'slug' => $product->slug,
+            'features' => $listing->features ?? $product?->features ?? [],
+            'slug' => $product?->slug,
         ];
     }
 

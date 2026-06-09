@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -92,6 +93,16 @@ class ResellerProduct extends Model
     public function usesDirectAdminPackage(): bool
     {
         return $this->type === 'shared_hosting' && filled($this->direct_admin_package_name);
+    }
+
+    public function isOrderable(): bool
+    {
+        return app(ResellerProvisionProductResolver::class)->isOrderable($this);
+    }
+
+    public function provisionProduct(): ?Product
+    {
+        return app(ResellerProvisionProductResolver::class)->resolve($this);
     }
 
     /**

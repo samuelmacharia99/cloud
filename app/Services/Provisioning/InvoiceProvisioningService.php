@@ -65,6 +65,15 @@ class InvoiceProvisioningService
                 $provisioned++;
             } catch (\Throwable $e) {
                 $failed[] = $service->id;
+                $meta = $service->service_meta ?? [];
+                $meta['provision_error'] = $e->getMessage();
+                $meta['provision_failed_at'] = now()->toIso8601String();
+
+                $service->update([
+                    'status' => ServiceStatus::Failed,
+                    'service_meta' => $meta,
+                ]);
+
                 Log::error('Auto-provisioning failed for service', [
                     'service_id' => $service->id,
                     'invoice_id' => $invoice->id,

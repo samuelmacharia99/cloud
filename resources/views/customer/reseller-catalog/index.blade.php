@@ -41,7 +41,7 @@
                             <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 flex-1">{{ $product->description }}</p>
                         @endif
                         <p class="mt-4 text-2xl font-bold text-blue-600">KES {{ number_format($product->monthly_price ?? 0, 2) }}<span class="text-sm font-normal text-slate-500">/mo</span></p>
-                        @if ($product->product_id)
+                        @if ($product->isOrderable())
                             <form action="{{ route('customer.catalog.add', $product) }}" method="POST" class="mt-4 space-y-3">
                                 @csrf
                                 <select name="billing_cycle" class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-sm">

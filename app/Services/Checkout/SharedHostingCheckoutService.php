@@ -9,6 +9,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Services\DomainInputParser;
 use App\Services\DomainTransferService;
@@ -33,8 +34,29 @@ class SharedHostingCheckoutService
     public function sharedHostingCartItems(array $cart): array
     {
         $items = [];
+        $resolver = app(ResellerProvisionProductResolver::class);
 
         foreach ($cart as $key => $item) {
+            if (($item['type'] ?? null) === 'reseller_product') {
+                $listing = ResellerProduct::query()->find($item['reseller_product_id'] ?? null);
+                if (! $listing?->usesDirectAdminPackage()) {
+                    continue;
+                }
+
+                $product = $resolver->resolve($listing);
+                if (! $product) {
+                    continue;
+                }
+
+                $items[] = array_merge($item, [
+                    'key' => $key,
+                    'product' => $product,
+                    'reseller_product' => $listing,
+                ]);
+
+                continue;
+            }
+
             if (($item['type'] ?? null) !== 'product') {
                 continue;
             }
@@ -193,6 +215,7 @@ class SharedHostingCheckoutService
         Product $product,
         Invoice $invoice,
         Order $order,
+        ?ResellerProduct $resellerProduct = null,
     ): array {
         $mode = SharedHostingDomainMode::from((string) $request->input("hosting_domain_mode.{$cartKey}"));
         $invoiceItems = [];
@@ -211,10 +234,25 @@ class SharedHostingCheckoutService
             ),
         };
 
-        $setup = $this->directAdminSetup->prepareForOrder($product, $user, $fqdn);
-        $serviceMeta = $setup['meta'];
+        if ($resellerProduct?->usesDirectAdminPackage()) {
+            $reseller = User::query()->find($resellerProduct->reseller_id);
+            $setup = app(ResellerHostingSetupService::class)->buildProvisioningContext(
+                $reseller,
+                $user,
+                $product,
+                $fqdn,
+                $resellerProduct,
+            );
+            $nodeId = $setup['node_id'] ?? null;
+            $serviceMeta = $setup['service_meta'];
+        } else {
+            $setup = $this->directAdminSetup->prepareForOrder($product, $user, $fqdn);
+            $serviceMeta = $setup['meta'];
+            $nodeId = $setup['node_id'];
+        }
+
         $serviceMeta['hosting_domain_mode'] = $mode->value;
-        $nameservers = $this->nameserverService->forNodeId($setup['node_id']);
+        $nameservers = $this->nameserverService->forNodeId($nodeId);
         $domainNameservers = $this->nameserverService->toDomainColumns($nameservers);
 
         if ($mode === SharedHostingDomainMode::Register) {
@@ -280,7 +318,7 @@ class SharedHostingCheckoutService
         }
 
         return [
-            'node_id' => $setup['node_id'],
+            'node_id' => $nodeId,
             'service_meta' => $serviceMeta,
             'invoice_items' => $invoiceItems,
         ];

@@ -35,20 +35,22 @@ class ResellerCatalogController extends Controller
             abort(404);
         }
 
-        if (! $resellerProduct->product_id) {
-            return back()->with('error', 'This catalog item is not linked to a provisionable product yet.');
+        if (! $resellerProduct->isOrderable()) {
+            return back()->with('error', 'This catalog item is not available for ordering.');
         }
 
         $validated = $request->validate([
             'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
         ]);
 
+        $provisionProduct = $resellerProduct->provisionProduct();
+
         $cart = session(CartController::CART_SESSION_KEY, []);
         $key = uniqid('rp_');
         $cart[$key] = [
             'type' => 'reseller_product',
             'reseller_product_id' => $resellerProduct->id,
-            'product_id' => $resellerProduct->product_id,
+            'product_id' => $provisionProduct?->id,
             'reseller_id' => $resellerProduct->reseller_id,
             'billing_cycle' => $validated['billing_cycle'],
             'added_at' => now()->toIso8601String(),

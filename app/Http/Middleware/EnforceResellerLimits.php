@@ -32,12 +32,22 @@ class EnforceResellerLimits
                 ->with('warning', 'You must subscribe to a reseller package before managing services or customers.');
         }
 
-        // Over limits: redirect to packages page with upgrade prompt
+        // Over limits: allow catalog maintenance; block new capacity-consuming actions
         if ($user->isOverPackageLimits()) {
-            return redirect()
-                ->route('reseller.packages.index')
-                ->with('limit_exceeded', true)
-                ->with('warning', 'You have reached your package limits. Please upgrade to continue adding services or customers.');
+            $allowedWhenOverLimit = [
+                'reseller.catalog.index',
+                'reseller.catalog.show',
+                'reseller.catalog.edit',
+                'reseller.catalog.update',
+                'reseller.catalog.destroy',
+            ];
+
+            if (! in_array($request->route()?->getName(), $allowedWhenOverLimit, true)) {
+                return redirect()
+                    ->route('reseller.packages.index')
+                    ->with('limit_exceeded', true)
+                    ->with('warning', 'You have reached your package limits. Please upgrade to continue adding services or customers.');
+            }
         }
 
         return $next($request);

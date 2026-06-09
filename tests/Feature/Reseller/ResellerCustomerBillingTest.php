@@ -447,6 +447,69 @@ class ResellerCustomerBillingTest extends TestCase
         $this->assertSame('directadmin', $service->provisioning_driver_key);
     }
 
+    public function test_reseller_da_only_catalog_shared_hosting_order_stores_directadmin_context(): void
+    {
+        \Illuminate\Support\Facades\Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
+                return \Illuminate\Support\Facades\Http::response(json_encode(['list' => ['Gold']]), 200);
+            }
+
+            return \Illuminate\Support\Facades\Http::response(json_encode(['disk' => '5000M', 'bandwidth' => '50000M']), 200);
+        });
+
+        $reseller = $this->reseller();
+        $reseller->update([
+            'directadmin_username' => 'reseller_acme',
+        ]);
+
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $node = Node::create([
+            'name' => 'DA Node',
+            'hostname' => 'da.example.com',
+            'ip_address' => '10.0.0.1',
+            'type' => 'directadmin',
+            'status' => 'online',
+            'api_url' => 'https://da.example.com:2222',
+            'da_admin_username' => 'admin',
+            'da_login_key' => 'secret',
+            'is_active' => true,
+        ]);
+
+        $reseller->update(['reseller_node_id' => $node->id]);
+
+        $catalogProduct = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => null,
+            'name' => 'Retail Gold',
+            'type' => 'shared_hosting',
+            'direct_admin_package_name' => 'Gold',
+            'monthly_price' => 500,
+            'is_active' => true,
+        ]);
+
+        Setting::setValue('auto_provision', 'false');
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-orders.hosting.store'), [
+                'customer_id' => $customer->id,
+                'reseller_product_id' => $catalogProduct->id,
+                'billing_cycle' => 'monthly',
+                'order_type' => 'provision',
+                'bill_customer' => '1',
+                'primary_domain' => 'client-gold.example.com',
+            ])
+            ->assertRedirect();
+
+        $service = Service::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($service);
+        $this->assertSame($node->id, $service->node_id);
+        $this->assertSame('client-gold.example.com', $service->service_meta['domain'] ?? null);
+        $this->assertSame('reseller_acme', $service->service_meta['directadmin_reseller'] ?? null);
+        $this->assertSame('directadmin', $service->provisioning_driver_key);
+        $this->assertSame($catalogProduct->id, $service->service_meta['reseller_product_id'] ?? null);
+    }
+
     public function test_domain_can_be_provisioned_without_customer_invoice(): void
     {
         $reseller = $this->reseller();
