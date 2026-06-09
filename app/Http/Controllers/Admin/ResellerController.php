@@ -77,7 +77,7 @@ class ResellerController extends Controller
             $q->whereIn('user_id', $customerIds)
                 ->orWhere('user_id', $user->id)
                 ->orWhere('reseller_id', $user->id);
-        })->with('user')->latest()->get();
+        })->with('user')->orderBy('name')->orderBy('extension')->get();
 
         // Get enabled domain extensions for the add domain form
         $extensions = DomainExtension::where('enabled', true)
