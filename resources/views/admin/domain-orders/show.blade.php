@@ -145,23 +145,45 @@
         </div>
     </div>
 
-    @if($order->canCancel() || $order->canDelete())
+    @if($order->status === 'queued')
+    <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
+        <strong>Queued</strong> — waiting for reseller wallet funds or a manual push. Use <strong>Push</strong> when ready to send to admin for registration. Complete / Fail become available after the order is pushed.
+    </div>
+    @endif
+
+    @if($order->canAdminPush() || $order->canCancel() || $order->canAdminDelete())
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Other Actions</h3>
-        <div class="flex flex-wrap gap-3">
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
+        <div class="flex flex-wrap items-center gap-2">
+            @if($order->canAdminPush())
+            <form method="POST" action="{{ route('admin.domain-orders.push', $order) }}" data-confirm="Push this domain order to admin for registration?">
+                @csrf
+                <input type="hidden" name="stay_on_detail" value="1">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" title="Push to admin">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    Push
+                </button>
+            </form>
+            @endif
             @if($order->canCancel())
             <form method="POST" action="{{ route('admin.domain-orders.cancel', $order) }}" data-confirm="Cancel this domain order?">
                 @csrf
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="px-6 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition">Cancel Order</button>
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white text-sm font-medium rounded-lg transition" title="Cancel order">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                    Cancel
+                </button>
             </form>
             @endif
-            @if($order->canDelete())
+            @if($order->canAdminDelete())
             <form method="POST" action="{{ route('admin.domain-orders.destroy', $order) }}" data-confirm="Delete this domain order permanently?">
                 @csrf
                 @method('DELETE')
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">Delete Order</button>
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition" title="Delete order">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    Delete
+                </button>
             </form>
             @endif
         </div>
@@ -169,7 +191,7 @@
     @endif
 
     <!-- Actions -->
-    @if($order->status === 'pushed')
+    @if($order->canAdminComplete())
     <!-- Complete Order Form -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Complete Domain Order</h3>
@@ -183,16 +205,18 @@
                     <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
                 @enderror
             </div>
-            <button type="submit" class="w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
-                ✓ Mark as Completed
+            <button type="submit" class="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                Mark as Completed
             </button>
         </form>
     </div>
 
     <!-- Fail Order -->
     <div>
-        <button type="button" onclick="document.getElementById('failForm').style.display = document.getElementById('failForm').style.display === 'none' ? 'block' : 'none'" class="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
-            ✗ Mark as Failed
+        <button type="button" onclick="document.getElementById('failForm').style.display = document.getElementById('failForm').style.display === 'none' ? 'block' : 'none'" class="w-full inline-flex items-center justify-center gap-2 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Mark as Failed
         </button>
     </div>
 

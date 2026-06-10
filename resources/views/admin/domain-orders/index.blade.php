@@ -94,10 +94,7 @@
                             <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($order->wholesale_amount, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->created_at->format('M d, Y') }}</td>
                             <td class="px-6 py-4 text-right sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 shadow-[-8px_0_16px_-12px_rgba(15,23,42,0.12)] dark:shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.35)]">
-                                <div class="inline-flex flex-col items-end gap-1.5">
-                                    <a href="{{ route('admin.domain-orders.show', $order) }}" class="text-purple-600 dark:text-purple-400 hover:underline text-xs font-medium">View</a>
-                                    @include('admin.domain-orders.partials.actions', ['order' => $order])
-                                </div>
+                                @include('admin.domain-orders.partials.actions', ['order' => $order])
                             </td>
                         </tr>
                     @empty

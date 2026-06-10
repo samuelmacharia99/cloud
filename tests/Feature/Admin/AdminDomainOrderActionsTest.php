@@ -119,7 +119,7 @@ class AdminDomainOrderActionsTest extends TestCase
         ]);
     }
 
-    public function test_index_shows_action_buttons_for_pushed_order(): void
+    public function test_index_shows_complete_icon_for_pushed_order(): void
     {
         $admin = User::factory()->admin()->create();
         $reseller = $this->createReseller();
@@ -128,7 +128,33 @@ class AdminDomainOrderActionsTest extends TestCase
         $this->actingAs($admin)
             ->get(route('admin.domain-orders.index'))
             ->assertOk()
-            ->assertSee('Complete')
-            ->assertSee('Fail');
+            ->assertSee('Mark as completed (pushed', false);
+    }
+
+    public function test_index_shows_push_and_delete_icons_for_queued_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $this->createOrder($reseller, 'queued');
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-orders.index'))
+            ->assertOk()
+            ->assertSee('Push to admin (queued', false)
+            ->assertSee('Delete order record', false);
+    }
+
+    public function test_admin_can_delete_queued_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createOrder($reseller, 'queued');
+
+        $this->actingAs($admin)
+            ->delete(route('admin.domain-orders.destroy', $order))
+            ->assertRedirect(route('admin.domain-orders.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('reseller_domain_orders', ['id' => $order->id]);
     }
 }

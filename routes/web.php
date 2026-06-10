@@ -300,6 +300,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/domain-orders/{order}', [DomainOrderController::class, 'show'])->name('admin.domain-orders.show');
         Route::post('admin/domain-orders/{order}/complete', [DomainOrderController::class, 'complete'])->name('admin.domain-orders.complete');
         Route::post('admin/domain-orders/{order}/fail', [DomainOrderController::class, 'fail'])->name('admin.domain-orders.fail');
+        Route::post('admin/domain-orders/{order}/push', [DomainOrderController::class, 'push'])->name('admin.domain-orders.push');
         Route::post('admin/domain-orders/{order}/cancel', [DomainOrderController::class, 'cancel'])->name('admin.domain-orders.cancel');
         Route::delete('admin/domain-orders/{order}', [DomainOrderController::class, 'destroy'])->name('admin.domain-orders.destroy');
 

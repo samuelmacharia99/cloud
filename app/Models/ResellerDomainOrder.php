@@ -106,6 +106,21 @@ class ResellerDomainOrder extends Model
         return in_array($this->status, ['cancelled', 'failed', 'expired'], true);
     }
 
+    public function canAdminPush(): bool
+    {
+        return $this->status === 'queued';
+    }
+
+    public function canAdminComplete(): bool
+    {
+        return $this->status === 'pushed';
+    }
+
+    public function canAdminDelete(): bool
+    {
+        return in_array($this->status, ['queued', 'cancelled', 'failed', 'expired'], true);
+    }
+
     public function isSelfOrder(): bool
     {
         return (int) $this->customer_id === (int) $this->reseller_id;

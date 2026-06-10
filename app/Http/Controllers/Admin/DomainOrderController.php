@@ -102,6 +102,27 @@ class DomainOrderController extends Controller
         }
     }
 
+    public function push(Request $request, ResellerDomainOrder $order)
+    {
+        if (! $order->canAdminPush()) {
+            return $this->redirectBack($request)
+                ->with('error', 'Only queued orders can be pushed.');
+        }
+
+        try {
+            if ($this->domainPushService->pushOrQueue($order)) {
+                return $this->redirectBack($request)
+                    ->with('success', "Domain {$order->fullDomainName()} pushed to admin for registration.");
+            }
+
+            return $this->redirectBack($request)
+                ->with('error', 'Reseller wallet balance is insufficient. Order remains queued until the reseller tops up.');
+        } catch (\Exception $e) {
+            return $this->redirectBack($request)
+                ->with('error', "Failed to push order: {$e->getMessage()}");
+        }
+    }
+
     public function cancel(Request $request, ResellerDomainOrder $order)
     {
         if (! $order->canCancel()) {
@@ -129,7 +150,7 @@ class DomainOrderController extends Controller
 
     public function destroy(Request $request, ResellerDomainOrder $order)
     {
-        if (! $order->canDelete()) {
+        if (! $order->canAdminDelete()) {
             return $this->redirectBack($request)
                 ->with('error', 'This order cannot be deleted.');
         }
