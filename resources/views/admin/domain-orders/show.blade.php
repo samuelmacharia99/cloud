@@ -25,22 +25,30 @@
 
     <!-- Details Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Reseller Card -->
+        <!-- Reseller / channel Card -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <h3 class="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Reseller</h3>
+            <h3 class="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">{{ $order->isPlatformOrder() ? 'Channel' : 'Reseller' }}</h3>
             <div class="space-y-3">
-                <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Name</p>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->name }}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Email</p>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->email }}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Phone</p>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->phone ?? 'N/A' }}</p>
-                </div>
+                @if ($order->isPlatformOrder())
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Type</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">Platform direct customer</p>
+                    </div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Customer paid Talksasa directly. No reseller wallet or wholesale invoice applies.</p>
+                @else
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Name</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->name }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Email</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->email }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Phone</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">{{ $order->reseller->phone ?? 'N/A' }}</p>
+                    </div>
+                @endif
             </div>
         </div>
 

@@ -20,7 +20,21 @@ class ResellerDomainOrderService
         float $retailAmount,
     ): ?ResellerDomainOrder {
         if ($customer->reseller_id === null) {
-            return null;
+            return ResellerDomainOrder::create([
+                'reseller_id' => null,
+                'customer_id' => $customer->id,
+                'domain_id' => $domain->id,
+                'customer_invoice_id' => $invoice->id,
+                'domain_name' => $domainName,
+                'extension' => $extension,
+                'years' => $years,
+                'wholesale_amount' => round($retailAmount, 2),
+                'retail_amount' => 0,
+                'status' => 'queued',
+                'push_mode' => 'auto',
+                'queued_at' => now(),
+                'expires_at' => now()->addDays(10),
+            ]);
         }
 
         $wholesaleAmount = $this->resolveWholesaleAmount($extension, $years, $retailAmount);

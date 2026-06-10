@@ -106,18 +106,63 @@ class ResellerDomainOrder extends Model
         return in_array($this->status, ['cancelled', 'failed', 'expired'], true);
     }
 
+    public function isPlatformOrder(): bool
+    {
+        return $this->reseller_id === null;
+    }
+
     public function canAdminPush(): bool
     {
-        return $this->status === 'queued';
+        if ($this->status !== 'queued') {
+            return false;
+        }
+
+        if ($this->isPlatformOrder()) {
+            return $this->hasPaidCustomerInvoice();
+        }
+
+        return true;
+    }
+
+    public function hasPaidCustomerInvoice(): bool
+    {
+        return $this->paidCustomerInvoice() !== null;
+    }
+
+    public function paidCustomerInvoice(): ?Invoice
+    {
+        if ($this->customer_invoice_id) {
+            $invoice = Invoice::find($this->customer_invoice_id);
+
+            return $invoice?->isPaid() ? $invoice : null;
+        }
+
+        return Invoice::query()
+            ->where('user_id', $this->customer_id)
+            ->whereHas('items', function ($query) {
+                $query->where('product_type', 'Domain')
+                    ->where('custom_options->domain_order_id', $this->id);
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->first(fn (Invoice $invoice) => $invoice->isPaid());
     }
 
     public function hasPaidWholesaleInvoice(): bool
     {
+        if ($this->isPlatformOrder()) {
+            return false;
+        }
+
         return $this->paidWholesaleInvoice() !== null;
     }
 
     public function paidWholesaleInvoice(): ?Invoice
     {
+        if ($this->isPlatformOrder() || $this->reseller_id === null) {
+            return null;
+        }
+
         return Invoice::query()
             ->where('user_id', $this->reseller_id)
             ->whereHas('items', function ($query) {
@@ -132,7 +177,7 @@ class ResellerDomainOrder extends Model
     public function canAdminComplete(): bool
     {
         return $this->status === 'pushed'
-            || ($this->status === 'queued' && $this->hasPaidWholesaleInvoice());
+            || ($this->status === 'queued' && ($this->hasPaidWholesaleInvoice() || $this->hasPaidCustomerInvoice()));
     }
 
     public function canAdminDelete(): bool
@@ -142,14 +187,34 @@ class ResellerDomainOrder extends Model
 
     public function isSelfOrder(): bool
     {
+        if ($this->isPlatformOrder()) {
+            return false;
+        }
+
         return (int) $this->customer_id === (int) $this->reseller_id;
+    }
+
+    public function resellerLabel(): string
+    {
+        return $this->isPlatformOrder()
+            ? 'Platform (direct)'
+            : ($this->reseller?->name ?? '—');
     }
 
     public function customerLabel(): string
     {
+        if ($this->isPlatformOrder()) {
+            return $this->customer?->name ?? '—';
+        }
+
         return $this->isSelfOrder()
             ? 'Reseller (self)'
             : ($this->customer?->name ?? '—');
+    }
+
+    public function displayAmount(): float
+    {
+        return (float) $this->wholesale_amount + (float) $this->retail_amount;
     }
 
     public function fullDomainName(): string

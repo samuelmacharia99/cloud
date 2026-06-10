@@ -85,6 +85,55 @@ class DomainPushServiceTest extends TestCase
         $this->assertSame(9500.0, (float) ResellerWallet::where('reseller_id', $reseller->id)->value('balance'));
     }
 
+    public function test_platform_customer_paid_domain_auto_pushes_for_admin_fulfillment(): void
+    {
+        $customer = User::factory()->create(['reseller_id' => null]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'platform',
+            'extension' => '.test',
+            'status' => 'pending',
+        ]);
+
+        $invoice = Invoice::create([
+            'user_id' => $customer->id,
+            'invoice_number' => 'INV-PLAT-1',
+            'status' => 'paid',
+            'due_date' => now(),
+            'subtotal' => 1200,
+            'tax' => 0,
+            'total' => 1200,
+        ]);
+
+        $order = app(ResellerDomainOrderService::class)->createForCustomerCheckout(
+            $customer,
+            $domain,
+            $invoice,
+            'platform',
+            '.test',
+            1,
+            1200,
+        );
+
+        $this->assertNotNull($order);
+        $this->assertTrue($order->isPlatformOrder());
+
+        InvoiceItem::create(array_merge([
+            'invoice_id' => $invoice->id,
+            'description' => 'platform.test',
+            'quantity' => 1,
+            'unit_price' => 1200,
+            'amount' => 1200,
+        ], app(ResellerDomainOrderService::class)->invoiceItemAttributes($order)));
+
+        app(DomainPushService::class)->handlePaidDomainInvoice($invoice->fresh(['items', 'user']));
+
+        $order->refresh();
+        $this->assertSame('pushed', $order->status);
+        $this->assertNotNull($order->admin_invoice_id);
+    }
+
     public function test_customer_paid_domain_queues_when_wallet_is_low(): void
     {
         $reseller = User::factory()->create(['is_reseller' => true]);

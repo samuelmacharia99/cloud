@@ -170,12 +170,19 @@ class InvoiceSettlementService
 
     private function processResellerDomainOrders(Invoice $invoice): void
     {
-        if ($invoice->user->reseller_id === null) {
+        $invoice->loadMissing('items');
+
+        $hasDomainOrder = $invoice->items->contains(function ($item) {
+            return $item->product_type === 'Domain'
+                && isset($item->custom_options['domain_order_id']);
+        });
+
+        if (! $hasDomainOrder) {
             return;
         }
 
         try {
-            app('domain-push-service')->handlePaidDomainInvoice($invoice);
+            app('domain-push-service')->handlePaidDomainInvoice($invoice->fresh(['items', 'user']));
         } catch (\Throwable $e) {
             Log::error('Failed to process reseller domain orders after settlement', [
                 'invoice_id' => $invoice->id,

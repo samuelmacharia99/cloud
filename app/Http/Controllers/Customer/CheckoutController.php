@@ -11,6 +11,7 @@ use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ResellerDomainOrder;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
@@ -499,6 +500,11 @@ class CheckoutController extends Controller
             $paidWithCredits = $invoice
                 ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
                 : false;
+
+            $this->notifyPlatformDomainOrdersPlaced(
+                $invoice?->fresh(['items']),
+                $paidWithCredits ? 'credits' : 'awaiting payment',
+            );
 
             if ($paidWithCredits) {
                 return redirect()
@@ -1132,6 +1138,11 @@ class CheckoutController extends Controller
                 ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
                 : false;
 
+            $this->notifyPlatformDomainOrdersPlaced(
+                $invoice?->fresh(['items']),
+                $paidWithCredits ? 'credits' : 'awaiting payment',
+            );
+
             if ($paidWithCredits) {
                 return redirect()
                     ->route('customer.payment.success', $invoice)
@@ -1157,6 +1168,36 @@ class CheckoutController extends Controller
         $settlement = app(InvoiceSettlementService::class);
 
         return $settlement->settleFromCredits($invoice->fresh());
+    }
+
+    private function notifyPlatformDomainOrdersPlaced(?Invoice $invoice, string $paymentMethod = 'awaiting payment'): void
+    {
+        if (! $invoice) {
+            return;
+        }
+
+        $invoice->loadMissing('items');
+
+        foreach ($invoice->items as $item) {
+            $orderId = $item->custom_options['domain_order_id'] ?? null;
+            if (! $orderId) {
+                continue;
+            }
+
+            $domainOrder = ResellerDomainOrder::find($orderId);
+            if (! $domainOrder?->isPlatformOrder()) {
+                continue;
+            }
+
+            try {
+                app(NotificationService::class)->notifyAdminResellerDomainOrder($domainOrder, 'placed', $paymentMethod);
+            } catch (\Throwable $e) {
+                \Log::error('Failed to notify admins about platform domain order', [
+                    'domain_order_id' => $domainOrder->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     private function domainRegistrationPrice(User $user, DomainExtension $extension, int $years): ?float

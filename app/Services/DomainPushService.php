@@ -22,9 +22,11 @@ class DomainPushService
 
     public function handlePaidDomainInvoice(Invoice $invoice): void
     {
-        if ($invoice->user->reseller_id === null) {
+        if (! $invoice->isPaid()) {
             return;
         }
+
+        $invoice->loadMissing('items', 'user');
 
         foreach ($invoice->items as $item) {
             if ($item->product_type !== 'Domain' || ! isset($item->custom_options['domain_order_id'])) {
@@ -40,6 +42,17 @@ class DomainPushService
             $order->update([
                 'customer_invoice_id' => $order->customer_invoice_id ?? $invoice->id,
             ]);
+
+            if ($order->isPlatformOrder()) {
+                $this->pushAfterPlatformCustomerPaid($order);
+                app(NotificationService::class)->notifyAdminResellerDomainOrder($order->fresh(), 'pushed');
+
+                continue;
+            }
+
+            if ($invoice->user->reseller_id === null) {
+                continue;
+            }
 
             if ($this->pushOrQueue($order)) {
                 continue;
@@ -89,6 +102,10 @@ class DomainPushService
 
     public function pushOrQueue(ResellerDomainOrder $order): bool
     {
+        if ($order->isPlatformOrder()) {
+            return false;
+        }
+
         $reseller = $order->reseller;
         $wallet = $this->walletService->getOrCreate($reseller);
 
@@ -155,6 +172,26 @@ class DomainPushService
         });
     }
 
+    public function pushAfterPlatformCustomerPaid(ResellerDomainOrder $order): void
+    {
+        if (! $order->isPlatformOrder()) {
+            throw new \InvalidArgumentException('Only platform domain orders can use platform customer payment push.');
+        }
+
+        $this->db->transaction(function () use ($order) {
+            $adminOrder = $this->createAdminOrderForDomain($order, $order->customer, paidViaWallet: false);
+
+            $order->update([
+                'status' => 'pushed',
+                'pushed_at' => now(),
+                'admin_order_id' => $adminOrder->id,
+                'admin_invoice_id' => $adminOrder->invoice_id,
+            ]);
+
+            $this->markCustomerOrderSubmitted($order);
+        });
+    }
+
     /** @deprecated Use pushAfterWholesalePaidViaInvoice() */
     public function pushOrderWithDirectPayment(ResellerDomainOrder $order): void
     {
@@ -169,35 +206,43 @@ class DomainPushService
 
     protected function createAdminOrderForDomain(
         ResellerDomainOrder $domainOrder,
-        User $reseller,
+        User $owner,
         bool $paidViaWallet,
     ): Order {
+        $total = $domainOrder->wholesale_amount + $domainOrder->retail_amount;
+        $notes = match (true) {
+            $domainOrder->isPlatformOrder() => "Platform domain order {$domainOrder->fullDomainName()} for {$domainOrder->customer->name}",
+            $domainOrder->isSelfOrder() => "Domain order {$domainOrder->fullDomainName()} (reseller self-registration)",
+            default => "Domain order {$domainOrder->fullDomainName()} for customer {$domainOrder->customer->name}",
+        };
+
         $adminOrder = Order::create([
-            'user_id' => $reseller->id,
+            'user_id' => $owner->id,
             'order_number' => 'ORD-PUSH-'.strtoupper(uniqid()),
             'status' => 'paid',
             'payment_status' => 'paid',
-            'total' => $domainOrder->wholesale_amount + $domainOrder->retail_amount,
-            'notes' => $domainOrder->isSelfOrder()
-                ? "Domain order {$domainOrder->fullDomainName()} (reseller self-registration)"
-                : "Domain order {$domainOrder->fullDomainName()} for customer {$domainOrder->customer->name}",
+            'total' => $total,
+            'notes' => $notes,
         ]);
 
         $invoiceNumber = 'PUSH-'.strtoupper(uniqid());
+        $invoiceNotes = match (true) {
+            $domainOrder->isPlatformOrder() => "Platform customer paid {$total} KES — register {$domainOrder->fullDomainName()} at registrar",
+            $paidViaWallet => "Domain pushed to admin via wallet debit (wholesale: {$domainOrder->wholesale_amount} KES)",
+            default => "Domain pushed to admin after invoice payment (wholesale: {$domainOrder->wholesale_amount} KES)",
+        };
 
         $pushInvoice = Invoice::create([
-            'user_id' => $reseller->id,
+            'user_id' => $owner->id,
             'order_id' => $adminOrder->id,
             'invoice_number' => $invoiceNumber,
             'status' => 'paid',
             'paid_date' => now(),
             'due_date' => now(),
-            'subtotal' => $domainOrder->wholesale_amount + $domainOrder->retail_amount,
+            'subtotal' => $total,
             'tax' => 0,
-            'total' => $domainOrder->wholesale_amount + $domainOrder->retail_amount,
-            'notes' => $paidViaWallet
-                ? "Domain pushed to admin via wallet debit (wholesale: {$domainOrder->wholesale_amount} KES)"
-                : "Domain pushed to admin after invoice payment (wholesale: {$domainOrder->wholesale_amount} KES)",
+            'total' => $total,
+            'notes' => $invoiceNotes,
         ]);
 
         InvoiceItem::create([
@@ -265,6 +310,22 @@ class DomainPushService
             ];
         }
 
+        if ($order->isPlatformOrder()) {
+            if (! $order->hasPaidCustomerInvoice()) {
+                return [
+                    'success' => false,
+                    'message' => 'Customer has not paid for this domain order yet.',
+                ];
+            }
+
+            $this->pushAfterPlatformCustomerPaid($order);
+
+            return [
+                'success' => true,
+                'message' => 'Platform domain order pushed for registrar fulfillment.',
+            ];
+        }
+
         if ($order->hasPaidWholesaleInvoice()) {
             $this->pushAfterWholesalePaidViaInvoice($order);
 
@@ -301,8 +362,14 @@ class DomainPushService
             return;
         }
 
+        if ($order->status === 'queued' && $order->isPlatformOrder() && $order->hasPaidCustomerInvoice()) {
+            $this->pushAfterPlatformCustomerPaid($order);
+
+            return;
+        }
+
         throw new \InvalidArgumentException(
-            'Order must be pushed or backed by a paid wholesale invoice before it can be completed.',
+            'Order must be pushed or backed by a paid invoice before it can be completed.',
         );
     }
 

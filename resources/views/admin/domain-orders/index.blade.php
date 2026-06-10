@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Orders</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage all reseller domain orders.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">View and manage reseller and platform direct domain registration orders.</p>
     </div>
 
     <!-- Filters -->
@@ -71,7 +71,12 @@
                     @forelse ($orders as $order)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group">
                             <td class="px-6 py-4 font-medium text-slate-900 dark:text-white">{{ $order->fullDomainName() }}</td>
-                            <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">{{ $order->reseller->name }}</td>
+                            <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">
+                                {{ $order->resellerLabel() }}
+                                @if ($order->isPlatformOrder())
+                                    <span class="ml-1 text-xs text-blue-600 dark:text-blue-400">(direct)</span>
+                                @endif
+                            </td>
                             <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">
                                 {{ $order->customerLabel() }}
                                 @if ($order->isSelfOrder())
@@ -93,10 +98,12 @@
                                 </span>
                                 @if($order->status === 'queued' && $order->hasPaidWholesaleInvoice())
                                     <span class="text-xs text-emerald-600 dark:text-emerald-400">Wholesale paid</span>
+                                @elseif($order->status === 'queued' && $order->hasPaidCustomerInvoice())
+                                    <span class="text-xs text-emerald-600 dark:text-emerald-400">Customer paid</span>
                                 @endif
                                 </div>
                             </td>
-                            <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($order->wholesale_amount, 2) }}</td>
+                            <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($order->displayAmount(), 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->created_at->format('M d, Y') }}</td>
                             <td class="px-6 py-4 text-right sticky right-0 z-10 bg-white dark:bg-slate-900 group-hover:bg-slate-50 dark:group-hover:bg-slate-800 shadow-[-8px_0_16px_-12px_rgba(15,23,42,0.12)] dark:shadow-[-8px_0_16px_-12px_rgba(0,0,0,0.35)]">
                                 @include('admin.domain-orders.partials.actions', ['order' => $order])

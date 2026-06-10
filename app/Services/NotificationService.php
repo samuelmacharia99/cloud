@@ -165,12 +165,20 @@ class NotificationService
         }
 
         $message = match ($stage) {
-            'placed' => $order->isSelfOrder()
-                ? "ALERT: Reseller {$order->reseller->name} placed domain order {$domain}. Wholesale: KES {$wholesale}. Payment: ".ucfirst($paymentMethod).'.'
-                : "ALERT: Domain order {$domain} for {$order->customer->name} via reseller {$order->reseller->name}. Retail: KES {$retail}. Payment: ".ucfirst($paymentMethod).'.',
-            'customer_paid' => "ALERT: {$order->customer->name} paid for {$domain} (reseller {$order->reseller->name}). Awaiting push. Wholesale: KES {$wholesale}.",
-            'pushed' => "ALERT: Reseller {$order->reseller->name} pushed {$domain} for registration. Wholesale: KES {$wholesale}. Fulfill now.",
-            'provisioned' => "ALERT: Reseller {$order->reseller->name} registered {$domain} for {$order->customer->name} (no customer invoice). Wholesale: KES {$wholesale}.",
+            'placed' => $order->isPlatformOrder()
+                ? "ALERT: Platform customer {$order->customer->name} placed domain order {$domain}. Amount: KES ".number_format($order->displayAmount(), 0).'. Payment: '.ucfirst($paymentMethod).'.'
+                : ($order->isSelfOrder()
+                    ? "ALERT: Reseller {$order->reseller->name} placed domain order {$domain}. Wholesale: KES {$wholesale}. Payment: ".ucfirst($paymentMethod).'.'
+                    : "ALERT: Domain order {$domain} for {$order->customer->name} via reseller {$order->reseller->name}. Retail: KES {$retail}. Payment: ".ucfirst($paymentMethod).'.'),
+            'customer_paid' => $order->isPlatformOrder()
+                ? "ALERT: {$order->customer->name} paid for {$domain} (platform direct). Awaiting registrar fulfillment. Amount: KES ".number_format($order->displayAmount(), 0).'.'
+                : "ALERT: {$order->customer->name} paid for {$domain} (reseller {$order->reseller->name}). Awaiting push. Wholesale: KES {$wholesale}.",
+            'pushed' => $order->isPlatformOrder()
+                ? "ALERT: Platform domain {$domain} paid by {$order->customer->name}. Register at registrar now. Amount: KES ".number_format($order->displayAmount(), 0).'.'
+                : "ALERT: Reseller {$order->reseller->name} pushed {$domain} for registration. Wholesale: KES {$wholesale}. Fulfill now.",
+            'provisioned' => $order->isPlatformOrder()
+                ? "ALERT: Platform domain {$domain} registered for {$order->customer->name}. Amount: KES ".number_format($order->displayAmount(), 0).'.'
+                : "ALERT: Reseller {$order->reseller->name} registered {$domain} for {$order->customer->name} (no customer invoice). Wholesale: KES {$wholesale}.",
             default => "ALERT: Domain order update for {$domain} ({$stage}).",
         };
 
@@ -180,9 +188,11 @@ class NotificationService
         } elseif ($this->preferences->isGloballyEnabled(NotificationEvent::AdminNewOrder)) {
             $this->emailDelivery->sendTemplated(null, NotificationEvent::AdminNewOrder, [
                 'order_number' => 'DOM-'.$order->id,
-                'customer_name' => $order->isSelfOrder()
-                    ? $order->reseller->name.' (reseller self-order)'
-                    : $order->customer->name.' via '.$order->reseller->name,
+                'customer_name' => $order->isPlatformOrder()
+                    ? $order->customer->name.' (platform direct)'
+                    : ($order->isSelfOrder()
+                        ? $order->reseller->name.' (reseller self-order)'
+                        : $order->customer->name.' via '.$order->reseller->name),
                 'payment_method' => ucfirst($paymentMethod),
                 'amount' => 'KES '.number_format((float) ($order->retail_amount + $order->wholesale_amount), 2),
             ]);
