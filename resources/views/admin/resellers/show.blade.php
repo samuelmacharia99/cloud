@@ -84,7 +84,7 @@
     </div>
 
     <!-- Tabbed Content -->
-    <div x-data="{ activeTab: '{{ request('tab', 'overview') }}', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
+    <div x-data="{ activeTab: '{{ request('tab', request()->has('domains_page') ? 'domains' : 'overview') }}', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
          x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any() && (old('amount') !== null || old('reason') !== null)) activeTab = 'wallet' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
@@ -100,7 +100,7 @@
                     Customers ({{ $customerIds->count() }})
                 </button>
                 <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
-                    Domains ({{ $domains->count() }})
+                    Domains ({{ $domains->total() }})
                 </button>
                 <button @click="activeTab = 'invoices'" :class="activeTab === 'invoices' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
                     Invoices ({{ $resellerInvoices->count() }})
@@ -408,14 +408,14 @@
             <!-- Domains Tab -->
             <div x-show="activeTab === 'domains'" class="space-y-4">
                 <div class="flex items-center justify-between">
-                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">Domains ({{ $domains->count() }})</h3>
+                    <h3 class="text-base font-semibold text-slate-900 dark:text-white">Domains ({{ $domains->total() }})</h3>
                     <button @click="addDomainModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
                         + Add Domain
                     </button>
                 </div>
 
                 <!-- Domains List -->
-                @if ($domains->count() > 0)
+                @if ($domains->total() > 0)
                     <div class="overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead>
@@ -464,6 +464,9 @@
                                     @endforeach
                                 </tbody>
                             </table>
+                    </div>
+                    <div class="mt-4">
+                        {{ $domains->appends(['tab' => 'domains'])->links() }}
                     </div>
                 @else
                     <div class="text-center py-12">

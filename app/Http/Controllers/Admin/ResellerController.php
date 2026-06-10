@@ -77,7 +77,12 @@ class ResellerController extends Controller
             $q->whereIn('user_id', $customerIds)
                 ->orWhere('user_id', $user->id)
                 ->orWhere('reseller_id', $user->id);
-        })->with('user')->orderBy('name')->orderBy('extension')->get();
+        })
+            ->with('user')
+            ->orderBy('name')
+            ->orderBy('extension')
+            ->paginate(10, ['*'], 'domains_page')
+            ->withQueryString();
 
         // Get enabled domain extensions for the add domain form
         $extensions = DomainExtension::where('enabled', true)
@@ -441,7 +446,9 @@ class ResellerController extends Controller
                 ]);
             });
 
-            return back()->with('success', "Domain {$name}.{$ext} added successfully.");
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'domains'])
+                ->with('success', "Domain {$name}.{$ext} added successfully.");
         } catch (\Exception $e) {
             Log::error('Failed to create domain', [
                 'reseller_id' => $user->id,
