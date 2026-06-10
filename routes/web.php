@@ -137,6 +137,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/customers/{customer}/invoice', [CustomerController::class, 'createInvoice'])->name('admin.customers.create-invoice');
         Route::post('admin/customers/{customer}/convert-to-reseller', [CustomerController::class, 'convertToReseller'])->name('admin.customers.convert-to-reseller');
         Route::post('admin/customers/{customer}/transfer-to-reseller', [CustomerController::class, 'transferToReseller'])->name('admin.customers.transfer-to-reseller');
+        Route::post('admin/products/{product}/duplicate', [ProductController::class, 'duplicate'])->name('admin.products.duplicate');
         Route::resource('admin/products', ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [InvoiceController::class, 'download'])->name('admin.invoices.download');

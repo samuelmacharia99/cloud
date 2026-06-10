@@ -97,6 +97,22 @@ class ProductController extends Controller
             ->with('success', 'Product deleted successfully.');
     }
 
+    public function duplicate(Product $product)
+    {
+        abort_if($product->type !== 'container_hosting', 404);
+
+        $copy = $product->replicate();
+        $copy->name = $this->uniqueCopyName($product->name);
+        $copy->slug = $this->uniqueCopySlug($product->slug);
+        $copy->is_active = false;
+        $copy->featured = false;
+        $copy->save();
+
+        return redirect()
+            ->route('admin.products.edit', $copy)
+            ->with('success', 'Product duplicated. Review settings and activate when ready.');
+    }
+
     private function validationRules(string $type, ?Product $product = null): array
     {
         $productId = $product?->id;
@@ -202,5 +218,33 @@ class ProductController extends Controller
         }
 
         return $normalized === [] ? null : $normalized;
+    }
+
+    private function uniqueCopyName(string $name): string
+    {
+        $base = preg_replace('/ \(Copy(?: \d+)?\)$/', '', $name) ?: $name;
+        $candidate = $base.' (Copy)';
+        $suffix = 2;
+
+        while (Product::where('name', $candidate)->exists()) {
+            $candidate = $base.' (Copy '.$suffix.')';
+            $suffix++;
+        }
+
+        return $candidate;
+    }
+
+    private function uniqueCopySlug(string $slug): string
+    {
+        $base = preg_replace('/-copy(?:-\d+)?$/', '', $slug) ?: $slug;
+        $candidate = $base.'-copy';
+        $suffix = 2;
+
+        while (Product::where('slug', $candidate)->exists()) {
+            $candidate = $base.'-copy-'.$suffix;
+            $suffix++;
+        }
+
+        return $candidate;
     }
 }

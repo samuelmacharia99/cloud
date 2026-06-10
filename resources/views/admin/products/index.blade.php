@@ -125,6 +125,14 @@
                                     <a href="{{ route('admin.products.edit', $product) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
                                         Edit
                                     </a>
+                                    @if ($product->type === 'container_hosting')
+                                        <form action="{{ route('admin.products.duplicate', $product) }}" method="POST" style="display: inline;">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition">
+                                                Duplicate
+                                            </button>
+                                        </form>
+                                    @endif
                                     <form action="{{ route('admin.products.destroy', $product) }}" method="POST" style="display: inline;" data-confirm='Are you sure you want to delete this product? This action cannot be undone.'>
                                         @csrf
                                         @method('DELETE')
