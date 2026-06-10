@@ -86,6 +86,14 @@
             <button @click="tab = 'payments'" :class="tab === 'payments' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
                 Payments
             </button>
+            <button @click="tab = 'credits'" :class="tab === 'credits' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
+                Credits
+                @if ($creditAvailableBalance > 0)
+                    <span class="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                        KES {{ number_format($creditAvailableBalance, 0) }}
+                    </span>
+                @endif
+            </button>
             <button @click="tab = 'tickets'" :class="tab === 'tickets' ? 'border-b-2 border-blue-600 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-4 font-medium text-sm transition whitespace-nowrap">
                 Tickets
             </button>
@@ -160,6 +168,10 @@
                         <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Total Invoices</p>
                             <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $customer->invoices_count ?? 0 }}</p>
+                        </div>
+                        <div class="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
+                            <p class="text-sm text-slate-600 dark:text-slate-400">Account credit</p>
+                            <p class="text-sm font-medium text-emerald-600 dark:text-emerald-400">KES {{ number_format($creditAvailableBalance, 2) }}</p>
                         </div>
                         <div class="flex items-center justify-between">
                             <p class="text-sm text-slate-600 dark:text-slate-400">Outstanding Balance</p>
@@ -345,6 +357,15 @@
                 </div>
             @endif
         </div>
+    </div>
+
+    <!-- Credits Tab -->
+    <div x-show="tab === 'credits'" x-cloak>
+        @include('admin.customers.partials.credits-tab', [
+            'customer' => $customer,
+            'customerCredits' => $customerCredits,
+            'creditAvailableBalance' => $creditAvailableBalance,
+        ])
     </div>
 
     <!-- Payments Tab -->
@@ -1035,7 +1056,7 @@
 <script>
 function initCustomerData() {
     return {
-        tab: 'overview',
+        tab: @js(request('tab', 'overview')),
         addServiceModal: false,
         addDomainModal: false,
         createInvoiceModal: false,

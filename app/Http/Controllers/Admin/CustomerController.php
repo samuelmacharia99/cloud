@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Credit;
 use App\Models\DirectAdminPackage;
 use App\Models\Domain;
 use App\Models\Invoice;
@@ -14,6 +15,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
+use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
@@ -190,7 +192,58 @@ class CustomerController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'hostname', 'status']);
 
-        return view('admin.customers.show', compact('customer', 'products', 'productsForJs', 'daNodes'));
+        $customerCredits = Credit::forUser($customer)
+            ->latest()
+            ->get();
+
+        $creditAvailableBalance = CreditService::getAvailableBalance($customer);
+
+        return view('admin.customers.show', compact(
+            'customer',
+            'products',
+            'productsForJs',
+            'daNodes',
+            'customerCredits',
+            'creditAvailableBalance',
+        ));
+    }
+
+    public function addCredit(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        if ($customer->is_reseller) {
+            return redirect()->route('admin.resellers.show', $customer)
+                ->with('error', 'Use the reseller profile to manage this account.');
+        }
+
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0.01',
+            'source' => 'required|in:admin,promotion,refund',
+            'notes' => 'nullable|string|max:500',
+            'expires_at' => 'nullable|date|after:today',
+        ]);
+
+        $credit = CreditService::createManualCredit(
+            $customer,
+            (float) $validated['amount'],
+            $validated['notes'] ?? 'Manual credit',
+            $validated['expires_at'] ? Carbon::parse($validated['expires_at']) : null,
+        );
+
+        $credit->update(['source' => $validated['source']]);
+
+        AdminActivityService::log(
+            'credit.issue',
+            'Issued KES '.number_format($validated['amount'], 2)." credit to {$customer->name}",
+            $credit,
+        );
+
+        return redirect()
+            ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+            ->with('success', 'KES '.number_format($validated['amount'], 2).' credit added successfully.');
     }
 
     public function edit(User $customer)

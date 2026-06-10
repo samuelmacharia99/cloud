@@ -51,6 +51,36 @@ class CustomerPortalTest extends TestCase
             ->assertRedirect(route('customer.payment.success', $invoice));
     }
 
+    public function test_checkout_can_apply_credits_when_placing_order(): void
+    {
+        $customer = $this->customer();
+        CreditService::createManualCredit($customer, 1000, 'Checkout credit');
+
+        $product = \App\Models\Product::factory()->create([
+            'monthly_price' => 500,
+            'is_active' => true,
+        ]);
+
+        session([\App\Http\Controllers\Customer\CheckoutController::CART_SESSION_KEY => [
+            'item-1' => [
+                'type' => 'product',
+                'product_id' => $product->id,
+                'billing_cycle' => 'monthly',
+            ],
+        ]]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.checkout.process'), [
+                'agree_terms' => '1',
+                'apply_credits' => '1',
+            ])
+            ->assertRedirect();
+
+        $invoice = Invoice::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($invoice);
+        $this->assertTrue($invoice->fresh()->status->value === 'paid' || $invoice->getAppliedCredits() > 0);
+    }
+
     public function test_customer_can_apply_partial_credits(): void
     {
         $customer = $this->customer();

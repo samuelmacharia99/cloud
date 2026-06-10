@@ -15,7 +15,9 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\CreditService;
 use App\Services\NodeNameserverService;
 use App\Services\NotificationService;
 use App\Services\ResellerCheckoutGuardService;
@@ -160,6 +162,7 @@ class CheckoutController extends Controller
             'user' => auth()->user(),
             'currency' => $currency,
             'currencyCode' => $currencyCode,
+            'creditBalance' => CreditService::getAvailableBalance($user),
         ]);
     }
 
@@ -170,6 +173,7 @@ class CheckoutController extends Controller
     {
         $request->validate([
             'agree_terms' => 'required|accepted',
+            'apply_credits' => 'sometimes|boolean',
             'source_repo_url.*' => 'nullable|url|max:500',
             'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
         ]);
@@ -490,6 +494,16 @@ class CheckoutController extends Controller
                         'error' => $e->getMessage(),
                     ]);
                 }
+            }
+
+            $paidWithCredits = $invoice
+                ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
+                : false;
+
+            if ($paidWithCredits) {
+                return redirect()
+                    ->route('customer.payment.success', $invoice)
+                    ->with('success', 'Order placed and paid using your account credit.');
             }
 
             return redirect()
@@ -1114,6 +1128,16 @@ class CheckoutController extends Controller
                 }
             }
 
+            $paidWithCredits = $invoice && $request
+                ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
+                : false;
+
+            if ($paidWithCredits) {
+                return redirect()
+                    ->route('customer.payment.success', $invoice)
+                    ->with('success', 'Account created and order paid using your account credit.');
+            }
+
             return redirect()
                 ->route('customer.invoices.show', $invoice)
                 ->with('success', 'Account created and order placed! Please pay your invoice to activate services.');
@@ -1122,6 +1146,17 @@ class CheckoutController extends Controller
 
             return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
+    }
+
+    private function applyCheckoutCreditsIfRequested(Invoice $invoice, Request $request): bool
+    {
+        if (! $request->boolean('apply_credits')) {
+            return false;
+        }
+
+        $settlement = app(InvoiceSettlementService::class);
+
+        return $settlement->settleFromCredits($invoice->fresh());
     }
 
     private function domainRegistrationPrice(User $user, DomainExtension $extension, int $years): ?float

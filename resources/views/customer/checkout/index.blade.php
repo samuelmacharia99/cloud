@@ -15,6 +15,7 @@
             'taxEnabled' => $taxEnabled,
             'taxRate' => $taxRate,
             'taxInclusive' => $taxInclusive ?? false,
+            'creditBalance' => $creditBalance ?? 0,
         ]) }})"
         @checkout-domain-added.window="addDomainAddon($event.detail)"
         @checkout-domain-removed.window="onDomainRemoved($event.detail.cartKey)">
@@ -97,10 +98,31 @@
                     </div>
                 </div>
 
+                @if(($creditBalance ?? 0) > 0)
+                    <div class="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
+                        <div class="flex items-center justify-between mb-3">
+                            <h2 class="text-lg font-bold text-emerald-900 dark:text-emerald-100">Account credit</h2>
+                            <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES {{ number_format($creditBalance, 2) }}</p>
+                        </div>
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="apply_credits" value="1" x-model="applyCredits" class="mt-1 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                            <span class="text-sm text-slate-700 dark:text-slate-300">
+                                Apply account credit to this order
+                                <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1" x-show="applyCredits">
+                                    Up to <span x-text="formatMoney(creditApplied())"></span> will be used from your credit balance.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                @endif
+
                 <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-                    <h2 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Payment Method</h2>
-                    <p class="text-blue-800 dark:text-blue-200">
-                        An invoice will be generated after you place your order. You can pay using M-Pesa, bank transfer, or other available payment methods.
+                    <h2 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2">Payment</h2>
+                    <p class="text-blue-800 dark:text-blue-200" x-show="!applyCredits || amountDue() > 0">
+                        An invoice will be generated after you place your order. Pay any remaining balance using M-Pesa, bank transfer, or other available payment methods.
+                    </p>
+                    <p class="text-blue-800 dark:text-blue-200" x-show="applyCredits && amountDue() <= 0">
+                        Your credit balance covers this order. Services activate once the order is placed.
                     </p>
                 </div>
 
@@ -137,9 +159,15 @@
                             </div>
                         @endif
                     </div>
+                    <template x-if="applyCredits && creditApplied() > 0">
+                        <div class="flex justify-between text-sm mb-2">
+                            <span class="text-emerald-700 dark:text-emerald-300">Credit applied</span>
+                            <span class="font-medium text-emerald-700 dark:text-emerald-300" x-text="'- ' + formatMoney(creditApplied())"></span>
+                        </div>
+                    </template>
                     <div class="flex justify-between">
-                        <span class="font-semibold text-slate-900 dark:text-white">Total</span>
-                        <span class="text-2xl font-bold text-green-600 dark:text-green-400" x-text="formatMoney(displayTotal())"></span>
+                        <span class="font-semibold text-slate-900 dark:text-white" x-text="applyCredits && creditApplied() > 0 ? 'Amount due' : 'Total'"></span>
+                        <span class="text-2xl font-bold text-green-600 dark:text-green-400" x-text="formatMoney(applyCredits ? amountDue() : displayTotal())"></span>
                     </div>
                     @if(!empty($sharedHostingItems))
                         <p class="mt-4 text-xs text-slate-500 dark:text-slate-400">
@@ -163,11 +191,25 @@
 function checkoutPage(config) {
     return {
         agree: false,
+        applyCredits: false,
         baseSubtotal: config.baseSubtotal,
         taxEnabled: config.taxEnabled,
         taxRate: config.taxRate,
         taxInclusive: config.taxInclusive,
+        creditBalance: config.creditBalance ?? 0,
         domainAddons: {},
+
+        creditApplied() {
+            if (!this.applyCredits) {
+                return 0;
+            }
+
+            return Math.min(this.creditBalance, this.displayTotal());
+        },
+
+        amountDue() {
+            return Math.max(0, this.displayTotal() - this.creditApplied());
+        },
 
         addDomainAddon(detail) {
             this.domainAddons[detail.cartKey] = {
