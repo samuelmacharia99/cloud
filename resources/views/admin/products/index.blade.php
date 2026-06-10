@@ -118,29 +118,7 @@
                                 {{ $product->services_count ?? 0 }}
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <div class="flex items-center justify-end gap-2">
-                                    <a href="{{ route('admin.products.show', $product) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
-                                        View
-                                    </a>
-                                    <a href="{{ route('admin.products.edit', $product) }}" class="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">
-                                        Edit
-                                    </a>
-                                    @if ($product->type === 'container_hosting')
-                                        <form action="{{ route('admin.products.duplicate', $product) }}" method="POST" style="display: inline;">
-                                            @csrf
-                                            <button type="submit" class="px-3 py-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition">
-                                                Duplicate
-                                            </button>
-                                        </form>
-                                    @endif
-                                    <form action="{{ route('admin.products.destroy', $product) }}" method="POST" style="display: inline;" data-confirm='Are you sure you want to delete this product? This action cannot be undone.'>
-                                        @csrf
-                                        @method('DELETE')
-                                        <button type="submit" class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">
-                                            Delete
-                                        </button>
-                                    </form>
-                                </div>
+                                @include('admin.products.partials.row-actions', ['product' => $product])
                             </td>
                         </tr>
                     @empty
