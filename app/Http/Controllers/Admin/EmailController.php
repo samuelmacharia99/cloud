@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Email;
 use App\Services\EmailDeliveryService;
+use App\Services\EmailPreviewService;
 use Illuminate\Http\Request;
 
 class EmailController extends Controller
@@ -40,11 +41,23 @@ class EmailController extends Controller
         return view('admin.emails.index', compact('totalSentToday', 'totalFailedToday', 'totalAllTime', 'emails', 'status'));
     }
 
-    public function show(Email $email)
+    public function show(Email $email, EmailPreviewService $preview)
     {
         $this->authorize('view', $email);
 
-        return view('admin.emails.show', compact('email'));
+        $email->load('user', 'sentBy');
+
+        return view('admin.emails.show', [
+            'email' => $email,
+            'preview' => $preview,
+            'customerHtml' => $preview->customerHtml($email),
+            'plainTextContent' => $preview->plainTextContent($email),
+            'recipientUser' => $preview->resolveRecipient($email),
+            'fromName' => $preview->fromName($email),
+            'fromAddress' => $preview->fromAddress($email),
+            'eventLabel' => $preview->eventLabel($email),
+            'branding' => $preview->branding($email),
+        ]);
     }
 
     public function resend(Email $email, EmailDeliveryService $emailDelivery)

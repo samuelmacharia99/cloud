@@ -11,7 +11,7 @@ class Email extends Model
 
     public $updatedAt = false;
 
-    protected $fillable = ['recipient', 'user_id', 'subject', 'event_key', 'message_id', 'body', 'status', 'response', 'sent_by', 'created_at'];
+    protected $fillable = ['recipient', 'user_id', 'subject', 'event_key', 'message_id', 'body', 'html_body', 'status', 'response', 'sent_by', 'created_at'];
 
     protected $casts = [
         'created_at' => 'datetime',
@@ -20,6 +20,11 @@ class Email extends Model
     public function sentBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sent_by');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function scopeFailed($query)

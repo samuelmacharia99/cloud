@@ -13,6 +13,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\View;
 
 class EmailDeliveryService
 {
@@ -62,11 +63,13 @@ class EmailDeliveryService
 
         try {
             $this->dispatchMail($customer->email, $mailable, $customer);
-            $this->logEmail($customer->email, $subject, 'sent', null, $logBody, $event, $customer->id);
+            $content = $this->captureMailableContent($mailable, $customer, $logBody);
+            $this->logEmail($customer->email, $subject, 'sent', null, $content['body'], $event, $customer->id, null, $content['html_body']);
 
             return true;
         } catch (\Throwable $e) {
-            $this->logEmail($customer->email, $subject, 'failed', $e->getMessage(), $logBody, $event, $customer->id);
+            $content = $this->captureMailableContent($mailable, $customer, $logBody);
+            $this->logEmail($customer->email, $subject, 'failed', $e->getMessage(), $content['body'], $event, $customer->id, null, $content['html_body']);
             throw $e;
         }
     }
@@ -93,11 +96,13 @@ class EmailDeliveryService
 
         try {
             $this->dispatchMail($email, $mailable);
-            $this->logEmail($email, $subject, 'sent', null, $logBody, $event, $user?->id);
+            $content = $this->captureMailableContent($mailable, $user, $logBody);
+            $this->logEmail($email, $subject, 'sent', null, $content['body'], $event, $user?->id, null, $content['html_body']);
 
             return true;
         } catch (\Throwable $e) {
-            $this->logEmail($email, $subject, 'failed', $e->getMessage(), $logBody, $event, $user?->id);
+            $content = $this->captureMailableContent($mailable, $user, $logBody);
+            $this->logEmail($email, $subject, 'failed', $e->getMessage(), $content['body'], $event, $user?->id, null, $content['html_body']);
             throw $e;
         }
     }
@@ -204,6 +209,8 @@ class EmailDeliveryService
                 $email->body,
                 $event,
                 $user?->id,
+                null,
+                $email->html_body,
             );
         } catch (\Throwable $e) {
             $this->logEmail(
@@ -214,6 +221,8 @@ class EmailDeliveryService
                 $email->body,
                 $event,
                 $user?->id,
+                null,
+                $email->html_body,
             );
 
             throw $e;
@@ -251,6 +260,7 @@ class EmailDeliveryService
         ?NotificationEvent $event = null,
         ?int $userId = null,
         ?string $messageId = null,
+        ?string $htmlBody = null,
     ): void {
         try {
             Email::create([
@@ -260,6 +270,7 @@ class EmailDeliveryService
                 'event_key' => $event?->value,
                 'message_id' => $messageId,
                 'body' => $body ?? '',
+                'html_body' => $htmlBody,
                 'status' => $status,
                 'response' => $error,
                 'sent_by' => auth()->id(),
@@ -268,5 +279,36 @@ class EmailDeliveryService
         } catch (\Throwable $e) {
             Log::error('Failed to log email', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * @return array{body: string, html_body: ?string}
+     */
+    protected function captureMailableContent(Mailable $mailable, ?User $customer, ?string $logBody): array
+    {
+        if ($customer) {
+            View::share('emailBranding', $this->brandingResolver->forCustomer($customer));
+        } elseif ($customer === null) {
+            View::share('emailBranding', $this->brandingResolver->defaults());
+        }
+
+        $htmlBody = null;
+
+        try {
+            $htmlBody = $mailable->render();
+        } catch (\Throwable $e) {
+            Log::warning('Failed to render email for logging', ['error' => $e->getMessage()]);
+        }
+
+        $plainBody = $logBody;
+
+        if ($plainBody === null && filled($htmlBody)) {
+            $plainBody = EmailPreviewService::htmlToPlain($htmlBody);
+        }
+
+        return [
+            'body' => $plainBody ?? '',
+            'html_body' => $htmlBody,
+        ];
     }
 }
