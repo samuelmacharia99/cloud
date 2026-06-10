@@ -60,9 +60,9 @@ class DomainOrderController extends Controller
 
     public function complete(Request $request, ResellerDomainOrder $order)
     {
-        if ($order->status !== 'pushed') {
+        if (! $order->canAdminComplete()) {
             return $this->redirectBack($request)
-                ->with('error', 'Only pushed orders can be marked as completed.');
+                ->with('error', 'This order cannot be completed yet. Push it first, or ensure the reseller wholesale invoice is paid.');
         }
 
         $validated = $request->validate([
@@ -70,7 +70,8 @@ class DomainOrderController extends Controller
         ]);
 
         try {
-            $this->domainPushService->completeOrder($order, $validated['registrar']);
+            $this->domainPushService->prepareOrderForAdminCompletion($order);
+            $this->domainPushService->completeOrder($order->fresh(), $validated['registrar']);
 
             return $this->redirectBack($request)
                 ->with('success', "Domain {$order->fullDomainName()} marked as completed.");
@@ -110,13 +111,15 @@ class DomainOrderController extends Controller
         }
 
         try {
-            if ($this->domainPushService->pushOrQueue($order)) {
+            $result = $this->domainPushService->adminPushOrder($order);
+
+            if ($result['success']) {
                 return $this->redirectBack($request)
-                    ->with('success', "Domain {$order->fullDomainName()} pushed to admin for registration.");
+                    ->with('success', "Domain {$order->fullDomainName()} pushed to admin for registration. {$result['message']}");
             }
 
             return $this->redirectBack($request)
-                ->with('error', 'Reseller wallet balance is insufficient. Order remains queued until the reseller tops up.');
+                ->with('error', $result['message']);
         } catch (\Exception $e) {
             return $this->redirectBack($request)
                 ->with('error', "Failed to push order: {$e->getMessage()}");

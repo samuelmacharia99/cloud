@@ -19,7 +19,7 @@
             method="POST"
             action="{{ route('admin.domain-orders.push', $order) }}"
             class="inline"
-            data-confirm="Push {{ $order->fullDomainName() }} to admin for registration? This debits the reseller wallet if funds are available."
+            data-confirm="Push {{ $order->fullDomainName() }} to admin for registration?{{ $order->hasPaidWholesaleInvoice() ? ' Wholesale invoice is already paid — no wallet debit.' : ' Uses reseller wallet if no paid invoice is on file.' }}"
         >
             @csrf
             @foreach ($filterQuery as $key => $value)
@@ -28,7 +28,7 @@
             <button
                 type="submit"
                 class="action-icon-btn text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                title="Push to admin (queued — waiting for reseller wallet or manual push)"
+                title="{{ $order->hasPaidWholesaleInvoice() ? 'Push to admin (wholesale invoice paid — no wallet debit)' : 'Push to admin (uses wallet if wholesale invoice not paid)' }}"
             >
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
@@ -42,7 +42,7 @@
             type="button"
             @click="$dispatch('open-domain-order-complete', { orderId: {{ $order->id }}, domain: @js($order->fullDomainName()) })"
             class="action-icon-btn text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-            title="Mark as completed (pushed — domain registered at registrar)"
+            title="{{ $order->status === 'queued' ? 'Mark as completed (wholesale paid — will push then register)' : 'Mark as completed (domain registered at registrar)' }}"
         >
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>

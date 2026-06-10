@@ -79,6 +79,7 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4">
+                                <div class="flex flex-col items-start gap-1">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ match($order->status) {
                                     'queued' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
                                     'pushed' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
@@ -90,6 +91,10 @@
                                 } }}">
                                     {{ ucfirst($order->status) }}
                                 </span>
+                                @if($order->status === 'queued' && $order->hasPaidWholesaleInvoice())
+                                    <span class="text-xs text-emerald-600 dark:text-emerald-400">Wholesale paid</span>
+                                @endif
+                                </div>
                             </td>
                             <td class="px-6 py-4 text-right text-sm font-medium text-slate-900 dark:text-white">KES {{ number_format($order->wholesale_amount, 2) }}</td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $order->created_at->format('M d, Y') }}</td>

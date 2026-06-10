@@ -111,9 +111,28 @@ class ResellerDomainOrder extends Model
         return $this->status === 'queued';
     }
 
+    public function hasPaidWholesaleInvoice(): bool
+    {
+        return $this->paidWholesaleInvoice() !== null;
+    }
+
+    public function paidWholesaleInvoice(): ?Invoice
+    {
+        return Invoice::query()
+            ->where('user_id', $this->reseller_id)
+            ->whereHas('items', function ($query) {
+                $query->where('product_type', 'Domain')
+                    ->where('custom_options->domain_order_id', $this->id);
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->first(fn (Invoice $invoice) => $invoice->isPaid());
+    }
+
     public function canAdminComplete(): bool
     {
-        return $this->status === 'pushed';
+        return $this->status === 'pushed'
+            || ($this->status === 'queued' && $this->hasPaidWholesaleInvoice());
     }
 
     public function canAdminDelete(): bool

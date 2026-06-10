@@ -248,6 +248,63 @@ class DomainPushService
         }
     }
 
+    /**
+     * Admin push: prefer paid wholesale invoice (M-Pesa/card/etc.), then wallet.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function adminPushOrder(ResellerDomainOrder $order): array
+    {
+        $order->refresh();
+
+        if ($order->status !== 'queued') {
+            return [
+                'success' => false,
+                'message' => 'Only queued orders can be pushed.',
+            ];
+        }
+
+        if ($order->hasPaidWholesaleInvoice()) {
+            $this->pushAfterWholesalePaidViaInvoice($order);
+
+            return [
+                'success' => true,
+                'message' => 'Order pushed using confirmed wholesale invoice payment (no wallet debit).',
+            ];
+        }
+
+        if ($this->pushOrQueue($order)) {
+            return [
+                'success' => true,
+                'message' => 'Order pushed using reseller wallet funds.',
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => 'No paid wholesale invoice found and reseller wallet balance is insufficient.',
+        ];
+    }
+
+    public function prepareOrderForAdminCompletion(ResellerDomainOrder $order): void
+    {
+        $order->refresh();
+
+        if ($order->status === 'pushed') {
+            return;
+        }
+
+        if ($order->status === 'queued' && $order->hasPaidWholesaleInvoice()) {
+            $this->pushAfterWholesalePaidViaInvoice($order);
+
+            return;
+        }
+
+        throw new \InvalidArgumentException(
+            'Order must be pushed or backed by a paid wholesale invoice before it can be completed.',
+        );
+    }
+
     public function processQueuedOrders(User $reseller): int
     {
         $queued = ResellerDomainOrder::where('reseller_id', $reseller->id)

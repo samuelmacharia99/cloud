@@ -3,6 +3,8 @@
 namespace Tests\Feature\Admin;
 
 use App\Models\Domain;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerPackage;
 use App\Models\User;
@@ -142,6 +144,75 @@ class AdminDomainOrderActionsTest extends TestCase
             ->assertOk()
             ->assertSee('Push to admin (queued', false)
             ->assertSee('Delete order record', false);
+    }
+
+    public function test_admin_can_complete_queued_order_when_wholesale_invoice_is_paid(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createOrder($reseller, 'queued');
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'paid_date' => now(),
+            'total' => 500,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'product_type' => 'Domain',
+            'description' => 'example.com',
+            'quantity' => 1,
+            'unit_price' => 500,
+            'amount' => 500,
+            'custom_options' => ['domain_order_id' => $order->id],
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.domain-orders.complete', $order), [
+                'registrar' => 'Namecheap',
+            ])
+            ->assertRedirect(route('admin.domain-orders.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+        $this->assertSame('completed', $order->status);
+        $this->assertNotNull($order->completed_at);
+    }
+
+    public function test_admin_push_uses_paid_invoice_without_wallet_debit(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createOrder($reseller, 'queued');
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'paid',
+            'paid_date' => now(),
+            'total' => 500,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'product_type' => 'Domain',
+            'description' => 'example.com',
+            'quantity' => 1,
+            'unit_price' => 500,
+            'amount' => 500,
+            'custom_options' => ['domain_order_id' => $order->id],
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.domain-orders.push', $order))
+            ->assertRedirect(route('admin.domain-orders.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+        $this->assertSame('pushed', $order->status);
+        $this->assertNull($order->wallet_transaction_id);
+        $this->assertNotNull($order->admin_invoice_id);
     }
 
     public function test_admin_can_delete_queued_order(): void

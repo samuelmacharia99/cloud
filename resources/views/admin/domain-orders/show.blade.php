@@ -95,6 +95,14 @@
                 <p class="text-sm text-slate-600 dark:text-slate-400">Push Mode</p>
                 <p class="font-semibold text-slate-900 dark:text-white text-lg">{{ ucfirst($order->push_mode) }}</p>
             </div>
+            @if($paidInvoice = $order->paidWholesaleInvoice())
+            <div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Wholesale Payment</p>
+                <p class="font-semibold text-emerald-600 dark:text-emerald-400 text-lg">
+                    Paid — {{ $paidInvoice->invoice_number }}
+                </p>
+            </div>
+            @endif
         </div>
     </div>
 
@@ -147,7 +155,11 @@
 
     @if($order->status === 'queued')
     <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
-        <strong>Queued</strong> — waiting for reseller wallet funds or a manual push. Use <strong>Push</strong> when ready to send to admin for registration. Complete / Fail become available after the order is pushed.
+        @if($order->hasPaidWholesaleInvoice())
+            <strong>Queued</strong> — wholesale invoice is <strong>paid</strong> (M-Pesa/card/bank, not wallet). You can <strong>Complete</strong> directly or use <strong>Push</strong> first; no wallet debit is required.
+        @else
+            <strong>Queued</strong> — waiting for reseller wallet funds or wholesale payment. Use <strong>Push</strong> when ready (wallet debit) or after the reseller pays their invoice.
+        @endif
     </div>
     @endif
 
