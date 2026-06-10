@@ -140,7 +140,7 @@
                                         {{ strtoupper(substr($domain->user->name, 0, 1)) }}
                                     </div>
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $domain->user->name }}</p>
+                                        <x-admin.customer-link :user="$domain->user" class="text-sm text-slate-900 dark:text-white" />
                                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->user->email }}</p>
                                     </div>
                                 </div>

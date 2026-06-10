@@ -54,9 +54,7 @@
             <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">Sent By</p>
             <p class="text-lg font-semibold text-slate-900 dark:text-white mt-2">
                 @if ($email->sentBy)
-                    <a href="{{ route('admin.customers.show', $email->sentBy) }}" class="text-blue-600 dark:text-blue-400 hover:underline">
-                        {{ $email->sentBy->name }}
-                    </a>
+                    <x-admin.customer-link :user="$email->sentBy" />
                 @else
                     <span class="text-slate-500">System</span>
                 @endif

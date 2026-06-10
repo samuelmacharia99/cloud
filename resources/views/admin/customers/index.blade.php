@@ -93,7 +93,7 @@
                                         {{ strtoupper(substr($customer->name, 0, 1)) }}
                                     </div>
                                     <div>
-                                        <p class="font-medium text-slate-900 dark:text-white">{{ $customer->name }}</p>
+                                        <x-admin.customer-link :user="$customer" />
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $customer->email }}</p>
                                     </div>
                                 </div>

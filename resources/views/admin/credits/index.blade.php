@@ -66,7 +66,7 @@
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">#{{ $credit->id }}</td>
                             <td class="px-6 py-4">
-                                <a href="{{ route('admin.customers.show', $credit->user) }}" class="text-blue-600 hover:text-blue-700 font-medium">{{ $credit->user->name }}</a>
+                                <x-admin.customer-link :user="$credit->user" />
                                 <p class="text-xs text-slate-500">{{ $credit->user->email }}</p>
                             </td>
                             <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white">KES {{ number_format($credit->amount, 2) }}</td>

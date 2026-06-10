@@ -67,7 +67,7 @@
                             <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ $invoice->invoice_number }}</td>
                             <td class="px-6 py-4">
                                 <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->user->name }}</p>
+                                    <x-admin.customer-link :user="$invoice->user" class="text-sm text-slate-900 dark:text-white" />
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invoice->user->email }}</p>
                                 </div>
                             </td>

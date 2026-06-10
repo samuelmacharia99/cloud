@@ -16,7 +16,7 @@
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Credit #{{ $credit->id }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">
-                <a href="{{ route('admin.customers.show', $credit->user) }}" class="text-blue-600 hover:text-blue-700">{{ $credit->user->name }}</a>
+                <x-admin.customer-link :user="$credit->user" />
             </p>
         </div>
         <form method="POST" action="{{ route('admin.credits.destroy', $credit) }}" data-confirm="Delete this credit?">

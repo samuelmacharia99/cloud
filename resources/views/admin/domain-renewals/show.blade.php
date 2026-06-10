@@ -108,7 +108,7 @@
                 <div class="space-y-3 text-sm">
                     <div class="flex justify-between">
                         <span class="text-slate-600 dark:text-slate-400">Name</span>
-                        <span class="font-medium text-slate-900 dark:text-white">{{ $renewal->user->name }}</span>
+                        <x-admin.customer-link :user="$renewal->user" class="text-slate-900 dark:text-white" />
                     </div>
                     <div class="flex justify-between">
                         <span class="text-slate-600 dark:text-slate-400">Email</span>

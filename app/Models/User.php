@@ -332,4 +332,22 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         app(AuthEmailService::class)->sendPasswordReset($this, $token);
     }
+
+    public function isLinkableAdminProfile(): bool
+    {
+        return ! $this->is_admin;
+    }
+
+    public function adminProfileUrl(): ?string
+    {
+        if ($this->is_admin) {
+            return null;
+        }
+
+        if ($this->is_reseller) {
+            return route('admin.resellers.show', $this);
+        }
+
+        return route('admin.customers.show', $this);
+    }
 }

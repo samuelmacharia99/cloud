@@ -135,7 +135,7 @@
                             </td>
                             <td>
                                 <div class="min-w-0">
-                                    <p class="font-medium text-slate-900 dark:text-white truncate">{{ $service->user->name }}</p>
+                                    <x-admin.customer-link :user="$service->user" class="truncate text-slate-900 dark:text-white" />
                                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate">{{ $service->user->email }}</p>
                                 </div>
                             </td>

@@ -54,6 +54,12 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2">
+                <form method="POST" action="{{ route('admin.customers.impersonate', $customer) }}" class="inline">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
+                        Impersonate
+                    </button>
+                </form>
                 <a href="{{ route('admin.customers.edit', $customer) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                     Edit Customer
                 </a>

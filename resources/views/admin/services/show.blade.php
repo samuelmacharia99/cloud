@@ -399,7 +399,7 @@
                             {{ strtoupper(substr($service->user->name, 0, 1)) }}
                         </div>
                         <div>
-                            <p class="font-medium text-slate-900 dark:text-white">{{ $service->user->name }}</p>
+                            <x-admin.customer-link :user="$service->user" class="text-slate-900 dark:text-white" />
                             <p class="text-xs text-slate-600 dark:text-slate-400">{{ $service->user->email }}</p>
                         </div>
                     </div>

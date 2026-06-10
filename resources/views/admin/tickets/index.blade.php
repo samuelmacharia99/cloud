@@ -91,7 +91,7 @@
                             </a>
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
-                            {{ $ticket->user->name }}
+                            <x-admin.customer-link :user="$ticket->user" />
                         </td>
                         <td class="px-6 py-4">
                             <span class="px-3 py-1 rounded-full text-xs font-semibold

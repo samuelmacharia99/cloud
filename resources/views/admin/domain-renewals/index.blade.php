@@ -66,7 +66,7 @@
                                 {{ $renewal->domain->name }}{{ $renewal->domain->extension }}
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
-                                {{ $renewal->user->name }}
+                                <x-admin.customer-link :user="$renewal->user" />
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-300">
                                 {{ $renewal->years }} year{{ $renewal->years > 1 ? 's' : '' }}

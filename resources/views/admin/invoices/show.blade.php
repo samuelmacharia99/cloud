@@ -17,7 +17,7 @@
         <div class="flex items-start justify-between">
             <div>
                 <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Invoice #{{ str_pad($invoice->id, 5, '0', STR_PAD_LEFT) }}</h1>
-                <p class="text-slate-600 dark:text-slate-400 mt-2">{{ $invoice->user->name }} • {{ $invoice->user->email }}</p>
+                <p class="text-slate-600 dark:text-slate-400 mt-2"><x-admin.customer-link :user="$invoice->user" /> • {{ $invoice->user->email }}</p>
 
                 <!-- Status badge -->
                 <div class="mt-4">
@@ -327,7 +327,7 @@
                             {{ strtoupper(substr($invoice->user->name, 0, 1)) }}
                         </div>
                         <div>
-                            <p class="font-medium text-slate-900 dark:text-white">{{ $invoice->user->name }}</p>
+                            <x-admin.customer-link :user="$invoice->user" class="text-slate-900 dark:text-white" />
                             <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invoice->user->email }}</p>
                         </div>
                     </div>

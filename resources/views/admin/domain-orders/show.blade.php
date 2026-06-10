@@ -58,7 +58,7 @@
             <div class="space-y-3">
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Name</p>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ $order->customer->name }}</p>
+                    <x-admin.customer-link :user="$order->customer" class="font-semibold text-slate-900 dark:text-white" />
                 </div>
                 <div>
                     <p class="text-sm text-slate-600 dark:text-slate-400">Email</p>

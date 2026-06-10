@@ -96,7 +96,7 @@
                 </div>
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Owner</p>
-                    <p class="text-slate-900 dark:text-white mt-1">{{ $domain->user->name }}</p>
+                    <div class="mt-1"><x-admin.customer-link :user="$domain->user" class="text-slate-900 dark:text-white" /></div>
                     <p class="text-xs text-slate-500 dark:text-slate-400">{{ $domain->user->email }}</p>
                 </div>
                 <div>

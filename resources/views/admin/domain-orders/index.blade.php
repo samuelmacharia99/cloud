@@ -78,7 +78,13 @@
                                 @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-900 dark:text-white">
-                                {{ $order->customerLabel() }}
+                                @if ($order->isSelfOrder() && $order->reseller)
+                                    <x-admin.customer-link :user="$order->reseller" label="Reseller (self)" />
+                                @elseif ($order->customer)
+                                    <x-admin.customer-link :user="$order->customer" />
+                                @else
+                                    —
+                                @endif
                                 @if ($order->isSelfOrder())
                                     <span class="ml-1 text-xs text-purple-600 dark:text-purple-400">(wholesale)</span>
                                 @endif

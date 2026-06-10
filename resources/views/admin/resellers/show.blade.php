@@ -331,7 +331,7 @@
                                             </a>
                                         </td>
                                         <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
-                                            {{ $service->user->name }}
+                                            <x-admin.customer-link :user="$service->user" />
                                             @if ($service->user_id === $user->id)
                                                 <span class="ml-1 text-xs text-purple-600 dark:text-purple-400">(reseller)</span>
                                             @endif
@@ -378,9 +378,7 @@
                                 @foreach ($customers as $customer)
                                     <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                         <td class="py-3 px-4">
-                                            <a href="{{ route('admin.customers.show', $customer) }}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">
-                                                {{ $customer->name }}
-                                            </a>
+                                            <x-admin.customer-link :user="$customer" />
                                         </td>
                                         <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
                                             {{ $customer->email }}
@@ -436,9 +434,7 @@
                                                 {{ $domain->name }}{{ $domain->extension }}
                                             </td>
                                             <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
-                                                <a href="{{ route('admin.customers.show', $domain->user) }}" class="text-blue-600 dark:text-blue-400 hover:underline">
-                                                    {{ $domain->user->name }}
-                                                </a>
+                                                <x-admin.customer-link :user="$domain->user" />
                                             </td>
                                             <td class="py-3 px-4 text-slate-600 dark:text-slate-400">
                                                 {{ $domain->registered_at?->format('M d, Y') ?? '—' }}

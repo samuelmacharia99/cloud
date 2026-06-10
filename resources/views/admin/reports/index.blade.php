@@ -121,7 +121,7 @@
                         <tr>
                             <td class="px-6 py-3 text-slate-600">{{ $entry->created_at->format('M d, Y') }}</td>
                             <td class="px-6 py-3">{{ $entry->reseller?->name ?? '—' }}</td>
-                            <td class="px-6 py-3">{{ $entry->customer?->name ?? '—' }}</td>
+                            <td class="px-6 py-3"><x-admin.customer-link :user="$entry->customer" /></td>
                             <td class="px-6 py-3 text-slate-600">{{ Str::limit($entry->description, 50) }}</td>
                             <td class="px-6 py-3 text-right font-medium">KES {{ number_format($entry->margin_amount, 2) }}</td>
                         </tr>

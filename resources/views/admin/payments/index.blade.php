@@ -100,7 +100,7 @@
                                         {{ substr($payment->user->name, 0, 1) }}
                                     </div>
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->user->name }}</p>
+                                        <x-admin.customer-link :user="$payment->user" class="text-sm text-slate-900 dark:text-white" />
                                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ $payment->user->email }}</p>
                                     </div>
                                 </div>

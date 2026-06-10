@@ -26,7 +26,7 @@
 
                 <div class="flex items-center justify-between text-sm">
                     <span class="text-gray-600 dark:text-gray-400">
-                        From: <strong>{{ $ticket->user->name }}</strong> ({{ $ticket->user->email }})
+                        From: <x-admin.customer-link :user="$ticket->user" class="font-semibold" /> ({{ $ticket->user->email }})
                     </span>
                     <span class="text-gray-600 dark:text-gray-400">
                         {{ $ticket->created_at->format('M d, Y H:i') }}
@@ -43,7 +43,7 @@
                     <div class="flex justify-between items-start mb-4">
                         <div>
                             <p class="font-semibold text-gray-900 dark:text-white">
-                                {{ $reply->user->name }}
+                                <x-admin.customer-link :user="$reply->user" class="text-gray-900 dark:text-white" />
                                 @if($reply->is_staff_reply)
                                 <span class="text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded-full ml-2">Staff</span>
                                 @endif
@@ -160,7 +160,7 @@
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Customer</h3>
                 <div class="space-y-2 text-sm">
-                    <p><strong>Name:</strong> {{ $ticket->user->name }}</p>
+                    <p><strong>Name:</strong> <x-admin.customer-link :user="$ticket->user" /></p>
                     <p><strong>Email:</strong> <a href="mailto:{{ $ticket->user->email }}" class="text-blue-600 hover:text-blue-700">{{ $ticket->user->email }}</a></p>
                     <p><strong>Phone:</strong> {{ $ticket->user->phone ?? 'N/A' }}</p>
                 </div>

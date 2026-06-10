@@ -568,7 +568,7 @@
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
                                 </td>
                                 <td class="py-4">
-                                    <p class="font-medium text-slate-900 dark:text-white">{{ $service->user->name }}</p>
+                                    <x-admin.customer-link :user="$service->user" class="text-slate-900 dark:text-white" />
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $service->user->email }}</p>
                                 </td>
                                 <td class="py-4">

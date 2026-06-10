@@ -48,7 +48,7 @@
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Customer</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-2">{{ $payment->user->name }}</p>
+                        <div class="mt-2"><x-admin.customer-link :user="$payment->user" class="text-sm text-slate-900 dark:text-white" /></div>
                     </div>
                 </div>
             </div>

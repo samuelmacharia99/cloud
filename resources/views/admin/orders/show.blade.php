@@ -250,7 +250,7 @@
                             {{ strtoupper(substr($order->user->name, 0, 1)) }}
                         </div>
                         <div class="min-w-0">
-                            <p class="font-semibold text-slate-900 dark:text-white truncate">{{ $order->user->name }}</p>
+                            <x-admin.customer-link :user="$order->user" class="font-semibold truncate text-slate-900 dark:text-white" />
                             <p class="text-xs text-slate-600 dark:text-slate-400 truncate">{{ $order->user->email }}</p>
                         </div>
                     </div>

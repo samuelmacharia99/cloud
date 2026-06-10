@@ -130,7 +130,7 @@
                             <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white">{{ $order->order_number }}</td>
                             <td class="px-6 py-4">
                                 <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $order->user->name }}</p>
+                                    <x-admin.customer-link :user="$order->user" class="text-sm text-slate-900 dark:text-white" />
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $order->user->email }}</p>
                                 </div>
                             </td>
