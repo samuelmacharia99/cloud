@@ -198,6 +198,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/upload-file', [SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
         Route::post('admin/settings/test-sms', [SettingController::class, 'testSms'])->name('admin.settings.test-sms');
+        Route::post('admin/settings/paypal/connect', [SettingController::class, 'startPayPalConnect'])->name('admin.settings.paypal.connect');
+        Route::get('admin/settings/paypal/connect/callback', [SettingController::class, 'payPalConnectCallback'])->name('admin.settings.paypal.connect.callback');
+        Route::post('admin/settings/paypal/disconnect', [SettingController::class, 'disconnectPayPal'])->name('admin.settings.paypal.disconnect');
+        Route::post('admin/settings/paypal/refresh', [SettingController::class, 'refreshPayPalConnection'])->name('admin.settings.paypal.refresh');
         Route::post('admin/settings/test-mpesa', [SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
         Route::post('admin/settings/register-mpesa-urls', [SettingController::class, 'registerMpesaUrls'])->name('admin.settings.register-mpesa-urls');
         Route::post('admin/settings/simulate-mpesa-payment', [SettingController::class, 'simulateMpesaPayment'])->name('admin.settings.simulate-mpesa-payment');

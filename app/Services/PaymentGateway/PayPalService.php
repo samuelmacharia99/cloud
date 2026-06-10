@@ -19,14 +19,22 @@ class PayPalService implements PaymentGatewayInterface
 
     protected string $baseUrl;
 
-    public function __construct()
-    {
+    public function __construct(
+        protected ?PayPalConnectService $connectService = null,
+    ) {
+        $this->connectService ??= app(PayPalConnectService::class);
         $this->clientId = Setting::getValue('paypal_client_id', '');
         $this->clientSecret = Setting::getValue('paypal_client_secret', '');
         $this->isProduction = Setting::getValue('paypal_environment', 'sandbox') === 'production';
         $this->baseUrl = $this->isProduction
             ? 'https://api.paypal.com'
             : 'https://api.sandbox.paypal.com';
+    }
+
+    protected function usesPartnerConnection(): bool
+    {
+        return $this->connectService->isConnected()
+            && PayPalConnectService::isPartnerConfigured();
     }
 
     /**
@@ -105,10 +113,14 @@ class PayPalService implements PaymentGatewayInterface
                 ],
             ];
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-                'Content-Type' => 'application/json',
-            ])->post("{$this->baseUrl}/v2/checkout/orders", $payload);
+            if ($this->usesPartnerConnection()) {
+                $payload['purchase_units'][0]['payee'] = [
+                    'merchant_id' => Setting::getValue('paypal_merchant_id'),
+                ];
+            }
+
+            $response = Http::withHeaders($this->apiHeaders($token))
+                ->post("{$this->baseUrl}/v2/checkout/orders", $payload);
 
             if (! $response->successful()) {
                 Log::error('PayPal order creation failed', [
@@ -184,10 +196,8 @@ class PayPalService implements PaymentGatewayInterface
             }
 
             // Capture the order
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-                'Content-Type' => 'application/json',
-            ])->post("{$this->baseUrl}/v2/checkout/orders/{$transactionReference}/capture", []);
+            $response = Http::withHeaders($this->apiHeaders($token))
+                ->post("{$this->baseUrl}/v2/checkout/orders/{$transactionReference}/capture", []);
 
             if (! $response->successful()) {
                 $errorBody = $response->json();
@@ -253,9 +263,8 @@ class PayPalService implements PaymentGatewayInterface
                 return null;
             }
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-            ])->get("{$this->baseUrl}/v2/checkout/orders/{$orderId}");
+            $response = Http::withHeaders($this->apiHeaders($token, json: false))
+                ->get("{$this->baseUrl}/v2/checkout/orders/{$orderId}");
 
             if ($response->successful()) {
                 return $response->json();
@@ -306,10 +315,8 @@ class PayPalService implements PaymentGatewayInterface
                 'webhook_event' => $request->json()->all(),
             ];
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-                'Content-Type' => 'application/json',
-            ])->post("{$this->baseUrl}/v1/notifications/verify-webhook-signature", $payload);
+            $response = Http::withHeaders($this->apiHeaders($token))
+                ->post("{$this->baseUrl}/v1/notifications/verify-webhook-signature", $payload);
 
             if (! $response->successful()) {
                 Log::warning('PayPal webhook verification API call failed', [
@@ -417,6 +424,12 @@ class PayPalService implements PaymentGatewayInterface
                 ];
             }
 
+            if ($eventType === 'MERCHANT.ONBOARDING.COMPLETED') {
+                $this->connectService->refreshConnectionStatus();
+
+                return ['success' => true, 'message' => 'Merchant onboarding status refreshed'];
+            }
+
             if (in_array($eventType, ['CHECKOUT.ORDER.VOIDED', 'PAYMENT.CAPTURE.DENIED', 'PAYMENT.CAPTURE.DECLINED'], true)) {
                 $orderId = $resource['id'] ?? null;
 
@@ -454,8 +467,42 @@ class PayPalService implements PaymentGatewayInterface
     /**
      * Get PayPal access token
      */
+    /**
+     * @return array<string, string>
+     */
+    private function apiHeaders(string $token, bool $json = true): array
+    {
+        $headers = [
+            'Authorization' => 'Bearer '.$token,
+        ];
+
+        if ($json) {
+            $headers['Content-Type'] = 'application/json';
+        }
+
+        if ($this->usesPartnerConnection()) {
+            $partnerClientId = (string) config('paypal.partner.client_id');
+            $bnCode = config('paypal.partner.bn_code');
+            if (filled($bnCode)) {
+                $headers['PayPal-Partner-Attribution-Id'] = (string) $bnCode;
+            }
+            $headers['PayPal-Auth-Assertion'] = $this->connectService->buildAuthAssertion(
+                $partnerClientId,
+                (string) Setting::getValue('paypal_merchant_id')
+            );
+        }
+
+        return $headers;
+    }
+
     private function getAccessToken(): ?string
     {
+        if ($this->usesPartnerConnection()) {
+            return $this->connectService->getPartnerAccessToken(
+                $this->isProduction ? 'production' : 'sandbox'
+            );
+        }
+
         try {
             $response = Http::withBasicAuth($this->clientId, $this->clientSecret)
                 ->asForm()
@@ -486,8 +533,14 @@ class PayPalService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return Setting::getValue('paypal_enabled') == '1'
-            && ! empty($this->clientId)
-            && ! empty($this->clientSecret);
+        if (Setting::getValue('paypal_enabled') != '1') {
+            return false;
+        }
+
+        if ($this->usesPartnerConnection()) {
+            return Setting::getValue('paypal_onboarding_ready') === '1';
+        }
+
+        return ! empty($this->clientId) && ! empty($this->clientSecret);
     }
 }

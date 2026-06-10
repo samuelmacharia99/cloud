@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Services\PaymentGateway\MpesaService;
+use App\Services\PaymentGateway\PayPalConnectService;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -42,7 +43,9 @@ class SettingController extends Controller
             'stripe_enabled', 'stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret',
             // PayPal
             'paypal_enabled', 'paypal_client_id', 'paypal_client_secret',
-            'paypal_webhook_id', 'paypal_environment',
+            'paypal_webhook_id', 'paypal_environment', 'paypal_connection_mode',
+            'paypal_merchant_id', 'paypal_merchant_email', 'paypal_connected_at',
+            'paypal_connect_tracking_id', 'paypal_onboarding_ready', 'paypal_onboarding_status',
             // Bank Transfer
             'bank_transfer_enabled', 'bank_name', 'bank_account_name', 'bank_account_number',
             'bank_branch', 'bank_swift_code',
@@ -133,13 +136,16 @@ class SettingController extends Controller
         $gatewayStatus = [
             'mpesa' => Setting::getValue('mpesa_enabled') == '1' && ! empty(Setting::getValue('mpesa_consumer_key')),
             'stripe' => Setting::getValue('stripe_enabled') == '1' && ! empty(Setting::getValue('stripe_secret_key')),
-            'paypal' => Setting::getValue('paypal_enabled') == '1' && ! empty(Setting::getValue('paypal_client_id')),
+            'paypal' => $this->paypalGatewayActive(),
         ];
+
+        $paypalConnectAvailable = PayPalConnectService::isPartnerConfigured();
+        $paypalConnection = app(PayPalConnectService::class)->connectionSummary();
 
         return view('admin.settings.index', compact(
             'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList', 'directAdminNodes', 'activeTab',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
-            'gatewayStatus'
+            'gatewayStatus', 'paypalConnectAvailable', 'paypalConnection'
         ));
     }
 
@@ -535,6 +541,71 @@ class SettingController extends Controller
         }
     }
 
+    public function startPayPalConnect(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $validated = $request->validate([
+            'environment' => 'required|in:sandbox,production',
+        ]);
+
+        $result = app(PayPalConnectService::class)->createConnectReferral($validated['environment']);
+
+        if (! $result['success']) {
+            return response()->json($result, 422);
+        }
+
+        return response()->json($result);
+    }
+
+    public function payPalConnectCallback(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $environment = $request->query('environment', Setting::getValue('paypal_environment', 'sandbox'));
+        if (! in_array($environment, ['sandbox', 'production'], true)) {
+            $environment = 'sandbox';
+        }
+
+        $result = app(PayPalConnectService::class)->handleConnectCallback($request, $environment);
+
+        return redirect()
+            ->route('admin.settings.index', ['tab' => 'payment_methods'])
+            ->with($result['success'] ? 'success' : 'error', $result['message']);
+    }
+
+    public function disconnectPayPal(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        app(PayPalConnectService::class)->disconnect();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'PayPal account disconnected.',
+        ]);
+    }
+
+    public function refreshPayPalConnection(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $integration = app(PayPalConnectService::class)->refreshConnectionStatus();
+
+        if ($integration === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No linked PayPal account to refresh.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => Setting::getValue('paypal_onboarding_status'),
+            'connection' => app(PayPalConnectService::class)->connectionSummary(),
+        ]);
+    }
+
     public function testMpesa(Request $request)
     {
         $this->authorize('batchUpdate', Setting::class);
@@ -543,6 +614,22 @@ class SettingController extends Controller
         $result = $mpesaService->testConnection();
 
         return response()->json($result);
+    }
+
+    private function paypalGatewayActive(): bool
+    {
+        if (Setting::getValue('paypal_enabled') != '1') {
+            return false;
+        }
+
+        if (Setting::getValue('paypal_connection_mode') === 'partner'
+            && filled(Setting::getValue('paypal_merchant_id'))
+            && PayPalConnectService::isPartnerConfigured()) {
+            return Setting::getValue('paypal_onboarding_ready') === '1';
+        }
+
+        return ! empty(Setting::getValue('paypal_client_id'))
+            && ! empty(Setting::getValue('paypal_client_secret'));
     }
 
     public function registerMpesaUrls(Request $request)
