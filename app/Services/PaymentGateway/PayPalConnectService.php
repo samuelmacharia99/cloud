@@ -390,4 +390,98 @@ class PayPalConnectService
             ? 'https://api.paypal.com'
             : 'https://api.sandbox.paypal.com';
     }
+
+    /**
+     * @return array{success: bool, message: string, environment?: string, mode?: string}
+     */
+    public function testConnection(): array
+    {
+        $environment = Setting::getValue('paypal_environment', 'sandbox');
+        $environmentLabel = $environment === 'production' ? 'production' : 'sandbox';
+
+        if (self::isPartnerConfigured()) {
+            $token = $this->getPartnerAccessToken($environment);
+            if (! $token) {
+                return [
+                    'success' => false,
+                    'message' => 'Partner API authentication failed. Check Client ID, Secret, and environment.',
+                    'environment' => $environmentLabel,
+                    'mode' => 'partner',
+                ];
+            }
+
+            if ($this->isConnected()) {
+                $integration = $this->refreshConnectionStatus();
+                if ($integration === null) {
+                    return [
+                        'success' => false,
+                        'message' => 'Partner credentials work, but the linked merchant account could not be verified.',
+                        'environment' => $environmentLabel,
+                        'mode' => 'partner_connected',
+                    ];
+                }
+
+                $ready = ($integration['payments_receivable'] ?? false) === true
+                    && ($integration['primary_email_confirmed'] ?? false) === true;
+
+                return [
+                    'success' => true,
+                    'message' => $ready
+                        ? 'Partner API and linked merchant account are ready to accept payments.'
+                        : 'Partner API verified. Finish merchant setup on PayPal to receive payments.',
+                    'environment' => $environmentLabel,
+                    'mode' => 'partner_connected',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Partner API credentials verified. Connect a business account to receive payments.',
+                'environment' => $environmentLabel,
+                'mode' => 'partner',
+            ];
+        }
+
+        $clientId = Setting::getValue('paypal_client_id');
+        $clientSecret = Setting::getValue('paypal_client_secret');
+
+        if (! filled($clientId) || ! filled($clientSecret)) {
+            return [
+                'success' => false,
+                'message' => 'Save partner credentials or manual Client ID and Secret, then try again.',
+            ];
+        }
+
+        try {
+            $response = Http::withBasicAuth((string) $clientId, (string) $clientSecret)
+                ->asForm()
+                ->post($this->apiBaseUrl($environment).'/v1/oauth2/token', [
+                    'grant_type' => 'client_credentials',
+                ]);
+
+            if (! $response->successful()) {
+                return [
+                    'success' => false,
+                    'message' => 'Merchant API authentication failed. Check Client ID, Secret, and environment.',
+                    'environment' => $environmentLabel,
+                    'mode' => 'manual',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'message' => 'Merchant API credentials verified.',
+                'environment' => $environmentLabel,
+                'mode' => 'manual',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('PayPal connection test failed', ['error' => $e->getMessage()]);
+
+            return [
+                'success' => false,
+                'message' => 'Connection test failed: '.$e->getMessage(),
+                'environment' => $environmentLabel,
+            ];
+        }
+    }
 }

@@ -203,6 +203,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/paypal/disconnect', [SettingController::class, 'disconnectPayPal'])->name('admin.settings.paypal.disconnect');
         Route::post('admin/settings/paypal/refresh', [SettingController::class, 'refreshPayPalConnection'])->name('admin.settings.paypal.refresh');
         Route::post('admin/settings/test-mpesa', [SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
+        Route::post('admin/settings/test-paypal', [SettingController::class, 'testPayPal'])->name('admin.settings.test-paypal');
         Route::post('admin/settings/register-mpesa-urls', [SettingController::class, 'registerMpesaUrls'])->name('admin.settings.register-mpesa-urls');
         Route::post('admin/settings/simulate-mpesa-payment', [SettingController::class, 'simulateMpesaPayment'])->name('admin.settings.simulate-mpesa-payment');
         Route::post('admin/settings/debug-log', [SettingController::class, 'debugLog'])->name('admin.settings.debug-log');

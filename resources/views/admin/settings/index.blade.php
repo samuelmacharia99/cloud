@@ -702,6 +702,13 @@
                             </div>
 
                             <div class="flex gap-3 pt-4">
+                                <button type="button" @click="testPayPal()" :disabled="testing.paypal" class="px-4 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!testing.paypal">Test Connection</span>
+                                    <span x-show="testing.paypal" class="inline-flex items-center gap-2">
+                                        <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
+                                        Testing...
+                                    </span>
+                                </button>
                                 <button type="submit" :disabled="saving.paypal" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
                                     <span x-show="!saving.paypal">Save PayPal Settings</span>
                                     <span x-show="saving.paypal" class="inline-flex items-center justify-center gap-2 w-full">
@@ -852,7 +859,7 @@
                     return {
                         open: { mpesa: true, stripe: false, paypal: {{ $gatewayStatus['paypal'] || $paypalConnection['connected'] ? 'true' : 'false' }}, bank: false },
                         saving: { mpesa: false, stripe: false, paypal: false, bank: false },
-                        testing: { mpesa: false },
+                        testing: { mpesa: false, paypal: false },
                         registering: { mpesa: false },
                         simulating: { mpesa: false },
                         connecting: { paypal: false },
@@ -1036,6 +1043,31 @@
                             } finally {
                                 this.testing.mpesa = false;
                                 setTimeout(() => { this.status.mpesa = null; }, 5000);
+                            }
+                        },
+
+                        async testPayPal() {
+                            this.testing.paypal = true;
+                            try {
+                                const response = await fetch('{{ route('admin.settings.test-paypal') }}', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Accept': 'application/json',
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}',
+                                        'X-Requested-With': 'XMLHttpRequest',
+                                    },
+                                });
+
+                                const data = await response.json();
+                                this.status.paypal = {
+                                    type: data.success ? 'success' : 'error',
+                                    message: data.message + (data.environment ? ` (${data.environment})` : ''),
+                                };
+                            } catch (error) {
+                                this.status.paypal = { type: 'error', message: 'Test failed: ' + error.message };
+                            } finally {
+                                this.testing.paypal = false;
+                                setTimeout(() => { this.status.paypal = null; }, 5000);
                             }
                         },
 

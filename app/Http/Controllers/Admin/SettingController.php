@@ -618,6 +618,13 @@ class SettingController extends Controller
         return response()->json($result);
     }
 
+    public function testPayPal(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        return response()->json(app(PayPalConnectService::class)->testConnection());
+    }
+
     private function paypalGatewayActive(): bool
     {
         if (Setting::getValue('paypal_enabled') != '1') {
