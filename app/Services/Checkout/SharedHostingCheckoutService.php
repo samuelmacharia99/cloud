@@ -17,6 +17,8 @@ use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerHostingSetupService;
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
