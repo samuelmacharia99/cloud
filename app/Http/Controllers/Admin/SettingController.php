@@ -43,6 +43,8 @@ class SettingController extends Controller
             'stripe_enabled', 'stripe_secret_key', 'stripe_publishable_key', 'stripe_webhook_secret',
             // PayPal
             'paypal_enabled', 'paypal_client_id', 'paypal_client_secret',
+            'paypal_partner_client_id', 'paypal_partner_client_secret',
+            'paypal_partner_merchant_id', 'paypal_partner_bn_code',
             'paypal_webhook_id', 'paypal_environment', 'paypal_connection_mode',
             'paypal_merchant_id', 'paypal_merchant_email', 'paypal_connected_at',
             'paypal_connect_tracking_id', 'paypal_onboarding_ready', 'paypal_onboarding_status',
@@ -184,7 +186,7 @@ class SettingController extends Controller
         $sensitiveFields = [
             'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret', 'mpesa_callback_token',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
-            'paypal_client_secret', 'recaptcha_secret_key',
+            'paypal_client_secret', 'paypal_partner_client_secret', 'recaptcha_secret_key',
         ];
 
         foreach ($settings as $key => $value) {

@@ -8,9 +8,8 @@ return [
     |--------------------------------------------------------------------------
     |
     | Used for "Connect with PayPal" in Admin → Settings → Payment Methods.
-    | These are Talksasa's partner app credentials (not the merchant's).
-    | Merchants link their PayPal account via Partner Referrals; payments use
-    | partner tokens + PayPal-Auth-Assertion on their behalf.
+    | Optional server-level defaults for the partner app. Admins can also set
+    | these in Admin → Settings → Payment Methods → PayPal (stored in DB).
     |
     | Apply for PayPal partner access: https://developer.paypal.com/docs/multiparty/
     |

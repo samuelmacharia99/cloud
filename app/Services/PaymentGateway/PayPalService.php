@@ -481,8 +481,8 @@ class PayPalService implements PaymentGatewayInterface
         }
 
         if ($this->usesPartnerConnection()) {
-            $partnerClientId = (string) config('paypal.partner.client_id');
-            $bnCode = config('paypal.partner.bn_code');
+            $partnerClientId = (string) PayPalConnectService::partnerClientId();
+            $bnCode = PayPalConnectService::partnerBnCode();
             if (filled($bnCode)) {
                 $headers['PayPal-Partner-Attribution-Id'] = (string) $bnCode;
             }

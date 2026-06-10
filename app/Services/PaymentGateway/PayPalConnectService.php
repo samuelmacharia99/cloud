@@ -10,11 +10,39 @@ use Illuminate\Support\Str;
 
 class PayPalConnectService
 {
+    public static function partnerClientId(): ?string
+    {
+        $value = Setting::getValue('paypal_partner_client_id');
+
+        return filled($value) ? (string) $value : config('paypal.partner.client_id');
+    }
+
+    public static function partnerClientSecret(): ?string
+    {
+        $value = Setting::getValue('paypal_partner_client_secret');
+
+        return filled($value) ? (string) $value : config('paypal.partner.client_secret');
+    }
+
+    public static function partnerMerchantId(): ?string
+    {
+        $value = Setting::getValue('paypal_partner_merchant_id');
+
+        return filled($value) ? (string) $value : config('paypal.partner.merchant_id');
+    }
+
+    public static function partnerBnCode(): ?string
+    {
+        $value = Setting::getValue('paypal_partner_bn_code');
+
+        return filled($value) ? (string) $value : config('paypal.partner.bn_code');
+    }
+
     public static function isPartnerConfigured(): bool
     {
-        return filled(config('paypal.partner.client_id'))
-            && filled(config('paypal.partner.client_secret'))
-            && filled(config('paypal.partner.merchant_id'));
+        return filled(self::partnerClientId())
+            && filled(self::partnerClientSecret())
+            && filled(self::partnerMerchantId());
     }
 
     public function isConnected(): bool
@@ -268,8 +296,8 @@ class PayPalConnectService
 
         try {
             $response = Http::withBasicAuth(
-                (string) config('paypal.partner.client_id'),
-                (string) config('paypal.partner.client_secret'),
+                (string) self::partnerClientId(),
+                (string) self::partnerClientSecret(),
             )
                 ->asForm()
                 ->post($this->apiBaseUrl($environment).'/v1/oauth2/token', [
@@ -301,7 +329,7 @@ class PayPalConnectService
             return null;
         }
 
-        $partnerMerchantId = (string) config('paypal.partner.merchant_id');
+        $partnerMerchantId = (string) self::partnerMerchantId();
         $url = $this->apiBaseUrl($environment)
             .'/v1/customer/partners/'.$partnerMerchantId
             .'/merchant-integrations/'.$sellerMerchantId;
@@ -348,7 +376,7 @@ class PayPalConnectService
             'Content-Type' => 'application/json',
         ];
 
-        $bnCode = config('paypal.partner.bn_code');
+        $bnCode = self::partnerBnCode();
         if (filled($bnCode)) {
             $headers['PayPal-Partner-Attribution-Id'] = (string) $bnCode;
         }

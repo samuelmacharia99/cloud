@@ -637,79 +637,6 @@
                     </div>
 
                     <div x-show="open.paypal" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-6">
-                        @if ($paypalConnectAvailable)
-                            <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-4">
-                                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <div>
-                                        <h4 class="font-semibold text-slate-900 dark:text-white">PayPal account</h4>
-                                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                                            Link your PayPal business account securely. API credentials are managed automatically after you approve access on PayPal.
-                                        </p>
-                                    </div>
-                                    @if ($paypalConnection['connected'])
-                                        <span class="inline-flex items-center self-start rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
-                                            Connected
-                                        </span>
-                                    @endif
-                                </div>
-
-                                @if ($paypalConnection['connected'])
-                                    <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                                        <div>
-                                            <dt class="text-slate-500 dark:text-slate-400">Merchant ID</dt>
-                                            <dd class="font-mono text-slate-900 dark:text-white">{{ $paypalConnection['merchant_id'] }}</dd>
-                                        </div>
-                                        @if ($paypalConnection['email'])
-                                            <div>
-                                                <dt class="text-slate-500 dark:text-slate-400">PayPal email</dt>
-                                                <dd class="text-slate-900 dark:text-white">{{ $paypalConnection['email'] }}</dd>
-                                            </div>
-                                        @endif
-                                        @if ($paypalConnection['connected_at'])
-                                            <div>
-                                                <dt class="text-slate-500 dark:text-slate-400">Linked</dt>
-                                                <dd class="text-slate-900 dark:text-white">{{ \Illuminate\Support\Carbon::parse($paypalConnection['connected_at'])->format('M j, Y g:i A') }}</dd>
-                                            </div>
-                                        @endif
-                                        <div>
-                                            <dt class="text-slate-500 dark:text-slate-400">Payment readiness</dt>
-                                            <dd class="{{ $paypalConnection['ready'] ? 'text-green-700 dark:text-green-300' : 'text-amber-700 dark:text-amber-300' }}">
-                                                {{ $paypalConnection['ready'] ? 'Ready to accept payments' : 'Finish setup on PayPal' }}
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                    @if ($paypalConnection['status_message'])
-                                        <p class="text-sm text-slate-600 dark:text-slate-400">{{ $paypalConnection['status_message'] }}</p>
-                                    @endif
-                                    <div class="flex flex-wrap gap-3">
-                                        <button type="button" @click="refreshPayPal()" :disabled="refreshing.paypal" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 transition disabled:opacity-50">
-                                            <span x-text="refreshing.paypal ? 'Refreshing...' : 'Refresh status'"></span>
-                                        </button>
-                                        <button type="button" @click="disconnectPayPal()" :disabled="disconnecting.paypal" class="px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30 transition disabled:opacity-50">
-                                            <span x-text="disconnecting.paypal ? 'Disconnecting...' : 'Disconnect account'"></span>
-                                        </button>
-                                    </div>
-                                @else
-                                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
-                                        <div class="flex-1">
-                                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Environment for linking</label>
-                                            <select x-model="paypalConnectEnvironment" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                                                <option value="sandbox">Sandbox</option>
-                                                <option value="production">Production</option>
-                                            </select>
-                                        </div>
-                                        <button type="button" @click="connectPayPal()" :disabled="connecting.paypal" class="px-5 py-2.5 rounded-lg bg-[#0070ba] hover:bg-[#005ea6] text-white font-medium transition disabled:opacity-50">
-                                            <span x-text="connecting.paypal ? 'Redirecting...' : 'Connect with PayPal'"></span>
-                                        </button>
-                                    </div>
-                                @endif
-                            </div>
-                        @else
-                            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                                PayPal auto-connect is not configured on this server. Add <code class="font-mono">PAYPAL_PARTNER_CLIENT_ID</code>, <code class="font-mono">PAYPAL_PARTNER_CLIENT_SECRET</code>, and <code class="font-mono">PAYPAL_PARTNER_MERCHANT_ID</code> to <code class="font-mono">.env</code>, or enter API credentials manually below.
-                            </div>
-                        @endif
-
                         <form @submit.prevent="savePayPal($el)" class="space-y-4">
                             @csrf
                             <div>
@@ -719,18 +646,42 @@
                                 </label>
                             </div>
 
-                            @if (! $paypalConnection['connected'])
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Environment</label>
-                                    <select name="paypal_environment" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                                        <option value="sandbox" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'sandbox')>Sandbox</option>
-                                        <option value="production" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'production')>Production</option>
-                                    </select>
-                                </div>
-                            @endif
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Environment</label>
+                                <select name="paypal_environment" x-model="paypalConnectEnvironment" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                    <option value="sandbox" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'sandbox')>Sandbox</option>
+                                    <option value="production" @selected(($settings['paypal_environment'] ?? 'sandbox') === 'production')>Production</option>
+                                </select>
+                            </div>
 
-                            <details class="rounded-lg border border-slate-200 dark:border-slate-700 p-4" @if(! $paypalConnectAvailable) open @endif>
-                                <summary class="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">Advanced: manual API credentials</summary>
+                            <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-4">
+                                <div>
+                                    <h4 class="font-semibold text-slate-900 dark:text-white">Partner app credentials</h4>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                        From your PayPal Developer partner app. Save these first, then use <strong>Connect with PayPal</strong> below to link the business account that receives payments.
+                                    </p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Partner Client ID</label>
+                                    <input type="text" name="paypal_partner_client_id" value="{{ $settings['paypal_partner_client_id'] ?? '' }}" placeholder="Partner REST app client ID" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Partner Client Secret</label>
+                                    <input type="password" name="paypal_partner_client_secret" placeholder="Leave blank to keep existing" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Partner Merchant ID</label>
+                                    <input type="text" name="paypal_partner_merchant_id" value="{{ $settings['paypal_partner_merchant_id'] ?? '' }}" placeholder="Your platform PayPal merchant ID" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PayPal → Account Settings → Business information → PayPal Merchant ID</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Partner BN code (optional)</label>
+                                    <input type="text" name="paypal_partner_bn_code" value="{{ $settings['paypal_partner_bn_code'] ?? '' }}" placeholder="PayPal-Partner-Attribution-Id" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                </div>
+                            </div>
+
+                            <details class="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+                                <summary class="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300">Advanced: manual merchant API credentials</summary>
                                 <div class="mt-4 space-y-4">
                                     <div>
                                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Client ID</label>
@@ -761,6 +712,68 @@
                             </div>
                             <p x-show="status.paypal" :class="status.paypal?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.paypal?.message"></p>
                         </form>
+
+                        <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-4">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h4 class="font-semibold text-slate-900 dark:text-white">Link PayPal business account</h4>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                        After saving partner credentials above, connect the PayPal account that will receive customer payments.
+                                    </p>
+                                </div>
+                                @if ($paypalConnection['connected'])
+                                    <span class="inline-flex items-center self-start rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-800 dark:bg-green-950 dark:text-green-300">
+                                        Connected
+                                    </span>
+                                @endif
+                            </div>
+
+                            @if (! $paypalConnectAvailable)
+                                <p class="text-sm text-amber-700 dark:text-amber-300">
+                                    Enter partner Client ID, Client Secret, and Merchant ID above, then click <strong>Save PayPal Settings</strong> before connecting.
+                                </p>
+                            @elseif ($paypalConnection['connected'])
+                                <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                                    <div>
+                                        <dt class="text-slate-500 dark:text-slate-400">Receiving merchant ID</dt>
+                                        <dd class="font-mono text-slate-900 dark:text-white">{{ $paypalConnection['merchant_id'] }}</dd>
+                                    </div>
+                                    @if ($paypalConnection['email'])
+                                        <div>
+                                            <dt class="text-slate-500 dark:text-slate-400">PayPal email</dt>
+                                            <dd class="text-slate-900 dark:text-white">{{ $paypalConnection['email'] }}</dd>
+                                        </div>
+                                    @endif
+                                    @if ($paypalConnection['connected_at'])
+                                        <div>
+                                            <dt class="text-slate-500 dark:text-slate-400">Linked</dt>
+                                            <dd class="text-slate-900 dark:text-white">{{ \Illuminate\Support\Carbon::parse($paypalConnection['connected_at'])->format('M j, Y g:i A') }}</dd>
+                                        </div>
+                                    @endif
+                                    <div>
+                                        <dt class="text-slate-500 dark:text-slate-400">Payment readiness</dt>
+                                        <dd class="{{ $paypalConnection['ready'] ? 'text-green-700 dark:text-green-300' : 'text-amber-700 dark:text-amber-300' }}">
+                                            {{ $paypalConnection['ready'] ? 'Ready to accept payments' : 'Finish setup on PayPal' }}
+                                        </dd>
+                                    </div>
+                                </dl>
+                                @if ($paypalConnection['status_message'])
+                                    <p class="text-sm text-slate-600 dark:text-slate-400">{{ $paypalConnection['status_message'] }}</p>
+                                @endif
+                                <div class="flex flex-wrap gap-3">
+                                    <button type="button" @click="refreshPayPal()" :disabled="refreshing.paypal" class="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-800 transition disabled:opacity-50">
+                                        <span x-text="refreshing.paypal ? 'Refreshing...' : 'Refresh status'"></span>
+                                    </button>
+                                    <button type="button" @click="disconnectPayPal()" :disabled="disconnecting.paypal" class="px-4 py-2 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/30 transition disabled:opacity-50">
+                                        <span x-text="disconnecting.paypal ? 'Disconnecting...' : 'Disconnect account'"></span>
+                                    </button>
+                                </div>
+                            @else
+                                <button type="button" @click="connectPayPal()" :disabled="connecting.paypal || !paypalConnectAvailable" class="px-5 py-2.5 rounded-lg bg-[#0070ba] hover:bg-[#005ea6] text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
+                                    <span x-text="connecting.paypal ? 'Redirecting...' : 'Connect with PayPal'"></span>
+                                </button>
+                            @endif
+                        </div>
                     </div>
                 </div>
 
@@ -846,6 +859,7 @@
                         disconnecting: { paypal: false },
                         refreshing: { paypal: false },
                         paypalConnectEnvironment: '{{ $settings['paypal_environment'] ?? 'sandbox' }}',
+                        paypalConnectAvailable: @js($paypalConnectAvailable),
                         status: { mpesa: null, stripe: null, paypal: null, bank: null, registration: null, simulation: null },
                         testPayment: { phone: '', amount: 100 },
 
