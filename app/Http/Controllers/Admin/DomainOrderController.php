@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\ResellerDomainOrder;
 use App\Services\DomainPushService;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 
 class DomainOrderController extends Controller
 {
@@ -46,7 +46,7 @@ class DomainOrderController extends Controller
             $query->whereDate('created_at', '<=', $request->input('to_date'));
         }
 
-        $orders = $query->latest()->paginate(20);
+        $orders = $query->latest()->paginate(20)->withQueryString();
 
         return view('admin.domain-orders.index', compact('orders'));
     }
@@ -60,6 +60,11 @@ class DomainOrderController extends Controller
 
     public function complete(Request $request, ResellerDomainOrder $order)
     {
+        if ($order->status !== 'pushed') {
+            return $this->redirectBack($request)
+                ->with('error', 'Only pushed orders can be marked as completed.');
+        }
+
         $validated = $request->validate([
             'registrar' => 'required|string|max:255',
         ]);
@@ -67,16 +72,21 @@ class DomainOrderController extends Controller
         try {
             $this->domainPushService->completeOrder($order, $validated['registrar']);
 
-            return redirect()->route('admin.domain-orders.show', $order)
-                ->with('success', "Domain {$order->domain_name} marked as completed!");
+            return $this->redirectBack($request)
+                ->with('success', "Domain {$order->fullDomainName()} marked as completed.");
         } catch (\Exception $e) {
-            return redirect()->route('admin.domain-orders.show', $order)
+            return $this->redirectBack($request)
                 ->with('error', "Failed to complete order: {$e->getMessage()}");
         }
     }
 
     public function fail(Request $request, ResellerDomainOrder $order)
     {
+        if ($order->status !== 'pushed') {
+            return $this->redirectBack($request)
+                ->with('error', 'Only pushed orders can be marked as failed.');
+        }
+
         $request->validate([
             'failure_reason' => 'required|string|min:5|max:500',
         ]);
@@ -84,11 +94,72 @@ class DomainOrderController extends Controller
         try {
             $this->domainPushService->failOrder($order, $request->input('failure_reason'));
 
-            return redirect()->route('admin.domain-orders.show', $order)
-                ->with('success', "Domain {$order->domain_name} marked as failed!");
+            return $this->redirectBack($request)
+                ->with('success', "Domain {$order->fullDomainName()} marked as failed.");
         } catch (\Exception $e) {
-            return redirect()->route('admin.domain-orders.show', $order)
+            return $this->redirectBack($request)
                 ->with('error', "Failed to mark order as failed: {$e->getMessage()}");
         }
+    }
+
+    public function cancel(Request $request, ResellerDomainOrder $order)
+    {
+        if (! $order->canCancel()) {
+            return $this->redirectBack($request)
+                ->with('error', 'This order cannot be cancelled.');
+        }
+
+        $validated = $request->validate([
+            'reason' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            $this->domainPushService->cancelOrder(
+                $order,
+                $validated['reason'] ?? 'Cancelled by administrator',
+            );
+
+            return $this->redirectBack($request)
+                ->with('success', "Domain order {$order->fullDomainName()} has been cancelled.");
+        } catch (\Exception $e) {
+            return $this->redirectBack($request)
+                ->with('error', "Failed to cancel order: {$e->getMessage()}");
+        }
+    }
+
+    public function destroy(Request $request, ResellerDomainOrder $order)
+    {
+        if (! $order->canDelete()) {
+            return $this->redirectBack($request)
+                ->with('error', 'This order cannot be deleted.');
+        }
+
+        $label = $order->fullDomainName();
+
+        try {
+            $this->domainPushService->deleteOrder($order);
+
+            return $this->redirectBack($request)
+                ->with('success', "Domain order {$label} has been removed.");
+        } catch (\Exception $e) {
+            return $this->redirectBack($request)
+                ->with('error', "Failed to delete order: {$e->getMessage()}");
+        }
+    }
+
+    private function redirectBack(Request $request)
+    {
+        if ($request->boolean('stay_on_detail')) {
+            return redirect()->route('admin.domain-orders.show', $request->route('order'));
+        }
+
+        return redirect()->route('admin.domain-orders.index', $request->only([
+            'search',
+            'status',
+            'reseller_id',
+            'from_date',
+            'to_date',
+            'page',
+        ]));
     }
 }

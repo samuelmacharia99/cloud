@@ -15,7 +15,9 @@
             'pushed' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
             'completed' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
             'failed' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
+            'cancelled' => 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200',
             'expired' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
+            default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
         } }}">
             {{ ucfirst($order->status) }}
         </span>
@@ -128,8 +130,43 @@
                 <div class="text-sm text-slate-900 dark:text-white">{{ $order->failed_at->format('M d, Y H:i') }}</div>
             </div>
             @endif
+            @if($order->cancelled_at)
+            <div class="flex gap-4">
+                <div class="text-sm font-semibold text-slate-600 dark:text-slate-400 w-24">Cancelled</div>
+                <div class="text-sm text-slate-900 dark:text-white">{{ $order->cancelled_at->format('M d, Y H:i') }}</div>
+            </div>
+            @endif
+            @if($order->failure_reason)
+            <div class="flex gap-4">
+                <div class="text-sm font-semibold text-slate-600 dark:text-slate-400 w-24">Note</div>
+                <div class="text-sm text-slate-900 dark:text-white">{{ $order->failure_reason }}</div>
+            </div>
+            @endif
         </div>
     </div>
+
+    @if($order->canCancel() || $order->canDelete())
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Other Actions</h3>
+        <div class="flex flex-wrap gap-3">
+            @if($order->canCancel())
+            <form method="POST" action="{{ route('admin.domain-orders.cancel', $order) }}" data-confirm="Cancel this domain order?">
+                @csrf
+                <input type="hidden" name="stay_on_detail" value="1">
+                <button type="submit" class="px-6 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition">Cancel Order</button>
+            </form>
+            @endif
+            @if($order->canDelete())
+            <form method="POST" action="{{ route('admin.domain-orders.destroy', $order) }}" data-confirm="Delete this domain order permanently?">
+                @csrf
+                @method('DELETE')
+                <input type="hidden" name="stay_on_detail" value="1">
+                <button type="submit" class="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">Delete Order</button>
+            </form>
+            @endif
+        </div>
+    </div>
+    @endif
 
     <!-- Actions -->
     @if($order->status === 'pushed')
@@ -138,6 +175,7 @@
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Complete Domain Order</h3>
         <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" class="space-y-4">
             @csrf
+            <input type="hidden" name="stay_on_detail" value="1">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registrar</label>
                 <input type="text" name="registrar" required placeholder="e.g., GoDaddy, Namecheap" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
@@ -163,6 +201,7 @@
         <h3 class="text-lg font-semibold text-red-900 dark:text-red-200 mb-4">Mark Order as Failed</h3>
         <form method="POST" action="{{ route('admin.domain-orders.fail', $order) }}">
             @csrf
+            <input type="hidden" name="stay_on_detail" value="1">
             <div class="mb-4">
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Failure Reason</label>
                 <textarea name="failure_reason" required class="w-full px-4 py-2 border border-red-300 dark:border-red-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-red-500 dark:focus:ring-red-400" rows="3" placeholder="Explain why this order is being marked as failed..."></textarea>
