@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\NotificationEvent;
-use App\Mail\AdminResellerDomainPushMail;
 use App\Mail\ResellerDomainOrderMail;
 use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
@@ -16,6 +15,7 @@ class WalletNotificationService
         private ResellerBrandingResolver $brandingResolver,
         private EmailDeliveryService $emailDelivery,
         private NotificationPreferenceService $preferences,
+        private NotificationService $notificationService,
         private SmsService $smsService,
     ) {}
 
@@ -254,13 +254,6 @@ class WalletNotificationService
 
     protected function notifyAdminDomainPush(ResellerDomainOrder $order): void
     {
-        $event = NotificationEvent::AdminResellerDomainPush;
-        if (! $this->preferences->isGloballyEnabled($event)) {
-            return;
-        }
-
-        $domain = $order->domain_name.$order->extension;
-        $subject = 'Reseller domain order - '.$domain;
-        $this->emailDelivery->sendToAdmins(new AdminResellerDomainPushMail($order), $subject, $event);
+        $this->notificationService->notifyAdminResellerDomainOrder($order, 'pushed');
     }
 }

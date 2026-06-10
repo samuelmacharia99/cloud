@@ -1421,14 +1421,14 @@
                                 <input type="hidden" name="settings[notify_admin_manual_payment]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_manual_payment]" value="1" @checked(($settings['notify_admin_manual_payment'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Manual Payment Submitted</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Manual Payment Submitted (email + SMS)</span>
                                 </label>
                             </div>
                             <div>
                                 <input type="hidden" name="settings[notify_admin_reseller_domain_push]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_reseller_domain_push]" value="1" @checked(($settings['notify_admin_reseller_domain_push'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Reseller Domain Push</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Reseller Domain Push (email + SMS)</span>
                                 </label>
                             </div>
                             <div>
@@ -1569,7 +1569,7 @@
                                 <input type="hidden" name="settings[notify_admin_new_order]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_new_order]" value="1" @checked(($settings['notify_admin_new_order'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: New Order</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: New Order (email + SMS)</span>
                                 </label>
                             </div>
                             <div>

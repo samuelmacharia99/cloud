@@ -46,6 +46,7 @@ class DomainPushService
             }
 
             $this->notificationService->sendNewCustomerDomainOrderNotification($order);
+            app(NotificationService::class)->notifyAdminResellerDomainOrder($order, 'customer_paid');
         }
     }
 

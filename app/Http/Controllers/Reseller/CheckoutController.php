@@ -244,20 +244,36 @@ class CheckoutController extends Controller
 
             session()->forget(CartController::CART_KEY);
 
+            $paymentMethod = 'awaiting payment';
+
             if ($request->boolean('apply_wallet')) {
                 $this->invoicePaymentService->applyWallet($invoice, $reseller, true);
                 $invoice->refresh();
 
                 if ($this->invoicePaymentService->amountDue($invoice) <= 0) {
                     $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice);
-                    app(NotificationService::class)->notifyPaymentReceived($invoice);
-                    app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
-                    $this->processDomainRenewals($invoice);
-
-                    return redirect()->route('reseller.invoices.show', $invoice)
-                        ->with('success', 'Order placed and paid using your wallet balance.');
+                    $paymentMethod = 'wallet';
                 }
+            }
 
+            foreach (ResellerDomainOrder::whereIn('id', $domainOrders)->with('reseller', 'customer')->get() as $domainOrder) {
+                try {
+                    app(NotificationService::class)->notifyAdminResellerDomainOrder($domainOrder, 'placed', $paymentMethod);
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
+
+            if ($paymentMethod === 'wallet') {
+                app(NotificationService::class)->notifyPaymentReceived($invoice);
+                app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
+                $this->processDomainRenewals($invoice);
+
+                return redirect()->route('reseller.invoices.show', $invoice)
+                    ->with('success', 'Order placed and paid using your wallet balance.');
+            }
+
+            if ($request->boolean('apply_wallet')) {
                 return redirect()->route('reseller.invoices.show', $invoice)
                     ->with('success', 'Order placed. Wallet applied — pay the remaining KES '
                         .number_format($this->invoicePaymentService->amountDue($invoice), 2).' to complete.');

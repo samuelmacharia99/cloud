@@ -27,6 +27,7 @@ class ResellerCustomerOrderService
         private ResellerEnforcementService $enforcement,
         private DomainPushService $domainPush,
         private ResellerHostingSetupService $hostingSetup,
+        private NotificationService $notifications,
     ) {}
 
     /**
@@ -98,7 +99,16 @@ class ResellerCustomerOrderService
                 $lineItem->update(['service_id' => $service->id]);
             }
 
-            return ['service' => $service->fresh(), 'invoice' => $invoice->fresh(['items'])];
+            $freshInvoice = $invoice->fresh(['items']);
+            $this->notifications->notifyAdminResellerCustomerInvoiceOrder(
+                $reseller,
+                $customer,
+                $freshInvoice,
+                $description,
+                $status === 'paid' ? 'paid' : 'awaiting payment',
+            );
+
+            return ['service' => $service->fresh(), 'invoice' => $freshInvoice];
         });
     }
 
@@ -260,9 +270,12 @@ class ResellerCustomerOrderService
 
             $this->linkDomainOrderToInvoice($prepared['order'], $prepared['domain'], $invoice);
 
+            $order = $prepared['order']->fresh(['reseller', 'customer']);
+            $this->notifications->notifyAdminResellerDomainOrder($order, 'placed');
+
             return [
                 'invoice' => $invoice->fresh(['items']),
-                'order' => $prepared['order']->fresh(),
+                'order' => $order,
                 'domain' => $prepared['domain']->fresh(),
             ];
         });
@@ -302,9 +315,15 @@ class ResellerCustomerOrderService
 
             $pushed = $this->domainPush->pushOrQueue($order->fresh(['reseller', 'customer']));
 
+            $freshOrder = $order->fresh(['reseller', 'customer']);
+            $this->notifications->notifyAdminResellerDomainOrder(
+                $freshOrder,
+                $pushed ? 'pushed' : 'provisioned',
+            );
+
             return [
                 'domain' => $prepared['domain']->fresh(),
-                'order' => $order->fresh(),
+                'order' => $freshOrder,
                 'pushed' => $pushed,
             ];
         });
@@ -373,6 +392,7 @@ class ResellerCustomerOrderService
                         'product_type' => 'Domain',
                         'domain_id' => $order->domain_id,
                     ]);
+                    $this->notifications->notifyAdminResellerDomainOrder($order->fresh(['reseller', 'customer']), 'placed');
                 }
             }
 

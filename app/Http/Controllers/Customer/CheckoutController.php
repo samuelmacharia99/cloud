@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\NodeNameserverService;
+use App\Services\NotificationService;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
@@ -481,8 +482,19 @@ class CheckoutController extends Controller
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
 
-            // Get the invoice that was just created
-            $invoice = Invoice::where('user_id', $user->id)->latest()->first();
+            $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
+
+            if ($invoice) {
+                try {
+                    app(NotificationService::class)->notifyNewOrder($order, $invoice, 'awaiting payment');
+                } catch (\Throwable $e) {
+                    \Log::error('Failed to send new order notifications at checkout', [
+                        'order_id' => $order->id,
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return redirect()
                 ->route('customer.invoices.show', $invoice)
@@ -1098,8 +1110,19 @@ class CheckoutController extends Controller
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
 
-            // Get the invoice that was just created
-            $invoice = Invoice::where('user_id', $user->id)->latest()->first();
+            $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
+
+            if ($invoice) {
+                try {
+                    app(NotificationService::class)->notifyNewOrder($order, $invoice, 'awaiting payment');
+                } catch (\Throwable $e) {
+                    \Log::error('Failed to send new order notifications at checkout', [
+                        'order_id' => $order->id,
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             return redirect()
                 ->route('customer.invoices.show', $invoice)

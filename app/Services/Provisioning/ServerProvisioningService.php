@@ -46,5 +46,10 @@ class ServerProvisioningService
                 NotificationEvent::AdminNewOrder,
             );
         }
+
+        $notifications->sendAdminSmsAlert(
+            NotificationEvent::AdminNewOrder,
+            'ALERT: New server order — '.$service->name.' for '.$service->user->name.'. Provision and deliver credentials.',
+        );
     }
 }

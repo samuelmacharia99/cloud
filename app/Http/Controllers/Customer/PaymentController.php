@@ -156,7 +156,7 @@ class PaymentController extends Controller
 
                 if ($order) {
                     $notificationService = app(NotificationService::class);
-                    $notificationService->notifyNewOrder($order, $invoice, $request->payment_method);
+                    $notificationService->notifyNewOrder($order, $invoice, $request->payment_method, notifyAdmin: false);
                 }
             } catch (\Exception $e) {
                 Log::error('Failed to send new order notifications', [

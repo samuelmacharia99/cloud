@@ -124,7 +124,10 @@ class DomainRenewalService
             return;
         }
 
-        DB::transaction(function () use ($renewalOrder) {
+        $adminOrder = null;
+        $adminInvoice = null;
+
+        DB::transaction(function () use ($renewalOrder, &$adminOrder, &$adminInvoice) {
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
@@ -168,6 +171,14 @@ class DomainRenewalService
                 'pushed_at' => now(),
             ]);
         });
+
+        if ($adminOrder && $adminInvoice) {
+            try {
+                app(NotificationService::class)->notifyAdminDomainRenewalPushed($renewalOrder->fresh(), $adminOrder, $adminInvoice);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     public function completeRenewal(DomainRenewalOrder $renewalOrder, string $adminNotes = ''): void

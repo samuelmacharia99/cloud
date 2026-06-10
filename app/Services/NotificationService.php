@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\NotificationEvent;
 use App\Enums\PaymentStatus;
 use App\Mail\AdminManualPaymentMail;
+use App\Mail\AdminResellerDomainPushMail;
 use App\Mail\ContainerAutoRestartedMail;
 use App\Mail\ContainerBackupCompletedMail;
 use App\Mail\ContainerBackupFailedMail;
@@ -30,9 +31,11 @@ use App\Mail\TicketCreatedMail;
 use App\Mail\TicketRepliedMail;
 use App\Models\ContainerBackup;
 use App\Models\Domain;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Models\SmsTemplate;
 use App\Models\Ticket;
@@ -118,6 +121,123 @@ class NotificationService
 
             return $fallback;
         }
+    }
+
+    public function sendAdminSmsAlert(NotificationEvent $event, string $message): void
+    {
+        if (! $this->smsService->isConfigured() || ! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        try {
+            foreach (User::where('is_admin', true)->whereNotNull('notification_phones')->get() as $admin) {
+                if (empty($admin->notification_phones) || ! is_array($admin->notification_phones)) {
+                    continue;
+                }
+
+                try {
+                    $this->smsService->send($admin->notification_phones, $message);
+                } catch (\Exception $e) {
+                    Log::error('Failed to send admin SMS alert', [
+                        'event' => $event->value,
+                        'admin_id' => $admin->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to notify admins by SMS', ['event' => $event->value, 'error' => $e->getMessage()]);
+        }
+    }
+
+    public function notifyAdminResellerDomainOrder(ResellerDomainOrder $order, string $stage, string $paymentMethod = 'awaiting payment'): void
+    {
+        $order->loadMissing('reseller', 'customer');
+        $domain = $order->fullDomainName();
+        $wholesale = number_format((float) $order->wholesale_amount, 0);
+        $retail = number_format((float) $order->retail_amount, 0);
+        $event = $stage === 'pushed'
+            ? NotificationEvent::AdminResellerDomainPush
+            : NotificationEvent::AdminNewOrder;
+
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $message = match ($stage) {
+            'placed' => $order->isSelfOrder()
+                ? "ALERT: Reseller {$order->reseller->name} placed domain order {$domain}. Wholesale: KES {$wholesale}. Payment: ".ucfirst($paymentMethod).'.'
+                : "ALERT: Domain order {$domain} for {$order->customer->name} via reseller {$order->reseller->name}. Retail: KES {$retail}. Payment: ".ucfirst($paymentMethod).'.',
+            'customer_paid' => "ALERT: {$order->customer->name} paid for {$domain} (reseller {$order->reseller->name}). Awaiting push. Wholesale: KES {$wholesale}.",
+            'pushed' => "ALERT: Reseller {$order->reseller->name} pushed {$domain} for registration. Wholesale: KES {$wholesale}. Fulfill now.",
+            'provisioned' => "ALERT: Reseller {$order->reseller->name} registered {$domain} for {$order->customer->name} (no customer invoice). Wholesale: KES {$wholesale}.",
+            default => "ALERT: Domain order update for {$domain} ({$stage}).",
+        };
+
+        if ($stage === 'pushed') {
+            $subject = 'Reseller domain order - '.$domain;
+            $this->emailDelivery->sendToAdmins(new AdminResellerDomainPushMail($order), $subject, $event);
+        } elseif ($this->preferences->isGloballyEnabled(NotificationEvent::AdminNewOrder)) {
+            $this->emailDelivery->sendTemplated(null, NotificationEvent::AdminNewOrder, [
+                'order_number' => 'DOM-'.$order->id,
+                'customer_name' => $order->isSelfOrder()
+                    ? $order->reseller->name.' (reseller self-order)'
+                    : $order->customer->name.' via '.$order->reseller->name,
+                'payment_method' => ucfirst($paymentMethod),
+                'amount' => 'KES '.number_format((float) ($order->retail_amount + $order->wholesale_amount), 2),
+            ]);
+        }
+
+        $this->sendAdminSmsAlert($event, $message);
+    }
+
+    public function notifyAdminResellerCustomerInvoiceOrder(
+        User $reseller,
+        User $customer,
+        Invoice $invoice,
+        string $summary,
+        string $paymentMethod = 'awaiting payment',
+    ): void {
+        $event = NotificationEvent::AdminNewOrder;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $amount = number_format((float) $invoice->total, 0);
+        $message = "ALERT: Reseller {$reseller->name} ordered {$summary} for customer {$customer->name}. Invoice {$invoice->invoice_number}. KES {$amount}. Payment: ".ucfirst($paymentMethod).'.';
+
+        $this->emailDelivery->sendTemplated(null, $event, [
+            'order_number' => $invoice->invoice_number,
+            'customer_name' => $customer->name.' via '.$reseller->name,
+            'payment_method' => ucfirst($paymentMethod),
+            'amount' => 'KES '.number_format((float) $invoice->total, 2),
+        ]);
+
+        $this->sendAdminSmsAlert($event, $message);
+    }
+
+    public function notifyAdminDomainRenewalPushed(DomainRenewalOrder $renewalOrder, Order $adminOrder, Invoice $adminInvoice): void
+    {
+        $event = NotificationEvent::AdminNewOrder;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $renewalOrder->loadMissing('domain', 'user');
+        $domain = $renewalOrder->domain;
+        $domainName = $domain->name.$domain->extension;
+        $amount = number_format((float) $adminInvoice->total, 0);
+
+        $message = "ALERT: Domain renewal {$domainName} for {$renewalOrder->user->name} pushed to admin. Order {$adminOrder->order_number}. KES {$amount}.";
+
+        $this->emailDelivery->sendTemplated(null, $event, [
+            'order_number' => $adminOrder->order_number,
+            'customer_name' => $renewalOrder->user->name,
+            'payment_method' => 'Renewal',
+            'amount' => 'KES '.number_format((float) $adminInvoice->total, 2),
+        ]);
+
+        $this->sendAdminSmsAlert($event, $message);
     }
 
     public function notifyInvoiceGenerated(Invoice $invoice): void
@@ -412,48 +532,42 @@ class NotificationService
         }
     }
 
-    public function notifyNewOrder(Order $order, Invoice $invoice, string $paymentMethod = 'unknown'): void
+    public function notifyNewOrder(Order $order, Invoice $invoice, string $paymentMethod = 'unknown', bool $notifyAdmin = true): void
     {
         $customerEvent = NotificationEvent::NewOrder;
         $adminEvent = NotificationEvent::AdminNewOrder;
+
+        $order->loadMissing('user');
 
         if ($this->emailDelivery->mailConfiguredFor($order->user) && $this->preferences->isEmailEnabledForUser($order->user, $customerEvent)) {
             $subject = 'Order Confirmation - '.$order->order_number;
             $this->sendCustomerEmail($order->user, new OrderConfirmationMail($order), $subject, $customerEvent);
         }
 
-        if ($this->preferences->isGloballyEnabled($adminEvent)) {
+        if ($notifyAdmin && $this->preferences->isGloballyEnabled($adminEvent)) {
+            $customerName = $order->user->name;
+            if ($order->user->reseller_id) {
+                $reseller = User::find($order->user->reseller_id);
+                if ($reseller) {
+                    $customerName .= ' via '.$reseller->name;
+                }
+            }
+
             $this->emailDelivery->sendTemplated(null, $adminEvent, [
                 'order_number' => $order->order_number,
-                'customer_name' => $order->user->name,
+                'customer_name' => $customerName,
                 'payment_method' => ucfirst($paymentMethod),
                 'amount' => 'KES '.number_format($invoice->total, 2),
             ]);
-        }
 
-        if ($this->smsService->isConfigured() && $this->preferences->isGloballyEnabled($customerEvent)) {
-            try {
-                $adminUsers = User::where('is_admin', true)
-                    ->whereNotNull('notification_phones')
-                    ->get();
+            $adminMessage = $this->renderTemplate('admin_new_order', [
+                'order_number' => $order->order_number,
+                'customer_name' => $customerName,
+                'payment_method' => ucfirst($paymentMethod),
+                'amount' => 'KES '.number_format($invoice->total, 0),
+            ], 'ALERT: New order #'.$order->order_number.' from '.$customerName.'. Payment: '.ucfirst($paymentMethod).'. Amount: KES '.number_format($invoice->total, 0).'.');
 
-                foreach ($adminUsers as $admin) {
-                    if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
-                        try {
-                            $adminMessage = 'New order #'.$order->order_number.' from '.$order->user->name.'. Payment: '.ucfirst($paymentMethod).'. Amount: KES '.number_format($invoice->total, 0).'.';
-                            $this->smsService->send($admin->notification_phones, $adminMessage);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to send admin order notification SMS', [
-                                'order_id' => $order->id,
-                                'admin_id' => $admin->id,
-                                'error' => $e->getMessage(),
-                            ]);
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to notify admins about new order', ['order_id' => $order->id, 'error' => $e->getMessage()]);
-            }
+            $this->sendAdminSmsAlert($adminEvent, $adminMessage);
         }
 
         if ($order->user->phone && $this->preferences->isSmsEnabledForUser($order->user, $customerEvent)) {
@@ -552,6 +666,10 @@ class NotificationService
         $payment->loadMissing('invoice', 'user');
         $subject = 'Manual Payment Submitted - Invoice '.$payment->invoice->invoice_number;
         $this->emailDelivery->sendToAdmins(new AdminManualPaymentMail($payment), $subject, $event);
+
+        $amount = number_format((float) $payment->amount, 0);
+        $message = 'ALERT: Manual payment submitted by '.$payment->user->name.' for invoice '.$payment->invoice->invoice_number.'. KES '.$amount.'. Review and approve.';
+        $this->sendAdminSmsAlert($event, $message);
     }
 
     public function notifyContainerBackupCompleted(Service $service, ContainerBackup $backup): void

@@ -50,6 +50,14 @@ class SmsTemplate extends Model
                 'available_variables' => ['customer_name', 'order_id', 'amount', 'site_name'],
             ],
             [
+                'event_key' => 'admin_new_order',
+                'name' => 'Admin: New Order',
+                'body' => 'ALERT: New order #{order_number} from {customer_name}. Payment: {payment_method}. Amount: {amount}.',
+                'recipient_type' => 'admin',
+                'description' => 'SMS alert to admins when any order is placed',
+                'available_variables' => ['order_number', 'customer_name', 'payment_method', 'amount'],
+            ],
+            [
                 'event_key' => 'payment_received',
                 'name' => 'Payment Received',
                 'body' => 'Hi {customer_name}, we received your payment of {amount} for invoice #{invoice_number}. Thank you! -{site_name}',
