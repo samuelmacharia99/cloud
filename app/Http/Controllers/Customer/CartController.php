@@ -6,11 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
-use App\Models\Setting;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainInputParser;
 use App\Services\NodeNameserverService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\TaxService;
 use Exception;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -85,21 +85,18 @@ class CartController extends Controller
             $cartItems[] = $item;
         }
 
-        // Calculate tax
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($subtotal);
 
         $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
 
         return view('customer.cart.index', [
             'cartItems' => $cartItems,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'taxEnabled' => $taxEnabled,
-            'taxRate' => $taxRate,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
             'itemCount' => count($cartItems),
             'defaultNameservers' => $defaultNameservers,
             'hasSharedHosting' => $hasSharedHosting,

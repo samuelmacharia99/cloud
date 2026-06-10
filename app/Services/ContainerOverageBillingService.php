@@ -17,8 +17,6 @@ class ContainerOverageBillingService
     public function addOverageItemsToInvoice(
         Invoice $invoice,
         Service $service,
-        bool $taxEnabled,
-        float $taxRate
     ): void {
         $service->loadMissing(['product.containerTemplate', 'containerDeployment.node']);
 
@@ -78,8 +76,6 @@ class ContainerOverageBillingService
                 ),
                 $cpuOverageHours,
                 $cpuRate,
-                $taxEnabled,
-                $taxRate
             );
         }
 
@@ -97,8 +93,6 @@ class ContainerOverageBillingService
                 ),
                 $memoryOverageGbHours,
                 $ramRate,
-                $taxEnabled,
-                $taxRate
             );
         }
 
@@ -116,8 +110,6 @@ class ContainerOverageBillingService
                 ),
                 $diskOverageGbHours,
                 $diskRate,
-                $taxEnabled,
-                $taxRate
             );
         }
     }
@@ -159,11 +151,9 @@ class ContainerOverageBillingService
         string $description,
         float $quantity,
         float $unitPrice,
-        bool $taxEnabled,
-        float $taxRate
     ): void {
         $amount = round($quantity * $unitPrice, 2);
-        $tax = $taxEnabled ? round($amount * $taxRate / 100, 2) : 0;
+        $breakdown = TaxService::calculate($amount);
 
         InvoiceItem::create([
             'invoice_id' => $invoice->id,
@@ -175,9 +165,9 @@ class ContainerOverageBillingService
             'amount' => $amount,
         ]);
 
-        $invoice->increment('subtotal', $amount);
-        $invoice->increment('tax', $tax);
-        $invoice->increment('total', $amount + $tax);
+        $invoice->increment('subtotal', $breakdown['subtotal']);
+        $invoice->increment('tax', $breakdown['tax']);
+        $invoice->increment('total', $breakdown['total']);
     }
 
     private function subtractBillingCycle(Carbon $dueDate, string $billingCycle): Carbon

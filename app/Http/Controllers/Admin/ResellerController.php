@@ -20,6 +20,7 @@ use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerWalletService;
+use App\Services\TaxService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
@@ -553,10 +554,7 @@ class ResellerController extends Controller
             default => 0,
         };
 
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-        $total = $price + $tax;
+        $taxBreakdown = TaxService::calculate($price);
 
         $prefix = Setting::getValue('invoice_prefix', 'INV');
         $date = now()->format('Ymd');
@@ -571,9 +569,9 @@ class ResellerController extends Controller
             'invoice_number' => $number,
             'status' => 'unpaid',
             'due_date' => $dueDate,
-            'subtotal' => $price,
-            'tax' => $tax,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'total' => $taxBreakdown['total'],
             'notes' => 'Reseller Service: '.$service->name,
         ]);
 

@@ -205,7 +205,7 @@
                             <div>
                                 <input type="hidden" name="settings[tax_enabled]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[tax_enabled]" value="1" @checked(($settings['tax_enabled'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[tax_enabled]" value="1" @checked(\App\Services\TaxService::isTruthy($settings['tax_enabled'] ?? null)) class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Enable Tax Calculation</span>
                                 </label>
                             </div>
@@ -223,7 +223,7 @@
                             <div>
                                 <input type="hidden" name="settings[tax_inclusive]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[tax_inclusive]" value="1" @checked(($settings['tax_inclusive'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[tax_inclusive]" value="1" @checked(\App\Services\TaxService::isTruthy($settings['tax_inclusive'] ?? null)) class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Tax Inclusive (included in displayed price)</span>
                                 </label>
                             </div>

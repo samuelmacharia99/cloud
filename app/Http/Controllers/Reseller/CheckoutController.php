@@ -19,6 +19,7 @@ use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
+use App\Services\TaxService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,31 +57,29 @@ class CheckoutController extends Controller
             }
         }
 
-        $taxEnabled = Setting::getValue('tax_enabled') === 'true';
-        $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($subtotal);
 
         $user = auth()->user();
         $checkoutCustomer = $this->resolveCheckoutCustomer();
         $isCustomerCheckout = $checkoutCustomer !== null;
 
         $wallet = $this->walletService->getOrCreate($user);
-        $walletApplicable = $isCustomerCheckout ? 0 : min((float) $wallet->balance, $total);
+        $walletApplicable = $isCustomerCheckout ? 0 : min((float) $wallet->balance, $taxBreakdown['total']);
 
-        return view('reseller.checkout.index', compact(
-            'items',
-            'subtotal',
-            'tax',
-            'taxEnabled',
-            'taxRate',
-            'total',
-            'user',
-            'wallet',
-            'walletApplicable',
-            'checkoutCustomer',
-            'isCustomerCheckout',
-        ));
+        return view('reseller.checkout.index', [
+            'items' => $items,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
+            'user' => $user,
+            'wallet' => $wallet,
+            'walletApplicable' => $walletApplicable,
+            'checkoutCustomer' => $checkoutCustomer,
+            'isCustomerCheckout' => $isCustomerCheckout,
+        ]);
     }
 
     public function process(Request $request)
@@ -190,10 +189,7 @@ class CheckoutController extends Controller
                 }
             }
 
-            $taxEnabled = Setting::getValue('tax_enabled') === 'true';
-            $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
-            $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-            $total = $subtotal + $tax;
+            $taxBreakdown = TaxService::calculate($subtotal);
 
             $invoiceNotes = match (true) {
                 $hasRegistration && $hasRenewal => 'Domain registration and renewal order',
@@ -207,9 +203,9 @@ class CheckoutController extends Controller
                 'invoice_number' => $this->generateInvoiceNumber(),
                 'status' => 'unpaid',
                 'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
-                'subtotal' => $subtotal,
-                'tax' => $taxEnabled ? $tax : 0,
-                'total' => $total,
+                'subtotal' => $taxBreakdown['subtotal'],
+                'tax' => $taxBreakdown['tax'],
+                'total' => $taxBreakdown['total'],
                 'notes' => $invoiceNotes,
             ]);
 

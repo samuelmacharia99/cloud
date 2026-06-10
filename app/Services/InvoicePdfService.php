@@ -27,7 +27,7 @@ class InvoicePdfService
             'billing_company', 'billing_address', 'billing_city', 'billing_country', 'billing_vat_number',
             'company_name', 'company_address', 'company_phone', 'company_email', 'company_website',
             'site_email', 'site_url', 'logo_url', 'footer_text',
-            'tax_enabled', 'tax_rate', 'tax_name', 'tax_number',
+            'tax_enabled', 'tax_inclusive', 'tax_rate', 'tax_name', 'tax_number',
             'mpesa_enabled', 'mpesa_shortcode', 'stripe_enabled', 'paypal_enabled', 'bank_transfer_enabled',
             'bank_name', 'bank_account_name', 'bank_account_number', 'bank_branch', 'bank_swift_code',
             'currency_symbol', 'primary_color',
@@ -67,7 +67,8 @@ class InvoicePdfService
 
         // Tax data
         $tax = [
-            'enabled' => in_array($settings['tax_enabled'] ?? 'false', ['1', 'true', true], true),
+            'enabled' => TaxService::isTruthy($settings['tax_enabled'] ?? null),
+            'inclusive' => TaxService::isTruthy($settings['tax_inclusive'] ?? null),
             'rate' => $settings['tax_rate'] ?? '16',
             'name' => $settings['tax_name'] ?? 'VAT',
             'number' => $settings['tax_number'] ?? '',

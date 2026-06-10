@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerScopeService;
+use App\Services\TaxService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -39,24 +39,22 @@ class CartController extends Controller
             }
         }
 
-        $taxEnabled = Setting::getValue('tax_enabled') === 'true';
-        $taxRate = $taxEnabled ? (float) Setting::getValue('tax_rate', 0) : 0;
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($subtotal);
 
         $cartContext = ResellerCartContext::summary();
         $checkoutCustomer = $this->resolveCheckoutCustomer();
 
-        return view('reseller.cart.index', compact(
-            'items',
-            'subtotal',
-            'tax',
-            'taxEnabled',
-            'taxRate',
-            'total',
-            'cartContext',
-            'checkoutCustomer',
-        ));
+        return view('reseller.cart.index', [
+            'items' => $items,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
+            'cartContext' => $cartContext,
+            'checkoutCustomer' => $checkoutCustomer,
+        ]);
     }
 
     public function setContext(Request $request): RedirectResponse|JsonResponse

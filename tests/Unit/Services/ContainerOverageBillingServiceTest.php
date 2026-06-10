@@ -116,7 +116,7 @@ class ContainerOverageBillingServiceTest extends TestCase
             'total' => 1000,
         ]);
 
-        $this->billing->addOverageItemsToInvoice($invoice, $service, false, 0);
+        $this->billing->addOverageItemsToInvoice($invoice, $service);
 
         $invoice->refresh();
         $items = $invoice->items()->pluck('description')->all();
@@ -183,7 +183,7 @@ class ContainerOverageBillingServiceTest extends TestCase
             'total' => 1000,
         ]);
 
-        $this->billing->addOverageItemsToInvoice($invoice, $service, false, 0);
+        $this->billing->addOverageItemsToInvoice($invoice, $service);
 
         $invoice->refresh();
 

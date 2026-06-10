@@ -22,6 +22,7 @@ use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
+use App\Services\TaxService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -129,11 +130,7 @@ class CheckoutController extends Controller
             return redirect()->route('customer.cart.index')->with('error', 'No valid items in cart');
         }
 
-        // Calculate tax
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($subtotal);
 
         // Get currency info
         $currencyCode = Setting::getValue('currency', 'KES');
@@ -152,11 +149,14 @@ class CheckoutController extends Controller
             'sharedHostingItems' => $sharedHostingItems,
             'domainExtensions' => $domainExtensions,
             'defaultNameservers' => $defaultNameservers,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'taxEnabled' => $taxEnabled,
-            'taxRate' => $taxRate,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxInclusive' => $taxBreakdown['inclusive'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
+            'cartSubtotal' => $subtotal,
             'user' => auth()->user(),
             'currency' => $currency,
             'currencyCode' => $currencyCode,
@@ -245,12 +245,8 @@ class CheckoutController extends Controller
 
                 $domainAddonTotal = app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart);
 
-                // Calculate totals
-                $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-                $taxRate = (float) Setting::getValue('tax_rate', 0);
                 $subtotal += $domainAddonTotal;
-                $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-                $total = $subtotal + $tax;
+                $taxBreakdown = TaxService::calculate($subtotal);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
@@ -258,9 +254,9 @@ class CheckoutController extends Controller
                     'invoice_number' => $this->generateInvoiceNumber(),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                 ]);
 
                 // Create Order linked to Invoice
@@ -270,9 +266,9 @@ class CheckoutController extends Controller
                     'order_number' => 'ORD-'.uniqid(),
                     'status' => 'pending',
                     'payment_status' => 'unpaid',
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                 ]);
 
                 // Create OrderItems, Services, and Domains
@@ -735,11 +731,7 @@ class CheckoutController extends Controller
             return redirect('/')->with('error', 'Your cart is empty');
         }
 
-        // Calculate tax
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($subtotal);
 
         // Get currency info
         $currencyCode = Setting::getValue('currency', 'KES');
@@ -747,11 +739,13 @@ class CheckoutController extends Controller
 
         return view('public.checkout', [
             'cartItems' => $cartItems,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'taxEnabled' => $taxEnabled,
-            'taxRate' => $taxRate,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxInclusive' => $taxBreakdown['inclusive'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
             'currency' => $currency,
             'currencyCode' => $currencyCode,
         ]);
@@ -881,12 +875,8 @@ class CheckoutController extends Controller
                     ? app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart)
                     : 0.0;
 
-                // Calculate totals
-                $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-                $taxRate = (float) Setting::getValue('tax_rate', 0);
                 $subtotal += $domainAddonTotal;
-                $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-                $total = $subtotal + $tax;
+                $taxBreakdown = TaxService::calculate($subtotal);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
@@ -894,9 +884,9 @@ class CheckoutController extends Controller
                     'invoice_number' => $this->generateInvoiceNumber(),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                 ]);
 
                 // Create Order linked to Invoice
@@ -906,9 +896,9 @@ class CheckoutController extends Controller
                     'order_number' => 'ORD-'.uniqid(),
                     'status' => 'pending',
                     'payment_status' => 'unpaid',
-                    'subtotal' => $subtotal,
-                    'tax' => $tax,
-                    'total' => $total,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                 ]);
 
                 // Create OrderItems, Services, and Domains

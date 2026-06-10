@@ -116,7 +116,7 @@
 
                     @if($taxEnabled && $tax > 0)
                         <div class="flex justify-between text-sm">
-                            <span class="text-slate-600 dark:text-slate-400">Tax ({{ $taxRate }}%)</span>
+                            <span class="text-slate-600 dark:text-slate-400">{{ $taxName ?? 'Tax' }} ({{ $taxRate }}%)</span>
                             <span class="text-slate-900 dark:text-white font-medium">{{ $currencyCode }} {{ number_format($tax, 2) }}</span>
                         </div>
                     @endif

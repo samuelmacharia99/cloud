@@ -7,7 +7,6 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
-use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
@@ -83,19 +82,16 @@ class DomainRenewalService
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $taxRate = (float) Setting::getValue('tax_rate', 0);
-            $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-            $tax = $taxEnabled ? round($renewalOrder->amount * $taxRate / 100, 2) : 0;
-            $total = $renewalOrder->amount + $tax;
+            $tax = TaxService::calculate((float) $renewalOrder->amount);
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
                 'invoice_number' => 'INV-'.strtoupper(uniqid()),
                 'status' => 'unpaid',
                 'due_date' => now()->addDays(7),
-                'subtotal' => $renewalOrder->amount,
-                'tax' => $tax,
-                'total' => $total,
+                'subtotal' => $tax['subtotal'],
+                'tax' => $tax['tax'],
+                'total' => $tax['total'],
                 'notes' => "Domain renewal for {$domain->name}{$domain->extension} ({$renewalOrder->years} year".($renewalOrder->years > 1 ? 's' : '').')',
             ]);
 
@@ -131,16 +127,13 @@ class DomainRenewalService
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $taxRate = (float) Setting::getValue('tax_rate', 0);
-            $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-            $tax = $taxEnabled ? round($renewalOrder->amount * $taxRate / 100, 2) : 0;
-            $total = $renewalOrder->amount + $tax;
+            $tax = TaxService::calculate((float) $renewalOrder->amount);
 
             $adminOrder = Order::create([
                 'user_id' => $customer->id,
                 'order_number' => 'ORD-'.strtoupper(uniqid()),
                 'status' => 'pending',
-                'total' => $total,
+                'total' => $tax['total'],
                 'notes' => "Domain renewal for {$domain->name}{$domain->extension}",
             ]);
 
@@ -149,9 +142,9 @@ class DomainRenewalService
                 'invoice_number' => 'ADM-INV-'.strtoupper(uniqid()),
                 'status' => 'unpaid',
                 'due_date' => now()->addDays(7),
-                'subtotal' => $renewalOrder->amount,
-                'tax' => $tax,
-                'total' => $total,
+                'subtotal' => $tax['subtotal'],
+                'tax' => $tax['tax'],
+                'total' => $tax['total'],
                 'notes' => "Admin renewal order for {$domain->name}{$domain->extension}",
             ]);
 

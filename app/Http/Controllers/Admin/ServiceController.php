@@ -19,6 +19,7 @@ use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ServiceStatusSyncService;
+use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -130,21 +131,16 @@ class ServiceController extends Controller
                 // Generate invoice if requested
                 if ($request->boolean('generate_invoice')) {
                     $price = $this->getServicePrice($product, $request->billing_cycle);
-                    $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-                    $taxRate = (float) Setting::getValue('tax_rate', 0);
-
-                    $subtotal = $price;
-                    $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-                    $total = $subtotal + $tax;
+                    $taxBreakdown = TaxService::calculate($price);
 
                     $invoice = Invoice::create([
                         'user_id' => $user->id,
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
                         'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 30)),
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
+                        'subtotal' => $taxBreakdown['subtotal'],
+                        'tax' => $taxBreakdown['tax'],
+                        'total' => $taxBreakdown['total'],
                     ]);
 
                     InvoiceItem::create([

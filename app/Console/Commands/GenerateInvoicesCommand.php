@@ -24,9 +24,6 @@ class GenerateInvoicesCommand extends BaseCronCommand
 
         $invoiceDueDays = (int) Setting::getValue('invoice_due_days', 14);
         $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-
         $services = $schedule->servicesDueForRenewalInvoiceQuery()->get();
 
         $count = 0;
@@ -35,7 +32,7 @@ class GenerateInvoicesCommand extends BaseCronCommand
                 continue;
             }
 
-            DB::transaction(function () use ($service, $prefix, $invoiceDueDays, $taxRate, $taxEnabled, &$count) {
+            DB::transaction(function () use ($service, $prefix, $invoiceDueDays, &$count) {
                 $year = now()->format('Y');
                 $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
                 $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
@@ -53,9 +50,9 @@ class GenerateInvoicesCommand extends BaseCronCommand
                     'invoice_number' => $number,
                     'status' => 'unpaid',
                     'due_date' => $serviceDueDate,
-                    'subtotal' => $price,
-                    'tax' => $tax,
-                    'total' => $total,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                     'notes' => 'Auto-generated renewal invoice.',
                 ]);
 
@@ -73,8 +70,6 @@ class GenerateInvoicesCommand extends BaseCronCommand
                     app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
                         $invoice,
                         $service,
-                        $taxEnabled,
-                        $taxRate
                     );
                 }
 

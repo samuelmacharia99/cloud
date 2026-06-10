@@ -12,6 +12,7 @@ use App\Services\ContainerOverageBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
+use App\Services\TaxService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -83,20 +84,16 @@ class GenerateInvoicesByDateCommand extends Command
         }
 
         $prefix = Setting::getValue('invoice_prefix', 'INV');
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-
         $count = 0;
         foreach ($services as $service) {
             try {
-                DB::transaction(function () use ($service, $prefix, $taxRate, $taxEnabled, $date, $sendNotifications, &$count, $schedule) {
+                DB::transaction(function () use ($service, $prefix, $date, $sendNotifications, &$count, $schedule) {
                     $year = $date->format('Y');
                     $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
                     $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
 
                     $price = $this->getPriceForCycle($service);
-                    $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-                    $total = $price + $tax;
+                    $taxBreakdown = TaxService::calculate($price);
                     $dueDate = $schedule->serviceInvoiceDueDate($service)->toDateString();
 
                     $invoice = Invoice::create([
@@ -104,9 +101,9 @@ class GenerateInvoicesByDateCommand extends Command
                         'invoice_number' => $number,
                         'status' => 'unpaid',
                         'due_date' => $dueDate,
-                        'subtotal' => $price,
-                        'tax' => $tax,
-                        'total' => $total,
+                        'subtotal' => $taxBreakdown['subtotal'],
+                        'tax' => $taxBreakdown['tax'],
+                        'total' => $taxBreakdown['total'],
                         'notes' => 'Manual invoice generation for '.$date->format('M d, Y').'.',
                     ]);
 
@@ -124,8 +121,6 @@ class GenerateInvoicesByDateCommand extends Command
                         app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
                             $invoice,
                             $service,
-                            $taxEnabled,
-                            $taxRate
                         );
                     }
 

@@ -11,9 +11,10 @@
 
     <form action="{{ route('customer.checkout.process') }}" method="POST"
         x-data="checkoutPage({{ Js::from([
-            'baseSubtotal' => $subtotal,
+            'baseSubtotal' => $cartSubtotal ?? $subtotal,
             'taxEnabled' => $taxEnabled,
             'taxRate' => $taxRate,
+            'taxInclusive' => $taxInclusive ?? false,
         ]) }})"
         @checkout-domain-added.window="addDomainAddon($event.detail)"
         @checkout-domain-removed.window="onDomainRemoved($event.detail.cartKey)">
@@ -165,6 +166,7 @@ function checkoutPage(config) {
         baseSubtotal: config.baseSubtotal,
         taxEnabled: config.taxEnabled,
         taxRate: config.taxRate,
+        taxInclusive: config.taxInclusive,
         domainAddons: {},
 
         addDomainAddon(detail) {
@@ -193,16 +195,44 @@ function checkoutPage(config) {
             return this.domainAddonList().reduce((sum, addon) => sum + addon.amount, 0);
         },
 
-        displaySubtotal() {
+        displayGross() {
             return this.baseSubtotal + this.domainAddonsTotal();
         },
 
+        displaySubtotal() {
+            const gross = this.displayGross();
+            if (! this.taxEnabled || this.taxRate <= 0) {
+                return gross;
+            }
+            if (this.taxInclusive) {
+                return gross / (1 + this.taxRate / 100);
+            }
+
+            return gross;
+        },
+
         displayTax() {
-            return this.taxEnabled ? this.displaySubtotal() * this.taxRate / 100 : 0;
+            const gross = this.displayGross();
+            if (! this.taxEnabled || this.taxRate <= 0) {
+                return 0;
+            }
+            if (this.taxInclusive) {
+                return gross - this.displaySubtotal();
+            }
+
+            return gross * this.taxRate / 100;
         },
 
         displayTotal() {
-            return this.displaySubtotal() + this.displayTax();
+            const gross = this.displayGross();
+            if (! this.taxEnabled || this.taxRate <= 0) {
+                return gross;
+            }
+            if (this.taxInclusive) {
+                return gross;
+            }
+
+            return gross + this.displayTax();
         },
 
         formatMoney(amount) {

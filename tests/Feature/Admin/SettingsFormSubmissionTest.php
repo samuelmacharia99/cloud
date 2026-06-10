@@ -5,6 +5,7 @@ namespace Tests\Feature\Admin;
 use App\Models\Node;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\TaxService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -50,6 +51,25 @@ class SettingsFormSubmissionTest extends TestCase
         $response->assertOk()->assertJson(['success' => true]);
         $this->assertSame('1', Setting::getValue('tax_enabled'));
         $this->assertSame('0', Setting::getValue('tax_inclusive'));
+    }
+
+    public function test_tax_settings_tab_persists_enabled_and_inclusive_flags(): void
+    {
+        $response = $this->actingAs($this->admin)->postJson(route('admin.settings.update'), [
+            'settings' => [
+                'tax_enabled' => '1',
+                'tax_inclusive' => '1',
+                'tax_rate' => '16',
+                'tax_name' => 'VAT',
+            ],
+        ]);
+
+        $response->assertOk()->assertJson(['success' => true]);
+
+        $this->assertTrue(TaxService::isEnabled());
+        $this->assertTrue(TaxService::isInclusive());
+        $this->assertSame('16', Setting::getValue('tax_rate'));
+        $this->assertSame('VAT', Setting::getValue('tax_name'));
     }
 
     public function test_billing_reseller_auto_pay_setting_persists(): void

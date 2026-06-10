@@ -13,6 +13,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
+use App\Services\TaxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -170,12 +171,7 @@ class DomainController extends Controller
         $domain = Domain::findOrFail($transferCheckout['domain_id']);
         $this->authorize('view', $domain);
 
-        // Calculate totals
-        $subtotal = $transferCheckout['transfer_price'];
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate((float) $transferCheckout['transfer_price']);
 
         // Get currency info
         $currencyCode = Setting::getValue('currency', 'KES');
@@ -183,11 +179,12 @@ class DomainController extends Controller
 
         return view('customer.domains.transfer-checkout', [
             'domain' => $domain,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'taxEnabled' => $taxEnabled,
-            'taxRate' => $taxRate,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
             'currency' => $currency,
             'currencyCode' => $currencyCode,
         ]);
@@ -213,6 +210,7 @@ class DomainController extends Controller
             // Create invoice and invoice item within a transaction
             $invoice = DB::transaction(function () use ($domain, $transferCheckout) {
                 $transferPrice = $transferCheckout['transfer_price'];
+                $taxBreakdown = TaxService::calculate((float) $transferPrice);
 
                 // Create invoice
                 $invoice = Invoice::create([
@@ -220,9 +218,9 @@ class DomainController extends Controller
                     'invoice_number' => 'INV-'.strtoupper(uniqid()),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays(7),
-                    'subtotal' => $transferPrice,
-                    'tax' => 0,
-                    'total' => $transferPrice,
+                    'subtotal' => $taxBreakdown['subtotal'],
+                    'tax' => $taxBreakdown['tax'],
+                    'total' => $taxBreakdown['total'],
                 ]);
 
                 // Create invoice item
@@ -296,11 +294,7 @@ class DomainController extends Controller
         $domain = Domain::findOrFail($renewalCheckout['domain_id']);
         $this->authorize('view', $domain);
 
-        $subtotal = $renewalCheckout['amount'];
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate((float) $renewalCheckout['amount']);
 
         $currencyCode = Setting::getValue('currency', 'KES');
         $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
@@ -308,11 +302,12 @@ class DomainController extends Controller
         return view('customer.domains.renewal-checkout', [
             'domain' => $domain,
             'years' => $renewalCheckout['years'],
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'taxEnabled' => $taxEnabled,
-            'taxRate' => $taxRate,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'taxEnabled' => $taxBreakdown['enabled'],
+            'taxRate' => $taxBreakdown['rate'],
+            'taxName' => $taxBreakdown['name'],
+            'total' => $taxBreakdown['total'],
             'currency' => $currency,
             'currencyCode' => $currencyCode,
         ]);

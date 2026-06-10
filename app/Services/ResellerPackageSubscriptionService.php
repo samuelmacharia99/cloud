@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Invoice;
 use App\Models\ResellerPackage;
-use App\Models\Setting;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -70,14 +69,12 @@ class ResellerPackageSubscriptionService
      */
     public function calculateAmounts(float $subtotal): array
     {
-        $taxEnabled = in_array(Setting::getValue('tax_enabled'), ['1', 'true', true], true);
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $tax = $taxEnabled ? round($subtotal * $taxRate / 100, 2) : 0;
+        $breakdown = TaxService::calculate($subtotal);
 
         return [
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'total' => round($subtotal + $tax, 2),
+            'subtotal' => $breakdown['subtotal'],
+            'tax' => $breakdown['tax'],
+            'total' => $breakdown['total'],
         ];
     }
 

@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\TaxService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -71,14 +72,13 @@ class CustomerHostingUpgradeService
         }
 
         $price = $this->proratedUpgradePrice($service, $targetProduct);
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-        $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-        $total = round($price + $tax, 2);
+        $taxBreakdown = TaxService::calculate($price);
+        $tax = $taxBreakdown['tax'];
+        $total = $taxBreakdown['total'];
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
         $prefix = Setting::getValue('invoice_prefix', 'INV');
 
-        return DB::transaction(function () use ($service, $customer, $targetProduct, $prefix, $price, $tax, $total, $dueDate) {
+        return DB::transaction(function () use ($service, $customer, $targetProduct, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown) {
             $year = now()->format('Y');
             $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
             $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
@@ -88,7 +88,7 @@ class CustomerHostingUpgradeService
                 'invoice_number' => $number,
                 'status' => 'unpaid',
                 'due_date' => $dueDate,
-                'subtotal' => $price,
+                'subtotal' => $taxBreakdown['subtotal'],
                 'tax' => $tax,
                 'total' => $total,
                 'notes' => "Hosting upgrade: {$service->product->name} → {$targetProduct->name}",

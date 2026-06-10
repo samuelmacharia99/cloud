@@ -18,6 +18,7 @@ use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
+use App\Services\TaxService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -389,12 +390,7 @@ class CustomerController extends Controller
                 // Create invoice if next_due_date is provided (manual first invoice)
                 if (! empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
-                    $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-                    $taxRate = (float) Setting::getValue('tax_rate', 0);
-
-                    $subtotal = $price;
-                    $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-                    $total = $subtotal + $tax;
+                    $taxBreakdown = TaxService::calculate($price);
 
                     $invoiceDueDate = $schedule->domainRenewalAnchorDate($domain);
 
@@ -403,9 +399,9 @@ class CustomerController extends Controller
                         'domain_id' => $domain->id,
                         'next_due_date' => $validated['next_due_date'],
                         'invoice_due_date' => $invoiceDueDate->toDateString(),
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
+                        'subtotal' => $taxBreakdown['subtotal'],
+                        'tax' => $taxBreakdown['tax'],
+                        'total' => $taxBreakdown['total'],
                     ]);
 
                     $invoice = Invoice::create([
@@ -413,9 +409,9 @@ class CustomerController extends Controller
                         'invoice_number' => $this->generateInvoiceNumber(),
                         'status' => 'unpaid',
                         'due_date' => $invoiceDueDate,
-                        'subtotal' => $subtotal,
-                        'tax' => $tax,
-                        'total' => $total,
+                        'subtotal' => $taxBreakdown['subtotal'],
+                        'tax' => $taxBreakdown['tax'],
+                        'total' => $taxBreakdown['total'],
                     ]);
 
                     Log::info('addDomain() invoice created', [
@@ -669,12 +665,7 @@ class CustomerController extends Controller
     private function createServiceInvoice(User $customer, Product $product, Service $service, array $validated): Invoice
     {
         $price = $this->getServicePrice($product, $validated['billing_cycle']);
-        $taxEnabled = Setting::getValue('tax_enabled') == 'true';
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-
-        $subtotal = $price;
-        $tax = $taxEnabled ? ($subtotal * $taxRate / 100) : 0;
-        $total = $subtotal + $tax;
+        $taxBreakdown = TaxService::calculate($price);
 
         $invoiceDueDate = app(InvoiceGenerationScheduleService::class)->serviceInvoiceDueDate($service);
 
@@ -683,9 +674,9 @@ class CustomerController extends Controller
             'invoice_number' => $this->generateInvoiceNumber(),
             'status' => 'unpaid',
             'due_date' => $invoiceDueDate,
-            'subtotal' => $subtotal,
-            'tax' => $tax,
-            'total' => $total,
+            'subtotal' => $taxBreakdown['subtotal'],
+            'tax' => $taxBreakdown['tax'],
+            'total' => $taxBreakdown['total'],
         ]);
 
         InvoiceItem::create([
@@ -945,8 +936,10 @@ class CustomerController extends Controller
                 }
 
                 $taxRate = floatval($validated['tax_rate'] ?? 0);
-                $taxAmount = $subtotal * ($taxRate / 100);
-                $total = $subtotal + $taxAmount;
+                $taxBreakdown = TaxService::calculateWithRate($subtotal, $taxRate);
+                $taxAmount = $taxBreakdown['tax'];
+                $subtotal = $taxBreakdown['subtotal'];
+                $total = $taxBreakdown['total'];
 
                 // Generate invoice number
                 $prefix = Setting::getValue('invoice_prefix', 'INV');

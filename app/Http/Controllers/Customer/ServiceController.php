@@ -8,6 +8,7 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
+use App\Services\TaxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -88,14 +89,13 @@ class ServiceController extends Controller
         }
 
         $price = $this->getPriceForCycle($service);
-        $taxRate = (float) Setting::getValue('tax_rate', 0);
-        $taxEnabled = Setting::getValue('tax_enabled', 'false') === 'true';
-        $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-        $total = $price + $tax;
+        $taxBreakdown = TaxService::calculate($price);
+        $tax = $taxBreakdown['tax'];
+        $total = $taxBreakdown['total'];
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
         $prefix = Setting::getValue('invoice_prefix', 'INV');
 
-        $invoice = DB::transaction(function () use ($service, $prefix, $price, $tax, $total, $dueDate) {
+        $invoice = DB::transaction(function () use ($service, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown) {
             $year = now()->format('Y');
             $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
             $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
@@ -105,7 +105,7 @@ class ServiceController extends Controller
                 'invoice_number' => $number,
                 'status' => 'unpaid',
                 'due_date' => $dueDate,
-                'subtotal' => $price,
+                'subtotal' => $taxBreakdown['subtotal'],
                 'tax' => $tax,
                 'total' => $total,
                 'notes' => 'Manual renewal — '.$service->product->name.' ('.ucfirst($service->billing_cycle).')',
