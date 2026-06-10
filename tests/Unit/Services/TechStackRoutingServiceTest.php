@@ -91,4 +91,73 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertCount(1, $containerDatabases);
         $this->assertSame('container', $containerDatabases->first()->hosting_type);
     }
+
+    private function createWordPressLanguage(): ContainerTemplate
+    {
+        $language = ContainerTemplate::firstOrCreate(
+            ['slug' => 'wordpress'],
+            [
+                'name' => 'WordPress',
+                'description' => 'Test WordPress',
+                'category' => 'web',
+                'docker_image' => 'wordpress:latest',
+                'default_port' => 80,
+                'required_ram_mb' => 512,
+                'required_cpu_cores' => 1,
+                'required_storage_gb' => 1,
+                'is_active' => true,
+                'order' => 2,
+            ]
+        );
+
+        $language->forceFill(['hosting_type' => 'directadmin'])->save();
+
+        return $language->fresh();
+    }
+
+    public function test_wordpress_shared_platform_routes_to_directadmin_products(): void
+    {
+        $language = $this->createWordPressLanguage();
+        $database = $this->createDatabase('directadmin');
+
+        $routing = TechStackRoutingService::determineHostingType($language, $database, 'shared');
+
+        $this->assertSame('directadmin', $routing['hosting_type']);
+        $this->assertSame('shared', $routing['deployment_platform']);
+    }
+
+    public function test_wordpress_container_platform_routes_to_container_products(): void
+    {
+        $language = $this->createWordPressLanguage();
+        $database = $this->createDatabase('container');
+
+        $routing = TechStackRoutingService::determineHostingType($language, $database, 'container');
+
+        $this->assertSame('container', $routing['hosting_type']);
+        $this->assertSame('container', $routing['deployment_platform']);
+    }
+
+    public function test_wordpress_databases_are_filtered_by_deployment_platform(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $language = $this->createWordPressLanguage();
+        $this->createDatabase('directadmin');
+        $this->createDatabase('container');
+
+        $sharedDatabases = TechStackRoutingService::getAvailableDatabasesForLanguage($language, 'shared');
+        $containerDatabases = TechStackRoutingService::getAvailableDatabasesForLanguage($language, 'container');
+
+        $this->assertCount(1, $sharedDatabases);
+        $this->assertSame('directadmin', $sharedDatabases->first()->hosting_type);
+        $this->assertCount(1, $containerDatabases);
+        $this->assertSame('container', $containerDatabases->first()->hosting_type);
+    }
+
+    public function test_wordpress_supports_deployment_platform_choice(): void
+    {
+        $language = $this->createWordPressLanguage();
+
+        $this->assertTrue(TechStackRoutingService::supportsDeploymentPlatformChoice($language));
+    }
 }

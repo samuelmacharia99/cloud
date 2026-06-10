@@ -35,7 +35,7 @@
                     <div class="flex-1">
                         <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
                         <div class="flex gap-2 mt-1">
-                            @if($language->slug === 'laravel')
+                            @if(in_array($language->slug, ['laravel', 'wordpress']))
                                 <span class="inline-block text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded-full">Shared or Container</span>
                             @elseif($language->hosting_type === 'directadmin')
                                 <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared Hosting</span>
@@ -108,7 +108,7 @@
                 </button>
             </div>
 
-            <!-- Laravel hosting platform step -->
+            <!-- Hosting platform step (Laravel, WordPress, etc.) -->
             <div class="p-6 space-y-4" x-show="modalStep === 'hosting'">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button type="button" @click="selectDeploymentPlatform('container')"
@@ -119,9 +119,7 @@
                         <span class="absolute top-3 right-3 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-1 rounded-full">Recommended</span>
                         <div class="text-2xl mb-2">🐳</div>
                         <p class="font-semibold text-slate-900 dark:text-white">Container Hosting</p>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
-                            Docker-based Laravel runtime with flexible PHP versions and isolated resources.
-                        </p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="containerHostingDescription"></p>
                     </button>
 
                     <button type="button" @click="selectDeploymentPlatform('shared')"
@@ -131,9 +129,7 @@
                             : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600'">
                         <div class="text-2xl mb-2">🌐</div>
                         <p class="font-semibold text-slate-900 dark:text-white">Shared Hosting</p>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
-                            DirectAdmin shared hosting with cPanel-style management and bundled MySQL.
-                        </p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="sharedHostingDescription"></p>
                     </button>
                 </div>
 
@@ -211,7 +207,7 @@
                             @csrf
                             <input type="hidden" name="language_id" :value="selectedLanguage.id">
                             <input type="hidden" name="database_id" :value="selectedDatabase.id">
-                            <template x-if="isLaravelSelection">
+                            <template x-if="requiresHostingChoice">
                                 <input type="hidden" name="deployment_platform" :value="deploymentPlatform">
                             </template>
                             <button
@@ -247,8 +243,24 @@ function techstackSelector() {
         loading: false,
         confirmTechstackUrl: '{{ route("customer.confirm-techstack") }}',
 
-        get isLaravelSelection() {
-            return this.selectedLanguage.slug === 'laravel';
+        get requiresHostingChoice() {
+            return ['laravel', 'wordpress'].includes(this.selectedLanguage.slug);
+        },
+
+        get containerHostingDescription() {
+            if (this.selectedLanguage.slug === 'wordpress') {
+                return 'Docker-based WordPress with bundled MySQL and isolated resources.';
+            }
+
+            if (this.selectedLanguage.slug === 'laravel') {
+                return 'Docker-based Laravel runtime with flexible PHP versions and isolated resources.';
+            }
+
+            return 'Containerized deployment with isolated resources and flexible scaling.';
+        },
+
+        get sharedHostingDescription() {
+            return 'DirectAdmin shared hosting with cPanel-style management and bundled MySQL.';
         },
 
         get deploymentPlatformLabel() {
@@ -271,7 +283,7 @@ function techstackSelector() {
                 return;
             }
 
-            this.modalStep = language.slug === 'laravel' ? 'hosting' : 'database';
+            this.modalStep = this.requiresHostingChoice ? 'hosting' : 'database';
             this.showDatabaseModal = true;
 
             if (this.modalStep === 'database') {
@@ -290,7 +302,7 @@ function techstackSelector() {
         },
 
         goBackFromDatabaseStep() {
-            if (this.isLaravelSelection) {
+            if (this.requiresHostingChoice) {
                 this.modalStep = 'hosting';
                 this.selectedDatabase = {};
                 this.availableDatabases = [];
@@ -313,7 +325,7 @@ function techstackSelector() {
             this.loading = true;
             try {
                 let url = `/api/languages/${languageId}/databases`;
-                if (this.isLaravelSelection) {
+                if (this.requiresHostingChoice) {
                     url += `?deployment_platform=${this.deploymentPlatform}`;
                 }
 
@@ -332,16 +344,18 @@ function techstackSelector() {
         },
 
         get hostingTypeInfo() {
-            const isShared = this.isLaravelSelection
+            const isShared = this.requiresHostingChoice
                 ? this.deploymentPlatform === 'shared'
                 : this.selectedLanguage.hosting_type === 'directadmin';
+
+            const appLabel = this.selectedLanguage.name || 'Your application';
 
             return {
                 emoji: isShared ? '🌐' : '🐳',
                 label: isShared ? 'DirectAdmin Shared Hosting' : 'Container Hosting',
                 description: isShared
-                    ? 'Your Laravel app will be deployed to shared hosting with DirectAdmin control panel'
-                    : 'Your Laravel app will run in a containerized environment with Docker',
+                    ? `${appLabel} will be deployed to shared hosting with DirectAdmin control panel`
+                    : `${appLabel} will run in a containerized environment with Docker`,
                 bgClass: isShared
                     ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
                     : 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700',

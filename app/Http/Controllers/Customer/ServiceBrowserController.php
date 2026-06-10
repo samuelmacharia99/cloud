@@ -46,8 +46,8 @@ class ServiceBrowserController extends Controller
             return response()->json(['message' => 'Invalid deployment platform.'], 422);
         }
 
-        if (TechStackRoutingService::isLaravel($language) && ! $deploymentPlatform) {
-            return response()->json(['message' => 'Deployment platform is required for Laravel.'], 422);
+        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && ! $deploymentPlatform) {
+            return response()->json(['message' => 'Deployment platform is required.'], 422);
         }
 
         $databases = TechStackRoutingService::getAvailableDatabasesForLanguage($language, $deploymentPlatform);
@@ -94,11 +94,11 @@ class ServiceBrowserController extends Controller
         $language = ContainerTemplate::findOrFail($request->language_id);
         $database = $request->database_id ? DatabaseTemplate::findOrFail($request->database_id) : null;
 
-        if (TechStackRoutingService::isLaravel($language) && ! $request->deployment_platform) {
-            return back()->with('error', 'Please choose shared or container hosting for Laravel.');
+        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && ! $request->deployment_platform) {
+            return back()->with('error', 'Please choose shared or container hosting.');
         }
 
-        if (TechStackRoutingService::isLaravel($language) && $database) {
+        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && $database) {
             $expectedHosting = $request->deployment_platform === 'shared' ? 'directadmin' : 'container';
             if ($database->hosting_type !== $expectedHosting) {
                 return back()->with('error', 'Selected database does not match the chosen hosting platform.');

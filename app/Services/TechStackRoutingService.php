@@ -14,12 +14,22 @@ class TechStackRoutingService
         return strtolower($language->slug) === 'laravel';
     }
 
+    public static function isWordPress(ContainerTemplate $language): bool
+    {
+        return strtolower($language->slug) === 'wordpress';
+    }
+
+    public static function supportsDeploymentPlatformChoice(ContainerTemplate $language): bool
+    {
+        return in_array(strtolower($language->slug), ['laravel', 'wordpress'], true);
+    }
+
     /**
      * Determine hosting type and product based on language + database selection
      *
      * Database Restrictions:
-     * - PHP & WordPress: MySQL and MariaDB only (DirectAdmin shared hosting)
-     * - Laravel: customer chooses shared (DirectAdmin) or container hosting
+     * - PHP: MySQL and MariaDB only (DirectAdmin shared hosting)
+     * - WordPress & Laravel: customer chooses shared (DirectAdmin) or container hosting
      * - Static Site: no database (Container hosting)
      * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Container hosting)
      */
@@ -32,7 +42,7 @@ class TechStackRoutingService
         $database_name = $database?->name ?? 'None';
         $database_slug = $database?->slug ?? 'none';
 
-        if (self::isLaravel($language) && $deploymentPlatform) {
+        if (self::supportsDeploymentPlatformChoice($language) && $deploymentPlatform) {
             $hosting_type = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
         } elseif ($language->hosting_type === 'directadmin' && $database && in_array($database->type, ['mysql', 'mariadb'])) {
             $hosting_type = 'directadmin';
@@ -100,7 +110,7 @@ class TechStackRoutingService
         ContainerTemplate $language,
         ?string $deploymentPlatform = null
     ): Collection {
-        if (self::isLaravel($language) && $deploymentPlatform) {
+        if (self::supportsDeploymentPlatformChoice($language) && $deploymentPlatform) {
             $hostingType = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
 
             return DatabaseTemplate::active()
@@ -109,8 +119,8 @@ class TechStackRoutingService
                 ->get();
         }
 
-        // PHP stacks use MySQL/MariaDB; hosting type depends on template routing.
-        if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
+        // PHP uses MySQL/MariaDB; hosting type depends on template routing.
+        if (in_array(strtolower($language->slug), ['php', 'laravel', 'wordpress'])) {
             $hostingType = $language->hosting_type ?? 'container';
 
             return DatabaseTemplate::active()
