@@ -19,7 +19,7 @@
 
             <!-- Form Card -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
-                <form action="{{ route('customer.tickets.store') }}" method="POST" class="space-y-6">
+                <form action="{{ route('customer.tickets.store') }}" method="POST" enctype="multipart/form-data" class="space-y-6">
                     @csrf
 
                     <!-- Title -->
@@ -52,6 +52,8 @@
                         <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
                         @enderror
                     </div>
+
+                    <x-ticket-attachment-input />
 
                     <!-- Priority -->
                     <div>

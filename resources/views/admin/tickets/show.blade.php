@@ -22,6 +22,7 @@
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <div class="mb-6 pb-6 border-b border-slate-200 dark:border-slate-700">
                     <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $ticket->description }}</p>
+                    <x-ticket-attachments :attachments="$ticket->attachments" :ticket="$ticket" />
                 </div>
 
                 <div class="flex items-center justify-between text-sm">
@@ -55,6 +56,7 @@
                         </span>
                     </div>
                     <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $reply->message }}</p>
+                    <x-ticket-attachments :attachments="$reply->attachments" :ticket="$ticket" />
                 </div>
                 @empty
                 <p class="text-gray-600 dark:text-gray-400 text-center py-8">No replies yet.</p>
@@ -65,7 +67,7 @@
             @can('reply', $ticket)
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add Reply</h3>
-                <form action="{{ route('tickets.reply', $ticket) }}" method="POST" class="space-y-4">
+                <form action="{{ route('tickets.reply', $ticket) }}" method="POST" enctype="multipart/form-data" class="space-y-4">
                     @csrf
                     <div>
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message</label>
@@ -80,6 +82,7 @@
                         <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
                         @enderror
                     </div>
+                    <x-ticket-attachment-input label="Attach files" help="Images (JPG, PNG, GIF, WebP) or documents (PDF, Word, TXT). Up to 5 files, 10 MB each." />
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
                         Send Reply
                     </button>

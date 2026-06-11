@@ -7,6 +7,7 @@ use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\TicketAttachmentService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -63,7 +64,7 @@ class TicketController extends Controller
     {
         $this->authorize('view', $ticket);
 
-        $ticket->load('user', 'replies.user', 'assignee');
+        $ticket->load('user', 'replies.user', 'replies.attachments', 'assignee', 'attachments');
         $staffMembers = User::where('is_admin', true)->get();
 
         return view('admin.tickets.show', compact('ticket', 'staffMembers'));
@@ -89,12 +90,12 @@ class TicketController extends Controller
     {
         $this->authorize('create', Ticket::class);
 
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'user_id' => 'required|exists:users,id',
             'title' => 'required|string|max:255',
             'description' => 'required|string|max:5000',
             'priority' => 'required|in:low,medium,high,urgent',
-        ]);
+        ], TicketAttachmentService::validationRules()));
 
         $ticket = Ticket::create([
             'user_id' => $validated['user_id'],
@@ -103,6 +104,12 @@ class TicketController extends Controller
             'priority' => $validated['priority'],
             'status' => 'open',
         ]);
+
+        app(TicketAttachmentService::class)->storeForTicket(
+            $ticket,
+            $request->user(),
+            $request->file('attachments', [])
+        );
 
         // Send notification
         $this->notifyTicketCreated($ticket);
@@ -117,16 +124,23 @@ class TicketController extends Controller
     {
         $this->authorize('reply', $ticket);
 
-        $validated = $request->validate([
+        $validated = $request->validate(array_merge([
             'message' => 'required|string|max:5000',
-        ]);
+        ], TicketAttachmentService::validationRules()));
 
-        TicketReply::create([
+        $reply = TicketReply::create([
             'ticket_id' => $ticket->id,
             'user_id' => auth()->id(),
             'message' => $validated['message'],
             'is_staff_reply' => true,
         ]);
+
+        app(TicketAttachmentService::class)->storeForReply(
+            $ticket,
+            $reply,
+            $request->user(),
+            $request->file('attachments', [])
+        );
 
         // Auto-set status to in_progress if ticket is open
         if ($ticket->isOpen()) {

@@ -56,6 +56,7 @@ use App\Http\Controllers\Reseller\PackageController;
 use App\Http\Controllers\Reseller\ReportsController;
 use App\Http\Controllers\Reseller\ServerController;
 use App\Http\Controllers\Reseller\WalletController;
+use App\Http\Controllers\TicketAttachmentController;
 use App\Models\DomainExtension;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
@@ -298,6 +299,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/tickets/{ticket}/reply', [TicketController::class, 'reply'])->name('tickets.reply');
         Route::patch('admin/tickets/{ticket}/status', [TicketController::class, 'updateStatus'])->name('tickets.updateStatus');
         Route::patch('admin/tickets/{ticket}/assign', [TicketController::class, 'assign'])->name('tickets.assign');
+        Route::get('admin/tickets/{ticket}/attachments/{attachment}', [TicketAttachmentController::class, 'show'])->name('tickets.attachments.show');
 
         // Reseller Wallet Management
         Route::get('admin/reseller-wallets', [ResellerWalletController::class, 'index'])->name('admin.reseller-wallets.index');
@@ -329,6 +331,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->names('reseller.tickets');
         Route::post('reseller/tickets/{ticket}/reply', [App\Http\Controllers\Reseller\TicketController::class, 'reply'])->name('reseller.tickets.reply');
         Route::patch('reseller/tickets/{ticket}/close', [App\Http\Controllers\Reseller\TicketController::class, 'close'])->name('reseller.tickets.close');
+        Route::get('reseller/tickets/{ticket}/attachments/{attachment}', [TicketAttachmentController::class, 'show'])->name('reseller.tickets.attachments.show');
 
         Route::get('reseller/services', [ManagedServiceController::class, 'index'])->name('reseller.services.index');
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
@@ -600,6 +603,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->only(['index', 'show', 'create', 'store'])->names('customer.tickets');
         Route::post('my/tickets/{ticket}/reply', [App\Http\Controllers\Customer\TicketController::class, 'reply'])->name('customer.tickets.reply');
         Route::patch('my/tickets/{ticket}/close', [App\Http\Controllers\Customer\TicketController::class, 'close'])->name('customer.tickets.close');
+        Route::get('my/tickets/{ticket}/attachments/{attachment}', [TicketAttachmentController::class, 'show'])->name('customer.tickets.attachments.show');
     });
 
     // Profile (accessible to all authenticated users)

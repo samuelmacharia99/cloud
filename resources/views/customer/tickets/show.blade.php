@@ -48,6 +48,7 @@
             <!-- Ticket Details -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $ticket->description }}</p>
+                <x-ticket-attachments :attachments="$ticket->attachments" :ticket="$ticket" route-name="customer.tickets.attachments.show" />
                 <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 text-sm text-gray-600 dark:text-gray-400">
                     Created {{ $ticket->created_at->format('M d, Y H:i') }}
                 </div>
@@ -73,6 +74,7 @@
                         </span>
                     </div>
                     <p class="text-gray-700 dark:text-gray-300 whitespace-pre-line">{{ $reply->message }}</p>
+                    <x-ticket-attachments :attachments="$reply->attachments" :ticket="$ticket" route-name="customer.tickets.attachments.show" />
                 </div>
                 @empty
                 <p class="text-gray-600 dark:text-gray-400 text-center py-8">No replies yet.</p>
@@ -98,6 +100,7 @@
                         <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
                         @enderror
                     </div>
+                    <x-ticket-attachment-input />
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
                         Send Reply
                     </button>

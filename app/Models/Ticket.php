@@ -38,6 +38,16 @@ class Ticket extends Model
         return $this->hasMany(TicketReply::class);
     }
 
+    public function attachments()
+    {
+        return $this->hasMany(TicketAttachment::class)->whereNull('ticket_reply_id');
+    }
+
+    public function allAttachments()
+    {
+        return $this->hasMany(TicketAttachment::class);
+    }
+
     public function isOpen(): bool
     {
         return $this->status === 'open';

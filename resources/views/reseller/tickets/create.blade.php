@@ -9,7 +9,7 @@
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">New Support Ticket</h1>
     </div>
 
-    <form action="{{ route('reseller.tickets.store') }}" method="POST" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+    <form action="{{ route('reseller.tickets.store') }}" method="POST" enctype="multipart/form-data" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
         @csrf
         <div>
             <label class="block text-sm font-medium mb-2">Title</label>
@@ -27,6 +27,7 @@
             <label class="block text-sm font-medium mb-2">Description</label>
             <textarea name="description" rows="6" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">{{ old('description') }}</textarea>
         </div>
+        <x-ticket-attachment-input />
         <button type="submit" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg">Submit Ticket</button>
     </form>
 </div>
