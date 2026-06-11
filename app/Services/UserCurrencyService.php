@@ -38,9 +38,14 @@ class UserCurrencyService
         $code = $this->codeFor($user);
 
         return Cache::remember("currency:active:{$code}", 300, function () use ($code) {
-            return Currency::where('code', $code)->where('is_active', true)->first()
-                ?? Currency::getBaseCurrency()
-                ?? Currency::where('code', config('currency.base', 'KES'))->firstOrFail();
+            $currency = Currency::where('code', $code)->where('is_active', true)->first()
+                ?? Currency::getBaseCurrency();
+
+            if ($currency) {
+                return $currency;
+            }
+
+            return app(CurrencyCatalogService::class)->ensure($code);
         });
     }
 

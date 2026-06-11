@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\CurrencyCatalogService;
 use Illuminate\Database\Eloquent\Model;
 
 class Currency extends Model
@@ -63,11 +64,15 @@ class Currency extends Model
             return $amount;
         }
 
-        $fromCurrency = self::where('code', $fromCurrencyCode)->firstOrFail();
-        $toCurrency = self::where('code', $toCurrencyCode)->firstOrFail();
+        $catalog = app(CurrencyCatalogService::class);
+        $fromCurrency = self::where('code', $fromCurrencyCode)->first()
+            ?? $catalog->ensure($fromCurrencyCode);
+        $toCurrency = self::where('code', $toCurrencyCode)->first()
+            ?? $catalog->ensure($toCurrencyCode);
 
         // Convert to KES first, then to target currency
         $inKES = $fromCurrency->convertToKES($amount);
+
         return $toCurrency->convertFromKES($inKES);
     }
 
@@ -77,6 +82,7 @@ class Currency extends Model
     public function format($amount): string
     {
         $formatted = number_format($amount, 2);
+
         return "{$this->symbol} {$formatted}";
     }
 }

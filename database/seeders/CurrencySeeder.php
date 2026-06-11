@@ -7,17 +7,13 @@ use Illuminate\Database\Seeder;
 
 class CurrencySeeder extends Seeder
 {
-    public function run(): void
+    /**
+     * @return list<array{code: string, name: string, symbol: string, order: int}>
+     */
+    public static function catalog(): array
     {
-        $this->upsertCurrency([
-            'code' => 'KES',
-            'name' => 'Kenya Shilling',
-            'symbol' => 'KES',
-            'order' => 1,
-        ]);
-
-        // Other major currencies
-        $currencies = [
+        return [
+            ['code' => 'KES', 'name' => 'Kenya Shilling', 'symbol' => 'KES', 'order' => 1],
             ['code' => 'USD', 'name' => 'United States Dollar', 'symbol' => '$', 'order' => 2],
             ['code' => 'EUR', 'name' => 'Euro', 'symbol' => '€', 'order' => 3],
             ['code' => 'GBP', 'name' => 'British Pound', 'symbol' => '£', 'order' => 4],
@@ -38,8 +34,11 @@ class CurrencySeeder extends Seeder
             ['code' => 'CNY', 'name' => 'Chinese Yuan', 'symbol' => '¥', 'order' => 19],
             ['code' => 'HKD', 'name' => 'Hong Kong Dollar', 'symbol' => 'HK$', 'order' => 20],
         ];
+    }
 
-        foreach ($currencies as $currency) {
+    public function run(): void
+    {
+        foreach (self::catalog() as $currency) {
             $this->upsertCurrency($currency);
         }
     }
