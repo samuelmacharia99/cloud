@@ -4,12 +4,11 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
-use App\Models\Currency;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
-use App\Models\Setting;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 
 class ServiceBrowserController extends Controller
@@ -168,9 +167,8 @@ class ServiceBrowserController extends Controller
 
         $cartCount = count(session('cart', []));
 
-        // Get currency info
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = app(UserCurrencyService::class)->model($user);
+        $currencyCode = $currency->code;
 
         return view('customer.confirm-techstack', [
             'language' => $language,

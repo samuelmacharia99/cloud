@@ -271,6 +271,9 @@
                     </svg>
                     <span class="absolute -top-2 -right-2 bg-cyan-500 text-dark-bg text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center" x-text="cartCount"></span>
                 </button>
+                <div class="hidden sm:block">
+                    <x-currency-switcher />
+                </div>
                 <a href="{{ route('login') }}" class="hidden sm:inline nav-link">Login</a>
                 <a href="{{ route('register') }}" class="btn-cyan text-xs sm:text-sm">Get Started</a>
             </div>

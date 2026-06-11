@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\UserCurrencyService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -27,6 +28,31 @@ class InvoiceItem extends Model
         'amount' => 'decimal:2',
         'custom_options' => 'array',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $item) {
+            if (! $item->invoice_id) {
+                return;
+            }
+
+            $invoice = Invoice::query()->find($item->invoice_id);
+
+            if (! $invoice || $invoice->displayCurrency() === config('currency.base', 'KES')) {
+                return;
+            }
+
+            $rate = (float) $invoice->exchange_rate;
+
+            if ($rate <= 0 || $rate === 1.0) {
+                return;
+            }
+
+            $decimals = app(UserCurrencyService::class)->decimalsFor($invoice->displayCurrency());
+            $item->unit_price = round((float) $item->unit_price * $rate, $decimals);
+            $item->amount = round((float) $item->amount * $rate, $decimals);
+        });
+    }
 
     public function invoice()
     {

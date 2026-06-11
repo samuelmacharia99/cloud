@@ -5,6 +5,7 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceCurrencyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -53,24 +54,26 @@ class PayPalService implements PaymentGatewayInterface
                 throw new \Exception('Failed to get PayPal access token');
             }
 
-            // Get invoice items
-            $invoiceItems = $invoice->items()->with('product')->get();
-            $items = [];
+            $settlement = app(InvoiceCurrencyService::class)->settlementAmount(
+                $invoice,
+                config('currency.paypal_settlement', 'USD')
+            );
 
-            foreach ($invoiceItems as $item) {
-                $items[] = [
-                    'name' => $item->description,
-                    'unit_amount' => [
-                        'currency_code' => 'USD',
-                        'value' => number_format($item->amount, 2, '.', ''),
-                    ],
-                    'quantity' => '1',
-                ];
+            $settlementCurrency = $settlement['currency'];
+            $settlementTotal = $settlement['amount'];
+
+            if ($settlementTotal <= 0) {
+                throw new \Exception('Invoice has no remaining balance');
             }
 
-            if (empty($items)) {
-                throw new \Exception('No items in invoice');
-            }
+            $items = [[
+                'name' => "Invoice {$invoice->invoice_number}",
+                'unit_amount' => [
+                    'currency_code' => $settlementCurrency,
+                    'value' => number_format($settlementTotal, 2, '.', ''),
+                ],
+                'quantity' => '1',
+            ]];
 
             // Create PayPal order
             $payload = [
@@ -83,16 +86,12 @@ class PayPalService implements PaymentGatewayInterface
                         'soft_descriptor' => 'Talksasa Cloud',
                         'items' => $items,
                         'amount' => [
-                            'currency_code' => 'USD',
-                            'value' => number_format($invoice->total, 2, '.', ''),
+                            'currency_code' => $settlementCurrency,
+                            'value' => number_format($settlementTotal, 2, '.', ''),
                             'breakdown' => [
                                 'item_total' => [
-                                    'currency_code' => 'USD',
-                                    'value' => number_format($invoice->subtotal, 2, '.', ''),
-                                ],
-                                'tax_total' => [
-                                    'currency_code' => 'USD',
-                                    'value' => number_format($invoice->tax, 2, '.', ''),
+                                    'currency_code' => $settlementCurrency,
+                                    'value' => number_format($settlementTotal, 2, '.', ''),
                                 ],
                             ],
                         ],
@@ -150,8 +149,8 @@ class PayPalService implements PaymentGatewayInterface
             Payment::create([
                 'user_id' => $invoice->user_id,
                 'invoice_id' => $invoice->id,
-                'amount' => $invoice->total,
-                'currency' => 'USD',
+                'amount' => $settlementTotal,
+                'currency' => $settlementCurrency,
                 'payment_method' => 'paypal',
                 'transaction_reference' => $orderId,
                 'status' => 'pending',

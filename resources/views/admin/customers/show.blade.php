@@ -790,92 +790,113 @@
     </div>
 
     <!-- Add Domain Modal -->
-    <div x-show="addDomainModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addDomainModal = false">
-        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
-        <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Domain</h2>
-            <button @click="addDomainModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-        </div>
+    <div
+        x-show="addDomainModal"
+        x-cloak
+        x-transition:enter="ease-out duration-200"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="ease-in duration-150"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-domain-modal-title"
+        @keydown.escape.window="addDomainModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="addDomainModal = false"></div>
 
-        <form method="POST" action="{{ route('admin.customers.add-domain', $customer) }}" class="p-6 space-y-6">
-            @csrf
-
-            <!-- Domain Name -->
-            <div>
-                <label for="domain_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Domain Name <span class="text-red-500">*</span></label>
-                <input type="text" id="domain_name" name="domain_name" placeholder="e.g., example.co.ke" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
-            </div>
-
-            <!-- Status -->
-            <div>
-                <label for="domain_status" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Status <span class="text-red-500">*</span></label>
-                <select id="domain_status" name="status" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
-                    <option value="active">Active</option>
-                    <option value="pending">Pending</option>
-                    <option value="expired">Expired</option>
-                    <option value="suspended">Suspended</option>
-                </select>
-            </div>
-
-            <!-- Dates -->
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <label for="registered_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Registration Date</label>
-                    <input type="date" id="registered_at" name="registered_at" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
+        <div class="flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div
+                x-show="addDomainModal"
+                x-transition:enter="ease-out duration-200"
+                x-transition:enter-start="opacity-0 translate-y-4 sm:scale-95"
+                x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave="ease-in duration-150"
+                x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave-end="opacity-0 translate-y-4 sm:scale-95"
+                class="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[min(90vh,56rem)] flex flex-col"
+                @click.stop
+            >
+                <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                    <div>
+                        <h2 id="add-domain-modal-title" class="text-xl font-bold text-slate-900 dark:text-white">Add Domain</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-0.5">Manually attach a domain to {{ $customer->name }}</p>
+                    </div>
+                    <button type="button" @click="addDomainModal = false" class="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition" aria-label="Close">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
                 </div>
 
-                <div>
-                    <label for="expires_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Expiration Date <span class="text-red-500">*</span></label>
-                    <input type="date" id="expires_at" name="expires_at" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                <form id="add-domain-form" method="POST" action="{{ route('admin.customers.add-domain', $customer) }}" class="flex-1 overflow-y-auto p-6 space-y-5">
+                    @csrf
+
+                    <div>
+                        <label for="domain_name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Domain name <span class="text-red-500">*</span></label>
+                        <input type="text" id="domain_name" name="domain_name" placeholder="e.g., example.co.ke" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500" required>
+                    </div>
+
+                    <div>
+                        <label for="domain_status" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Status <span class="text-red-500">*</span></label>
+                        <select id="domain_status" name="status" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500" required>
+                            <option value="active">Active</option>
+                            <option value="pending">Pending</option>
+                            <option value="expired">Expired</option>
+                            <option value="suspended">Suspended</option>
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="registered_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Registration date</label>
+                            <input type="date" id="registered_at" name="registered_at" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label for="expires_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Expiration date <span class="text-red-500">*</span></label>
+                            <input type="date" id="expires_at" name="expires_at" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500" required>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="next_due_date_domain" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next invoice date <span class="text-slate-400 font-normal">(optional)</span></label>
+                        <input type="date" id="next_due_date_domain" name="next_due_date" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                        <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Leave blank to skip invoice generation</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="nameserver_1" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 1</label>
+                            <input type="text" id="nameserver_1" name="nameserver_1" placeholder="ns1.example.com" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label for="nameserver_2" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 2</label>
+                            <input type="text" id="nameserver_2" name="nameserver_2" placeholder="ns2.example.com" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" id="auto_renew" name="auto_renew" value="1" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        <label for="auto_renew" class="text-sm text-slate-900 dark:text-white">Auto-renew domain</label>
+                    </div>
+
+                    <div>
+                        <label for="domain_notes" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Notes</label>
+                        <textarea id="domain_notes" name="notes" rows="3" class="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                </form>
+
+                <div class="flex flex-col-reverse sm:flex-row gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-2xl shrink-0">
+                    <button type="button" @click="addDomainModal = false" class="flex-1 px-4 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-white dark:hover:bg-slate-800 transition">
+                        Cancel
+                    </button>
+                    <button type="submit" form="add-domain-form" class="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                        Add Domain
+                    </button>
                 </div>
             </div>
-
-            <!-- Next Invoice Date -->
-            <div>
-                <label for="next_due_date_domain" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next Invoice Date (Optional)</label>
-                <input type="date" id="next_due_date_domain" name="next_due_date" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Leave blank if you don't want to generate an invoice</p>
-            </div>
-
-            <!-- Nameservers -->
-            <div class="space-y-3">
-                <div>
-                    <label for="nameserver_1" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 1</label>
-                    <input type="text" id="nameserver_1" name="nameserver_1" placeholder="e.g., ns1.example.com" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
-                </div>
-
-                <div>
-                    <label for="nameserver_2" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Nameserver 2</label>
-                    <input type="text" id="nameserver_2" name="nameserver_2" placeholder="e.g., ns2.example.com" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white">
-                </div>
-            </div>
-
-            <!-- Auto Renew -->
-            <div class="flex items-center gap-3">
-                <input type="checkbox" id="auto_renew" name="auto_renew" value="1" class="w-4 h-4 border-slate-300 rounded">
-                <label for="auto_renew" class="text-sm text-slate-900 dark:text-white">Auto-renew domain</label>
-            </div>
-
-            <!-- Notes -->
-            <div>
-                <label for="domain_notes" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Notes</label>
-                <textarea id="domain_notes" name="notes" rows="3" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white"></textarea>
-            </div>
-
-            <!-- Submit Button -->
-            <div class="flex gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
-                <button type="button" @click="addDomainModal = false" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                    Cancel
-                </button>
-                <button type="submit" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                    Add Domain
-                </button>
-            </div>
-        </form>
         </div>
     </div>
 

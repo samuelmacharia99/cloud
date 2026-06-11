@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\InvoiceStatus;
+use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\ResellerPackageSubscriptionService;
+use App\Support\CurrencyFormatter;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -21,6 +23,11 @@ class Invoice extends Model
         'subtotal',
         'tax',
         'total',
+        'currency',
+        'exchange_rate',
+        'subtotal_base_kes',
+        'tax_base_kes',
+        'total_base_kes',
         'wallet_amount_applied',
         'notes',
     ];
@@ -31,12 +38,20 @@ class Invoice extends Model
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
         'total' => 'decimal:2',
+        'exchange_rate' => 'decimal:8',
+        'subtotal_base_kes' => 'decimal:2',
+        'tax_base_kes' => 'decimal:2',
+        'total_base_kes' => 'decimal:2',
         'wallet_amount_applied' => 'decimal:2',
         'status' => InvoiceStatus::class,
     ];
 
     protected static function booted(): void
     {
+        static::creating(function (self $invoice) {
+            app(InvoiceCurrencyService::class)->applySnapshot($invoice);
+        });
+
         static::updated(function (self $invoice) {
             if ($invoice->wasChanged('status') && $invoice->isPaid()) {
                 app(ResellerPackageSubscriptionService::class)
@@ -111,7 +126,23 @@ class Invoice extends Model
      */
     public function getAppliedCredits(): float
     {
-        return $this->credits()->sum('credit_applications.amount_applied') ?? 0;
+        $kesApplied = (float) ($this->credits()->sum('credit_applications.amount_applied') ?? 0);
+
+        if ($kesApplied <= 0 || $this->displayCurrency() === config('currency.base', 'KES')) {
+            return $kesApplied;
+        }
+
+        return round($kesApplied * (float) $this->exchange_rate, 2);
+    }
+
+    public function displayCurrency(): string
+    {
+        return $this->currency ?? config('currency.base', 'KES');
+    }
+
+    public function formatMoney(float $amount): string
+    {
+        return CurrencyFormatter::format($amount, $this->displayCurrency());
     }
 
     /**

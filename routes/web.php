@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SmsController;
 use App\Http\Controllers\Admin\SmsTemplateController;
 use App\Http\Controllers\Admin\TicketController;
+use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
@@ -58,6 +59,8 @@ use App\Http\Controllers\Reseller\WalletController;
 use App\Models\DomainExtension;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/currency', [CurrencyPreferenceController::class, 'update'])->name('currency.update');
 
 Route::get('/', function () {
     return redirect()->route('login');

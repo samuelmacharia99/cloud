@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\ResellerBrandingResolver;
+use App\Support\CountryCurrency;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -49,7 +50,10 @@ class PaymentGatewayFactory
         $invoice->loadMissing('user');
         $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
 
-        return self::buildGatewayList($reseller);
+        return self::filterGatewaysForInvoice(
+            self::buildGatewayList($reseller),
+            $invoice
+        );
     }
 
     /**
@@ -121,6 +125,23 @@ class PaymentGatewayFactory
                 'color' => 'slate',
                 'description' => 'Pay via bank transfer and submit your reference',
             ];
+        }
+
+        return $gateways;
+    }
+
+    /**
+     * @param  array<string, array<string, string>>  $gateways
+     * @return array<string, array<string, string>>
+     */
+    private static function filterGatewaysForInvoice(array $gateways, Invoice $invoice): array
+    {
+        $user = $invoice->user;
+        $invoiceCurrency = $invoice->displayCurrency();
+        $isKenya = CountryCurrency::isKenya($user?->country);
+
+        if ($invoiceCurrency !== config('currency.base', 'KES') || ! $isKenya) {
+            unset($gateways['mpesa']);
         }
 
         return $gateways;

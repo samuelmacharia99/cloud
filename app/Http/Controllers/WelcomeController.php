@@ -3,13 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
-use App\Models\Currency;
-use App\Models\Setting;
-use Illuminate\Http\Request;
+use App\Services\UserCurrencyService;
 
 class WelcomeController extends Controller
 {
-    public function index()
+    public function index(UserCurrencyService $currencies)
     {
         // Fetch hosting packages (shared_hosting type)
         $packages = Product::where('type', 'shared_hosting')
@@ -17,9 +15,8 @@ class WelcomeController extends Controller
             ->orderBy('monthly_price')
             ->get();
 
-        // Get currency info
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = $currencies->model(null);
+        $currencyCode = $currency->code;
 
         return view('welcome', [
             'packages' => $packages,

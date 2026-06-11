@@ -16,6 +16,9 @@
             'taxRate' => $taxRate,
             'taxInclusive' => $taxInclusive ?? false,
             'creditBalance' => $creditBalance ?? 0,
+            'exchangeRate' => (float) ($currency->exchange_rate ?? 1),
+            'currencySymbol' => $currency->symbol ?? $currencyCode,
+            'decimals' => app(\App\Services\UserCurrencyService::class)->decimalsFor($currencyCode),
         ]) }})"
         @checkout-domain-added.window="addDomainAddon($event.detail)"
         @checkout-domain-removed.window="onDomainRemoved($event.detail.cartKey)">
@@ -32,7 +35,7 @@
                                     <p class="font-medium text-slate-900 dark:text-white">{{ $item['name'] }}</p>
                                     <p class="text-sm text-slate-500 dark:text-slate-400">{{ $item['description'] ?? '' }}</p>
                                 </div>
-                                <p class="font-semibold text-slate-900 dark:text-white">Ksh {{ number_format($item['amount'], 0) }}</p>
+                                <p class="font-semibold text-slate-900 dark:text-white"><x-currency-formatter :amount="$item['amount']" :convertFromKES="true" /></p>
                             </div>
                         @endforeach
                         <template x-for="addon in domainAddonList()" :key="addon.cartKey">
@@ -45,7 +48,7 @@
                                         Remove from cart
                                     </button>
                                 </div>
-                                <p class="font-semibold text-slate-900 dark:text-white" x-text="formatMoney(addon.amount)"></p>
+                                <p class="font-semibold text-slate-900 dark:text-white" x-text="formatMoney(convertFromBase(addon.amount))"></p>
                             </div>
                         </template>
                     </div>
@@ -102,7 +105,7 @@
                     <div class="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-6">
                         <div class="flex items-center justify-between mb-3">
                             <h2 class="text-lg font-bold text-emerald-900 dark:text-emerald-100">Account credit</h2>
-                            <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300">KES {{ number_format($creditBalance, 2) }}</p>
+                            <p class="text-lg font-bold text-emerald-700 dark:text-emerald-300"><x-currency-formatter :amount="$creditBalance" :convertFromKES="true" /></p>
                         </div>
                         <label class="flex items-start gap-3 cursor-pointer">
                             <input type="checkbox" name="apply_credits" value="1" x-model="applyCredits" class="mt-1 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
@@ -197,6 +200,9 @@ function checkoutPage(config) {
         taxRate: config.taxRate,
         taxInclusive: config.taxInclusive,
         creditBalance: config.creditBalance ?? 0,
+        exchangeRate: config.exchangeRate ?? 1,
+        currencySymbol: config.currencySymbol ?? 'KES',
+        decimals: config.decimals ?? 2,
         domainAddons: {},
 
         creditApplied() {
@@ -204,7 +210,9 @@ function checkoutPage(config) {
                 return 0;
             }
 
-            return Math.min(this.creditBalance, this.displayTotal());
+            const creditDisplay = this.creditBalance * this.exchangeRate;
+
+            return Math.min(creditDisplay, this.displayTotal());
         },
 
         amountDue() {
@@ -242,6 +250,10 @@ function checkoutPage(config) {
         },
 
         displaySubtotal() {
+            return this.convertFromBase(this.baseSubtotalInKes());
+        },
+
+        baseSubtotalInKes() {
             const gross = this.displayGross();
             if (! this.taxEnabled || this.taxRate <= 0) {
                 return gross;
@@ -259,26 +271,35 @@ function checkoutPage(config) {
                 return 0;
             }
             if (this.taxInclusive) {
-                return gross - this.displaySubtotal();
+                return this.convertFromBase(gross - this.baseSubtotalInKes());
             }
 
-            return gross * this.taxRate / 100;
+            return this.convertFromBase(gross * this.taxRate / 100);
         },
 
         displayTotal() {
             const gross = this.displayGross();
             if (! this.taxEnabled || this.taxRate <= 0) {
-                return gross;
+                return this.convertFromBase(gross);
             }
             if (this.taxInclusive) {
-                return gross;
+                return this.convertFromBase(gross);
             }
 
-            return gross + this.displayTax();
+            return this.convertFromBase(gross + (gross * this.taxRate / 100));
+        },
+
+        convertFromBase(amountKes) {
+            return amountKes * this.exchangeRate;
         },
 
         formatMoney(amount) {
-            return 'Ksh ' + Math.round(amount).toLocaleString();
+            const formatted = Number(amount).toLocaleString(undefined, {
+                minimumFractionDigits: this.decimals,
+                maximumFractionDigits: this.decimals,
+            });
+
+            return `${this.currencySymbol} ${formatted}`;
         },
     };
 }

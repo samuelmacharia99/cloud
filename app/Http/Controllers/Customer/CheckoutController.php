@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
-use App\Models\Currency;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
@@ -26,6 +25,7 @@ use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
 use App\Services\TaxService;
+use App\Services\UserCurrencyService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -46,9 +46,8 @@ class CheckoutController extends Controller
                 ->where('user_id', auth()->id())
                 ->firstOrFail();
 
-            // Get currency info
-            $currencyCode = Setting::getValue('currency', 'KES');
-            $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+            $currency = app(UserCurrencyService::class)->model(auth()->user());
+            $currencyCode = $currency->code;
 
             return view('customer.checkout.invoice', [
                 'invoice' => $invoice,
@@ -135,9 +134,8 @@ class CheckoutController extends Controller
 
         $taxBreakdown = TaxService::calculate($subtotal);
 
-        // Get currency info
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = app(UserCurrencyService::class)->model($user);
+        $currencyCode = $currency->code;
 
         $sharedHostingItems = array_values(array_filter(
             $cartItems,
@@ -753,9 +751,8 @@ class CheckoutController extends Controller
 
         $taxBreakdown = TaxService::calculate($subtotal);
 
-        // Get currency info
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = app(UserCurrencyService::class)->model(null);
+        $currencyCode = $currency->code;
 
         return view('public.checkout', [
             'cartItems' => $cartItems,

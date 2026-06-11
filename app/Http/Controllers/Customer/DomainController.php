@@ -3,17 +3,16 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
-use App\Models\Currency;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
-use App\Models\Setting;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\TaxService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -173,9 +172,8 @@ class DomainController extends Controller
 
         $taxBreakdown = TaxService::calculate((float) $transferCheckout['transfer_price']);
 
-        // Get currency info
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = app(UserCurrencyService::class)->model(auth()->user());
+        $currencyCode = $currency->code;
 
         return view('customer.domains.transfer-checkout', [
             'domain' => $domain,
@@ -296,8 +294,8 @@ class DomainController extends Controller
 
         $taxBreakdown = TaxService::calculate((float) $renewalCheckout['amount']);
 
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)->where('is_active', true)->first();
+        $currency = app(UserCurrencyService::class)->model(auth()->user());
+        $currencyCode = $currency->code;
 
         return view('customer.domains.renewal-checkout', [
             'domain' => $domain,

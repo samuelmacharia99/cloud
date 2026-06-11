@@ -1,16 +1,15 @@
-@props(['amount', 'currency' => null, 'showSymbol' => true, 'decimals' => 2, 'convertFromKES' => false])
+@props(['amount', 'currency' => null, 'showSymbol' => true, 'decimals' => null, 'convertFromKES' => false])
 
 @php
+    use App\Helpers\CurrencyHelper;
     use App\Models\Currency;
-    use App\Models\Setting;
+    use App\Services\UserCurrencyService;
     use Illuminate\Support\Facades\Cache;
 
-    // Use provided currency or get the selected currency from settings
     if ($currency === null) {
-        $currency = Setting::getValue('currency', 'KES');
+        $currency = CurrencyHelper::getSelectedCurrencyCode();
     }
 
-    // Cache currency lookup to avoid repeated DB queries in tables/lists.
     $currencyModel = Cache::remember("currency:formatter:{$currency}", 300, function () use ($currency) {
         return Currency::where('code', $currency)->first();
     });
@@ -18,9 +17,15 @@
 
     $displayAmount = (float) $amount;
 
-    // If convertFromKES is true, convert from KES to the target currency
-    if ($convertFromKES && $currency !== 'KES' && $currencyModel) {
-        $displayAmount = $displayAmount * $currencyModel->exchange_rate;
+    if ($convertFromKES) {
+        $displayAmount = CurrencyHelper::convertFromBase($displayAmount);
+        $currency = CurrencyHelper::getSelectedCurrencyCode();
+        $currencyModel = CurrencyHelper::getSelectedCurrency();
+        $symbol = $currencyModel?->symbol ?? $currency;
+    }
+
+    if ($decimals === null) {
+        $decimals = app(UserCurrencyService::class)->decimalsFor($currency);
     }
 
     $formatted = number_format($displayAmount, $decimals, '.', ',');

@@ -7,7 +7,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Pay Invoice</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — KES {{ number_format($amountRemaining ?? $invoice->total, 2) }} remaining</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Invoice #{{ $invoice->invoice_number }} — {{ $invoice->formatMoney($amountRemaining ?? $invoice->getAmountRemaining()) }} remaining</p>
     </div>
 
     <!-- Invoice Summary -->
@@ -31,12 +31,12 @@
             @if(($appliedCredits ?? 0) > 0)
             <div class="flex justify-between">
                 <span class="text-slate-600 dark:text-slate-400">Credits applied</span>
-                <span class="font-semibold text-emerald-600">− KES {{ number_format($appliedCredits, 2) }}</span>
+                <span class="font-semibold text-emerald-600">− {{ $invoice->formatMoney($appliedCredits) }}</span>
             </div>
             @endif
             <div class="flex justify-between text-lg">
                 <span class="font-semibold text-slate-900 dark:text-white">Amount Due</span>
-                <span class="font-bold text-blue-600 dark:text-blue-400">KES {{ number_format($amountRemaining ?? $invoice->total, 2) }}</span>
+                <span class="font-bold text-blue-600 dark:text-blue-400">{{ $invoice->formatMoney($amountRemaining ?? $invoice->getAmountRemaining()) }}</span>
             </div>
         </div>
     </div>
@@ -45,7 +45,9 @@
     <div class="bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 flex flex-wrap items-center justify-between gap-4">
         <div>
             <p class="font-semibold text-emerald-900 dark:text-emerald-300">Account credit available</p>
-            <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">KES {{ number_format($creditBalance, 2) }} can be applied to this invoice.</p>
+            <p class="text-sm text-emerald-800 dark:text-emerald-400 mt-1">
+                <x-currency-formatter :amount="$creditBalance" :convertFromKES="true" /> account credit can be applied to this invoice.
+            </p>
         </div>
         <form method="POST" action="{{ route('customer.payment.apply-credits', $invoice) }}">
             @csrf
@@ -56,7 +58,15 @@
 
     <!-- Payment Methods -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6" x-data="{ selectedMethod: null, showManualModal: false, mpesaPhoneNumber: '' }">
-        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Select Payment Method</h2>
+        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Select Payment Method</h2>
+        @if ($invoice->displayCurrency() !== config('currency.paypal_settlement', 'USD'))
+            <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                Prices are shown in <strong>{{ $invoice->displayCurrency() }}</strong>.
+                PayPal checkout settles in <strong>{{ config('currency.paypal_settlement', 'USD') }}</strong> at the locked exchange rate.
+            </p>
+        @else
+            <div class="mb-6"></div>
+        @endif
 
         @if (session('success'))
             <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-lg">

@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Listeners\BlockDestructiveProductionCommands;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
 use App\Services\EmailRateLimiter;
@@ -14,6 +15,7 @@ use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerWalletService;
 use App\Services\TalksasaSmsService;
+use App\Services\UserCurrencyService;
 use App\Services\WalletNotificationService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandStarting;
@@ -48,6 +50,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(ResellerDomainTransferService::class);
         $this->app->singleton(ResellerBrandingResolver::class);
         $this->app->singleton(ResellerMailService::class);
+        $this->app->singleton(UserCurrencyService::class);
+        $this->app->singleton(InvoiceCurrencyService::class);
         $this->app->singleton(TalksasaSmsService::class);
         $this->app->alias(TalksasaSmsService::class, 'talksasa-sms-service');
     }

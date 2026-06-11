@@ -5,6 +5,7 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Support\CurrencyFormatter;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session;
 use Stripe\Exception\SignatureVerificationException;
@@ -54,6 +55,7 @@ class StripeService implements PaymentGatewayInterface
             }
 
             $user = $invoice->user;
+            $currency = strtolower($invoice->displayCurrency());
             $lineItems = [];
 
             // Get invoice items
@@ -61,8 +63,8 @@ class StripeService implements PaymentGatewayInterface
             foreach ($invoiceItems as $item) {
                 $lineItems[] = [
                     'price_data' => [
-                        'currency' => 'usd',
-                        'unit_amount' => (int) round($item->amount * 100), // Convert to cents
+                        'currency' => $currency,
+                        'unit_amount' => CurrencyFormatter::toMinorUnits((float) $item->amount, $invoice->displayCurrency()),
                         'product_data' => [
                             'name' => $item->description,
                             'metadata' => [
@@ -99,8 +101,8 @@ class StripeService implements PaymentGatewayInterface
             Payment::create([
                 'user_id' => $user->id,
                 'invoice_id' => $invoice->id,
-                'amount' => $invoice->total,
-                'currency' => 'USD',
+                'amount' => $invoice->getAmountRemaining(),
+                'currency' => strtoupper($invoice->displayCurrency()),
                 'payment_method' => 'stripe',
                 'transaction_reference' => $session->id,
                 'status' => 'pending',

@@ -24,6 +24,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'notification_phones',
         'company',
         'country',
+        'preferred_currency',
         'address',
         'city',
         'postal_code',

@@ -3,10 +3,9 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
-use App\Models\Currency;
 use App\Models\Product;
-use App\Models\Setting;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 
 class ServerController extends Controller
@@ -56,12 +55,9 @@ class ServerController extends Controller
             $vpsProducts = collect();
         }
 
-        // Get currency information
-        $currencyCode = Setting::getValue('currency', 'KES');
-        $currency = Currency::where('code', $currencyCode)
-            ->where('is_active', true)
-            ->first();
-        $currencySymbol = $currency?->symbol ?? $currencyCode;
+        $currency = app(UserCurrencyService::class)->model(auth()->user());
+        $currencyCode = $currency->code;
+        $currencySymbol = $currency->symbol ?? $currencyCode;
 
         $linuxDistros = config('server_options.linux_distributions');
         $maxIpCount = config('server_options.max_ip_count', 8);

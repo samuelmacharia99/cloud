@@ -4,75 +4,87 @@ namespace App\Helpers;
 
 use App\Models\Currency;
 use App\Models\Setting;
+use App\Models\User;
+use App\Services\UserCurrencyService;
 
 class CurrencyHelper
 {
-    /**
-     * Get the selected/default currency for the system
-     */
-    public static function getSelectedCurrency(): ?Currency
+    public static function usesCustomerCurrency(): bool
     {
-        $code = Setting::getValue('currency', 'KES');
+        if (! auth()->check()) {
+            return true;
+        }
+
+        $user = auth()->user();
+
+        return ! $user->is_admin;
+    }
+
+    /**
+     * Get the display currency for the current context.
+     */
+    public static function getSelectedCurrency(?User $user = null): ?Currency
+    {
+        if (self::usesCustomerCurrency()) {
+            return app(UserCurrencyService::class)->model($user);
+        }
+
+        $code = Setting::getValue('currency', config('currency.base', 'KES'));
+
         return Currency::where('code', $code)->where('is_active', true)->first();
     }
 
-    /**
-     * Get the selected currency code
-     */
-    public static function getSelectedCurrencyCode(): string
+    public static function getSelectedCurrencyCode(?User $user = null): string
     {
-        return Setting::getValue('currency', 'KES');
+        if (self::usesCustomerCurrency()) {
+            return app(UserCurrencyService::class)->codeFor($user);
+        }
+
+        return Setting::getValue('currency', config('currency.base', 'KES'));
     }
 
-    /**
-     * Get the selected currency symbol
-     */
-    public static function getSelectedCurrencySymbol(): string
+    public static function getSelectedCurrencySymbol(?User $user = null): string
     {
-        $currency = self::getSelectedCurrency();
+        $currency = self::getSelectedCurrency($user);
+
         return $currency?->symbol ?? Setting::getValue('currency_symbol', 'KES');
     }
 
-    /**
-     * Format an amount in the selected currency
-     */
-    public static function formatPrice($amount, $decimals = 2): string
+    public static function formatPrice($amount, $decimals = 2, ?User $user = null): string
     {
-        $currency = self::getSelectedCurrency();
+        $currency = self::getSelectedCurrency($user);
         $symbol = $currency?->symbol ?? Setting::getValue('currency_symbol', 'KES');
         $formatted = number_format($amount, $decimals);
+
         return "{$symbol} {$formatted}";
     }
 
-    /**
-     * Convert amount from base currency (KES) to selected currency
-     */
-    public static function convertFromBase($amount): float
+    public static function convertFromBase($amount, ?User $user = null): float
     {
-        $currency = self::getSelectedCurrency();
-        if (!$currency) {
-            return $amount;
+        if (self::usesCustomerCurrency()) {
+            return app(UserCurrencyService::class)->convertFromKes((float) $amount, $user);
         }
+
+        $currency = self::getSelectedCurrency($user);
+        if (! $currency) {
+            return (float) $amount;
+        }
+
         return $currency->convertFromKES($amount);
     }
 
-    /**
-     * Convert amount from selected currency to base currency (KES)
-     */
-    public static function convertToBase($amount): float
+    public static function convertToBase($amount, ?User $user = null): float
     {
-        $currency = self::getSelectedCurrency();
-        if (!$currency) {
-            return $amount;
+        $currency = self::getSelectedCurrency($user);
+        if (! $currency) {
+            return (float) $amount;
         }
+
         return $currency->convertToKES($amount);
     }
 
-    /**
-     * Check if selected currency is base currency (KES)
-     */
-    public static function isBaseCurrency(): bool
+    public static function isBaseCurrency(?User $user = null): bool
     {
-        return self::getSelectedCurrencyCode() === 'KES';
+        return self::getSelectedCurrencyCode($user) === config('currency.base', 'KES');
     }
 }

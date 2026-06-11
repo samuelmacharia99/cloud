@@ -6,6 +6,7 @@ use App\Models\Credit;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 
 class CreditService
 {
@@ -16,7 +17,7 @@ class CreditService
     {
         $payment->load('invoice');
 
-        if (!$payment->invoice) {
+        if (! $payment->invoice) {
             return null;
         }
 
@@ -91,7 +92,7 @@ class CreditService
     /**
      * Get all active credits for user
      */
-    public static function getActiveCredits(User $user): \Illuminate\Database\Eloquent\Collection
+    public static function getActiveCredits(User $user): Collection
     {
         return Credit::forUser($user)
             ->active()
@@ -122,17 +123,24 @@ class CreditService
                 break;
             }
 
-            $availableBalance = $credit->getAvailableBalance();
-            if ($availableBalance <= 0) {
+            $availableBalanceKes = $credit->getAvailableBalance();
+            if ($availableBalanceKes <= 0) {
                 continue;
             }
 
-            // Apply the lesser of available credit or remaining balance
-            $applyAmount = min($availableBalance, $remainingBalance);
+            $remainingKes = $invoice->displayCurrency() === config('currency.base', 'KES')
+                ? $remainingBalance
+                : round($remainingBalance / max((float) $invoice->exchange_rate, 0.00000001), 2);
 
-            if ($credit->applyToInvoice($invoice, $applyAmount)) {
-                $appliedAmount += $applyAmount;
-                $remainingBalance -= $applyAmount;
+            $applyAmountKes = min($availableBalanceKes, $remainingKes);
+
+            if ($credit->applyToInvoice($invoice, $applyAmountKes)) {
+                $appliedInvoiceAmount = $invoice->displayCurrency() === config('currency.base', 'KES')
+                    ? $applyAmountKes
+                    : round($applyAmountKes * (float) $invoice->exchange_rate, 2);
+
+                $appliedAmount += $appliedInvoiceAmount;
+                $remainingBalance -= $appliedInvoiceAmount;
             }
         }
 

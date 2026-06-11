@@ -210,6 +210,9 @@
 
                     <!-- Right: Actions + Dark Mode + Notifications + Profile -->
                     <div class="flex items-center gap-2 sm:gap-4 ml-auto shrink-0">
+                        @if (!auth()->user()->is_admin)
+                            <x-currency-switcher />
+                        @endif
                         <!-- Shopping Cart -->
                         <a href="{{ route('customer.cart.index') }}" class="relative p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition">
                             <svg class="w-5 h-5 text-slate-600 dark:text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -21,6 +21,7 @@ use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\TaxService;
+use App\Services\UserCurrencyService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -117,6 +118,7 @@ class CustomerController extends Controller
         unset($validated['send_welcome_email']);
 
         $user = User::create($validated);
+        app(UserCurrencyService::class)->syncFromCountry($user, true);
 
         $flash = 'Customer created successfully.';
 
@@ -282,6 +284,10 @@ class CustomerController extends Controller
         }
 
         $customer->update($validated);
+
+        if ($customer->wasChanged('country')) {
+            app(UserCurrencyService::class)->syncFromCountry($customer->fresh(), true);
+        }
 
         return redirect()->route('admin.customers.show', $customer)
             ->with('success', 'Customer updated successfully.');
