@@ -9,12 +9,10 @@ class CurrencySeeder extends Seeder
 {
     public function run(): void
     {
-        // Base currency - Kenya Shilling
-        Currency::updateOrCreate(['code' => 'KES'], [
+        $this->upsertCurrency([
+            'code' => 'KES',
             'name' => 'Kenya Shilling',
             'symbol' => 'KES',
-            'exchange_rate' => 1.0,
-            'is_active' => true,
             'order' => 1,
         ]);
 
@@ -42,13 +40,33 @@ class CurrencySeeder extends Seeder
         ];
 
         foreach ($currencies as $currency) {
-            Currency::updateOrCreate(
+            $this->upsertCurrency($currency);
+        }
+    }
+
+    /**
+     * @param  array{code: string, name: string, symbol: string, order: int}  $currency
+     */
+    private function upsertCurrency(array $currency): void
+    {
+        if (app()->environment('production')) {
+            Currency::firstOrCreate(
                 ['code' => $currency['code']],
                 array_merge($currency, [
-                    'exchange_rate' => 1.0, // Will be updated by cron
+                    'exchange_rate' => 1.0,
                     'is_active' => true,
                 ])
             );
+
+            return;
         }
+
+        Currency::updateOrCreate(
+            ['code' => $currency['code']],
+            array_merge($currency, [
+                'exchange_rate' => 1.0,
+                'is_active' => true,
+            ])
+        );
     }
 }

@@ -59,6 +59,7 @@ php artisan db:seed --class=CronJobSeeder --force
 php artisan db:seed --class=SettingSeeder --force
 php artisan db:seed --class=EmailTemplateSeeder --force
 php artisan db:seed --class=SmsTemplateSeeder --force
+php artisan db:seed --class=CurrencySeeder --force
 
 if command -v npm >/dev/null 2>&1 && [[ -f package.json ]]; then
   log "Building frontend assets"

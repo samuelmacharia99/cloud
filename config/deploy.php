@@ -12,6 +12,8 @@ return [
     | customer billing, settings, or transactional data. SettingSeeder,
     | EmailTemplateSeeder, and SmsTemplateSeeder only insert missing keys
     | in production (firstOrCreate) — they never overwrite live values.
+    | CurrencySeeder only inserts missing currency rows (never overwrites
+    | exchange rates updated by cron).
     |
     */
     'production_allowed_seeders' => [
@@ -23,6 +25,8 @@ return [
         'Database\\Seeders\\EmailTemplateSeeder',
         'SmsTemplateSeeder',
         'Database\\Seeders\\SmsTemplateSeeder',
+        'CurrencySeeder',
+        'Database\\Seeders\\CurrencySeeder',
     ],
 
     /*

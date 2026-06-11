@@ -60,7 +60,7 @@ class ProductionCommandGuardTest extends TestCase
     {
         $this->asProduction();
 
-        foreach (['SettingSeeder', 'EmailTemplateSeeder', 'SmsTemplateSeeder'] as $seeder) {
+        foreach (['SettingSeeder', 'EmailTemplateSeeder', 'SmsTemplateSeeder', 'CurrencySeeder'] as $seeder) {
             ProductionCommandGuard::assertCommandAllowed('db:seed', ['class' => $seeder]);
         }
 

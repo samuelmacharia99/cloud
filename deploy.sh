@@ -119,6 +119,7 @@ php artisan db:seed --class=CronJobSeeder --force || warning "CronJobSeeder fail
 php artisan db:seed --class=SettingSeeder --force || warning "SettingSeeder failed"
 php artisan db:seed --class=EmailTemplateSeeder --force || warning "EmailTemplateSeeder failed"
 php artisan db:seed --class=SmsTemplateSeeder --force || warning "SmsTemplateSeeder failed"
+php artisan db:seed --class=CurrencySeeder --force || warning "CurrencySeeder failed"
 log "Allowlisted seeders complete ✓"
 
 # Step 8: Clear caches and compiled files
