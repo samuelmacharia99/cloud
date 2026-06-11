@@ -114,7 +114,8 @@ class PayPalConnectService
                     ],
                 ],
             ],
-            'products' => ['EXPRESS_CHECKOUT'],
+            // PPCP is required for current PayPal multiparty / Connect flows (includes Express Checkout).
+            'products' => config('paypal.partner.referral_products', ['PPCP']),
             'legal_consents' => [
                 [
                     'type' => 'SHARE_DATA_CONSENT',
@@ -127,16 +128,15 @@ class PayPalConnectService
             ->post($this->apiBaseUrl($environment).'/v2/customer/partner-referrals', $payload);
 
         if (! $response->successful()) {
+            $body = $response->json();
             Log::error('PayPal partner referral failed', [
                 'status' => $response->status(),
-                'body' => $response->json(),
+                'body' => $body,
             ]);
-
-            $message = $response->json('message') ?? 'PayPal could not start account linking.';
 
             return [
                 'success' => false,
-                'message' => $message,
+                'message' => $this->formatReferralErrorMessage($body, $response->status()),
             ];
         }
 
@@ -389,6 +389,30 @@ class PayPalConnectService
         return $environment === 'production'
             ? 'https://api.paypal.com'
             : 'https://api.sandbox.paypal.com';
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $body
+     */
+    private function formatReferralErrorMessage(?array $body, int $status): string
+    {
+        $paypalMessage = is_string($body['message'] ?? null) ? $body['message'] : null;
+        $issue = $body['details'][0]['issue'] ?? null;
+
+        if ($status === 401 || ($body['name'] ?? null) === 'NOT_AUTHORIZED' || $issue === 'NOT_AUTHORIZED') {
+            return 'PayPal rejected the connect request: partner app is not authorized for Connect. '
+                .'Use a Platform REST app from the PayPal Partner Program (not a standard business app), '
+                .'verify Partner Client ID, Secret, and Merchant ID match the same environment (sandbox vs live), '
+                .'then save settings and try again. Live Connect requires PayPal partner approval.';
+        }
+
+        if (str_contains(strtolower((string) $paypalMessage), 'insufficient permissions')) {
+            return 'PayPal partner credentials lack permission to onboard merchants. '
+                .'Apply for PayPal multiparty/partner access, create a Platform app in the PayPal Developer Dashboard, '
+                .'and use that app\'s Client ID, Secret, and your platform Merchant ID.';
+        }
+
+        return $paypalMessage ?? 'PayPal could not start account linking.';
     }
 
     /**

@@ -19,6 +19,8 @@ return [
         'client_secret' => env('PAYPAL_PARTNER_CLIENT_SECRET'),
         'merchant_id' => env('PAYPAL_PARTNER_MERCHANT_ID'),
         'bn_code' => env('PAYPAL_PARTNER_BN_CODE'),
+        // PPCP = PayPal Complete Payments (current multiparty default).
+        'referral_products' => ['PPCP'],
     ],
 
 ];

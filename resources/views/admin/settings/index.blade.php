@@ -776,6 +776,16 @@
                                     </button>
                                 </div>
                             @else
+                                <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-2">
+                                    <p class="font-medium">If Connect shows “insufficient permissions” on PayPal</p>
+                                    <ul class="list-disc pl-5 space-y-1 text-amber-800 dark:text-amber-200">
+                                        <li>Use a <strong>Platform</strong> REST app from <a href="https://developer.paypal.com/dashboard/applications" target="_blank" rel="noopener" class="underline">PayPal Developer</a> — not a normal business checkout app.</li>
+                                        <li><strong>Partner Merchant ID</strong> must be your platform PayPal business merchant ID (Account Settings → Business information), not the Client ID.</li>
+                                        <li>Environment must match: sandbox credentials only with Sandbox selected; live only after PayPal approves your partner account.</li>
+                                        <li>For production, apply for PayPal multiparty/partner access first — Connect is blocked until PayPal enables it on your account.</li>
+                                        <li>Alternatively, expand <strong>Advanced: manual merchant API credentials</strong> above and enter your own REST app Client ID + Secret (no Connect).</li>
+                                    </ul>
+                                </div>
                                 <button type="button" @click="connectPayPal()" :disabled="connecting.paypal || !paypalConnectAvailable" class="px-5 py-2.5 rounded-lg bg-[#0070ba] hover:bg-[#005ea6] text-white font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">
                                     <span x-text="connecting.paypal ? 'Redirecting...' : 'Connect with PayPal'"></span>
                                 </button>
