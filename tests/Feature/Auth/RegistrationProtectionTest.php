@@ -26,6 +26,7 @@ class RegistrationProtectionTest extends TestCase
 
         $response = $this->post('/register', [
             'name' => 'Jane Doe',
+            'country' => 'NG',
             'email' => 'jane@example.com',
             'password' => 'Password1!',
             'password_confirmation' => 'Password1!',
@@ -49,6 +50,7 @@ class RegistrationProtectionTest extends TestCase
 
         $response = $this->post('/register', [
             'name' => 'Jane Doe',
+            'country' => 'KE',
             'email' => 'bot@example.com',
             'password' => 'Password1!',
             'password_confirmation' => 'Password1!',
@@ -69,6 +71,7 @@ class RegistrationProtectionTest extends TestCase
 
         $response = $this->post('/register', [
             'name' => 'Jane Doe',
+            'country' => 'KE',
             'email' => 'jane@yopmail.com',
             'password' => 'Password1!',
             'password_confirmation' => 'Password1!',

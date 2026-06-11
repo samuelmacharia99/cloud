@@ -13,6 +13,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Rules\ValidCountryCode;
 use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
 use App\Services\CreditService;
@@ -103,7 +104,7 @@ class CustomerController extends Controller
             'password' => 'required|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
-            'country' => 'nullable|string',
+            'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'address' => 'nullable|string',
             'city' => 'nullable|string',
             'postal_code' => 'nullable|string',
@@ -269,7 +270,7 @@ class CustomerController extends Controller
             'password' => 'nullable|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
-            'country' => 'nullable|string',
+            'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'address' => 'nullable|string',
             'city' => 'nullable|string',
             'postal_code' => 'nullable|string',

@@ -29,6 +29,10 @@
             <x-input-error :messages="$errors->get('name')" class="mt-2" />
         </div>
 
+        <div>
+            <x-country-select name="country" :value="old('country')" :required="true" />
+        </div>
+
         <!-- Company (Optional) -->
         <div>
             <x-input-label for="company" value="Company (Optional)" />

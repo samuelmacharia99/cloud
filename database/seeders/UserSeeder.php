@@ -17,7 +17,7 @@ class UserSeeder extends Seeder
             'password' => bcrypt('password'),
             'phone' => '+254712345678',
             'company' => 'Talksasa Cloud',
-            'country' => 'Kenya',
+            'country' => 'KE',
             'address' => '123 Tech Street',
             'city' => 'Nairobi',
             'postal_code' => '00100',
@@ -36,7 +36,7 @@ class UserSeeder extends Seeder
             'password' => bcrypt('password'),
             'phone' => '+254723456789',
             'company' => 'Talksasa Cloud',
-            'country' => 'Kenya',
+            'country' => 'KE',
             'address' => '123 Tech Street',
             'city' => 'Nairobi',
             'postal_code' => '00100',
@@ -55,7 +55,7 @@ class UserSeeder extends Seeder
             'password' => bcrypt('password'),
             'phone' => '+254733456789',
             'company' => 'Tech Solutions Ltd',
-            'country' => 'Kenya',
+            'country' => 'KE',
             'address' => '456 Business Avenue',
             'city' => 'Mombasa',
             'postal_code' => '80100',
@@ -101,7 +101,7 @@ class UserSeeder extends Seeder
         ];
 
         $phonePrefix = ['712', '713', '714', '715', '716', '717', '718', '719', '720', '721', '722'];
-        $countries = ['Kenya', 'Uganda', 'Tanzania'];
+        $countries = ['KE', 'UG', 'TZ'];
         $addresses = ['Nairobi Road', 'Kampala Street', 'Dar Street', 'Mombasa Avenue', 'Kampala Road'];
         $postalCodes = ['00100', '80100', '40100', '41600', '50100'];
         $index = 0;
@@ -112,13 +112,13 @@ class UserSeeder extends Seeder
                 'email' => $customer['email'],
                 'email_verified_at' => now(),
                 'password' => bcrypt('password'),
-                'phone' => '+' . $phonePrefix[$index % count($phonePrefix)] . str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT),
+                'phone' => '+'.$phonePrefix[$index % count($phonePrefix)].str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT),
                 'company' => $customer['company'],
                 'country' => $countries[$index % count($countries)],
-                'address' => $addresses[$index % count($addresses)] . ' ' . ($index + 1),
+                'address' => $addresses[$index % count($addresses)].' '.($index + 1),
                 'city' => $customer['city'],
                 'postal_code' => $postalCodes[$index % count($postalCodes)],
-                'vat_number' => '254' . str_pad(rand(10000000, 99999999), 8, '0', STR_PAD_LEFT),
+                'vat_number' => '254'.str_pad(rand(10000000, 99999999), 8, '0', STR_PAD_LEFT),
                 'notes' => 'Active customer account',
                 'is_admin' => false,
                 'is_reseller' => false,

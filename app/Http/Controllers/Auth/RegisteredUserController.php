@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\RegisterUserRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\RegistrationGuardService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -37,12 +38,15 @@ class RegisteredUserController extends Controller
         $user = User::create([
             'name' => $validated['name'],
             'company' => $validated['company'] ?? null,
+            'country' => $validated['country'],
             'email' => $validated['email'],
             'password' => Hash::make($validated['password']),
             'email_verified_at' => null,
             'status' => 'inactive',
             'reseller_id' => $resellerId ?: null,
         ]);
+
+        app(UserCurrencyService::class)->syncFromCountry($user, true);
 
         session()->forget('registration_reseller_id');
 

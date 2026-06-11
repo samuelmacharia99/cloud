@@ -121,7 +121,7 @@
                 </div>
                 <div>
                     <p class="text-slate-600 dark:text-slate-400 text-xs uppercase font-medium">Country</p>
-                    <p class="text-slate-900 dark:text-white">{{ $customer->country ?: '-' }}</p>
+                    <p class="text-slate-900 dark:text-white">{{ \App\Support\Countries::display($customer->country) }}</p>
                 </div>
                 <div>
                     <p class="text-slate-600 dark:text-slate-400 text-xs uppercase font-medium">City</p>

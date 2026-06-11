@@ -134,7 +134,7 @@
                     @endif
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Country</p>
-                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $customer->country ?: '-' }}</p>
+                        <p class="text-sm text-slate-900 dark:text-white mt-1">{{ \App\Support\Countries::display($customer->country) }}</p>
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Address</p>

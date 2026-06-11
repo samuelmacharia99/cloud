@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Rules\ValidCountryCode;
 use App\Services\ResellerCustomerWelcomeService;
 use App\Services\ServiceEnforcementInsightService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 
 class CustomerController extends Controller
@@ -60,7 +62,7 @@ class CustomerController extends Controller
             'password' => 'required|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
-            'country' => 'nullable|string',
+            'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'address' => 'nullable|string',
             'city' => 'nullable|string',
             'postal_code' => 'nullable|string',
@@ -79,6 +81,8 @@ class CustomerController extends Controller
             'reseller_id' => auth()->id(),
             'is_reseller' => false,
         ]);
+
+        app(UserCurrencyService::class)->syncFromCountry($customer, true);
 
         $flash = 'Customer created successfully.';
 
@@ -129,7 +133,7 @@ class CustomerController extends Controller
             'password' => 'nullable|min:8|confirmed',
             'phone' => 'nullable|string',
             'company' => 'nullable|string',
-            'country' => 'nullable|string',
+            'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'address' => 'nullable|string',
             'city' => 'nullable|string',
             'postal_code' => 'nullable|string',
@@ -144,6 +148,10 @@ class CustomerController extends Controller
         }
 
         $customer->update($validated);
+
+        if ($customer->wasChanged('country')) {
+            app(UserCurrencyService::class)->syncFromCountry($customer->fresh(), true);
+        }
 
         return redirect()->route('reseller.customers.show', $customer)
             ->with('success', 'Customer updated successfully.');

@@ -171,6 +171,15 @@
                                     @enderror
                                 </div>
 
+                                <x-country-select
+                                    name="country"
+                                    label="Country"
+                                    :value="old('country')"
+                                    :required="true"
+                                    variant="public"
+                                    placeholder="Select your country"
+                                />
+
                                 <!-- Email -->
                                 <div>
                                     <label for="email" class="block text-sm font-medium text-white mb-2">Email Address</label>

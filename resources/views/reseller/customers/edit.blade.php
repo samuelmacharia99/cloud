@@ -134,12 +134,12 @@
                     @error('company')<span class="text-red-600 text-sm">{{ $message }}</span>@enderror
                 </div>
 
-                <!-- Country -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Country</label>
-                    <input type="text" name="country" value="{{ old('country', $customer->country) }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white @error('country') border-red-500 @enderror">
-                    @error('country')<span class="text-red-600 text-sm">{{ $message }}</span>@enderror
-                </div>
+                <x-country-select
+                    name="country"
+                    :value="\App\Support\Countries::normalize($customer->country) ?? $customer->country"
+                    :required="true"
+                    variant="reseller"
+                />
 
                 <!-- Address -->
                 <div>

@@ -15,6 +15,7 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
@@ -792,6 +793,7 @@ class CheckoutController extends Controller
             // For unauthenticated users, validate and create account
             $request->validate([
                 'name' => 'required|string|max:255',
+                'country' => ['required', 'string', 'size:2', new ValidCountryCode],
                 'email' => 'required|email|unique:users,email',
                 'password' => 'required|string|min:8|confirmed',
                 'agree_terms' => 'required|accepted',
@@ -800,10 +802,13 @@ class CheckoutController extends Controller
             // Create user account — do NOT auto-verify email; trigger normal verification flow
             $user = User::create([
                 'name' => $request->name,
+                'country' => $request->country,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'email_verified_at' => null,
             ]);
+
+            app(UserCurrencyService::class)->syncFromCountry($user, true);
 
             // Fire Registered event so the default email verification notification is sent
             event(new Registered($user));

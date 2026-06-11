@@ -17,7 +17,7 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
             'phone' => fake()->phoneNumber(),
             'company' => fake()->company(),
-            'country' => fake()->country(),
+            'country' => fake()->randomElement(['KE', 'UG', 'TZ', 'NG', 'US', 'GB']),
             'address' => fake()->address(),
             'city' => fake()->city(),
             'postal_code' => fake()->postcode(),

@@ -89,6 +89,6 @@ return [
     | M-Pesa is only offered when the invoice is in KES and country is Kenya.
     |--------------------------------------------------------------------------
     */
-    'mpesa_countries' => ['KE', 'Kenya'],
+    'mpesa_countries' => ['KE'],
 
 ];

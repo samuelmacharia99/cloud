@@ -33,6 +33,7 @@ class RegistrationTest extends TestCase
 
         $response = $this->post('/register', [
             'name' => 'Test User',
+            'country' => 'KE',
             'email' => 'test@example.com',
             'password' => 'Password1!',
             'password_confirmation' => 'Password1!',
@@ -47,6 +48,7 @@ class RegistrationTest extends TestCase
         $this->assertNotNull($user);
         $this->assertNull($user->email_verified_at);
         $this->assertSame('inactive', $user->status);
+        $this->assertSame('KE', $user->country);
     }
 
     public function test_signup_requires_all_critical_fields(): void
@@ -63,6 +65,7 @@ class RegistrationTest extends TestCase
         $response->assertRedirect('/register');
         $response->assertSessionHasErrors([
             'name',
+            'country',
             'email',
             'password',
             'agree',

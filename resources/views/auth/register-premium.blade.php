@@ -43,6 +43,15 @@
             @enderror
         </div>
 
+        <x-country-select
+            name="country"
+            label="Country"
+            :value="old('country')"
+            :required="true"
+            variant="auth"
+            placeholder="Select your country"
+        />
+
         <!-- Company (Optional) -->
         <div class="space-y-2.5">
             <label for="company" class="block text-sm font-semibold text-slate-900 dark:text-white">
