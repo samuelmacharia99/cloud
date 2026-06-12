@@ -207,6 +207,28 @@ class ResellerDomainOrder extends Model
             || ($this->status === 'queued' && ($this->hasPaidWholesaleInvoice() || $this->hasPaidCustomerInvoice()));
     }
 
+    /**
+     * Submit or retry registration/transfer at the linked API registrar (e.g. Openprovider).
+     */
+    public function canAdminPushToRegistrar(): bool
+    {
+        if (! in_array($this->status, ['pushed', 'failed'], true)) {
+            return false;
+        }
+
+        $domain = $this->relationLoaded('domain') ? $this->domain : $this->domain()->first();
+
+        if (! $domain) {
+            return false;
+        }
+
+        if ($domain->status === 'active' && $domain->registrar_external_id) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function canAdminDelete(): bool
     {
         return in_array($this->status, ['queued', 'cancelled', 'failed', 'expired'], true);

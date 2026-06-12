@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\InvoiceStatus;
+use App\Enums\ResellerDomainOrderType;
 use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
@@ -338,19 +339,19 @@ class ResellerCustomerOrderService
     {
         $this->billing->ensureManagedCustomer($reseller, $customer);
 
-        $registrations = array_values(array_filter(
+        $domainItems = array_values(array_filter(
             $cartItems,
-            fn ($item) => ($item['type'] ?? 'domain') === 'domain',
+            fn ($item) => in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer'], true),
         ));
 
-        if ($registrations === []) {
-            throw new \InvalidArgumentException('Your cart has no domain registrations for this customer.');
+        if ($domainItems === []) {
+            throw new \InvalidArgumentException('Your cart has no domain orders for this customer.');
         }
 
-        return DB::transaction(function () use ($reseller, $customer, $registrations) {
+        return DB::transaction(function () use ($reseller, $customer, $domainItems) {
             $lineItems = [];
 
-            foreach ($registrations as $item) {
+            foreach ($domainItems as $item) {
                 $extension = DomainExtension::query()
                     ->where('extension', $item['extension'])
                     ->where('enabled', true)
@@ -360,21 +361,39 @@ class ResellerCustomerOrderService
                     throw new \InvalidArgumentException("Extension {$item['extension']} is not available.");
                 }
 
-                $prepared = $this->prepareDomainRegistration(
-                    $reseller,
-                    $customer,
-                    (string) $item['domain'],
-                    $extension,
-                    (int) $item['years'],
-                );
+                if (($item['type'] ?? 'domain') === 'domain_transfer') {
+                    $prepared = $this->prepareDomainTransfer(
+                        $reseller,
+                        $customer,
+                        (string) $item['domain'],
+                        $extension,
+                        (string) $item['epp_code'],
+                        (string) $item['old_registrar'],
+                        $item['old_registrar_url'] ?? null,
+                        isset($item['retail_total']) ? (float) $item['retail_total'] : null,
+                    );
+                } else {
+                    $prepared = $this->prepareDomainRegistration(
+                        $reseller,
+                        $customer,
+                        (string) $item['domain'],
+                        $extension,
+                        (int) $item['years'],
+                    );
+                }
 
                 $lineItems[] = $prepared['line_item'];
             }
 
+            $hasTransfer = collect($domainItems)->contains(fn ($item) => ($item['type'] ?? 'domain') === 'domain_transfer');
+            $invoiceNotes = $hasTransfer
+                ? 'Whitelabel domain cart checkout (includes transfer)'
+                : 'Whitelabel domain cart checkout';
+
             $invoice = $this->billing->createCustomerInvoice($reseller, $customer, [
                 'status' => InvoiceStatus::Unpaid->value,
                 'due_date' => now()->addDays((int) Setting::getValue('invoice_due_days', 7)),
-                'notes' => 'Whitelabel domain cart checkout',
+                'notes' => $invoiceNotes,
                 'tax_rate' => 0,
                 'items' => $lineItems,
             ]);
@@ -398,6 +417,94 @@ class ResellerCustomerOrderService
 
             return $invoice->fresh(['items', 'user']);
         });
+    }
+
+    /**
+     * @return array{domain: Domain, order: ResellerDomainOrder, line_item: array<string, mixed>}
+     */
+    private function prepareDomainTransfer(
+        User $reseller,
+        User $customer,
+        string $domainName,
+        DomainExtension $extension,
+        string $eppCode,
+        string $oldRegistrar,
+        ?string $oldRegistrarUrl = null,
+        ?float $retailAmount = null,
+    ): array {
+        $domainName = strtolower($domainName);
+        $wholesaleAmount = app(ResellerDomainOrderService::class)
+            ->resolveTransferWholesaleAmount($extension->extension, 0);
+
+        if ($wholesaleAmount <= 0) {
+            throw new \InvalidArgumentException("Transfer pricing is not configured for {$extension->extension}.");
+        }
+
+        $retailAmount ??= app(ResellerCustomerCatalogService::class)
+            ->domainTransferPrice($customer, $extension);
+
+        $existing = Domain::query()
+            ->where('user_id', $customer->id)
+            ->where('name', $domainName)
+            ->where('extension', $extension->extension)
+            ->first();
+
+        if ($existing) {
+            throw new \InvalidArgumentException("Domain {$domainName}{$extension->extension} already exists for this customer.");
+        }
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => $domainName,
+            'extension' => $extension->extension,
+            'type' => 'transfer',
+            'status' => 'pending',
+            'transfer_status' => 'pending',
+            'epp_code' => $eppCode,
+            'old_registrar' => $oldRegistrar,
+            'old_registrar_url' => $oldRegistrarUrl,
+            'transfer_notes' => 'Transfer initiated on '.now()->format('Y-m-d H:i:s'),
+            'auto_renew' => false,
+        ]);
+
+        $retailMargin = max(0, round($retailAmount - $wholesaleAmount, 2));
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => $domainName,
+            'extension' => $extension->extension,
+            'order_type' => ResellerDomainOrderType::Transfer,
+            'years' => 1,
+            'wholesale_amount' => $wholesaleAmount,
+            'retail_amount' => $retailMargin,
+            'status' => 'queued',
+            'push_mode' => 'auto',
+            'queued_at' => now(),
+            'expires_at' => now()->addDays(10),
+        ]);
+
+        $domain->update(['domain_order_id' => $order->id]);
+
+        return [
+            'domain' => $domain,
+            'order' => $order,
+            'line_item' => [
+                'description' => "Domain Transfer: {$domainName}{$extension->extension}",
+                'quantity' => 1,
+                'unit_price' => $retailAmount,
+                'product_id' => null,
+                'product_type' => 'Domain',
+                'domain_id' => $domain->id,
+                'custom_options' => [
+                    'type' => 'domain_transfer',
+                    'domain_id' => $domain->id,
+                    'domain_order_id' => $order->id,
+                ],
+            ],
+        ];
     }
 
     /**

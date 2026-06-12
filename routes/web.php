@@ -319,6 +319,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/domain-orders/{order}/complete', [DomainOrderController::class, 'complete'])->name('admin.domain-orders.complete');
         Route::post('admin/domain-orders/{order}/fail', [DomainOrderController::class, 'fail'])->name('admin.domain-orders.fail');
         Route::post('admin/domain-orders/{order}/push', [DomainOrderController::class, 'push'])->name('admin.domain-orders.push');
+        Route::post('admin/domain-orders/{order}/push-registrar', [DomainOrderController::class, 'pushToRegistrar'])->name('admin.domain-orders.push-registrar');
         Route::post('admin/domain-orders/{order}/cancel', [DomainOrderController::class, 'cancel'])->name('admin.domain-orders.cancel');
         Route::delete('admin/domain-orders/{order}', [DomainOrderController::class, 'destroy'])->name('admin.domain-orders.destroy');
 
@@ -425,6 +426,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('reseller/cart', [CartController::class, 'index'])->name('reseller.cart.index');
             Route::post('reseller/cart/context', [CartController::class, 'setContext'])->name('reseller.cart.context');
             Route::post('reseller/cart/add', [CartController::class, 'add'])->name('reseller.cart.add');
+            Route::post('reseller/cart/transfer', [CartController::class, 'addTransfer'])->name('reseller.cart.transfer');
             Route::delete('reseller/cart/{key}', [CartController::class, 'remove'])->name('reseller.cart.remove');
             Route::post('reseller/cart/clear', [CartController::class, 'clear'])->name('reseller.cart.clear');
             Route::get('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'show'])->name('reseller.checkout.show');

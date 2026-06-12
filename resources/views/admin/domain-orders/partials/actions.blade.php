@@ -37,6 +37,29 @@
         </form>
     @endif
 
+    @if ($order->canAdminPushToRegistrar())
+        <form
+            method="POST"
+            action="{{ route('admin.domain-orders.push-registrar', $order) }}"
+            class="inline"
+            data-confirm="Submit {{ $order->fullDomainName() }} to the API registrar now?@if($order->status === 'failed') This will retry a failed submission.@endif Ensure Openprovider balance and contact handles are configured."
+        >
+            @csrf
+            @foreach ($filterQuery as $key => $value)
+                <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+            @endforeach
+            <button
+                type="submit"
+                class="action-icon-btn text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                title="Push to registrar API (Openprovider) — manual register/transfer or retry"
+            >
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                </svg>
+            </button>
+        </form>
+    @endif
+
     @if ($order->canAdminComplete())
         <button
             type="button"

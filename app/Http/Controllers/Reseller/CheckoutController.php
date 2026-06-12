@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Enums\ResellerDomainOrderType;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Reseller\Concerns\ResellerDomainAccess;
 use App\Models\Domain;
@@ -14,8 +15,10 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
+use App\Services\DomainTransferService;
 use App\Services\NotificationService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
@@ -105,6 +108,7 @@ class CheckoutController extends Controller
         $domainOrders = [];
         $hasRegistration = false;
         $hasRenewal = false;
+        $hasTransfer = false;
 
         try {
             \DB::beginTransaction();
@@ -126,6 +130,65 @@ class CheckoutController extends Controller
                         'unit_price' => $wholesaleAmount,
                         'domain_id' => $domain->id,
                         'custom_options' => ['renewal_order_id' => $renewalOrder->id],
+                    ];
+
+                    continue;
+                }
+
+                if (($item['type'] ?? 'domain') === 'domain_transfer') {
+                    $hasTransfer = true;
+                    $extension = DomainExtension::where('extension', $item['extension'])->first();
+
+                    if (! $extension) {
+                        throw new \Exception("Extension {$item['extension']} not found");
+                    }
+
+                    $wholesaleAmount = app(ResellerDomainOrderService::class)
+                        ->resolveTransferWholesaleAmount($item['extension'], 0);
+
+                    if ($wholesaleAmount <= 0) {
+                        throw new \Exception("No wholesale transfer pricing for {$item['extension']}");
+                    }
+
+                    $subtotal += $wholesaleAmount;
+
+                    $domain = DomainTransferService::createTransferRequest(
+                        $reseller,
+                        $item['domain'],
+                        $item['extension'],
+                        $item['epp_code'],
+                        $item['old_registrar'],
+                        $item['old_registrar_url'] ?? null,
+                    );
+
+                    $order = ResellerDomainOrder::create([
+                        'reseller_id' => $reseller->id,
+                        'customer_id' => $reseller->id,
+                        'domain_id' => $domain->id,
+                        'domain_name' => $item['domain'],
+                        'extension' => $item['extension'],
+                        'order_type' => ResellerDomainOrderType::Transfer,
+                        'years' => 1,
+                        'wholesale_amount' => $wholesaleAmount,
+                        'retail_amount' => 0,
+                        'status' => 'queued',
+                        'push_mode' => 'auto',
+                        'queued_at' => now(),
+                        'expires_at' => now()->addDays(10),
+                    ]);
+
+                    $domainOrders[] = $order->id;
+
+                    $invoiceItems[] = [
+                        'description' => 'Transfer '.$item['domain'].$item['extension'],
+                        'quantity' => 1,
+                        'unit_price' => $wholesaleAmount,
+                        'domain_id' => $domain->id,
+                        'custom_options' => [
+                            'domain_order_id' => $order->id,
+                            'type' => 'domain_transfer',
+                            'domain_id' => $domain->id,
+                        ],
                     ];
 
                     continue;
@@ -192,6 +255,9 @@ class CheckoutController extends Controller
             $taxBreakdown = TaxService::calculateResellerWholesale($subtotal);
 
             $invoiceNotes = match (true) {
+                $hasTransfer && $hasRegistration => 'Domain transfer and registration order',
+                $hasTransfer && $hasRenewal => 'Domain transfer and renewal order',
+                $hasTransfer => 'Domain transfer order',
                 $hasRegistration && $hasRenewal => 'Domain registration and renewal order',
                 $hasRenewal => 'Domain renewal order',
                 default => 'Domain registration order',

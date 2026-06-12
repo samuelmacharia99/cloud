@@ -27,22 +27,65 @@ class RegistrarFulfillmentService
 
     public function fulfillOrder(ResellerDomainOrder $order): void
     {
+        $this->runOrderFulfillment($order, manual: false);
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function fulfillOrderManually(ResellerDomainOrder $order): array
+    {
+        $order->refresh();
+
+        if (! $order->canAdminPushToRegistrar()) {
+            return [
+                'success' => false,
+                'message' => 'This order cannot be submitted to the registrar. Push it to admin first, or the domain is already active at the registrar.',
+            ];
+        }
+
+        if ($order->status === 'failed') {
+            $order->update([
+                'status' => 'pushed',
+                'failed_at' => null,
+                'failure_reason' => null,
+            ]);
+        }
+
+        return $this->runOrderFulfillment($order->fresh(['domain']), manual: true);
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    private function runOrderFulfillment(ResellerDomainOrder $order, bool $manual): array
+    {
         $order->loadMissing('domain.domainExtension.registrarModel');
 
         $domain = $order->domain;
         if (! $domain) {
-            return;
+            return $manual
+                ? ['success' => false, 'message' => 'No domain record is linked to this order.']
+                : ['success' => false, 'message' => ''];
         }
 
         if ($domain->registrar_external_id && in_array($domain->status, ['provisioning', 'active'], true)) {
-            return;
+            if ($manual) {
+                return ['success' => false, 'message' => 'This domain already has an active registrar submission.'];
+            }
+
+            return ['success' => false, 'message' => ''];
         }
 
         $registrar = $this->resolveRegistrar($domain);
         $driver = $this->operationsDriver($registrar);
 
         if (! $driver) {
-            return;
+            if ($manual) {
+                return ['success' => false, 'message' => 'No API registrar is configured for this TLD.'];
+            }
+
+            return ['success' => false, 'message' => ''];
         }
 
         $nameServers = OpenproviderClient::nameServerRecords(
@@ -65,6 +108,31 @@ class RegistrarFulfillmentService
             }
 
             $this->applyOperationResult($domain, $registrar, $result, $order);
+
+            $order->refresh();
+            $domain->refresh();
+
+            if ($order->status === 'completed') {
+                return [
+                    'success' => true,
+                    'message' => "Domain {$order->fullDomainName()} registered at {$registrar->name} (active).",
+                ];
+            }
+
+            if ($order->status === 'failed') {
+                return [
+                    'success' => false,
+                    'message' => $order->failure_reason ?? 'Registrar rejected the request.',
+                ];
+            }
+
+            $status = strtoupper((string) ($result['status'] ?? 'REQ'));
+
+            return [
+                'success' => true,
+                'message' => "Submitted to {$registrar->name}. Registrar status: {$status}. "
+                    .($status === 'REQ' ? 'It will complete automatically when the registry activates the domain.' : ''),
+            ];
         } catch (\Throwable $e) {
             Log::error('Registrar fulfillment failed', [
                 'order_id' => $order->id,
@@ -73,6 +141,11 @@ class RegistrarFulfillmentService
             ]);
 
             app(DomainPushService::class)->failOrder($order->fresh(), $e->getMessage());
+
+            return [
+                'success' => false,
+                'message' => $e->getMessage(),
+            ];
         }
     }
 

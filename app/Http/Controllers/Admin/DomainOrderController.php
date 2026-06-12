@@ -131,6 +131,24 @@ class DomainOrderController extends Controller
         }
     }
 
+    public function pushToRegistrar(Request $request, ResellerDomainOrder $order)
+    {
+        if (! $order->canAdminPushToRegistrar()) {
+            return $this->redirectBack($request)
+                ->with('error', 'This order cannot be submitted to the registrar. Ensure it is pushed and not already active at the registrar.');
+        }
+
+        try {
+            $result = app(RegistrarFulfillmentService::class)->fulfillOrderManually($order);
+
+            return $this->redirectBack($request)
+                ->with($result['success'] ? 'success' : 'error', $result['message']);
+        } catch (\Exception $e) {
+            return $this->redirectBack($request)
+                ->with('error', "Failed to push to registrar: {$e->getMessage()}");
+        }
+    }
+
     public function cancel(Request $request, ResellerDomainOrder $order)
     {
         if (! $order->canCancel()) {

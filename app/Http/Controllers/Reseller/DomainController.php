@@ -10,7 +10,9 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainRenewalService;
+use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerDomainTransferService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\Request;
@@ -136,11 +138,38 @@ class DomainController extends Controller
      */
     public function getPricing(DomainExtension $extension, Request $request)
     {
-        $period = max(1, (int) $request->get('period', 1));
         $reseller = auth()->user();
+        $useRetail = $request->boolean('retail') || ResellerCartContext::isCustomerMode();
+
+        if ($request->input('type') === 'transfer') {
+            $orderService = app(ResellerDomainOrderService::class);
+            $wholesaleLineTotal = $orderService->resolveTransferWholesaleAmount($extension->extension, 0);
+
+            $lineTotal = $wholesaleLineTotal;
+            if ($useRetail && ResellerCartContext::isCustomerMode()) {
+                $customer = User::find(ResellerCartContext::customerId());
+                if ($customer) {
+                    $lineTotal = app(ResellerCustomerCatalogService::class)
+                        ->domainTransferPrice($customer, $extension);
+                }
+            }
+
+            return response()->json([
+                'price' => $lineTotal,
+                'line_total' => $lineTotal,
+                'wholesale_price' => $wholesaleLineTotal,
+                'wholesale_line_total' => $wholesaleLineTotal,
+                'retail' => $useRetail,
+                'renewal_price' => 0,
+                'currency' => 'KES',
+                'available' => $wholesaleLineTotal > 0,
+                'type' => 'transfer',
+            ]);
+        }
+
+        $period = max(1, (int) $request->get('period', 1));
 
         $wholesaleLineTotal = $this->customerOrders->wholesaleAmountForExtension($extension, $period);
-        $useRetail = $request->boolean('retail') || ResellerCartContext::isCustomerMode();
 
         $lineTotal = $useRetail && $reseller
             ? $this->customerOrders->retailAmountForExtension($reseller, $extension, $period, $wholesaleLineTotal)
@@ -163,6 +192,7 @@ class DomainController extends Controller
             'renewal_price' => $renewalPrice,
             'currency' => 'KES',
             'available' => $wholesaleLineTotal > 0,
+            'type' => 'registration',
         ]);
     }
 

@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
+use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerScopeService;
 use App\Services\TaxService;
 use App\Support\ResellerCartContext;
@@ -32,7 +34,7 @@ class CartController extends Controller
         $subtotal = 0;
 
         foreach ($cart as $key => $item) {
-            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_renewal'], true)) {
+            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer', 'domain_renewal'], true)) {
                 $total = self::cartItemTotal($item);
                 $subtotal += $total;
                 $items[$key] = array_merge($item, ['total' => $total]);
@@ -218,6 +220,126 @@ class CartController extends Controller
         ]);
     }
 
+    public function addTransfer(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:63', 'regex:/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i'],
+            'extension' => 'required|string',
+            'price' => 'required|numeric|min:0',
+            'epp_code' => 'required|string|min:5|max:255',
+            'old_registrar' => 'required|string|min:2|max:255',
+            'old_registrar_url' => 'nullable|url|max:255',
+        ]);
+
+        $extension = DomainExtension::query()
+            ->where('extension', $validated['extension'])
+            ->where('enabled', true)
+            ->first();
+
+        if (! $extension) {
+            return response()->json(['success' => false, 'message' => 'Extension not available.'], 422);
+        }
+
+        $orderService = app(ResellerDomainOrderService::class);
+        $expectedWholesale = $orderService->resolveTransferWholesaleAmount($extension->extension, 0);
+
+        if ($expectedWholesale <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Wholesale transfer pricing is not configured for this extension.',
+            ], 422);
+        }
+
+        if (ResellerCartContext::isCustomerMode()) {
+            return $this->addTransferForCustomer($validated, $extension, $expectedWholesale);
+        }
+
+        if (abs((float) $validated['price'] - $expectedWholesale) > 0.02) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Price mismatch. Refresh and try again.',
+            ], 422);
+        }
+
+        $cart = session()->get(self::CART_KEY, []);
+        $key = uniqid('xfer_', true);
+
+        $cart[$key] = [
+            'type' => 'domain_transfer',
+            'domain' => strtolower($validated['domain']),
+            'extension' => $validated['extension'],
+            'years' => 1,
+            'price' => $expectedWholesale,
+            'epp_code' => $validated['epp_code'],
+            'old_registrar' => $validated['old_registrar'],
+            'old_registrar_url' => $validated['old_registrar_url'] ?? null,
+            'added_at' => now()->toIso8601String(),
+        ];
+
+        session()->put(self::CART_KEY, $cart);
+
+        return response()->json([
+            'success' => true,
+            'item_count' => count($cart),
+            'message' => 'Domain transfer added to cart',
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function addTransferForCustomer(array $validated, DomainExtension $extension, float $expectedWholesale): JsonResponse
+    {
+        $customerId = ResellerCartContext::customerId();
+        if (! $customerId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select a customer for whitelabel checkout first.',
+            ], 422);
+        }
+
+        $reseller = auth()->user();
+        $customer = User::findOrFail($customerId);
+        if (! app(ResellerScopeService::class)->ownsCustomer($reseller, $customer)) {
+            abort(404);
+        }
+
+        $expectedRetail = app(ResellerCustomerCatalogService::class)
+            ->domainTransferPrice($customer, $extension);
+
+        if (abs((float) $validated['price'] - $expectedRetail) > 0.02) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Price mismatch. Refresh and try again.',
+            ], 422);
+        }
+
+        $cart = session()->get(self::CART_KEY, []);
+        $key = uniqid('xfer_', true);
+
+        $cart[$key] = [
+            'type' => 'domain_transfer',
+            'domain' => strtolower($validated['domain']),
+            'extension' => $validated['extension'],
+            'years' => 1,
+            'price' => $expectedRetail,
+            'retail_total' => $expectedRetail,
+            'wholesale_total' => $expectedWholesale,
+            'epp_code' => $validated['epp_code'],
+            'old_registrar' => $validated['old_registrar'],
+            'old_registrar_url' => $validated['old_registrar_url'] ?? null,
+            'added_at' => now()->toIso8601String(),
+        ];
+
+        session()->put(self::CART_KEY, $cart);
+
+        return response()->json([
+            'success' => true,
+            'item_count' => count($cart),
+            'message' => 'Domain transfer added for '.$customer->name,
+        ]);
+    }
+
     public function remove(string $key): RedirectResponse
     {
         $cart = session(self::CART_KEY, []);
@@ -240,6 +362,10 @@ class CartController extends Controller
     {
         if (($item['type'] ?? 'domain') === 'domain_renewal') {
             return (float) $item['price'];
+        }
+
+        if (($item['type'] ?? 'domain') === 'domain_transfer') {
+            return (float) ($item['retail_total'] ?? $item['price']);
         }
 
         if (isset($item['retail_total'])) {

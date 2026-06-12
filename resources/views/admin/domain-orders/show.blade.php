@@ -168,14 +168,24 @@
     @if($order->status === 'queued')
     <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
         @if($order->hasPaidWholesaleInvoice())
-            <strong>Queued</strong> — wholesale invoice is <strong>paid</strong> (M-Pesa/card/bank, not wallet). You can <strong>Complete</strong> directly or use <strong>Push</strong> first; no wallet debit is required.
+            <strong>Queued</strong> — wholesale invoice is <strong>paid</strong> (M-Pesa/card/bank, not wallet). You can <strong>Complete</strong> directly or use <strong>Push to admin</strong> first; no wallet debit is required.
         @else
-            <strong>Queued</strong> — waiting for reseller wallet funds or wholesale payment. Use <strong>Push</strong> when ready (wallet debit) or after the reseller pays their invoice.
+            <strong>Queued</strong> — waiting for reseller wallet funds or wholesale payment. Use <strong>Push to admin</strong> when ready (wallet debit) or after the reseller pays their invoice.
         @endif
     </div>
     @endif
 
-    @if($order->canAdminPush() || $order->canCancel() || $order->canAdminDelete())
+    @if($order->status === 'pushed' || $order->status === 'failed')
+    <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-900 dark:text-violet-200">
+        @if($order->status === 'failed')
+            <strong>Failed</strong> — registrar submission did not complete. Top up Openprovider balance, verify contact handles, then use <strong>Push to registrar</strong> to retry.
+        @else
+            <strong>Pushed</strong> — ready for registrar API. Use <strong>Push to registrar</strong> to register or transfer at Openprovider (e.g. after topping up balance).
+        @endif
+    </div>
+    @endif
+
+    @if($order->canAdminPush() || $order->canAdminPushToRegistrar() || $order->canCancel() || $order->canAdminDelete())
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
         <div class="flex flex-wrap items-center gap-2">
@@ -183,9 +193,19 @@
             <form method="POST" action="{{ route('admin.domain-orders.push', $order) }}" data-confirm="Push this domain order to admin for registration?">
                 @csrf
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" title="Push to admin">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" title="Push to admin queue">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                    Push
+                    Push to admin
+                </button>
+            </form>
+            @endif
+            @if($order->canAdminPushToRegistrar())
+            <form method="POST" action="{{ route('admin.domain-orders.push-registrar', $order) }}" data-confirm="Submit this domain to the API registrar now?@if($order->status === 'failed') This retries a failed submission.@endif">
+                @csrf
+                <input type="hidden" name="stay_on_detail" value="1">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition" title="Register or transfer at Openprovider">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+                    Push to registrar
                 </button>
             </form>
             @endif

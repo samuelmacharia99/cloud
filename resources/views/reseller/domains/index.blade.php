@@ -15,7 +15,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domains</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Register for your account (wholesale) or bill a managed customer at your retail prices.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Register or transfer domains for your account (wholesale) or bill a managed customer at your retail prices.</p>
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
@@ -137,6 +137,86 @@
                     <p class="text-slate-600 dark:text-slate-400 text-sm">No results for this search. Check the domain format and extension.</p>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Domain Transfer Section -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="domainTransferManager(@js(['customerMode' => ($cartContext['mode'] ?? 'self') === 'customer', 'knownExtensions' => $knownExtensions]))">
+        <h2 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Transfer a Domain to Us</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="!customerMode">
+            Move a domain you own elsewhere into your reseller account at <strong class="text-purple-700 dark:text-purple-300">wholesale transfer</strong> rates.
+        </p>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-6" x-show="customerMode" x-cloak>
+            Bill a managed customer for a domain transfer at your <strong class="text-purple-700 dark:text-purple-300">retail transfer</strong> price.
+        </p>
+
+        <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6 text-sm text-blue-900 dark:text-blue-300">
+            You need the <strong>EPP / auth code</strong> from your current registrar. Unlock the domain there before submitting the transfer.
+        </div>
+
+        <div x-show="transferMessage" x-transition class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 rounded-lg mb-4">
+            <p class="text-sm text-emerald-900 dark:text-emerald-300" x-text="transferMessage"></p>
+        </div>
+
+        <div class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Domain name</label>
+                    <input type="text" x-model="domainName" placeholder="example"
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                    <p class="text-xs text-slate-500 mt-1">Without the extension (e.g. <code class="font-mono">mycompany</code> for mycompany.com)</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extension</label>
+                    <select x-model="selectedExtension" @change="loadTransferPricing()"
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                        <option value="">Select TLD</option>
+                        @foreach ($extensions as $ext)
+                            <option value="{{ $ext->extension }}">{{ $ext->extension }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            </div>
+
+            <div x-show="transferPrice !== null" x-cloak class="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-lg">
+                <p class="text-sm font-medium text-purple-900 dark:text-purple-200">
+                    Transfer cost:
+                    <span class="font-bold" x-text="currency + ' ' + (transferPrice !== null ? parseFloat(transferPrice).toFixed(2) : '—')"></span>
+                    <span class="text-xs font-semibold uppercase ml-2" :class="retail ? 'text-amber-600' : 'text-emerald-600'" x-text="retail ? 'Retail' : 'Wholesale'"></span>
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">EPP / auth code</label>
+                    <input type="text" x-model="eppCode" placeholder="From your current registrar"
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current registrar</label>
+                    <input type="text" x-model="oldRegistrar" placeholder="e.g. GoDaddy, Namecheap"
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registrar website <span class="text-slate-400 font-normal">(optional)</span></label>
+                <input type="url" x-model="oldRegistrarUrl" placeholder="https://"
+                    class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+            </div>
+
+            <div class="flex items-start gap-2">
+                <input type="checkbox" x-model="confirmTransfer" id="resellerConfirmTransfer" class="mt-1 rounded border-slate-300 text-purple-600">
+                <label for="resellerConfirmTransfer" class="text-sm text-slate-600 dark:text-slate-400">
+                    I have the EPP code and will unlock the domain at my current registrar.
+                </label>
+            </div>
+
+            <button type="button" @click="addTransferToCart()" :disabled="adding || !confirmTransfer"
+                class="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-medium rounded-lg transition text-sm">
+                <span x-show="!adding">Add transfer to cart</span>
+                <span x-show="adding">Adding…</span>
+            </button>
         </div>
     </div>
 
@@ -485,6 +565,143 @@ function domainSearchManager({ customerMode = false, knownExtensions = [] } = {}
             } catch (error) {
                 console.error('Cart error:', error);
                 alert('Error adding to cart: ' + error.message);
+            } finally {
+                this.adding = false;
+            }
+        }
+    }
+}
+
+function domainTransferManager({ customerMode = false, knownExtensions = [] } = {}) {
+    return {
+        customerMode: Boolean(customerMode),
+        knownExtensions,
+        domainName: '',
+        selectedExtension: '',
+        eppCode: '',
+        oldRegistrar: '',
+        oldRegistrarUrl: '',
+        confirmTransfer: false,
+        transferPrice: null,
+        currency: 'KES',
+        retail: false,
+        adding: false,
+        transferMessage: '',
+
+        pricingApiUrl(extension) {
+            const base = '{{ url('api/reseller/domains/pricing') }}';
+            return `${base}/${encodeURIComponent(extension)}`;
+        },
+
+        async loadTransferPricing() {
+            this.transferPrice = null;
+            if (!this.selectedExtension) {
+                return;
+            }
+
+            try {
+                const retailParam = this.customerMode ? '&retail=1' : '';
+                const res = await fetch(
+                    this.pricingApiUrl(this.selectedExtension) + '?type=transfer' + retailParam,
+                    { headers: { 'Accept': 'application/json' } }
+                );
+
+                if (!res.ok) {
+                    return;
+                }
+
+                const data = await res.json();
+                if (!data.available) {
+                    alert('Transfer pricing is not configured for this extension.');
+                    return;
+                }
+
+                this.transferPrice = parseFloat(data.line_total ?? data.price ?? 0);
+                this.currency = data.currency || 'KES';
+                this.retail = Boolean(data.retail);
+            } catch (e) {
+                console.error('Transfer pricing error:', e);
+            }
+        },
+
+        async addTransferToCart() {
+            const name = this.domainName.trim().toLowerCase();
+            if (!name || !this.selectedExtension) {
+                alert('Enter the domain name and select an extension.');
+                return;
+            }
+
+            if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) {
+                alert('Enter a valid domain name (letters, numbers, hyphens).');
+                return;
+            }
+
+            if (!this.eppCode || this.eppCode.length < 5) {
+                alert('Enter the EPP / auth code from your current registrar.');
+                return;
+            }
+
+            if (!this.oldRegistrar || this.oldRegistrar.length < 2) {
+                alert('Enter your current registrar name.');
+                return;
+            }
+
+            if (!this.confirmTransfer) {
+                alert('Confirm you have the EPP code and will unlock the domain.');
+                return;
+            }
+
+            if (this.transferPrice === null) {
+                await this.loadTransferPricing();
+            }
+
+            if (this.transferPrice === null || this.transferPrice <= 0) {
+                alert('Transfer pricing is not available for this extension.');
+                return;
+            }
+
+            this.adding = true;
+
+            try {
+                const res = await fetch('{{ route('reseller.cart.transfer') }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content
+                    },
+                    body: JSON.stringify({
+                        domain: name,
+                        extension: this.selectedExtension,
+                        price: this.transferPrice,
+                        epp_code: this.eppCode,
+                        old_registrar: this.oldRegistrar,
+                        old_registrar_url: this.oldRegistrarUrl || null,
+                    })
+                });
+
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    alert(data.message || 'Could not add transfer to cart');
+                    return;
+                }
+
+                const badge = document.getElementById('cart-count-badge');
+                if (badge) {
+                    badge.textContent = data.item_count;
+                    badge.classList.remove('hidden');
+                }
+
+                this.transferMessage = `${name}${this.selectedExtension} transfer added to cart.`;
+                setTimeout(() => this.transferMessage = '', 4000);
+
+                this.domainName = '';
+                this.eppCode = '';
+                this.oldRegistrar = '';
+                this.oldRegistrarUrl = '';
+                this.confirmTransfer = false;
+            } catch (e) {
+                alert('Error: ' + e.message);
             } finally {
                 this.adding = false;
             }

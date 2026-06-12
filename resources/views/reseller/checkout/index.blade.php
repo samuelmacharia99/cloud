@@ -57,10 +57,12 @@
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                                     @if(($item['type'] ?? 'domain') === 'domain_renewal')
                                         <span class="text-amber-700 dark:text-amber-300 font-medium">Renewal</span> ·
+                                    @elseif(($item['type'] ?? 'domain') === 'domain_transfer')
+                                        <span class="text-blue-700 dark:text-blue-300 font-medium">Transfer</span>
                                     @else
                                         <span class="text-emerald-700 dark:text-emerald-300 font-medium">Registration</span> ·
+                                        {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
                                     @endif
-                                    {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
                                 </p>
                             </div>
                             <div class="text-right">
