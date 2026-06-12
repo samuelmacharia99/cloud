@@ -29,6 +29,7 @@
                     <button @click="activeTab = 'tax'" :class="activeTab === 'tax' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Tax</button>
                     <button @click="activeTab = 'payment_methods'" :class="activeTab === 'payment_methods' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Payment Methods</button>
                     <button @click="activeTab = 'provisioning'" :class="activeTab === 'provisioning' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Provisioning</button>
+                    <button @click="activeTab = 'registrars'" :class="activeTab === 'registrars' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Registrars</button>
                     <button @click="activeTab = 'branding'" :class="activeTab === 'branding' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Branding</button>
                     <button @click="activeTab = 'email'" :class="activeTab === 'email' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Email</button>
                     <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors text-sm whitespace-nowrap">Notifications</button>
@@ -2037,6 +2038,8 @@
 
                 @include('admin.settings.partials.sms-templates-card')
             </div>
+            @include('admin.settings.partials.registrars-tab')
+
             <div x-show="activeTab === 'security'" class="space-y-6">
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
@@ -2109,6 +2112,203 @@
 </div>
 
 <script>
+    function registrarSettings(initial) {
+        const defaultDriver = initial.drivers.find(d => d.value === 'openprovider')?.value
+            || initial.drivers[0]?.value
+            || 'manual';
+
+        const nonKeTldIds = () => (initial.domainExtensions || [])
+            .filter(tld => ! /\.ke$/i.test(tld.extension))
+            .map(tld => tld.id);
+
+        const emptyForm = () => ({
+            name: 'Openprovider',
+            driver: defaultDriver,
+            environment: 'sandbox',
+            description: 'Wholesale domains via Openprovider — all TLDs except Kenya (.ke) zones.',
+            is_active: true,
+            is_default: true,
+            config: { login_ip: '0.0.0.0' },
+            tld_ids: nonKeTldIds(),
+        });
+
+        return {
+            registrars: initial.registrars || [],
+            domainExtensions: initial.domainExtensions || [],
+            drivers: initial.drivers || [],
+            routes: initial.routes || {},
+            modalOpen: false,
+            editingId: null,
+            form: emptyForm(),
+            saving: false,
+            formError: '',
+            testingId: null,
+            testBanner: { message: '', success: false },
+
+            get selectedDriver() {
+                return this.drivers.find(d => d.value === this.form.driver);
+            },
+
+            get configFields() {
+                return this.selectedDriver?.config_fields || [];
+            },
+
+            openCreate() {
+                this.editingId = null;
+                this.form = emptyForm();
+                this.formError = '';
+                this.modalOpen = true;
+            },
+
+            openEdit(registrar) {
+                this.editingId = registrar.id;
+                this.form = {
+                    name: registrar.name,
+                    driver: registrar.driver,
+                    environment: registrar.environment,
+                    description: registrar.description || '',
+                    is_active: !!registrar.is_active,
+                    is_default: !!registrar.is_default,
+                    config: { ...(registrar.config || {}) },
+                    tld_ids: [...(registrar.tld_ids || [])],
+                };
+                this.formError = '';
+                this.modalOpen = true;
+            },
+
+            closeModal() {
+                this.modalOpen = false;
+            },
+
+            onDriverChange() {
+                this.form.config = {};
+            },
+
+            toggleTld(id, checked) {
+                if (checked) {
+                    if (! this.form.tld_ids.includes(id)) {
+                        this.form.tld_ids.push(id);
+                    }
+                } else {
+                    this.form.tld_ids = this.form.tld_ids.filter(tldId => tldId !== id);
+                }
+            },
+
+            routeFor(template, id) {
+                return template.replace('__ID__', id);
+            },
+
+            async saveRegistrar() {
+                this.saving = true;
+                this.formError = '';
+
+                const url = this.editingId
+                    ? this.routeFor(this.routes.update, this.editingId)
+                    : this.routes.store;
+
+                const method = this.editingId ? 'PUT' : 'POST';
+
+                try {
+                    const response = await fetch(url, {
+                        method,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': settingsCsrfToken(),
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                        body: JSON.stringify(this.form),
+                    });
+
+                    const data = await response.json();
+
+                    if (! response.ok) {
+                        throw new Error(settingsErrorMessage(data, 'Failed to save registrar'));
+                    }
+
+                    if (data.registrar) {
+                        const index = this.registrars.findIndex(r => r.id === data.registrar.id);
+                        if (index >= 0) {
+                            this.registrars[index] = data.registrar;
+                        } else {
+                            this.registrars.push(data.registrar);
+                        }
+                    } else {
+                        window.location.href = '{{ route('admin.settings.index', ['tab' => 'registrars']) }}';
+                    }
+
+                    this.closeModal();
+                } catch (error) {
+                    this.formError = error.message;
+                } finally {
+                    this.saving = false;
+                }
+            },
+
+            async testRegistrar(registrar) {
+                this.testingId = registrar.id;
+                this.testBanner = { message: '', success: false };
+
+                try {
+                    const response = await fetch(this.routeFor(this.routes.test, registrar.id), {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': settingsCsrfToken(),
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    const data = await response.json();
+                    const prefix = data.success ? '[OK] ' : '[FAIL] ';
+                    const message = prefix + (data.message || (data.success ? 'Connection OK' : 'Test failed'));
+
+                    registrar.last_tested_at = new Date().toISOString();
+                    registrar.last_test_message = message;
+
+                    this.testBanner = {
+                        success: !! data.success,
+                        message: `${registrar.name}: ${data.message || (data.success ? 'Connection OK' : 'Test failed')}`,
+                    };
+                } catch (error) {
+                    const message = '[FAIL] ' + error.message;
+                    registrar.last_tested_at = new Date().toISOString();
+                    registrar.last_test_message = message;
+                    this.testBanner = { success: false, message: `${registrar.name}: ${error.message}` };
+                } finally {
+                    this.testingId = null;
+                }
+            },
+
+            async deleteRegistrar(registrar) {
+                if (! confirm(`Delete registrar "${registrar.name}"? Assigned TLDs will be unlinked.`)) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch(this.routeFor(this.routes.destroy, registrar.id), {
+                        method: 'DELETE',
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': settingsCsrfToken(),
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    const data = await response.json();
+
+                    if (! response.ok) {
+                        throw new Error(settingsErrorMessage(data, 'Failed to delete registrar'));
+                    }
+
+                    this.registrars = this.registrars.filter(r => r.id !== registrar.id);
+                } catch (error) {
+                    alert(error.message);
+                }
+            },
+        };
+    }
+
     function settingsCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]')?.content
             || document.querySelector('input[name="_token"]')?.value;

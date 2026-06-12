@@ -10,6 +10,7 @@ use App\Models\Order;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Database\DatabaseManager;
 
 class DomainPushService
@@ -88,7 +89,8 @@ class DomainPushService
                 continue;
             }
 
-            DomainTransferService::initiateTransfer($domain);
+            app(RegistrarFulfillmentService::class)
+                ->fulfillStandaloneTransfer($domain);
         }
     }
 
@@ -368,7 +370,8 @@ class DomainPushService
         if ($order->isTransfer()) {
             $domain = Domain::find($order->domain_id);
             if ($domain && $domain->isTransfer() && $domain->transfer_status === 'pending') {
-                DomainTransferService::initiateTransfer($domain);
+                app(RegistrarFulfillmentService::class)
+                    ->fulfillStandaloneTransfer($domain);
             }
 
             return;

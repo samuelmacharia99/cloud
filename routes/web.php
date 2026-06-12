@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\ManualPaymentController;
 use App\Http\Controllers\Admin\NodeController;
 use App\Http\Controllers\Admin\OrderController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\RegistrarController;
 use App\Http\Controllers\Admin\ResellerController;
 use App\Http\Controllers\Admin\ResellerPackageController;
 use App\Http\Controllers\Admin\ResellerWalletController;
@@ -213,6 +214,11 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/simulate-mpesa-payment', [SettingController::class, 'simulateMpesaPayment'])->name('admin.settings.simulate-mpesa-payment');
         Route::post('admin/settings/debug-log', [SettingController::class, 'debugLog'])->name('admin.settings.debug-log');
         Route::post('admin/settings/refresh-currencies', [SettingController::class, 'refreshCurrencies'])->name('admin.settings.refresh-currencies');
+
+        Route::post('admin/registrars', [RegistrarController::class, 'store'])->name('admin.registrars.store');
+        Route::put('admin/registrars/{registrar}', [RegistrarController::class, 'update'])->name('admin.registrars.update');
+        Route::delete('admin/registrars/{registrar}', [RegistrarController::class, 'destroy'])->name('admin.registrars.destroy');
+        Route::post('admin/registrars/{registrar}/test', [RegistrarController::class, 'test'])->name('admin.registrars.test');
 
         // Manual Payment Settings
         Route::get('admin/manual-payment', [ManualPaymentController::class, 'index'])->name('admin.manual-payment.index');

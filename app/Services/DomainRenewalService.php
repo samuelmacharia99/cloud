@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\User;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Support\Facades\DB;
 
 class DomainRenewalService
@@ -164,6 +165,13 @@ class DomainRenewalService
                 'pushed_at' => now(),
             ]);
         });
+
+        try {
+            app(RegistrarFulfillmentService::class)
+                ->fulfillRenewal($renewalOrder->fresh(['domain.domainExtension']));
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         if ($adminOrder && $adminInvoice) {
             try {

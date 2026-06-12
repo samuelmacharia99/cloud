@@ -4,6 +4,10 @@ namespace App\Services;
 
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Services\Registrar\Openprovider\OpenproviderException;
+use App\Services\Registrar\RegistrarFulfillmentService;
+use App\Services\Registrar\RegistrarManager;
+use App\Services\Registrar\RegistrarOperationsInterface;
 use Illuminate\Support\Str;
 
 class DomainAvailabilityService
@@ -25,6 +29,8 @@ class DomainAvailabilityService
 
     public function __construct(
         private DomainInputParser $parser,
+        private RegistrarManager $registrarManager,
+        private RegistrarFulfillmentService $registrarFulfillment,
     ) {}
 
     /**
@@ -67,6 +73,27 @@ class DomainAvailabilityService
             $this->lastSource = 'local';
 
             return false;
+        }
+
+        $domainExtension = DomainExtension::where('extension', $extension)->first();
+        if ($domainExtension && $this->registrarFulfillment->usesOpenprovider($domainExtension)) {
+            $registrar = $this->registrarManager->forExtension($domainExtension);
+            $driver = $this->registrarManager->driver($registrar);
+
+            if ($driver instanceof RegistrarOperationsInterface) {
+                try {
+                    $result = $driver->checkAvailability($registrar, $name, $extension);
+                    $this->lastSource = $result['source'] ?? 'openprovider';
+
+                    return (bool) ($result['available'] ?? false);
+                } catch (OpenproviderException $e) {
+                    $this->lastSource = 'openprovider-error';
+                    \Log::warning('Openprovider availability check failed, falling back to WHOIS', [
+                        'domain' => $fullDomain,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         }
 
         $whoisResult = $this->checkWhois($fullDomain, $extension);

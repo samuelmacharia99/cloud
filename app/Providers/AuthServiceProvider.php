@@ -7,6 +7,7 @@ use App\Models\Email;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Registrar;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\SmsLog;
@@ -17,6 +18,7 @@ use App\Policies\EmailPolicy;
 use App\Policies\InvoicePolicy;
 use App\Policies\OrderPolicy;
 use App\Policies\PaymentPolicy;
+use App\Policies\RegistrarPolicy;
 use App\Policies\ResellerPolicy;
 use App\Policies\ServicePolicy;
 use App\Policies\SettingPolicy;
@@ -33,6 +35,7 @@ class AuthServiceProvider extends ServiceProvider
         Invoice::class => InvoicePolicy::class,
         Order::class => OrderPolicy::class,
         Payment::class => PaymentPolicy::class,
+        Registrar::class => RegistrarPolicy::class,
         User::class => ResellerPolicy::class,
         Setting::class => SettingPolicy::class,
         Service::class => ServicePolicy::class,

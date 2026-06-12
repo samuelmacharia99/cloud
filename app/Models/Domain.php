@@ -16,6 +16,7 @@ class Domain extends Model
         'extension',
         'type',
         'registrar',
+        'registrar_external_id',
         'status',
         'transfer_status',
         'registered_at',

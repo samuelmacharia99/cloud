@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Domain;
 use App\Models\Node;
+use App\Models\Service;
 use App\Models\Setting;
 
 class NodeNameserverService
@@ -38,6 +40,39 @@ class NodeNameserverService
         }
 
         return $this->forNode(Node::find($nodeId));
+    }
+
+    /**
+     * Resolve nameservers for a domain: linked hosting node → domain NS columns → platform defaults.
+     *
+     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function forDomain(Domain $domain): array
+    {
+        if ($domain->nameserver_1) {
+            return $this->normalize(
+                $domain->nameserver_1,
+                $domain->nameserver_2,
+                $domain->nameserver_3,
+                $domain->nameserver_4,
+            );
+        }
+
+        $service = Service::query()
+            ->where('user_id', $domain->user_id)
+            ->where(function ($query) use ($domain) {
+                $query->whereJsonContains('service_meta->domain_id', $domain->id)
+                    ->orWhere('name', $domain->name.$domain->extension);
+            })
+            ->whereNotNull('node_id')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($service?->node_id) {
+            return $this->forNodeId($service->node_id);
+        }
+
+        return $this->platformDefaults();
     }
 
     /**

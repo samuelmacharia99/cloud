@@ -27,6 +27,7 @@ class DomainExtension extends Model
         'registration_period_min',
         'registration_period_max',
         'registrar',
+        'registrar_id',
         'dns_management',
         'auto_renewal',
         'transfer_price',
@@ -38,6 +39,11 @@ class DomainExtension extends Model
         'auto_renewal' => 'boolean',
         'transfer_price' => 'decimal:2',
     ];
+
+    public function registrarModel()
+    {
+        return $this->belongsTo(Registrar::class, 'registrar_id');
+    }
 
     public function pricing()
     {

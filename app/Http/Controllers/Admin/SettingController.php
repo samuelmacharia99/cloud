@@ -2,12 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\RegistrarDriver;
 use App\Helpers\CronHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
+use App\Models\DomainExtension;
 use App\Models\Email;
 use App\Models\EmailTemplate;
 use App\Models\Node;
+use App\Models\Registrar;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Services\PaymentGateway\MpesaService;
@@ -117,8 +120,17 @@ class SettingController extends Controller
         $emailTemplatesList = EmailTemplate::orderBy('recipient_type')->orderBy('name')->get();
         $directAdminNodes = Node::where('type', 'directadmin')->orderBy('name')->get();
 
-        $allowedTabs = ['general', 'billing', 'tax', 'payment_methods', 'provisioning', 'branding', 'email', 'notifications', 'cron', 'sms', 'security'];
+        $allowedTabs = ['general', 'billing', 'tax', 'payment_methods', 'provisioning', 'registrars', 'branding', 'email', 'notifications', 'cron', 'sms', 'security'];
         $activeTab = in_array(request('tab'), $allowedTabs, true) ? request('tab') : 'general';
+
+        $registrars = Registrar::with('domainExtensions')->ordered()->get();
+        $domainExtensions = DomainExtension::orderBy('extension')->get();
+        $registrarDrivers = collect(RegistrarDriver::cases())->map(fn (RegistrarDriver $driver) => [
+            'value' => $driver->value,
+            'label' => $driver->label(),
+            'description' => $driver->description(),
+            'config_fields' => $driver->configFields(),
+        ])->values();
 
         // Get cron helper data for the cron tab
         try {
@@ -147,7 +159,8 @@ class SettingController extends Controller
         return view('admin.settings.index', compact(
             'group', 'settings', 'keys', 'groups', 'currencies', 'smsTemplatesList', 'emailTemplatesList', 'directAdminNodes', 'activeTab',
             'cronCommand', 'cronCommandOptions', 'cronValidation', 'cronStats',
-            'gatewayStatus', 'paypalConnectAvailable', 'paypalConnection'
+            'gatewayStatus', 'paypalConnectAvailable', 'paypalConnection',
+            'registrars', 'domainExtensions', 'registrarDrivers'
         ));
     }
 

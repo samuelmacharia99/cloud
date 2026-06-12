@@ -71,9 +71,15 @@ class ApplicationSchedule
             ->withoutOverlapping(5)
             ->name('Terminal Session Cleanup');
 
+        $registrarSync = $schedule->command('registrar:sync-domains')
+            ->everyFifteenMinutes()
+            ->withoutOverlapping(10)
+            ->name('Registrar Domain Status Sync');
+
         if (config('scheduler.use_on_one_server')) {
             $health->onOneServer();
             $terminal->onOneServer();
+            $registrarSync->onOneServer();
         }
     }
 
