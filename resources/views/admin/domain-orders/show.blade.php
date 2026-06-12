@@ -118,6 +118,58 @@
         </div>
     </div>
 
+    @if($order->isTransfer())
+    @php
+        $transferDomain = $order->domain;
+        $authCode = $transferDomain?->epp_code ?: $transferDomain?->transfer_authorization_code;
+    @endphp
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-blue-200 dark:border-blue-800 p-6" x-data="{ copied: false }">
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Transfer Details</h3>
+        @if($transferDomain)
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">EPP / auth code</p>
+                    @if(filled($authCode))
+                        <div class="flex flex-wrap items-center gap-2">
+                            <code class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-mono text-slate-900 dark:text-white break-all">{{ $authCode }}</code>
+                            <button type="button"
+                                @click="navigator.clipboard.writeText(@js((string) $authCode)); copied = true; setTimeout(() => copied = false, 2000)"
+                                class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                <span x-show="!copied">Copy</span>
+                                <span x-show="copied" x-cloak>Copied</span>
+                            </button>
+                        </div>
+                    @else
+                        <p class="text-sm text-amber-700 dark:text-amber-300">No EPP code on file for this domain record.</p>
+                    @endif
+                </div>
+                <div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Transfer status</p>
+                    <p class="font-semibold text-slate-900 dark:text-white capitalize">{{ $transferDomain->transfer_status ?? 'pending' }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Current registrar</p>
+                    <p class="font-semibold text-slate-900 dark:text-white">{{ $transferDomain->old_registrar ?? '—' }}</p>
+                </div>
+                @if($transferDomain->old_registrar_url)
+                <div class="md:col-span-2">
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Registrar website</p>
+                    <a href="{{ $transferDomain->old_registrar_url }}" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 dark:text-blue-400 hover:underline break-all">{{ $transferDomain->old_registrar_url }}</a>
+                </div>
+                @endif
+                @if($transferDomain->transfer_notes)
+                <div class="md:col-span-2">
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Notes</p>
+                    <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $transferDomain->transfer_notes }}</p>
+                </div>
+                @endif
+            </div>
+        @else
+            <p class="text-sm text-amber-700 dark:text-amber-300">No domain record is linked to this transfer order.</p>
+        @endif
+    </div>
+    @endif
+
     <!-- Timeline -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Timeline</h3>
