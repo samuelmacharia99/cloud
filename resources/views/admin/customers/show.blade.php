@@ -472,23 +472,50 @@
     </div>
 
     <!-- Add Service Modal -->
-    <div x-show="addServiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addServiceModal = false">
-        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
-        <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
-            <div>
-                <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
-                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Prices shown in <span class="font-medium text-slate-700 dark:text-slate-300">{{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</span> — from {{ $customer->name }}'s profile
-                </p>
-            </div>
-            <button @click="addServiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-        </div>
+    <div
+        x-show="addServiceModal"
+        x-cloak
+        x-transition:enter="ease-out duration-200"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="ease-in duration-150"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-service-modal-title"
+        @keydown.escape.window="addServiceModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="addServiceModal = false"></div>
 
-        <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6" @submit="onAddServiceSubmit($event)">
+        <div class="flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div
+                x-show="addServiceModal"
+                x-transition:enter="ease-out duration-200"
+                x-transition:enter-start="opacity-0 translate-y-4 sm:scale-95"
+                x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave="ease-in duration-150"
+                x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave-end="opacity-0 translate-y-4 sm:scale-95"
+                class="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[min(90vh,56rem)] flex flex-col"
+                @click.stop
+            >
+                <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                    <div class="pr-4">
+                        <h2 id="add-service-modal-title" class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                            Prices shown in <span class="font-medium text-slate-700 dark:text-slate-300">{{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</span> — from {{ $customer->name }}'s profile
+                        </p>
+                    </div>
+                    <button type="button" @click="addServiceModal = false" class="shrink-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <form method="POST" action="{{ route('admin.customers.add-service', $customer) }}" class="p-6 space-y-6 overflow-y-auto flex-1 min-h-0" @submit="onAddServiceSubmit($event)">
             @csrf
 
             <!-- Product Type Selection -->
@@ -793,7 +820,8 @@
                     Add Service
                 </button>
             </div>
-        </form>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -950,21 +978,47 @@
     </div>
 
     <!-- Create Invoice Modal -->
-    <div x-show="createInvoiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="createInvoiceModal = false">
-        <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
-            <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <div>
-                    <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create Invoice for {{ $customer->name }}</h2>
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Line item amounts in {{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</p>
-                </div>
-                <button @click="createInvoiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
+    <div
+        x-show="createInvoiceModal"
+        x-cloak
+        x-transition:enter="ease-out duration-200"
+        x-transition:enter-start="opacity-0"
+        x-transition:enter-end="opacity-100"
+        x-transition:leave="ease-in duration-150"
+        x-transition:leave-start="opacity-100"
+        x-transition:leave-end="opacity-0"
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        @keydown.escape.window="createInvoiceModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="createInvoiceModal = false"></div>
 
-            <form method="POST" action="{{ route('admin.customers.create-invoice', $customer) }}" class="p-6 space-y-6">
+        <div class="flex min-h-full items-center justify-center p-4 sm:p-6">
+            <div
+                x-show="createInvoiceModal"
+                x-transition:enter="ease-out duration-200"
+                x-transition:enter-start="opacity-0 translate-y-4 sm:scale-95"
+                x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave="ease-in duration-150"
+                x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+                x-transition:leave-end="opacity-0 translate-y-4 sm:scale-95"
+                class="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[min(90vh,56rem)] flex flex-col"
+                @click.stop
+            >
+                <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+                    <div class="pr-4">
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create Invoice for {{ $customer->name }}</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Line item amounts in {{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</p>
+                    </div>
+                    <button type="button" @click="createInvoiceModal = false" class="shrink-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <form method="POST" action="{{ route('admin.customers.create-invoice', $customer) }}" class="p-6 space-y-6 overflow-y-auto flex-1 min-h-0">
                 @csrf
 
                 <!-- Status -->
@@ -1081,7 +1135,8 @@
                         Create Invoice
                     </button>
                 </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
