@@ -215,6 +215,30 @@ class AdminDomainOrderActionsTest extends TestCase
         $this->assertNotNull($order->admin_invoice_id);
     }
 
+    public function test_admin_can_complete_failed_order_after_manual_registrar_work(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createOrder($reseller, 'failed');
+        $order->update([
+            'pushed_at' => now(),
+            'failed_at' => now(),
+            'failure_reason' => 'No API registrar configured for this TLD.',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.domain-orders.complete', $order), [
+                'registrar' => 'Manual registrar',
+            ])
+            ->assertRedirect(route('admin.domain-orders.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+        $this->assertSame('completed', $order->status);
+        $this->assertNull($order->failure_reason);
+        $this->assertNull($order->failed_at);
+    }
+
     public function test_admin_can_delete_queued_order(): void
     {
         $admin = User::factory()->admin()->create();

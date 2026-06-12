@@ -448,7 +448,7 @@ class DomainPushService
     {
         $order->refresh();
 
-        if ($order->status === 'pushed') {
+        if (in_array($order->status, ['pushed', 'failed'], true)) {
             return;
         }
 
@@ -528,6 +528,8 @@ class DomainPushService
             $order->update([
                 'status' => 'completed',
                 'completed_at' => now(),
+                'failed_at' => null,
+                'failure_reason' => null,
             ]);
 
             $this->notificationService->sendDomainCompletedNotification($order);

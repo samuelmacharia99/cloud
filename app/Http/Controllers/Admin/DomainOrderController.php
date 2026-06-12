@@ -72,11 +72,7 @@ class DomainOrderController extends Controller
 
         try {
             $this->domainPushService->prepareOrderForAdminCompletion($order);
-            app(RegistrarFulfillmentService::class)->fulfillOrder($order->fresh(['domain']));
-            $order->refresh();
-            if ($order->status === 'pushed') {
-                $this->domainPushService->completeOrder($order, $validated['registrar']);
-            }
+            $this->domainPushService->completeOrder($order->fresh(['domain']), $validated['registrar']);
 
             return $this->redirectBack($request)
                 ->with('success', "Domain {$order->fullDomainName()} marked as completed.");

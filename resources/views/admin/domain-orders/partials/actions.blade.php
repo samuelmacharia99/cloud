@@ -65,12 +65,17 @@
             type="button"
             @click="$dispatch('open-domain-order-complete', { orderId: {{ $order->id }}, domain: @js($order->fullDomainName()) })"
             class="action-icon-btn text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-            title="{{ $order->status === 'queued' ? 'Mark as completed (wholesale paid — will push then register)' : 'Mark as completed (domain registered at registrar)' }}"
+            title="{{ match($order->status) {
+                'queued' => 'Mark as completed (wholesale paid — manual registration)',
+                'failed' => 'Mark as completed (manual registration — overrides failed API attempt)',
+                default => 'Mark as completed (manual registration — no API registrar)',
+            } }}"
         >
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
         </button>
+        @if ($order->status === 'pushed')
         <button
             type="button"
             @click="$dispatch('open-domain-order-fail', { orderId: {{ $order->id }}, domain: @js($order->fullDomainName()) })"
@@ -81,6 +86,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
         </button>
+        @endif
     @endif
 
     @if ($order->canCancel())

@@ -290,7 +290,8 @@
     @if($order->canAdminComplete())
     <!-- Complete Order Form -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Complete Domain Order</h3>
+        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Complete Domain Order</h3>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Record a manual registration or transfer (e.g. no API registrar configured). Does not submit to Openprovider.</p>
         <form method="POST" action="{{ route('admin.domain-orders.complete', $order) }}" class="space-y-4">
             @csrf
             <input type="hidden" name="stay_on_detail" value="1">

@@ -203,7 +203,7 @@ class ResellerDomainOrder extends Model
 
     public function canAdminComplete(): bool
     {
-        return $this->status === 'pushed'
+        return in_array($this->status, ['pushed', 'failed'], true)
             || ($this->status === 'queued' && ($this->hasPaidWholesaleInvoice() || $this->hasPaidCustomerInvoice()));
     }
 
