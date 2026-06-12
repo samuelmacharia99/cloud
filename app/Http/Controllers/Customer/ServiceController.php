@@ -89,7 +89,7 @@ class ServiceController extends Controller
         }
 
         $price = $this->getPriceForCycle($service);
-        $taxBreakdown = TaxService::calculate($price);
+        $taxBreakdown = TaxService::calculateForUser($price, auth()->user());
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();

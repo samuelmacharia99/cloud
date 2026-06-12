@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Enums\TaxContext;
 use App\Models\Setting;
+use App\Models\User;
 
 class TaxService
 {
@@ -34,6 +36,88 @@ class TaxService
         return (string) Setting::getValue('tax_name', 'VAT');
     }
 
+    public static function contextForUser(?User $user): TaxContext
+    {
+        if ($user === null) {
+            return TaxContext::PlatformCustomer;
+        }
+
+        if ($user->is_reseller || $user->reseller_id) {
+            return TaxContext::ResellerWholesale;
+        }
+
+        return TaxContext::PlatformCustomer;
+    }
+
+    public static function appliesPlatformTax(?User $user): bool
+    {
+        return self::contextForUser($user) === TaxContext::PlatformCustomer;
+    }
+
+    /**
+     * @return array{
+     *     subtotal: float,
+     *     tax: float,
+     *     total: float,
+     *     enabled: bool,
+     *     inclusive: bool,
+     *     rate: float,
+     *     name: string,
+     *     exempt?: bool
+     * }
+     */
+    public static function calculate(float $amount, int $precision = 2, TaxContext $context = TaxContext::PlatformCustomer): array
+    {
+        if ($context === TaxContext::ResellerWholesale) {
+            return self::exempt($amount, $precision);
+        }
+
+        return self::calculateTaxable($amount, $precision);
+    }
+
+    public static function calculateForUser(float $amount, ?User $user, int $precision = 2): array
+    {
+        return self::calculate($amount, $precision, self::contextForUser($user));
+    }
+
+    public static function calculateResellerSubscription(float $amount, int $precision = 2): array
+    {
+        return self::calculate($amount, $precision, TaxContext::ResellerSubscription);
+    }
+
+    public static function calculateResellerWholesale(float $amount, int $precision = 2): array
+    {
+        return self::calculate($amount, $precision, TaxContext::ResellerWholesale);
+    }
+
+    /**
+     * @return array{
+     *     subtotal: float,
+     *     tax: float,
+     *     total: float,
+     *     enabled: bool,
+     *     inclusive: bool,
+     *     rate: float,
+     *     name: string,
+     *     exempt: bool
+     * }
+     */
+    public static function exempt(float $amount, int $precision = 2): array
+    {
+        $amount = round(max(0, $amount), $precision);
+
+        return [
+            'subtotal' => $amount,
+            'tax' => 0.0,
+            'total' => $amount,
+            'enabled' => false,
+            'inclusive' => self::isInclusive(),
+            'rate' => 0.0,
+            'name' => self::name(),
+            'exempt' => true,
+        ];
+    }
+
     /**
      * @return array{
      *     subtotal: float,
@@ -45,7 +129,7 @@ class TaxService
      *     name: string
      * }
      */
-    public static function calculate(float $amount, int $precision = 2): array
+    private static function calculateTaxable(float $amount, int $precision = 2): array
     {
         $enabled = self::isEnabled();
         $inclusive = self::isInclusive();
@@ -128,5 +212,14 @@ class TaxService
         $total = round($subtotal + $tax, $precision);
 
         return compact('subtotal', 'tax', 'total');
+    }
+
+    public static function calculateWithRateForUser(float $amount, float $taxRate, ?User $user, int $precision = 2): array
+    {
+        if (self::contextForUser($user) === TaxContext::ResellerWholesale) {
+            return self::exempt($amount, $precision);
+        }
+
+        return self::calculateWithRate($amount, $taxRate, $precision);
     }
 }

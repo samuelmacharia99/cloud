@@ -133,7 +133,7 @@ class CheckoutController extends Controller
             return redirect()->route('customer.cart.index')->with('error', 'No valid items in cart');
         }
 
-        $taxBreakdown = TaxService::calculate($subtotal);
+        $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
         $currency = app(UserCurrencyService::class)->model($user);
         $currencyCode = $currency->code;
@@ -250,7 +250,7 @@ class CheckoutController extends Controller
                 $domainAddonTotal = app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart);
 
                 $subtotal += $domainAddonTotal;
-                $taxBreakdown = TaxService::calculate($subtotal);
+                $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
@@ -750,7 +750,7 @@ class CheckoutController extends Controller
             return redirect('/')->with('error', 'Your cart is empty');
         }
 
-        $taxBreakdown = TaxService::calculate($subtotal);
+        $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
         $currency = app(UserCurrencyService::class)->model(null);
         $currencyCode = $currency->code;
@@ -898,7 +898,7 @@ class CheckoutController extends Controller
                     : 0.0;
 
                 $subtotal += $domainAddonTotal;
-                $taxBreakdown = TaxService::calculate($subtotal);
+                $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([

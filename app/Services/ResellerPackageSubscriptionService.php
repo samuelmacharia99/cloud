@@ -69,7 +69,7 @@ class ResellerPackageSubscriptionService
      */
     public function calculateAmounts(float $subtotal): array
     {
-        $breakdown = TaxService::calculate($subtotal);
+        $breakdown = TaxService::calculateResellerSubscription($subtotal);
 
         return [
             'subtotal' => $breakdown['subtotal'],

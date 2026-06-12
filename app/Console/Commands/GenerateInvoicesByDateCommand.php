@@ -93,7 +93,8 @@ class GenerateInvoicesByDateCommand extends Command
                     $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
 
                     $price = $this->getPriceForCycle($service);
-                    $taxBreakdown = TaxService::calculate($price);
+                    $service->loadMissing('user');
+                    $taxBreakdown = TaxService::calculateForUser($price, $service->user);
                     $dueDate = $schedule->serviceInvoiceDueDate($service)->toDateString();
 
                     $invoice = Invoice::create([

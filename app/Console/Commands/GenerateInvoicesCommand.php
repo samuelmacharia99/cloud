@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Services\ContainerOverageBillingService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
+use App\Services\TaxService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -37,9 +38,9 @@ class GenerateInvoicesCommand extends BaseCronCommand
                 $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
                 $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
 
+                $service->loadMissing('user');
                 $price = $this->getPriceForCycle($service);
-                $tax = $taxEnabled ? round($price * $taxRate / 100, 2) : 0;
-                $total = $price + $tax;
+                $taxBreakdown = TaxService::calculateForUser($price, $service->user);
 
                 $serviceDueDate = $service->next_due_date
                     ? Carbon::parse($service->next_due_date)->toDateString()

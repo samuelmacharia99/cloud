@@ -131,7 +131,7 @@ class ServiceController extends Controller
                 // Generate invoice if requested
                 if ($request->boolean('generate_invoice')) {
                     $price = $this->getServicePrice($product, $request->billing_cycle);
-                    $taxBreakdown = TaxService::calculate($price);
+                    $taxBreakdown = TaxService::calculateForUser($price, $user);
 
                     $invoice = Invoice::create([
                         'user_id' => $user->id,

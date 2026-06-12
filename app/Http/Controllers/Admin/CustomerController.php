@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Credit;
+use App\Models\Currency;
 use App\Models\DirectAdminPackage;
 use App\Models\Domain;
 use App\Models\Invoice;
@@ -201,6 +202,13 @@ class CustomerController extends Controller
 
         $creditAvailableBalance = CreditService::getAvailableBalance($customer);
 
+        $customerCurrency = app(UserCurrencyService::class)->model($customer);
+        $customerCurrencyCode = $customerCurrency->code;
+        $customerCurrencySymbol = $customerCurrency->symbol ?? $customerCurrencyCode;
+        $customerExchangeRate = $customerCurrencyCode === config('currency.base', 'KES')
+            ? 1.0
+            : (float) $customerCurrency->exchange_rate;
+
         return view('admin.customers.show', compact(
             'customer',
             'products',
@@ -208,6 +216,9 @@ class CustomerController extends Controller
             'daNodes',
             'customerCredits',
             'creditAvailableBalance',
+            'customerCurrencyCode',
+            'customerCurrencySymbol',
+            'customerExchangeRate',
         ));
     }
 
@@ -450,7 +461,7 @@ class CustomerController extends Controller
                 // Create invoice if next_due_date is provided (manual first invoice)
                 if (! empty($validated['next_due_date'])) {
                     $price = 10.00; // Default domain renewal price
-                    $taxBreakdown = TaxService::calculate($price);
+                    $taxBreakdown = TaxService::calculateForUser($price, $customer);
 
                     $invoiceDueDate = $schedule->domainRenewalAnchorDate($domain);
 
@@ -556,6 +567,7 @@ class CustomerController extends Controller
             'suspend_date' => 'nullable|date',
             'notes' => 'nullable|string|max:1000',
             'generate_invoice' => 'boolean',
+            'custom_price' => 'nullable|numeric|min:0',
         ];
 
         if ($isSharedHosting) {
@@ -604,7 +616,9 @@ class CustomerController extends Controller
                     ->firstOrFail();
             }
 
-            $createdService = DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting, $selectedPackage) {
+            $priceResolution = $this->resolveManualServicePriceKes($customer, $product, $validated);
+
+            $createdService = DB::transaction(function () use ($validated, $customer, $product, $isSharedHosting, $selectedPackage, $priceResolution) {
                 $serviceMeta = [];
                 $nodeId = null;
 
@@ -651,6 +665,7 @@ class CustomerController extends Controller
                     'name' => $validated['name'],
                     'status' => $validated['status'],
                     'billing_cycle' => $validated['billing_cycle'],
+                    'custom_price' => $priceResolution['custom_price_kes'],
                     'commenced_at' => $validated['commenced_at'] ?? null,
                     'next_due_date' => $validated['next_due_date'],
                     'suspend_date' => $validated['suspend_date'] ?? null,
@@ -670,7 +685,7 @@ class CustomerController extends Controller
                 ]);
 
                 if (! empty($validated['generate_invoice'])) {
-                    $invoice = $this->createServiceInvoice($customer, $product, $service, $validated);
+                    $invoice = $this->createServiceInvoice($customer, $product, $service, $priceResolution['amount_kes']);
                     $service->update(['invoice_id' => $invoice->id]);
 
                     Log::info('addService() service updated with invoice_id', [
@@ -722,10 +737,9 @@ class CustomerController extends Controller
     /**
      * Build the invoice + line item for a manually-added service.
      */
-    private function createServiceInvoice(User $customer, Product $product, Service $service, array $validated): Invoice
+    private function createServiceInvoice(User $customer, Product $product, Service $service, float $priceKes): Invoice
     {
-        $price = $this->getServicePrice($product, $validated['billing_cycle']);
-        $taxBreakdown = TaxService::calculate($price);
+        $taxBreakdown = TaxService::calculateForUser($priceKes, $customer);
 
         $invoiceDueDate = app(InvoiceGenerationScheduleService::class)->serviceInvoiceDueDate($service);
 
@@ -745,11 +759,43 @@ class CustomerController extends Controller
             'product_id' => $product->id,
             'description' => $service->name,
             'quantity' => 1,
-            'unit_price' => $price,
-            'amount' => $price,
+            'unit_price' => $priceKes,
+            'amount' => $priceKes,
         ]);
 
         return $invoice;
+    }
+
+    /**
+     * @return array{amount_kes: float, custom_price_kes: ?float}
+     */
+    private function resolveManualServicePriceKes(User $customer, Product $product, array $validated): array
+    {
+        if (filled($validated['custom_price'] ?? null)) {
+            $currency = app(UserCurrencyService::class)->codeFor($customer);
+            $kesAmount = $this->displayAmountToKes((float) $validated['custom_price'], $currency);
+
+            return [
+                'amount_kes' => $kesAmount,
+                'custom_price_kes' => $kesAmount,
+            ];
+        }
+
+        return [
+            'amount_kes' => $this->getServicePrice($product, $validated['billing_cycle']),
+            'custom_price_kes' => null,
+        ];
+    }
+
+    private function displayAmountToKes(float $amount, string $currency): float
+    {
+        $base = config('currency.base', 'KES');
+
+        if ($currency === $base) {
+            return round($amount, 2);
+        }
+
+        return round(Currency::convert($amount, $currency, $base), 2);
     }
 
     /**
@@ -988,15 +1034,27 @@ class CustomerController extends Controller
         ]);
 
         try {
-            $invoice = DB::transaction(function () use ($validated, $customer) {
-                // Calculate totals
+            $customerCurrency = app(UserCurrencyService::class)->codeFor($customer);
+
+            $invoice = DB::transaction(function () use ($validated, $customer, $customerCurrency) {
+                // Calculate totals (amounts entered in the customer's billing currency)
                 $subtotal = 0;
+                $itemsInKes = [];
+
                 foreach ($validated['items'] as $item) {
-                    $subtotal += floatval($item['quantity']) * floatval($item['unit_price']);
+                    $unitPriceKes = $this->displayAmountToKes((float) $item['unit_price'], $customerCurrency);
+                    $lineTotalKes = $unitPriceKes * (float) $item['quantity'];
+                    $subtotal += $lineTotalKes;
+                    $itemsInKes[] = [
+                        'description' => $item['description'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $unitPriceKes,
+                        'amount' => $lineTotalKes,
+                    ];
                 }
 
                 $taxRate = floatval($validated['tax_rate'] ?? 0);
-                $taxBreakdown = TaxService::calculateWithRate($subtotal, $taxRate);
+                $taxBreakdown = TaxService::calculateWithRateForUser($subtotal, $taxRate, $customer);
                 $taxAmount = $taxBreakdown['tax'];
                 $subtotal = $taxBreakdown['subtotal'];
                 $total = $taxBreakdown['total'];
@@ -1019,15 +1077,13 @@ class CustomerController extends Controller
                     'notes' => $validated['notes'] ?? null,
                 ]);
 
-                // Create line items (custom items with no product_id or service_id)
-                foreach ($validated['items'] as $item) {
-                    $itemAmount = floatval($item['quantity']) * floatval($item['unit_price']);
+                foreach ($itemsInKes as $item) {
                     InvoiceItem::create([
                         'invoice_id' => $invoice->id,
                         'description' => $item['description'],
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
-                        'amount' => $itemAmount,
+                        'amount' => $item['amount'],
                     ]);
                 }
 

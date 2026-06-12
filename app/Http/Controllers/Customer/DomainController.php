@@ -173,7 +173,7 @@ class DomainController extends Controller
         $domain = Domain::findOrFail($transferCheckout['domain_id']);
         $this->authorize('view', $domain);
 
-        $taxBreakdown = TaxService::calculate((float) $transferCheckout['transfer_price']);
+        $taxBreakdown = TaxService::calculateForUser((float) $transferCheckout['transfer_price'], auth()->user());
 
         $currency = app(UserCurrencyService::class)->model(auth()->user());
         $currencyCode = $currency->code;
@@ -213,7 +213,7 @@ class DomainController extends Controller
             // Create invoice and invoice item within a transaction
             $invoice = DB::transaction(function () use ($domain, $transferCheckout, $user) {
                 $transferPrice = $transferCheckout['transfer_price'];
-                $taxBreakdown = TaxService::calculate((float) $transferPrice);
+                $taxBreakdown = TaxService::calculateForUser((float) $transferPrice, $user);
 
                 // Create invoice
                 $invoice = Invoice::create([
@@ -323,7 +323,7 @@ class DomainController extends Controller
         $domain = Domain::findOrFail($renewalCheckout['domain_id']);
         $this->authorize('view', $domain);
 
-        $taxBreakdown = TaxService::calculate((float) $renewalCheckout['amount']);
+        $taxBreakdown = TaxService::calculateForUser((float) $renewalCheckout['amount'], auth()->user());
 
         $currency = app(UserCurrencyService::class)->model(auth()->user());
         $currencyCode = $currency->code;

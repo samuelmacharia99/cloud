@@ -39,7 +39,7 @@ class CartController extends Controller
             }
         }
 
-        $taxBreakdown = TaxService::calculate($subtotal);
+        $taxBreakdown = TaxService::calculateResellerWholesale($subtotal);
 
         $cartContext = ResellerCartContext::summary();
         $checkoutCustomer = $this->resolveCheckoutCustomer();

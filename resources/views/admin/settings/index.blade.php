@@ -212,6 +212,9 @@
 
                     <fieldset>
                         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Tax Configuration</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                            Applies to direct platform customers and reseller package subscriptions. Reseller wholesale orders (domains, products for resale) and reseller-managed customers are tax-exempt on the platform.
+                        </p>
                         <div class="space-y-4">
                             <div>
                                 <input type="hidden" name="settings[tax_enabled]" value="0">

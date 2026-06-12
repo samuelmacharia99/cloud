@@ -82,7 +82,7 @@ class DomainRenewalService
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $tax = TaxService::calculate((float) $renewalOrder->amount);
+            $tax = TaxService::calculateForUser((float) $renewalOrder->amount, $customer);
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
@@ -127,7 +127,7 @@ class DomainRenewalService
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
 
-            $tax = TaxService::calculate((float) $renewalOrder->amount);
+            $tax = TaxService::calculateForUser((float) $renewalOrder->amount, $customer);
 
             $adminOrder = Order::create([
                 'user_id' => $customer->id,

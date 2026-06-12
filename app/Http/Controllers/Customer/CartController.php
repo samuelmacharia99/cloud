@@ -85,7 +85,7 @@ class CartController extends Controller
             $cartItems[] = $item;
         }
 
-        $taxBreakdown = TaxService::calculate($subtotal);
+        $taxBreakdown = TaxService::calculateForUser($subtotal, auth()->user());
 
         $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
 

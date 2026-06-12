@@ -48,6 +48,10 @@
                                 Platform (direct)
                             </span>
                         @endif
+
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300">
+                            Billing: {{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})
+                        </span>
                     </div>
                 </div>
             </div>
@@ -471,7 +475,12 @@
     <div x-show="addServiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="addServiceModal = false">
         <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
         <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
-            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
+            <div>
+                <h2 class="text-xl font-bold text-slate-900 dark:text-white">Add Service</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Prices shown in <span class="font-medium text-slate-700 dark:text-slate-300">{{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</span> — from {{ $customer->name }}'s profile
+                </p>
+            </div>
             <button @click="addServiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -556,13 +565,53 @@
             <!-- Billing Cycle -->
             <div>
                 <label for="billing_cycle" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Billing Cycle <span class="text-red-500">*</span></label>
-                <select id="billing_cycle" name="billing_cycle" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
+                <select id="billing_cycle" name="billing_cycle" x-model="billingCycle" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white" required>
                     <option value="monthly">Monthly</option>
                     <option value="quarterly">Quarterly</option>
                     <option value="semi-annual">Semi-Annual</option>
                     <option value="annual">Annual</option>
                 </select>
             </div>
+
+            <!-- Pricing -->
+            <template x-if="selectedProduct">
+                <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-4 space-y-4">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white">Standard product price</p>
+                            <p class="text-lg font-bold text-slate-900 dark:text-white mt-1" x-text="formatCustomerMoney(catalogPriceDisplay())"></p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" x-text="'Per ' + billingCycleLabel()"></p>
+                        </div>
+                        <span class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300" x-text="customerCurrency"></span>
+                    </div>
+
+                    <div>
+                        <label for="custom_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Custom price (optional)</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 text-sm font-medium" x-text="customerCurrencySymbol"></span>
+                            <input
+                                type="number"
+                                id="custom_price"
+                                name="custom_price"
+                                x-model="customPrice"
+                                step="0.01"
+                                min="0"
+                                placeholder="Leave empty to use standard price"
+                                class="w-full pl-14 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white"
+                            >
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Overrides the product price for this service and all future renewal invoices.
+                            <span x-show="customPrice" class="block mt-1 text-slate-600 dark:text-slate-300">
+                                Invoice amount: <span class="font-medium" x-text="formatCustomerMoney(parseFloat(customPrice) || 0)"></span>
+                            </span>
+                        </p>
+                        @error('custom_price')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+            </template>
 
             <!-- Status -->
             <div>
@@ -904,7 +953,10 @@
     <div x-show="createInvoiceModal" x-transition class="fixed inset-0 bg-black/50 z-50 flex items-end" @click.self="createInvoiceModal = false">
         <div class="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-t-2xl shadow-2xl overflow-y-auto max-h-screen">
             <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-                <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create Invoice for {{ $customer->name }}</h2>
+                <div>
+                    <h2 class="text-xl font-bold text-slate-900 dark:text-white">Create Invoice for {{ $customer->name }}</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Line item amounts in {{ $customerCurrencySymbol }} ({{ $customerCurrencyCode }})</p>
+                </div>
                 <button @click="createInvoiceModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -931,10 +983,17 @@
                 </div>
 
                 <!-- Tax Rate -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tax Rate (%)</label>
-                    <input type="number" name="tax_rate" x-model="taxRate" min="0" max="100" step="0.01" value="0" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
-                </div>
+                @if($customer->reseller_id || $customer->is_reseller)
+                    <input type="hidden" name="tax_rate" value="0">
+                    <p class="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
+                        Platform tax does not apply to this account. Invoice line amounts are tax-exempt.
+                    </p>
+                @else
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tax Rate (%)</label>
+                        <input type="number" name="tax_rate" x-model="taxRate" min="0" max="100" step="0.01" value="0" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                    </div>
+                @endif
 
                 <!-- Line Items Header -->
                 <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
@@ -960,16 +1019,19 @@
                                 required
                                 class="col-span-2 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
                             />
-                            <input
-                                type="number"
-                                :name="`items[${index}][unit_price]`"
-                                x-model="item.unit_price"
-                                min="0"
-                                step="0.01"
-                                placeholder="0.00"
-                                required
-                                class="col-span-3 px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
-                            />
+                            <div class="col-span-3 relative">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-medium">{{ $customerCurrencySymbol }}</span>
+                                <input
+                                    type="number"
+                                    :name="`items[${index}][unit_price]`"
+                                    x-model="item.unit_price"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    required
+                                    class="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm"
+                                />
+                            </div>
                             <button
                                 type="button"
                                 @click="removeInvoiceItem(index)"
@@ -1095,6 +1157,11 @@ function initCustomerData() {
         selectedProductType: '',
         selectedProduct: '',
         products: @json($productsForJs),
+        customerCurrency: @json($customerCurrencyCode),
+        customerCurrencySymbol: @json($customerCurrencySymbol),
+        exchangeRate: {{ json_encode($customerExchangeRate) }},
+        billingCycle: 'monthly',
+        customPrice: @json(old('custom_price', '')),
 
         // DirectAdmin (shared hosting) form state
         daUsername: '',
@@ -1153,6 +1220,7 @@ function initCustomerData() {
         onProductChange() {
             const product = this.currentProduct();
             this.productName = product?.name || '';
+            this.customPrice = '';
 
             // Reset only DA credentials when switching products
             // Keep server/package selection intact
@@ -1163,6 +1231,49 @@ function initCustomerData() {
             if (this.isSharedHosting()) {
                 this.suggestUsername();
             }
+        },
+
+        catalogPriceKes() {
+            const product = this.currentProduct();
+            if (!product) return 0;
+
+            const monthly = parseFloat(product.monthly_price) || 0;
+            const yearly = parseFloat(product.yearly_price) || (monthly * 12);
+
+            switch (this.billingCycle) {
+                case 'quarterly': return monthly * 3;
+                case 'semi-annual': return monthly * 6;
+                case 'annual': return yearly;
+                default: return monthly;
+            }
+        },
+
+        catalogPriceDisplay() {
+            return this.convertKesToDisplay(this.catalogPriceKes());
+        },
+
+        convertKesToDisplay(kes) {
+            if (this.customerCurrency === 'KES') {
+                return parseFloat(kes) || 0;
+            }
+
+            return (parseFloat(kes) || 0) * (parseFloat(this.exchangeRate) || 1);
+        },
+
+        billingCycleLabel() {
+            return ({
+                monthly: 'month',
+                quarterly: 'quarter',
+                'semi-annual': '6 months',
+                annual: 'year',
+            })[this.billingCycle] || this.billingCycle;
+        },
+
+        formatCustomerMoney(amount) {
+            const decimals = this.customerCurrency === 'KES' ? 0 : 2;
+            const formatted = parseFloat(amount || 0).toFixed(decimals).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+            return `${this.customerCurrencySymbol} ${formatted}`;
         },
 
         async suggestUsername() {
@@ -1337,7 +1448,7 @@ function initCustomerData() {
             return this.invoiceSubtotal() + this.invoiceTax();
         },
         fmt(v) {
-            return 'Ksh ' + parseFloat(v||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            return this.formatCustomerMoney(v);
         },
 
         init() {

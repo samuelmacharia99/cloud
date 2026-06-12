@@ -57,7 +57,7 @@ class CheckoutController extends Controller
             }
         }
 
-        $taxBreakdown = TaxService::calculate($subtotal);
+        $taxBreakdown = TaxService::calculateResellerWholesale($subtotal);
 
         $user = auth()->user();
         $checkoutCustomer = $this->resolveCheckoutCustomer();
@@ -189,7 +189,7 @@ class CheckoutController extends Controller
                 }
             }
 
-            $taxBreakdown = TaxService::calculate($subtotal);
+            $taxBreakdown = TaxService::calculateResellerWholesale($subtotal);
 
             $invoiceNotes = match (true) {
                 $hasRegistration && $hasRenewal => 'Domain registration and renewal order',

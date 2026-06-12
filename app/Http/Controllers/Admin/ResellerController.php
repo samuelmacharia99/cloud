@@ -554,7 +554,7 @@ class ResellerController extends Controller
             default => 0,
         };
 
-        $taxBreakdown = TaxService::calculate($price);
+        $taxBreakdown = TaxService::calculateResellerWholesale($price);
 
         $prefix = Setting::getValue('invoice_prefix', 'INV');
         $date = now()->format('Ymd');

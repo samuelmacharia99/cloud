@@ -75,7 +75,7 @@ class ServerController extends Controller
         $price = $this->getWholesalePrice($product, $validated['billing_cycle']);
         abort_if($price <= 0, 422, 'No wholesale price set for this product and billing cycle.');
 
-        $taxBreakdown = TaxService::calculate($price);
+        $taxBreakdown = TaxService::calculateResellerWholesale($price);
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
         $dueDays = (int) Setting::getValue('invoice_due_days', 14);

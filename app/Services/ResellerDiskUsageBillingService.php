@@ -91,7 +91,7 @@ class ResellerDiskUsageBillingService
         string $productType,
     ): void {
         $amount = round($quantity * $unitPrice, 2);
-        $breakdown = TaxService::calculate($amount);
+        $breakdown = TaxService::calculateResellerSubscription($amount);
 
         InvoiceItem::create([
             'invoice_id' => $invoice->id,

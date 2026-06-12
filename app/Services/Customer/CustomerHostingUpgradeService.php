@@ -72,7 +72,7 @@ class CustomerHostingUpgradeService
         }
 
         $price = $this->proratedUpgradePrice($service, $targetProduct);
-        $taxBreakdown = TaxService::calculate($price);
+        $taxBreakdown = TaxService::calculateForUser($price, $service->user);
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
