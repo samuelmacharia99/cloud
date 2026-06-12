@@ -89,7 +89,10 @@
                 <div class="grid grid-cols-2 gap-6">
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Invoice Amount</p>
-                        <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">KSH {{ number_format($invoice->total, 2) }}</p>
+                        <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1"><x-invoice-money :invoice="$invoice" :amount="$invoice->total" /></p>
+                        @if($invoice->displayCurrency() !== config('currency.base', 'KES') && $invoice->total_base_kes)
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">KES {{ number_format($invoice->total_base_kes, 2) }} base</p>
+                        @endif
                     </div>
                     <div>
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Status</p>
@@ -138,8 +141,8 @@
                                             </div>
                                         </td>
                                         <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
-                                        <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
+                                        <td class="py-3 px-3 text-right text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$item->unit_price" /></td>
+                                        <td class="py-3 px-3 text-right font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$item->amount" /></td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -150,15 +153,15 @@
                         <div class="flex justify-end gap-16">
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Subtotal</p>
-                                <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->subtotal, 2) }}</p>
+                                <p class="font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->subtotal" /></p>
                             </div>
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Tax</p>
-                                <p class="font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->tax, 2) }}</p>
+                                <p class="font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->tax" /></p>
                             </div>
                             <div>
                                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Total</p>
-                                <p class="font-bold text-lg text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
+                                <p class="font-bold text-lg text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->total" /></p>
                             </div>
                         </div>
                     </div>
@@ -181,15 +184,15 @@
                     <div class="grid grid-cols-3 gap-4">
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Invoice Total</p>
-                            <p class="text-slate-900 dark:text-white font-semibold text-base mt-1">KSH {{ number_format($invoice->total, 2) }}</p>
+                            <p class="text-slate-900 dark:text-white font-semibold text-base mt-1"><x-invoice-money :invoice="$invoice" :amount="$invoice->total" /></p>
                         </div>
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Amount Paid</p>
-                            <p class="text-emerald-600 dark:text-emerald-400 font-semibold text-base mt-1">KSH {{ number_format($invoice->getAmountPaid(), 2) }}</p>
+                            <p class="text-emerald-600 dark:text-emerald-400 font-semibold text-base mt-1"><x-invoice-money :invoice="$invoice" :amount="$invoice->getAmountPaid()" /></p>
                         </div>
                         <div>
                             <p class="text-slate-600 dark:text-slate-400 text-xs font-medium uppercase">Remaining</p>
-                            <p class="text-amber-600 dark:text-amber-400 font-semibold text-base mt-1">KSH {{ number_format($invoice->getAmountRemaining(), 2) }}</p>
+                            <p class="text-amber-600 dark:text-amber-400 font-semibold text-base mt-1"><x-invoice-money :invoice="$invoice" :amount="$invoice->getAmountRemaining()" /></p>
                         </div>
                     </div>
                 </div>
@@ -199,7 +202,7 @@
                         @foreach ($invoice->payments as $payment)
                             <div class="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg">
                                 <div>
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }} via {{ ucfirst($payment->payment_method->value) }}</p>
+                                    <p class="text-sm font-medium text-slate-900 dark:text-white"><x-currency-formatter :amount="$payment->amount" :currency="$payment->currency ?? $invoice->displayCurrency()" /> via {{ ucfirst($payment->payment_method->value) }}</p>
                                     <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->created_at->format('M d, Y') }}</p>
                                 </div>
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium

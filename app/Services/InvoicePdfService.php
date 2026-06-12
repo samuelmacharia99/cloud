@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Currency;
 use App\Models\Invoice;
 use App\Models\Setting;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -96,8 +97,8 @@ class InvoicePdfService
             'swift' => $settings['bank_swift_code'] ?? '',
         ];
 
-        // Currency symbol
-        $currencySymbol = $settings['currency_symbol'] ?? 'Ksh';
+        $invoiceCurrency = Currency::where('code', $invoice->displayCurrency())->first();
+        $currencySymbol = $invoiceCurrency?->symbol ?? $invoice->displayCurrency();
 
         // Site URL
         $siteUrl = $isWhiteLabel

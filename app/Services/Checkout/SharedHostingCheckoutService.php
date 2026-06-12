@@ -2,6 +2,7 @@
 
 namespace App\Services\Checkout;
 
+use App\Enums\ResellerDomainOrderType;
 use App\Enums\SharedHostingDomainMode;
 use App\Models\Domain;
 use App\Models\DomainExtension;
@@ -17,6 +18,7 @@ use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Http\Request;
@@ -328,7 +330,10 @@ class SharedHostingCheckoutService
 
     public function persistExtraInvoiceItems(Invoice $invoice, Order $order, array $invoiceItems): void
     {
+        $invoice->loadMissing('user');
+        $customer = $invoice->user;
         $domainProduct = null;
+        $orderService = app(ResellerDomainOrderService::class);
 
         foreach ($invoiceItems as $line) {
             $meta = $line['meta'] ?? [];
@@ -346,7 +351,37 @@ class SharedHostingCheckoutService
             if ($isDomainLine) {
                 $domainProduct ??= $this->domainProduct();
                 $attributes['product_id'] = $domainProduct->id;
+                $attributes['product_type'] = 'Domain';
                 $attributes['domain_id'] = $meta['domain_id'] ?? null;
+                $attributes['custom_options'] = [
+                    'type' => $type,
+                    'domain_id' => $meta['domain_id'] ?? null,
+                ];
+
+                $domain = isset($meta['domain_id']) ? Domain::find($meta['domain_id']) : null;
+                if ($domain && $customer?->reseller_id) {
+                    $fqdn = (string) ($meta['fqdn'] ?? $domain->name.$domain->extension);
+                    $parts = $this->domainValidator->splitFqdn($fqdn);
+                    $orderType = $type === 'domain_transfer'
+                        ? ResellerDomainOrderType::Transfer
+                        : ResellerDomainOrderType::Registration;
+                    $years = (int) ($meta['years'] ?? 1);
+
+                    $domainOrder = $orderService->createForHostingAddonLine(
+                        $customer,
+                        $domain,
+                        $invoice,
+                        $parts['name'],
+                        $parts['extension'],
+                        (float) $line['amount'],
+                        $orderType,
+                        $years,
+                    );
+
+                    if ($domainOrder) {
+                        $attributes = array_merge($attributes, $orderService->invoiceItemAttributes($domainOrder));
+                    }
+                }
             }
 
             InvoiceItem::create($attributes);

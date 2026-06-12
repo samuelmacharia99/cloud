@@ -56,7 +56,7 @@ class CurrencyCatalogService
                 continue;
             }
 
-            Currency::firstOrCreate(
+            $currency = Currency::firstOrCreate(
                 ['code' => $row['code']],
                 array_merge($row, [
                     'exchange_rate' => $row['code'] === config('currency.base', 'KES') ? 1.0 : 1.0,
@@ -64,10 +64,12 @@ class CurrencyCatalogService
                 ])
             );
 
+            $this->refreshRateIfNeeded($currency);
+
             return;
         }
 
-        Currency::firstOrCreate(
+        $currency = Currency::firstOrCreate(
             ['code' => $code],
             [
                 'name' => $code,
@@ -77,5 +79,24 @@ class CurrencyCatalogService
                 'order' => 99,
             ]
         );
+
+        $this->refreshRateIfNeeded($currency);
+    }
+
+    private function refreshRateIfNeeded(Currency $currency): void
+    {
+        if ($currency->code === config('currency.base', 'KES')) {
+            return;
+        }
+
+        $conversion = app(CurrencyConversionService::class);
+
+        try {
+            if ($conversion->areRatesStale() || (float) $currency->exchange_rate <= 0 || (float) $currency->exchange_rate === 1.0) {
+                $conversion->forceUpdateRates();
+            }
+        } catch (\Throwable) {
+            // Billing validation will surface unusable rates.
+        }
     }
 }

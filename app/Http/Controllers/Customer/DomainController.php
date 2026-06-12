@@ -11,6 +11,8 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
+use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\TaxService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
@@ -78,7 +80,8 @@ class DomainController extends Controller
         try {
             // Get extension and transfer price
             $extension = DomainExtension::where('extension', $validated['extension'])->firstOrFail();
-            $transferPrice = (float) $extension->transfer_price ?? 0;
+            $transferPrice = app(ResellerCustomerCatalogService::class)
+                ->domainTransferPrice(auth()->user(), $extension);
 
             // Create transfer request (but don't create invoice yet)
             $domain = DomainTransferService::createTransferRequest(
@@ -205,14 +208,16 @@ class DomainController extends Controller
             $domain = Domain::findOrFail($transferCheckout['domain_id']);
             $this->authorize('view', $domain);
 
+            $user = auth()->user();
+
             // Create invoice and invoice item within a transaction
-            $invoice = DB::transaction(function () use ($domain, $transferCheckout) {
+            $invoice = DB::transaction(function () use ($domain, $transferCheckout, $user) {
                 $transferPrice = $transferCheckout['transfer_price'];
                 $taxBreakdown = TaxService::calculate((float) $transferPrice);
 
                 // Create invoice
                 $invoice = Invoice::create([
-                    'user_id' => auth()->id(),
+                    'user_id' => $user->id,
                     'invoice_number' => 'INV-'.strtoupper(uniqid()),
                     'status' => 'unpaid',
                     'due_date' => now()->addDays(7),
@@ -221,14 +226,40 @@ class DomainController extends Controller
                     'total' => $taxBreakdown['total'],
                 ]);
 
-                // Create invoice item
-                InvoiceItem::create([
+                $domainOrder = null;
+                if ($user->reseller_id) {
+                    $domainOrder = app(ResellerDomainOrderService::class)->createForTransferCheckout(
+                        $user,
+                        $domain,
+                        $invoice,
+                        $domain->name,
+                        $domain->extension,
+                        (float) $transferPrice,
+                    );
+                }
+
+                $invoiceItemData = [
                     'invoice_id' => $invoice->id,
+                    'domain_id' => $domain->id,
+                    'product_type' => 'Domain',
                     'description' => "Domain Transfer: {$domain->name}{$domain->extension}",
                     'quantity' => 1,
                     'unit_price' => $transferPrice,
                     'amount' => $transferPrice,
-                ]);
+                    'custom_options' => [
+                        'type' => 'domain_transfer',
+                        'domain_id' => $domain->id,
+                    ],
+                ];
+
+                if ($domainOrder) {
+                    $invoiceItemData = array_merge(
+                        $invoiceItemData,
+                        app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder),
+                    );
+                }
+
+                InvoiceItem::create($invoiceItemData);
 
                 return $invoice;
             }, 2);

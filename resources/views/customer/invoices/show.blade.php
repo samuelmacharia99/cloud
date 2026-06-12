@@ -116,8 +116,8 @@
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
                                     </td>
                                     <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
-                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>
-                                    <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($item->amount, 2) }}</td>
+                                    <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$item->unit_price" /></td>
+                                    <td class="py-3 px-3 text-right text-sm font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$item->amount" /></td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -130,15 +130,15 @@
                 <div class="w-full md:w-80">
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-2">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Subtotal</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->subtotal, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->subtotal" /></span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-slate-200 dark:border-slate-700 mb-3">
                         <span class="text-sm text-slate-600 dark:text-slate-400">Tax</span>
-                        <span class="text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->tax, 2) }}</span>
+                        <span class="text-sm font-medium text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->tax" /></span>
                     </div>
                     <div class="flex justify-between py-3 bg-slate-50 dark:bg-slate-800 px-3 rounded">
                         <span class="text-base font-bold text-slate-900 dark:text-white">Total Due</span>
-                        <span class="text-lg font-bold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</span>
+                        <span class="text-lg font-bold text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$invoice->total" /></span>
                     </div>
                 </div>
             </div>
@@ -164,13 +164,13 @@
                     </div>
                 @else
                     @if(($appliedCredits ?? 0) > 0)
-                        <p class="text-sm text-emerald-700 dark:text-emerald-300 mb-3">Credits applied: KES {{ number_format($appliedCredits, 2) }}</p>
+                        <p class="text-sm text-emerald-700 dark:text-emerald-300 mb-3">Credits applied: <x-invoice-money :invoice="$invoice" :amount="$appliedCredits" /></p>
                     @endif
                     <a href="{{ route('customer.payment.select-method', $invoice) }}" class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
                         <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h10m4 0a1 1 0 11-2 0 1 1 0 012 0z"/>
                         </svg>
-                        Pay Now — KES {{ number_format($amountRemaining ?? $invoice->total, 2) }}
+                        Pay Now — <x-invoice-money :invoice="$invoice" :amount="$amountRemaining ?? $invoice->total" />
                     </a>
                 @endif
 
@@ -192,7 +192,7 @@
                             @foreach ($invoice->payments as $payment)
                                 <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded">
                                     <div>
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">Ksh {{ number_format($payment->amount, 0) }}</p>
+                                        <p class="text-sm font-medium text-slate-900 dark:text-white"><x-currency-formatter :amount="$payment->amount" :currency="$payment->currency ?? $invoice->displayCurrency()" /></p>
                                         <p class="text-xs text-slate-600 dark:text-slate-400">{{ $payment->payment_method?->label() }} • {{ $payment->created_at->format('M d, Y') }}</p>
                                     </div>
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium

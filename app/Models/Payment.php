@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
+use App\Services\Billing\InvoiceCurrencyService;
+use App\Services\CreditService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -66,23 +68,34 @@ class Payment extends Model
      */
     public function isOverpayment(): bool
     {
-        if (!$this->invoice) {
+        if (! $this->invoice) {
             return false;
         }
 
-        return $this->amount > $this->invoice->total;
+        $currencyService = app(InvoiceCurrencyService::class);
+        $paymentInInvoice = $currencyService->paymentAmountInInvoiceCurrency(
+            $this->invoice,
+            (float) $this->amount,
+            $this->currency ?? config('currency.base', 'KES')
+        );
+
+        return $paymentInInvoice > $this->invoice->getAmountRemaining() + 0.01;
     }
 
     /**
-     * Get overpayment amount
+     * Get overpayment amount in KES (account credit ledger).
      */
     public function getOverpaymentAmount(): float
     {
-        if (!$this->invoice || !$this->isOverpayment()) {
+        if (! $this->invoice || ! $this->isOverpayment()) {
             return 0;
         }
 
-        return $this->amount - $this->invoice->total;
+        return app(InvoiceCurrencyService::class)->paymentOverpaymentInKes(
+            $this->invoice,
+            (float) $this->amount,
+            $this->currency ?? config('currency.base', 'KES')
+        );
     }
 
     /**
@@ -90,11 +103,11 @@ class Payment extends Model
      */
     public function createCreditFromOverpayment(): ?Credit
     {
-        if (!$this->isOverpayment()) {
+        if (! $this->isOverpayment()) {
             return null;
         }
 
-        return \App\Services\CreditService::createFromOverpayment($this);
+        return CreditService::createFromOverpayment($this);
     }
 
     // Scopes
@@ -111,12 +124,14 @@ class Payment extends Model
     public function scopeByMethod($query, PaymentMethod|string $method)
     {
         $methodValue = $method instanceof PaymentMethod ? $method->value : $method;
+
         return $query->where('payment_method', $methodValue);
     }
 
     public function scopeByUser($query, User|int $user)
     {
         $userId = $user instanceof User ? $user->id : $user;
+
         return $query->where('user_id', $userId);
     }
 }

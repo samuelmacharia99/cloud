@@ -24,7 +24,7 @@ class ManualPaymentService implements PaymentGatewayInterface
                 'user_id' => $userId,
                 'user_name' => $user->name,
                 'amount' => $invoice->getAmountRemaining(),
-                'currency' => $customerData['currency'] ?? 'KES',
+                'currency' => $customerData['currency'] ?? $invoice->displayCurrency(),
             ]);
 
             // Create payment record with pending status
@@ -32,7 +32,7 @@ class ManualPaymentService implements PaymentGatewayInterface
                 'user_id' => $userId,
                 'invoice_id' => $invoice->id,
                 'amount' => $invoice->getAmountRemaining(),
-                'currency' => $customerData['currency'] ?? 'KES',
+                'currency' => $customerData['currency'] ?? $invoice->displayCurrency(),
                 'payment_method' => 'manual',
                 'transaction_reference' => 'manual-'.uniqid(),
                 'status' => 'pending',

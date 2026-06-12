@@ -6,6 +6,7 @@ use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\Billing\InvoiceCurrencyService;
 
 class ResellerInvoicePaymentService
 {
@@ -74,7 +75,14 @@ class ResellerInvoicePaymentService
         $remaining = $this->amountDue($invoice);
 
         if ($gatewayPayment) {
-            $remaining = max(0, round($remaining - (float) $gatewayPayment->amount, 2));
+            $paymentInInvoice = app(InvoiceCurrencyService::class)
+                ->paymentAmountInInvoiceCurrency(
+                    $invoice,
+                    (float) $gatewayPayment->amount,
+                    $gatewayPayment->currency ?? config('currency.base', 'KES')
+                );
+
+            $remaining = max(0, round($remaining - $paymentInInvoice, 2));
         }
 
         if ($remaining > 0) {

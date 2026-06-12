@@ -259,7 +259,7 @@
 
                             <div class="mt-3 p-3 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg border border-emerald-200 dark:border-emerald-700">
                                 <p class="text-sm text-emerald-900 dark:text-emerald-300">
-                                    ✓ <strong>Amount to Transfer:</strong> <span class="font-bold">Ksh {{ number_format($invoice->total, 0) }}</span>
+                                    ✓ <strong>Amount to Transfer:</strong> <span class="font-bold"><x-invoice-money :invoice="$invoice" :amount="$amountRemaining" /></span>
                                 </p>
                             </div>
                         </div>

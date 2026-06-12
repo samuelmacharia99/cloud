@@ -108,7 +108,26 @@ class Invoice extends Model
 
     public function getAmountPaid(): float
     {
-        return $this->payments()->where('status', 'completed')->sum('amount');
+        $currencyService = app(InvoiceCurrencyService::class);
+        $paid = 0.0;
+
+        $this->payments()
+            ->where('status', 'completed')
+            ->get()
+            ->each(function (Payment $payment) use ($currencyService, &$paid) {
+                $paid += $currencyService->paymentAmountInInvoiceCurrency(
+                    $this,
+                    (float) $payment->amount,
+                    $payment->currency ?? config('currency.base', 'KES')
+                );
+            });
+
+        return round($paid, 2);
+    }
+
+    public function isKesLedger(): bool
+    {
+        return app(InvoiceCurrencyService::class)->isKesLedgerInvoice($this);
     }
 
     public function getAmountRemaining(): float

@@ -6,6 +6,7 @@ use App\Models\Credit;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\Billing\InvoiceCurrencyService;
 use Illuminate\Database\Eloquent\Collection;
 
 class CreditService
@@ -21,7 +22,11 @@ class CreditService
             return null;
         }
 
-        $overpaidAmount = $payment->amount - $payment->invoice->total;
+        $overpaidAmount = app(InvoiceCurrencyService::class)->paymentOverpaymentInKes(
+            $payment->invoice,
+            (float) $payment->amount,
+            $payment->currency ?? config('currency.base', 'KES')
+        );
 
         if ($overpaidAmount <= 0) {
             return null;

@@ -91,4 +91,11 @@ return [
     */
     'mpesa_countries' => ['KE'],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Maximum age of exchange rates before billing is blocked (hours).
+    |--------------------------------------------------------------------------
+    */
+    'max_rate_age_hours' => (int) env('CURRENCY_MAX_RATE_AGE_HOURS', 48),
+
 ];

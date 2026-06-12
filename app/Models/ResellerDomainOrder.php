@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ResellerDomainOrderType;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,6 +19,7 @@ class ResellerDomainOrder extends Model
         'customer_invoice_id',
         'domain_name',
         'extension',
+        'order_type',
         'years',
         'wholesale_amount',
         'retail_amount',
@@ -34,6 +36,7 @@ class ResellerDomainOrder extends Model
     ];
 
     protected $casts = [
+        'order_type' => ResellerDomainOrderType::class,
         'wholesale_amount' => 'decimal:2',
         'retail_amount' => 'decimal:2',
         'queued_at' => 'datetime',
@@ -111,6 +114,21 @@ class ResellerDomainOrder extends Model
         return $this->reseller_id === null;
     }
 
+    public function isTransfer(): bool
+    {
+        return ($this->order_type ?? ResellerDomainOrderType::Registration) === ResellerDomainOrderType::Transfer;
+    }
+
+    public function isRegistration(): bool
+    {
+        return ! $this->isTransfer();
+    }
+
+    public function requiresCustomerPaymentBeforePush(): bool
+    {
+        return $this->customer_invoice_id !== null;
+    }
+
     public function canAdminPush(): bool
     {
         if ($this->status !== 'queued') {
@@ -121,7 +139,16 @@ class ResellerDomainOrder extends Model
             return $this->hasPaidCustomerInvoice();
         }
 
+        if ($this->requiresCustomerPaymentBeforePush()) {
+            return $this->hasPaidCustomerInvoice();
+        }
+
         return true;
+    }
+
+    public function canResellerPush(): bool
+    {
+        return $this->canAdminPush();
     }
 
     public function hasPaidCustomerInvoice(): bool

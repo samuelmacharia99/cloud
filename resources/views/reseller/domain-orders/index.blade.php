@@ -6,7 +6,7 @@
 <div class="space-y-6">
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Domain Orders</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Domains your customers registered or renewed — push queued orders to the platform when ready.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Customer domain registrations and transfers — auto-push to admin when your wallet has funds after the customer pays; otherwise push manually once funded.</p>
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
@@ -73,7 +73,16 @@
                         <tr class="group">
                             <td>
                                 <p class="font-semibold text-slate-900 dark:text-white font-mono">{{ $order->fullDomainName() }}</p>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ $order->years }} year(s)</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    @if($order->isTransfer())
+                                        Transfer
+                                    @else
+                                        {{ $order->years }} year(s)
+                                    @endif
+                                </p>
+                            </td>
+                            <td>
+                                <span class="text-sm text-slate-700 dark:text-slate-300">{{ $order->order_type?->label() ?? 'Registration' }}</span>
                             </td>
                             <td>
                                 @if ($order->customer)
@@ -97,6 +106,11 @@
                                 </span>
                                 @if($order->status === 'queued' && $order->expires_at)
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Expires {{ $order->expires_at->format('M d') }}</p>
+                                @endif
+                                @if($order->status === 'queued' && $order->requiresCustomerPaymentBeforePush() && ! $order->hasPaidCustomerInvoice())
+                                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Waiting for customer payment</p>
+                                @elseif($order->status === 'queued' && $order->hasPaidCustomerInvoice())
+                                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">Waiting for wallet funds or manual push</p>
                                 @endif
                             </td>
                             <td class="text-right whitespace-nowrap">

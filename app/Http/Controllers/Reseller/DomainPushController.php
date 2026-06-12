@@ -60,10 +60,10 @@ class DomainPushController extends Controller
         }
 
         try {
-            $this->domainPushService->pushOrder($order);
+            $result = $this->domainPushService->resellerPushOrder($order);
 
             return redirect()->route('reseller.domain-orders.index')
-                ->with('success', "Domain {$order->domain_name} pushed to admin successfully!");
+                ->with($result['success'] ? 'success' : 'error', $result['message']);
         } catch (\Exception $e) {
             return redirect()->route('reseller.domain-orders.index')
                 ->with('error', "Failed to push domain: {$e->getMessage()}");
@@ -80,10 +80,10 @@ class DomainPushController extends Controller
         }
 
         try {
-            $this->domainPushService->pushOrder($order);
+            $result = $this->domainPushService->resellerPushOrder($order);
 
             return redirect()->route('reseller.domain-orders.index')
-                ->with('success', "Domain {$order->domain_name} retry initiated!");
+                ->with($result['success'] ? 'success' : 'error', $result['message']);
         } catch (\Exception $e) {
             return redirect()->route('reseller.domain-orders.index')
                 ->with('error', "Failed to retry domain: {$e->getMessage()}");

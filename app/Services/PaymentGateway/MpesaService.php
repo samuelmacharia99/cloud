@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -91,7 +92,8 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $phone = $this->sanitizePhone($customerData['phone'] ?? '');
-            $chargeAmount = (float) ($customerData['charge_amount'] ?? $invoice->amountDue());
+            $settlement = app(InvoiceCurrencyService::class)->settlementAmount($invoice, 'KES');
+            $chargeAmount = (float) ($customerData['charge_amount'] ?? $settlement['amount']);
             $token = $this->getAccessToken();
 
             if (! $token) {

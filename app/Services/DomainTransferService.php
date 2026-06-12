@@ -34,6 +34,7 @@ class DomainTransferService
         // Create domain transfer record
         $domain = Domain::create([
             'user_id' => $user->id,
+            'reseller_id' => $user->reseller_id,
             'name' => $domainName,
             'extension' => $extension,
             'type' => 'transfer',

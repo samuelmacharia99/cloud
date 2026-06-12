@@ -134,6 +134,30 @@ class ResellerCustomerCatalogService
         return $resellerPricing ? (float) $resellerPricing->retail_price : null;
     }
 
+    public function domainTransferPrice(User $user, DomainExtension $extension): float
+    {
+        if (! $this->isResellerCustomer($user)) {
+            return (float) ($extension->transfer_price ?? 0);
+        }
+
+        $registrationRetail = $this->domainRegistrationPrice($user, $extension, 1);
+        $platformTransfer = (float) ($extension->transfer_price ?? 0);
+
+        if ($registrationRetail === null) {
+            return $platformTransfer;
+        }
+
+        $platformRegistration = (float) ($extension->getRetailPricing(1)?->price ?? $platformTransfer);
+
+        if ($platformRegistration <= 0) {
+            return $registrationRetail;
+        }
+
+        $markupRatio = $registrationRetail / $platformRegistration;
+
+        return round($platformTransfer * $markupRatio, 2);
+    }
+
     public function isPlatformCatalogRoute(string $routeName): bool
     {
         return in_array($routeName, [

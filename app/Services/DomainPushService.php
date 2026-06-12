@@ -61,6 +61,35 @@ class DomainPushService
             $this->notificationService->sendNewCustomerDomainOrderNotification($order);
             app(NotificationService::class)->notifyAdminResellerDomainOrder($order, 'customer_paid');
         }
+
+        $this->processStandaloneTransferItems($invoice);
+    }
+
+    public function processStandaloneTransferItems(Invoice $invoice): void
+    {
+        if (! $invoice->isPaid()) {
+            return;
+        }
+
+        $invoice->loadMissing('items');
+
+        foreach ($invoice->items as $item) {
+            if (($item->custom_options['type'] ?? null) !== 'domain_transfer') {
+                continue;
+            }
+
+            if (! empty($item->custom_options['domain_order_id'])) {
+                continue;
+            }
+
+            $domain = $item->domain_id ? Domain::find($item->domain_id) : null;
+
+            if (! $domain || ! $domain->isTransfer() || $domain->transfer_status !== 'pending') {
+                continue;
+            }
+
+            DomainTransferService::initiateTransfer($domain);
+        }
     }
 
     public function handlePaidResellerInvoice(Invoice $invoice): void
@@ -106,6 +135,10 @@ class DomainPushService
             return false;
         }
 
+        if ($order->requiresCustomerPaymentBeforePush() && ! $order->hasPaidCustomerInvoice()) {
+            return false;
+        }
+
         $reseller = $order->reseller;
         $wallet = $this->walletService->getOrCreate($reseller);
 
@@ -120,11 +153,56 @@ class DomainPushService
             'expires_at' => $order->expires_at ?? now()->addDays(10),
         ]);
 
-        if (! $order->customer_invoice_id) {
+        if ($order->hasPaidCustomerInvoice()) {
+            $this->notificationService->sendDomainQueuedNotification($order);
+        } elseif (! $order->customer_invoice_id) {
             $this->notificationService->sendDomainQueuedNotification($order);
         }
 
         return false;
+    }
+
+    /**
+     * @return array{success: bool, message: string}
+     */
+    public function resellerPushOrder(ResellerDomainOrder $order): array
+    {
+        $order->refresh();
+
+        if ($order->status !== 'queued') {
+            return [
+                'success' => false,
+                'message' => 'Only queued orders can be pushed.',
+            ];
+        }
+
+        if (! $order->canResellerPush()) {
+            return [
+                'success' => false,
+                'message' => 'Customer payment must be confirmed before this order can be pushed.',
+            ];
+        }
+
+        if ($order->hasPaidWholesaleInvoice()) {
+            $this->pushAfterWholesalePaidViaInvoice($order);
+
+            return [
+                'success' => true,
+                'message' => 'Order pushed using confirmed wholesale invoice payment.',
+            ];
+        }
+
+        if ($this->pushOrQueue($order)) {
+            return [
+                'success' => true,
+                'message' => 'Order pushed to admin using wallet funds.',
+            ];
+        }
+
+        return [
+            'success' => false,
+            'message' => 'Insufficient wallet balance. Top up your wallet and try again.',
+        ];
     }
 
     public function pushOrderUsingWallet(ResellerDomainOrder $order): void
@@ -132,10 +210,11 @@ class DomainPushService
         $this->db->transaction(function () use ($order) {
             $reseller = $order->reseller;
 
+            $actionLabel = $order->isTransfer() ? 'transfer' : 'registration';
             $transaction = $this->walletService->debit(
                 $reseller,
                 $order->wholesale_amount,
-                "Domain registration: {$order->domain_name}{$order->extension}",
+                "Domain {$actionLabel}: {$order->domain_name}{$order->extension}",
                 $order->id,
                 'ResellerDomainOrder'
             );
@@ -210,10 +289,11 @@ class DomainPushService
         bool $paidViaWallet,
     ): Order {
         $total = $domainOrder->wholesale_amount + $domainOrder->retail_amount;
+        $actionLabel = $domainOrder->isTransfer() ? 'transfer' : 'registration';
         $notes = match (true) {
-            $domainOrder->isPlatformOrder() => "Platform domain order {$domainOrder->fullDomainName()} for {$domainOrder->customer->name}",
-            $domainOrder->isSelfOrder() => "Domain order {$domainOrder->fullDomainName()} (reseller self-registration)",
-            default => "Domain order {$domainOrder->fullDomainName()} for customer {$domainOrder->customer->name}",
+            $domainOrder->isPlatformOrder() => "Platform domain {$actionLabel} {$domainOrder->fullDomainName()} for {$domainOrder->customer->name}",
+            $domainOrder->isSelfOrder() => "Domain {$actionLabel} {$domainOrder->fullDomainName()} (reseller self-order)",
+            default => "Domain {$actionLabel} {$domainOrder->fullDomainName()} for customer {$domainOrder->customer->name}",
         };
 
         $adminOrder = Order::create([
@@ -226,10 +306,11 @@ class DomainPushService
         ]);
 
         $invoiceNumber = 'PUSH-'.strtoupper(uniqid());
+        $fulfillmentLabel = $domainOrder->isTransfer() ? 'transfer' : 'register';
         $invoiceNotes = match (true) {
-            $domainOrder->isPlatformOrder() => "Platform customer paid {$total} KES — register {$domainOrder->fullDomainName()} at registrar",
-            $paidViaWallet => "Domain pushed to admin via wallet debit (wholesale: {$domainOrder->wholesale_amount} KES)",
-            default => "Domain pushed to admin after invoice payment (wholesale: {$domainOrder->wholesale_amount} KES)",
+            $domainOrder->isPlatformOrder() => "Platform customer paid {$total} KES — {$fulfillmentLabel} {$domainOrder->fullDomainName()} at registrar",
+            $paidViaWallet => "Domain {$actionLabel} pushed to admin via wallet debit (wholesale: {$domainOrder->wholesale_amount} KES)",
+            default => "Domain {$actionLabel} pushed to admin after invoice payment (wholesale: {$domainOrder->wholesale_amount} KES)",
         };
 
         $pushInvoice = Invoice::create([
@@ -249,12 +330,15 @@ class DomainPushService
             'invoice_id' => $pushInvoice->id,
             'product_id' => null,
             'product_type' => 'Domain',
-            'description' => "Wholesale: {$domainOrder->domain_name}{$domainOrder->extension} ({$domainOrder->years}yr)",
+            'description' => $domainOrder->isTransfer()
+                ? "Wholesale transfer: {$domainOrder->domain_name}{$domainOrder->extension}"
+                : "Wholesale: {$domainOrder->domain_name}{$domainOrder->extension} ({$domainOrder->years}yr)",
             'quantity' => 1,
             'unit_price' => $domainOrder->wholesale_amount,
             'amount' => $domainOrder->wholesale_amount,
             'custom_options' => [
                 'type' => 'wholesale_domain',
+                'order_type' => $domainOrder->order_type?->value ?? 'registration',
                 'domain_order_id' => $domainOrder->id,
                 'customer_id' => $domainOrder->customer_id,
                 'customer_invoice_id' => $domainOrder->customer_invoice_id,
@@ -281,6 +365,15 @@ class DomainPushService
 
     protected function markCustomerOrderSubmitted(ResellerDomainOrder $order): void
     {
+        if ($order->isTransfer()) {
+            $domain = Domain::find($order->domain_id);
+            if ($domain && $domain->isTransfer() && $domain->transfer_status === 'pending') {
+                DomainTransferService::initiateTransfer($domain);
+            }
+
+            return;
+        }
+
         $services = Service::query()
             ->where('user_id', $order->customer_id)
             ->where(function ($query) use ($order) {
@@ -384,6 +477,10 @@ class DomainPushService
 
         foreach ($queued as $order) {
             try {
+                if (! $order->canResellerPush()) {
+                    continue;
+                }
+
                 if ($this->pushOrQueue($order)) {
                     $pushed++;
                 }
@@ -400,7 +497,9 @@ class DomainPushService
         $this->db->transaction(function () use ($order, $registrar) {
             $domain = Domain::find($order->domain_id);
 
-            if ($domain) {
+            if ($domain && $order->isTransfer()) {
+                DomainTransferService::completeTransfer($domain, $registrar);
+            } elseif ($domain) {
                 $registrationDate = now();
                 $expiryDate = $domain->expires_at
                     ?? $registrationDate->copy()->addYears($order->years);
@@ -413,7 +512,7 @@ class DomainPushService
                 ]);
             }
 
-            if ($order->domain_id) {
+            if ($order->domain_id && $order->isRegistration()) {
                 Service::query()
                     ->where('user_id', $order->customer_id)
                     ->where(function ($query) use ($order) {
@@ -490,6 +589,10 @@ class DomainPushService
         $domain = $order->domain;
 
         if ($domain && $domain->status === 'pending') {
+            if ($domain->isTransfer() && ! in_array($domain->transfer_status, ['pending', 'initiated'], true)) {
+                return;
+            }
+
             $domain->delete();
         }
     }

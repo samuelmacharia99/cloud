@@ -77,6 +77,10 @@
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Order Details</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Order type</p>
+                <p class="font-semibold text-slate-900 dark:text-white">{{ $order->order_type?->label() ?? 'Registration' }}</p>
+            </div>
+            <div>
                 <p class="text-sm text-slate-600 dark:text-slate-400">Domain</p>
                 <p class="font-semibold text-slate-900 dark:text-white text-lg">{{ $order->domain_name }}.{{ $order->extension }}</p>
             </div>

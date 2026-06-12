@@ -25,7 +25,7 @@ class BankTransferPaymentService implements PaymentGatewayInterface
                 'user_id' => auth()->id(),
                 'invoice_id' => $invoice->id,
                 'amount' => $amount,
-                'currency' => $customerData['currency'] ?? 'KES',
+                'currency' => $customerData['currency'] ?? $invoice->displayCurrency(),
                 'payment_method' => 'bank_transfer',
                 'transaction_reference' => 'bank-'.uniqid(),
                 'status' => 'pending',

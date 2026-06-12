@@ -34,10 +34,15 @@ class DomainController extends Controller
     {
         $resellerId = auth()->id();
 
-        // Get customer IDs managed by this reseller (via services)
-        $customerIds = Service::where('reseller_id', $resellerId)
+        $managedCustomerIds = User::query()
+            ->where('reseller_id', $resellerId)
+            ->pluck('id');
+
+        $serviceCustomerIds = Service::where('reseller_id', $resellerId)
             ->distinct()
             ->pluck('user_id');
+
+        $customerIds = $managedCustomerIds->merge($serviceCustomerIds)->unique();
 
         // Get all domains: those owned by the reseller or their managed customers
         // Also include domains where reseller_id = $resellerId (manually added domains)
