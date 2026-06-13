@@ -78,6 +78,42 @@ class ResellerCatalogControllerTest extends TestCase
             ->assertDontSee('Container template / tech stack');
     }
 
+    public function test_reseller_adds_vps_from_admin_catalog_with_retail_prices(): void
+    {
+        $reseller = $this->reseller();
+
+        $product = Product::factory()->create([
+            'name' => 'Basic VPS',
+            'type' => 'vps',
+            'visible_to_resellers' => true,
+            'is_active' => true,
+            'wholesale_monthly_price' => 1500,
+            'wholesale_yearly_price' => 15000,
+            'monthly_price' => 2000,
+            'yearly_price' => 20000,
+        ]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.catalog.store'), [
+                'product_id' => $product->id,
+                'name' => $product->name,
+                'description' => $product->description,
+                'type' => 'vps',
+                'monthly_price' => 2499.99,
+                'yearly_price' => 24999.99,
+                'setup_fee' => 500,
+                'is_active' => true,
+            ])
+            ->assertRedirect(route('reseller.catalog.index'));
+
+        $listing = ResellerProduct::query()->where('reseller_id', $reseller->id)->first();
+        $this->assertNotNull($listing);
+        $this->assertSame($product->id, $listing->product_id);
+        $this->assertSame(2499.99, (float) $listing->monthly_price);
+        $this->assertSame(24999.99, (float) $listing->yearly_price);
+        $this->assertSame(500.0, (float) $listing->setup_fee);
+    }
+
     public function test_reseller_adds_container_package_from_admin_catalog_with_retail_price_only(): void
     {
         $reseller = $this->reseller();

@@ -85,7 +85,7 @@
                                 <label for="monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
                                     <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                    <input type="number" id="monthly_price" name="monthly_price" value="{{ old('monthly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                                    <input type="number" id="monthly_price" name="monthly_price" :disabled="mode !== 'admin'" value="{{ old('monthly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                                 </div>
                                 @error('monthly_price')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -97,7 +97,7 @@
                                 <label for="yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
                                     <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                    <input type="number" id="yearly_price" name="yearly_price" value="{{ old('yearly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                                    <input type="number" id="yearly_price" name="yearly_price" :disabled="mode !== 'admin'" value="{{ old('yearly_price') }}" placeholder="0.00" step="0.01" min="0" @input="calculateMargin()" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                                 </div>
                                 @error('yearly_price')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -109,7 +109,7 @@
                                 <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                                 <div class="relative">
                                     <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                    <input type="number" id="setup_fee" name="setup_fee" value="{{ old('setup_fee') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                                    <input type="number" id="setup_fee" name="setup_fee" :disabled="mode !== 'admin'" value="{{ old('setup_fee') }}" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                                 </div>
                                 @error('setup_fee')
                                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -120,7 +120,7 @@
                         <!-- Active Toggle -->
                         <div>
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" name="is_active" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('is_active') === '1' || old('is_active') === true || !old())>
+                                <input type="checkbox" name="is_active" value="1" :disabled="mode !== 'admin'" class="w-4 h-4 text-blue-600 rounded" @checked(old('is_active') === '1' || old('is_active') === true || !old())>
                                 <span class="text-sm text-slate-700 dark:text-slate-300">Active</span>
                             </label>
                         </div>
@@ -272,7 +272,7 @@
                             <label for="custom_monthly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Monthly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                <input type="number" id="custom_monthly_price" name="monthly_price" x-model.number="customMonthlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
+                                <input type="number" id="custom_monthly_price" name="monthly_price" :disabled="mode !== 'custom'" x-model.number="customMonthlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('monthly_price') border-red-500 @enderror">
                             </div>
                             @error('monthly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -284,7 +284,7 @@
                             <label for="custom_yearly_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Yearly Price <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                <input type="number" id="custom_yearly_price" name="yearly_price" x-model.number="customYearlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
+                                <input type="number" id="custom_yearly_price" name="yearly_price" :disabled="mode !== 'custom'" x-model.number="customYearlyPrice" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('yearly_price') border-red-500 @enderror">
                             </div>
                             @error('yearly_price')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -296,7 +296,7 @@
                             <label for="custom_setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                             <div class="relative">
                                 <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                                <input type="number" id="custom_setup_fee" name="setup_fee" x-model.number="customSetupFee" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
+                                <input type="number" id="custom_setup_fee" name="setup_fee" :disabled="mode !== 'custom'" x-model.number="customSetupFee" placeholder="0.00" step="0.01" min="0" class="w-full pl-12 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('setup_fee') border-red-500 @enderror">
                             </div>
                             @error('setup_fee')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -306,7 +306,7 @@
                         <!-- Active Toggle -->
                         <div>
                             <label class="flex items-center gap-3 cursor-pointer">
-                                <input type="checkbox" name="is_active" value="1" x-model="customIsActive" class="w-4 h-4 text-blue-600 rounded" checked>
+                                <input type="checkbox" name="is_active" value="1" :disabled="mode !== 'custom'" x-model="customIsActive" class="w-4 h-4 text-blue-600 rounded" checked>
                                 <span class="text-sm text-slate-700 dark:text-slate-300">Active</span>
                             </label>
                         </div>

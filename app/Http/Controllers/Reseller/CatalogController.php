@@ -160,8 +160,10 @@ class CatalogController extends Controller
             'monthly_price' => 'nullable|numeric|min:0',
             'yearly_price' => 'nullable|numeric|min:0',
             'setup_fee' => 'nullable|numeric|min:0',
-            'is_active' => 'boolean',
+            'is_active' => 'nullable|boolean',
         ]);
+
+        $validated['is_active'] = $request->boolean('is_active');
 
         if (($validated['type'] ?? '') === 'container_hosting') {
             if ($existing && ! filled($validated['product_id'] ?? null)) {
