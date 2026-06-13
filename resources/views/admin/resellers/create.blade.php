@@ -85,20 +85,103 @@
                 </div>
 
                 <!-- Right Column -->
-                <div class="space-y-6">
+                <div class="space-y-6" x-data="{
+                    showPassword: false,
+                    showConfirmPassword: false,
+                    generating: false,
+                    generatedHint: false,
+                    async generatePassword() {
+                        this.generating = true;
+                        try {
+                            const res = await fetch('{{ route('admin.customers.generate-password') }}?length=16', {
+                                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                            });
+                            if (!res.ok) throw new Error('Failed');
+                            const data = await res.json();
+                            if (!data.password) throw new Error('Empty');
+                            document.getElementById('password').value = data.password;
+                            document.getElementById('password_confirmation').value = data.password;
+                            this.showPassword = true;
+                            this.showConfirmPassword = true;
+                            this.generatedHint = true;
+                        } catch {
+                            alert('Failed to generate password. Please try again.');
+                        } finally {
+                            this.generating = false;
+                        }
+                    }
+                }">
                     <!-- Password -->
                     <div>
                         <label for="password" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Password</label>
-                        <input type="password" id="password" name="password" placeholder="Enter a secure password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror" required>
+                        <div class="relative">
+                            <input
+                                :type="showPassword ? 'text' : 'password'"
+                                id="password"
+                                name="password"
+                                placeholder="Enter a secure password"
+                                class="w-full px-4 py-2 pr-20 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('password') border-red-500 @enderror"
+                                required>
+                            <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                                <button
+                                    type="button"
+                                    @click="generatePassword()"
+                                    :disabled="generating"
+                                    class="p-1.5 text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-50 transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"
+                                    title="Generate password"
+                                    aria-label="Generate password">
+                                    <svg class="w-4 h-4" :class="{ 'animate-spin': generating }" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    @click="showPassword = !showPassword"
+                                    class="p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"
+                                    :title="showPassword ? 'Hide password' : 'Show password'"
+                                    :aria-label="showPassword ? 'Hide password' : 'Show password'">
+                                    <svg x-show="!showPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                    </svg>
+                                    <svg x-show="showPassword" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-4.753 4.753m4.753-4.753L3.596 3.596m16.807 16.807L6.404 6.404m9.596 9.596a3 3 0 10-4.242-4.242m4.242 4.242L9.172 9.172"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
                         @error('password')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
+                        <p x-show="generatedHint" x-cloak class="mt-1 text-xs text-emerald-600 dark:text-emerald-400">Password generated — copy it before submitting.</p>
                     </div>
 
                     <!-- Confirm Password -->
                     <div>
                         <label for="password_confirmation" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Confirm Password</label>
-                        <input type="password" id="password_confirmation" name="password_confirmation" placeholder="Confirm password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm" required>
+                        <div class="relative">
+                            <input
+                                :type="showConfirmPassword ? 'text' : 'password'"
+                                id="password_confirmation"
+                                name="password_confirmation"
+                                placeholder="Confirm password"
+                                class="w-full px-4 py-2 pr-10 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm"
+                                required>
+                            <button
+                                type="button"
+                                @click="showConfirmPassword = !showConfirmPassword"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition rounded-md hover:bg-slate-100 dark:hover:bg-slate-700"
+                                :title="showConfirmPassword ? 'Hide password' : 'Show password'"
+                                :aria-label="showConfirmPassword ? 'Hide password' : 'Show password'">
+                                <svg x-show="!showConfirmPassword" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                <svg x-show="showConfirmPassword" x-cloak class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-4.753 4.753m4.753-4.753L3.596 3.596m16.807 16.807L6.404 6.404m9.596 9.596a3 3 0 10-4.242-4.242m4.242 4.242L9.172 9.172"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Reseller Package Section Header -->
