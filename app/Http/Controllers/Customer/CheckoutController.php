@@ -25,6 +25,7 @@ use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
+use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\UserCurrencyService;
 use Illuminate\Auth\Events\Registered;
@@ -95,8 +96,9 @@ class CheckoutController extends Controller
                 $item['name'] = $product->name;
                 $item['description'] = $product->description ?? $product->name;
                 $item['type'] = $product->type;
-                $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
-                $item['amount'] = $item['unit_price'];
+                $pricing = $this->resolveCartItemPricing($product, $item);
+                $item['unit_price'] = $pricing['unit_price'];
+                $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
 
                 // Load container template if applicable
                 if ($product->type === 'container_hosting' && $product->containerTemplate) {
@@ -215,9 +217,9 @@ class CheckoutController extends Controller
                             continue;
                         }
 
-                        $price = $this->getProductPrice($product, $item['billing_cycle']);
-                        $item['unit_price'] = $price;
-                        $item['amount'] = $price;
+                        $pricing = $this->resolveCartItemPricing($product, $item);
+                        $item['unit_price'] = $pricing['unit_price'];
+                        $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
                     } elseif ($item['type'] === 'reseller_product') {
                         $prepared = $this->prepareResellerProductCartItem($item);
                         if ($prepared === null) {
@@ -358,6 +360,15 @@ class CheckoutController extends Controller
                             }
                             if (! empty($item['ip_count'])) {
                                 $serviceMeta['ip_count'] = (int) $item['ip_count'];
+                            }
+                            if (! empty($item['location_key'])) {
+                                $serviceMeta['location_key'] = $item['location_key'];
+                            }
+                            if (! empty($item['location_name'])) {
+                                $serviceMeta['location_name'] = $item['location_name'];
+                            }
+                            if (! empty($item['location_city'])) {
+                                $serviceMeta['location_city'] = $item['location_city'];
                             }
                         }
 
@@ -522,6 +533,22 @@ class CheckoutController extends Controller
     }
 
     /**
+     * @param  array<string, mixed>  $item
+     * @return array{unit_price: float, setup_fee: float}
+     */
+    private function resolveCartItemPricing(Product $product, array $item, ?ResellerProduct $listing = null): array
+    {
+        if (Product::isServerType($product->type)) {
+            return app(ServerProductConfigService::class)->priceForCartItem($product, $item, $listing);
+        }
+
+        return [
+            'unit_price' => $this->getProductPrice($product, $item['billing_cycle']),
+            'setup_fee' => (float) ($listing?->setup_fee ?? $product->setup_fee ?? 0),
+        ];
+    }
+
+    /**
      * Get product price based on billing cycle
      */
     private function getProductPrice(Product $product, string $billingCycle): float
@@ -563,8 +590,9 @@ class CheckoutController extends Controller
         $item['reseller_product_id'] = $resellerProduct->id;
         $item['name'] = $resellerProduct->name;
         $item['description'] = $resellerProduct->description ?? $resellerProduct->name;
-        $item['unit_price'] = $unitPrice;
-        $item['amount'] = $unitPrice + (float) ($resellerProduct->setup_fee ?? 0);
+        $pricing = $this->resolveCartItemPricing($product, $item, $resellerProduct);
+        $item['unit_price'] = $pricing['unit_price'];
+        $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
 
         if ($product->type === 'container_hosting' && $product->containerTemplate) {
             $item['container_template'] = $product->containerTemplate;
@@ -718,8 +746,9 @@ class CheckoutController extends Controller
                 }
 
                 $item['name'] = $product->name;
-                $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
-                $item['amount'] = $item['unit_price'];
+                $pricing = $this->resolveCartItemPricing($product, $item);
+                $item['unit_price'] = $pricing['unit_price'];
+                $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
             } elseif ($item['type'] === 'reseller_product') {
                 $prepared = $this->prepareResellerProductCartItem($item);
                 if ($prepared === null) {
@@ -861,9 +890,9 @@ class CheckoutController extends Controller
                             continue;
                         }
 
-                        $price = $this->getProductPrice($product, $item['billing_cycle']);
-                        $item['unit_price'] = $price;
-                        $item['amount'] = $price;
+                        $pricing = $this->resolveCartItemPricing($product, $item);
+                        $item['unit_price'] = $pricing['unit_price'];
+                        $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
                     } elseif ($item['type'] === 'reseller_product') {
                         $prepared = $this->prepareResellerProductCartItem($item);
                         if ($prepared === null) {
@@ -1004,6 +1033,15 @@ class CheckoutController extends Controller
                             }
                             if (! empty($item['ip_count'])) {
                                 $serviceMeta['ip_count'] = (int) $item['ip_count'];
+                            }
+                            if (! empty($item['location_key'])) {
+                                $serviceMeta['location_key'] = $item['location_key'];
+                            }
+                            if (! empty($item['location_name'])) {
+                                $serviceMeta['location_name'] = $item['location_name'];
+                            }
+                            if (! empty($item['location_city'])) {
+                                $serviceMeta['location_city'] = $item['location_city'];
                             }
                         }
 

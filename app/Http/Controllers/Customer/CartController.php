@@ -10,6 +10,7 @@ use App\Services\DomainAvailabilityService;
 use App\Services\DomainInputParser;
 use App\Services\NodeNameserverService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use Exception;
 use Illuminate\Http\JsonResponse;
@@ -45,8 +46,9 @@ class CartController extends Controller
                 if ($product) {
                     $item['name'] = $product->name;
                     $item['description'] = $product->description ?? $product->name;
-                    $item['unit_price'] = $this->getProductPrice($product, $item['billing_cycle']);
-                    $item['amount'] = $item['unit_price'];
+                    $pricing = $this->resolveCartItemPricing($product, $item);
+                    $item['unit_price'] = $pricing['unit_price'];
+                    $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
                     $hasSharedHosting = $hasSharedHosting || $product->type === 'shared_hosting';
                 } else {
                     continue; // Skip if product not found
@@ -57,8 +59,12 @@ class CartController extends Controller
                     && (! $catalogService->isResellerCustomer($user) || $resellerProduct->reseller_id === $user->reseller_id)) {
                     $item['name'] = $resellerProduct->name;
                     $item['description'] = $resellerProduct->description ?? $resellerProduct->name;
-                    $item['unit_price'] = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
-                    $item['amount'] = $item['unit_price'] + (float) ($resellerProduct->setup_fee ?? 0);
+                    $product = $resellerProduct->adminProduct;
+                    $pricing = $product
+                        ? $this->resolveCartItemPricing($product, $item, $resellerProduct)
+                        : ['unit_price' => $resellerProduct->priceForBillingCycle($item['billing_cycle']), 'setup_fee' => (float) ($resellerProduct->setup_fee ?? 0)];
+                    $item['unit_price'] = $pricing['unit_price'];
+                    $item['amount'] = $pricing['unit_price'] + $pricing['setup_fee'];
                     $item['product_id'] = $resellerProduct->product_id;
                     $hasSharedHosting = $hasSharedHosting || ($resellerProduct->adminProduct?->type === 'shared_hosting');
                 } else {
@@ -352,6 +358,22 @@ class CartController extends Controller
                 'available' => false,
             ], 500);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{unit_price: float, setup_fee: float}
+     */
+    private function resolveCartItemPricing(Product $product, array $item, ?ResellerProduct $listing = null): array
+    {
+        if (Product::isServerType($product->type)) {
+            return app(ServerProductConfigService::class)->priceForCartItem($product, $item, $listing);
+        }
+
+        return [
+            'unit_price' => $this->getProductPrice($product, $item['billing_cycle']),
+            'setup_fee' => (float) ($listing?->setup_fee ?? $product->setup_fee ?? 0),
+        ];
     }
 
     /**

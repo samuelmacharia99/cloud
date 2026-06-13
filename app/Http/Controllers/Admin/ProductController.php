@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Services\ServerProductConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -159,6 +160,34 @@ class ProductController extends Controller
             return $rules;
         }
 
+        if (in_array($type, ['vps', 'dedicated_server'], true)) {
+            $rules['resource_limits'] = 'nullable|array';
+            $rules['resource_limits.cpu_cores'] = 'nullable|integer|min:1';
+            $rules['resource_limits.ram_gb'] = 'nullable|integer|min:1';
+            $rules['resource_limits.storage_gb'] = 'nullable|integer|min:1';
+            $rules['resource_limits.storage_type'] = 'nullable|string|max:50';
+            $rules['resource_limits.raid'] = 'nullable|string|max:100';
+            $rules['resource_limits.bandwidth_tb'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.included_ips'] = 'nullable|integer|min:1|max:'.config('server_options.max_ip_count', 8);
+            $rules['resource_limits.money_back_days'] = 'nullable|integer|min:0';
+            $rules['resource_limits.managed'] = 'nullable|boolean';
+            $rules['resource_limits.locations'] = 'nullable|array';
+            $rules['resource_limits.locations.*.name'] = 'required_with:resource_limits.locations|string|max:255';
+            $rules['resource_limits.locations.*.key'] = 'nullable|string|max:100';
+            $rules['resource_limits.locations.*.city'] = 'nullable|string|max:255';
+            $rules['resource_limits.locations.*.monthly_price'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.yearly_price'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.wholesale_monthly_price'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.wholesale_yearly_price'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.setup_fee'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.ip_tiers'] = 'nullable|array';
+            $rules['resource_limits.locations.*.ip_tiers.*.ips'] = 'nullable|integer|min:1';
+            $rules['resource_limits.locations.*.ip_tiers.*.monthly_addon'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.ip_tiers.*.setup_addon'] = 'nullable|numeric|min:0';
+
+            return $rules;
+        }
+
         $resourceLimits = request()->input('resource_limits');
         $rules['resource_limits'] = ($resourceLimits !== null && ! is_array($resourceLimits))
             ? 'nullable|json'
@@ -188,6 +217,23 @@ class ProductController extends Controller
             $validated['wholesale_yearly_price'] = null;
             $validated['direct_admin_package_id'] = null;
             $validated['resource_limits'] = $this->normalizeContainerResourceLimits($validated['resource_limits'] ?? null);
+
+            return $validated;
+        }
+
+        if (in_array($type, ['vps', 'dedicated_server'], true)) {
+            $validated['direct_admin_package_id'] = null;
+            $validated['provisioning_driver_key'] = null;
+
+            $service = app(ServerProductConfigService::class);
+            $config = $service->normalizeFromRequest($validated['resource_limits'] ?? [], $type);
+            $validated['resource_limits'] = $config;
+
+            foreach ($service->syncProductPricesFromConfig($config) as $field => $value) {
+                if ($value !== null) {
+                    $validated[$field] = $value;
+                }
+            }
 
             return $validated;
         }

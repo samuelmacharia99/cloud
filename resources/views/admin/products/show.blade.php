@@ -170,7 +170,7 @@
 
         @if ($product->resource_limits)
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Resource Limits</h3>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">{{ in_array($product->type, ['vps', 'dedicated_server'], true) ? 'Server Configuration' : 'Resource Limits' }}</h3>
                 @if ($product->type === 'container_hosting')
                     <dl class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
@@ -186,6 +186,48 @@
                             <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['disk'] ?? '—' }}</dd>
                         </div>
                     </dl>
+                @elseif (in_array($product->type, ['vps', 'dedicated_server'], true))
+                    @php
+                        $configService = app(\App\Services\ServerProductConfigService::class);
+                        $specLines = $configService->specLines($product);
+                        $locations = $configService->locations($product);
+                    @endphp
+                    @if ($specLines !== [])
+                        <ul class="space-y-1 mb-6">
+                            @foreach ($specLines as $line)
+                                <li class="text-sm text-slate-700 dark:text-slate-300">• {{ $line }}</li>
+                            @endforeach
+                        </ul>
+                    @endif
+                    @if ($locations !== [])
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-sm">
+                                <thead>
+                                    <tr class="text-left text-xs uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                                        <th class="py-2 pr-4">Location</th>
+                                        <th class="py-2 pr-4">Monthly</th>
+                                        <th class="py-2 pr-4">Yearly</th>
+                                        <th class="py-2 pr-4">Setup</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($locations as $location)
+                                        <tr class="border-b border-slate-100 dark:border-slate-800">
+                                            <td class="py-2 pr-4 text-slate-900 dark:text-white">
+                                                {{ $location['name'] ?? '—' }}
+                                                @if (! empty($location['city']))
+                                                    <span class="text-slate-500">({{ $location['city'] }})</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-2 pr-4">{{ number_format((float) ($location['monthly_price'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4">{{ number_format((float) ($location['yearly_price'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4">{{ number_format((float) ($location['setup_fee'] ?? 0), 2) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
                 @else
                     <pre class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg text-xs text-slate-900 dark:text-slate-100 overflow-x-auto">{{ json_encode($product->resource_limits, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
                 @endif

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ServerProductConfigService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 
@@ -88,12 +89,14 @@ class ServerController extends Controller
             'product_id' => 'required|integer|exists:products,id',
             'billing_cycle' => 'required|in:monthly,annual',
             'operating_system' => 'required|string|in:'.$validOs,
+            'location_key' => 'nullable|string|max:100',
             'ip_count' => 'required|integer|min:1|max:'.config('server_options.max_ip_count', 8),
         ]);
 
         $user = auth()->user();
         $catalogService = app(ResellerCustomerCatalogService::class);
         $product = Product::findOrFail($validated['product_id']);
+        $configService = app(ServerProductConfigService::class);
 
         if (! $product->is_active) {
             return back()->withErrors(['error' => 'This product is no longer available.']);
@@ -109,39 +112,60 @@ class ServerController extends Controller
                 ->with('error', 'This server plan is not available for ordering.');
         }
 
+        $locations = $configService->locations($product);
+        $locationKey = $validated['location_key'] ?? ($locations[0]['key'] ?? null);
+        if ($locationKey === null || ! $configService->location($product, $locationKey)) {
+            return back()->withErrors(['error' => 'Please select a valid datacenter location.']);
+        }
+
+        try {
+            $configService->resolveOrderPricing(
+                $product,
+                $listing,
+                $locationKey,
+                (int) $validated['ip_count'],
+                $validated['billing_cycle'],
+            );
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
         if ($validated['billing_cycle'] === 'annual') {
             $yearlyAvailable = $catalogService->isResellerCustomer($user)
                 ? (float) ($listing?->yearly_price ?? 0) > 0
-                : (bool) $product->yearly_price;
+                : (float) ($configService->location($product, $locationKey)['yearly_price'] ?? $product->yearly_price ?? 0) > 0;
 
             if (! $yearlyAvailable) {
                 return back()->withErrors(['error' => 'Annual billing is not available for this product.']);
             }
         }
 
+        $location = $configService->location($product, $locationKey);
         $cart = session('cart', []);
         $cartKey = uniqid();
 
+        $serverMeta = [
+            'billing_cycle' => $validated['billing_cycle'],
+            'operating_system' => $validated['operating_system'],
+            'location_key' => $locationKey,
+            'location_name' => $location['name'] ?? null,
+            'location_city' => $location['city'] ?? null,
+            'ip_count' => (int) $validated['ip_count'],
+            'added_at' => now()->toIso8601String(),
+        ];
+
         if ($listing) {
-            $cart[$cartKey] = [
+            $cart[$cartKey] = array_merge([
                 'type' => 'reseller_product',
                 'reseller_product_id' => $listing->id,
                 'product_id' => $listing->product_id,
                 'reseller_id' => $listing->reseller_id,
-                'billing_cycle' => $validated['billing_cycle'],
-                'operating_system' => $validated['operating_system'],
-                'ip_count' => (int) $validated['ip_count'],
-                'added_at' => now()->toIso8601String(),
-            ];
+            ], $serverMeta);
         } else {
-            $cart[$cartKey] = [
+            $cart[$cartKey] = array_merge([
                 'type' => 'product',
                 'product_id' => $product->id,
-                'billing_cycle' => $validated['billing_cycle'],
-                'operating_system' => $validated['operating_system'],
-                'ip_count' => (int) $validated['ip_count'],
-                'added_at' => now()->toIso8601String(),
-            ];
+            ], $serverMeta);
         }
 
         session(['cart' => $cart]);

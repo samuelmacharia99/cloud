@@ -1,8 +1,13 @@
 @php
-    $limits = $service->product->resource_limits ?? [];
+    use App\Services\ServerProductConfigService;
+
+    $configService = app(ServerProductConfigService::class);
+    $specLines = $service->product ? $configService->specLines($service->product) : [];
     $ipAddress = $service->service_meta['ip_address'] ?? $service->service_meta['ip'] ?? null;
     $chosenOs = $service->service_meta['operating_system'] ?? null;
     $chosenIps = $service->service_meta['ip_count'] ?? null;
+    $locationName = $service->service_meta['location_name'] ?? null;
+    $locationCity = $service->service_meta['location_city'] ?? null;
     $osLabels = config('server_options.linux_distributions', []);
     $isVps = $service->product->type === 'vps';
 @endphp
@@ -25,11 +30,13 @@
     <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-3">{{ $service->product->name }}</h3>
 
     <div class="flex flex-wrap gap-2 mb-4 min-h-[1.5rem]">
-        @if($limits['specs'] ?? null)
-            <span class="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded font-mono">{{ $limits['specs'] }}</span>
-        @endif
-        @if($limits['location'] ?? null)
-            <span class="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">{{ $limits['location'] }}</span>
+        @foreach (array_slice($specLines, 0, 3) as $line)
+            <span class="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">{{ $line }}</span>
+        @endforeach
+        @if ($locationName)
+            <span class="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">
+                {{ $locationName }}{{ $locationCity ? ', '.$locationCity : '' }}
+            </span>
         @endif
         @if($chosenOs)
             <span class="px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded">{{ $osLabels[$chosenOs] ?? $chosenOs }}</span>

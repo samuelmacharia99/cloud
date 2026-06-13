@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -62,18 +63,39 @@ class ServerController extends Controller
             'product_id' => 'required|integer|exists:products,id',
             'billing_cycle' => 'required|in:monthly,annual',
             'operating_system' => 'required|string|in:'.$validOs,
+            'location_key' => 'nullable|string|max:100',
             'ip_count' => 'required|integer|min:1|max:'.config('server_options.max_ip_count', 8),
         ]);
 
         $product = Product::findOrFail($validated['product_id']);
         $reseller = auth()->user();
+        $configService = app(ServerProductConfigService::class);
 
         abort_if(! $product->is_active, 422, 'Product is not available.');
         abort_if(! Product::isServerType($product->type), 422, 'Invalid product type.');
         abort_if(! $product->visible_to_resellers, 403, 'Product not available for resellers.');
 
-        $price = $this->getWholesalePrice($product, $validated['billing_cycle']);
+        $locations = $configService->locations($product);
+        $locationKey = $validated['location_key'] ?? ($locations[0]['key'] ?? null);
+        abort_if($locationKey === null || ! $configService->location($product, $locationKey), 422, 'Invalid datacenter location.');
+
+        try {
+            $pricing = $configService->resolveOrderPricing(
+                $product,
+                null,
+                $locationKey,
+                (int) $validated['ip_count'],
+                $validated['billing_cycle'],
+                useWholesale: true,
+            );
+        } catch (\InvalidArgumentException $e) {
+            abort(422, $e->getMessage());
+        }
+
+        $price = $pricing['unit_price'];
         abort_if($price <= 0, 422, 'No wholesale price set for this product and billing cycle.');
+
+        $location = $configService->location($product, $locationKey);
 
         $taxBreakdown = TaxService::calculateResellerWholesale($price);
         $tax = $taxBreakdown['tax'];
@@ -110,6 +132,9 @@ class ServerController extends Controller
                 'service_meta' => [
                     'operating_system' => $validated['operating_system'],
                     'ip_count' => (int) $validated['ip_count'],
+                    'location_key' => $locationKey,
+                    'location_name' => $location['name'] ?? null,
+                    'location_city' => $location['city'] ?? null,
                 ],
             ]);
 
@@ -129,15 +154,6 @@ class ServerController extends Controller
         return redirect()
             ->route('reseller.payment.select-method', $invoice)
             ->with('success', 'Order placed. Complete payment to provision your server.');
-    }
-
-    private function getWholesalePrice(Product $product, string $cycle): float
-    {
-        return match ($cycle) {
-            'monthly' => (float) ($product->wholesale_monthly_price ?? 0),
-            'annual' => (float) ($product->wholesale_yearly_price ?? ($product->wholesale_monthly_price * 12) ?? 0),
-            default => 0,
-        };
     }
 
     private function getNextDueDate(string $cycle): string
