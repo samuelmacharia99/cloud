@@ -47,7 +47,7 @@ class SettingController extends Controller
             'user' => $user,
             'mpesaSettings' => $this->settingsService->getMpesaSettings($user),
             'smsSettings' => $this->settingsService->getSmsSettings($user),
-            'smtpSettings' => $this->settingsService->getSmtpSettings($user),
+            'smtpSettings' => $this->settingsService->getSmtpSettingsForDisplay($user),
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
             'nameserverSettings' => $this->nameserverService->getSettings($user),
             'platformNameservers' => $this->nameserverService->platformDefaults(),
@@ -182,7 +182,9 @@ class SettingController extends Controller
             $user = auth()->user();
             $this->settingsService->updateSmtpSettings($user, $request->validated());
 
-            return back()->with('success', 'SMTP settings updated successfully.');
+            return $this->redirectToSettingsTab('email', [
+                'success' => 'SMTP settings updated successfully.',
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to update SMTP settings', [
                 'error' => $e->getMessage(),
@@ -190,7 +192,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to update SMTP settings. Please try again.');
+            return $this->redirectToSettingsTab('email', [
+                'error' => 'Failed to update SMTP settings. Please try again.',
+            ]);
         }
     }
 
@@ -200,8 +204,22 @@ class SettingController extends Controller
             $user = auth()->user();
             $smtpSettings = $this->settingsService->getSmtpSettings($user);
 
-            if (empty($smtpSettings['host'])) {
-                return back()->with('error', 'SMTP settings are not configured. Please configure SMTP settings first.');
+            if (empty($smtpSettings['host']) || empty($smtpSettings['from_address'])) {
+                return $this->redirectToSettingsTab('email', [
+                    'error' => 'Save your SMTP host and from address before sending a test email.',
+                ]);
+            }
+
+            if (empty($smtpSettings['password'])) {
+                return $this->redirectToSettingsTab('email', [
+                    'error' => 'Save your SMTP password before sending a test email.',
+                ]);
+            }
+
+            if (! $this->resellerMail->resellerSmtpEnabled($user)) {
+                return $this->redirectToSettingsTab('email', [
+                    'error' => 'Enable SMTP and save your settings before sending a test email.',
+                ]);
             }
 
             Log::info('SMTP test connection initiated', [
@@ -211,7 +229,13 @@ class SettingController extends Controller
 
             $this->resellerMail->sendTest($user, $request->input('test_email'));
 
-            return back()->with('success', 'Test email sent to '.$request->input('test_email'));
+            return $this->redirectToSettingsTab('email', [
+                'success' => 'Test email sent to '.$request->input('test_email'),
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->redirectToSettingsTab('email', [
+                'error' => $e->getMessage(),
+            ]);
         } catch (\Exception $e) {
             Log::error('Failed to test SMTP', [
                 'error' => $e->getMessage(),
@@ -219,7 +243,9 @@ class SettingController extends Controller
                 'exception' => $e,
             ]);
 
-            return back()->with('error', 'Failed to test SMTP. Please try again.');
+            return $this->redirectToSettingsTab('email', [
+                'error' => 'Failed to send test email. Check your SMTP credentials and try again.',
+            ]);
         }
     }
 

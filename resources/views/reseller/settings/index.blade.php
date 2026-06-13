@@ -302,6 +302,13 @@
                     </div>
 
                     <div class="p-6 space-y-6">
+                        <div class="p-4 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30">
+                            <p class="text-sm text-purple-900 dark:text-purple-200">
+                                Configure SMTP to send email to <strong>your customers</strong> — invoices, welcome messages, login codes, tickets, and service notifications.
+                                Reseller-owned customers never use the platform mail server; you must enable SMTP here for those emails to send.
+                            </p>
+                        </div>
+
                         <form action="{{ route('reseller.settings.smtp.update') }}" method="POST" class="space-y-6">
                             @csrf
 
@@ -347,9 +354,13 @@
                                 <!-- SMTP Password -->
                                 <div>
                                     <label for="smtp_password" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
+                                    @if($smtpSettings['password_configured'] ?? false)
+                                        <p class="text-xs text-slate-500 dark:text-slate-400 mb-2">A password is saved. Leave blank to keep the existing password.</p>
+                                    @endif
                                     <input type="password" id="smtp_password" name="smtp_password"
-                                        value="{{ old('smtp_password', $smtpSettings['password'] ?? '') }}"
-                                        placeholder="Your password" required
+                                        value="{{ old('smtp_password') }}"
+                                        placeholder="{{ ($smtpSettings['password_configured'] ?? false) ? 'Leave blank to keep existing' : 'Your SMTP password' }}"
+                                        autocomplete="new-password"
                                         class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">
                                     @error('smtp_password')
                                         <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
@@ -362,8 +373,9 @@
                                 <label for="smtp_encryption" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Encryption</label>
                                 <select id="smtp_encryption" name="smtp_encryption" required
                                     class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-slate-900 dark:text-white text-sm">
-                                    <option value="tls" {{ old('smtp_encryption', $smtpSettings['encryption'] ?? 'tls') === 'tls' ? 'selected' : '' }}>TLS</option>
-                                    <option value="ssl" {{ old('smtp_encryption', $smtpSettings['encryption'] ?? 'tls') === 'ssl' ? 'selected' : '' }}>SSL</option>
+                                    <option value="tls" {{ old('smtp_encryption', $smtpSettings['encryption'] ?? 'tls') === 'tls' ? 'selected' : '' }}>TLS (STARTTLS — port 587)</option>
+                                    <option value="ssl" {{ old('smtp_encryption', $smtpSettings['encryption'] ?? 'tls') === 'ssl' ? 'selected' : '' }}>SSL (port 465)</option>
+                                    <option value="" {{ old('smtp_encryption', $smtpSettings['encryption'] ?? 'tls') === '' ? 'selected' : '' }}>None (plain — port 25)</option>
                                 </select>
                                 @error('smtp_encryption')
                                     <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
@@ -401,10 +413,11 @@
                                 <label class="flex items-center gap-3 cursor-pointer">
                                     <input type="hidden" name="smtp_enabled" value="0">
                                     <input type="checkbox" name="smtp_enabled" value="1"
-                                        {{ old('smtp_enabled') || (!old() && $smtpSettings['enabled'] ?? false) ? 'checked' : '' }}
+                                        {{ filter_var(old('smtp_enabled', $smtpSettings['enabled'] ?? false), FILTER_VALIDATE_BOOLEAN) ? 'checked' : '' }}
                                         class="w-4 h-4 text-purple-600 rounded">
-                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMTP</span>
+                                    <span class="text-sm font-medium text-slate-700 dark:text-slate-300">Enable SMTP for customer emails</span>
                                 </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Must be enabled and saved before customer notifications or test emails will send.</p>
                             </div>
 
                             <div class="flex gap-3 pt-2">
@@ -416,7 +429,8 @@
 
                         <!-- Test SMTP -->
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
-                            <h4 class="font-medium text-slate-900 dark:text-white mb-4">Test SMTP Connection</h4>
+                            <h4 class="font-medium text-slate-900 dark:text-white mb-2">Test SMTP Connection</h4>
+                            <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Save your settings with <strong>Enable SMTP</strong> checked first, then send a test message.</p>
                             <form action="{{ route('reseller.settings.smtp.test') }}" method="POST" class="flex flex-col md:flex-row gap-3">
                                 @csrf
                                 <input type="email" name="test_email" placeholder="Test email address"

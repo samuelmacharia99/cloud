@@ -96,7 +96,7 @@ class ResellerMailService
                 'transport' => 'smtp',
                 'host' => $smtp['host'],
                 'port' => (int) ($smtp['port'] ?? 587),
-                'encryption' => $smtp['encryption'] ?? 'tls',
+                'encryption' => ($smtp['encryption'] ?? 'tls') === '' ? null : ($smtp['encryption'] ?? 'tls'),
                 'username' => $smtp['username'] ?? null,
                 'password' => $smtp['password'] ?? null,
                 'timeout' => null,

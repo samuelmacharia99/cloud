@@ -105,18 +105,44 @@ class ResellerSettingsService
         ]);
     }
 
+    /**
+     * SMTP settings safe for the settings form (password never exposed).
+     *
+     * @return array<string, mixed>
+     */
+    public function getSmtpSettingsForDisplay(User $user): array
+    {
+        $smtp = $this->getSmtpSettings($user);
+        unset($smtp['password']);
+        $smtp['password_configured'] = $this->smtpPasswordConfigured($user);
+
+        return $smtp;
+    }
+
+    public function smtpPasswordConfigured(User $user): bool
+    {
+        return ($user->settings['smtp']['password'] ?? '') !== '';
+    }
+
     public function updateSmtpSettings(User $user, array $data): void
     {
+        $existing = $this->getSmtpSettings($user);
+        $password = trim((string) ($data['smtp_password'] ?? ''));
+
+        if ($password === '') {
+            $password = $existing['password'] ?? '';
+        }
+
         $settings = $user->settings ?? [];
         $settings['smtp'] = [
             'host' => $data['smtp_host'],
             'port' => (int) $data['smtp_port'],
             'username' => $data['smtp_username'],
-            'password' => $data['smtp_password'],
+            'password' => $password,
             'encryption' => $data['smtp_encryption'],
             'from_address' => $data['smtp_from_address'],
             'from_name' => $data['smtp_from_name'],
-            'enabled' => (bool) $data['smtp_enabled'] ?? false,
+            'enabled' => filter_var($data['smtp_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'updated_at' => now(),
         ];
 
