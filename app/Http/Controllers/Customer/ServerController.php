@@ -16,6 +16,9 @@ class ServerController extends Controller
     public function index(Request $request)
     {
         $selectedType = $request->query('type'); // vps or dedicated_server
+        if ($selectedType && ! in_array($selectedType, ['vps', 'dedicated_server'], true)) {
+            $selectedType = null;
+        }
 
         // Load user's server services
         $services = auth()->user()->services()
