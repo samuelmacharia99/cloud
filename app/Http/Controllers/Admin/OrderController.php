@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Models\Order;
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
+use App\Models\Order;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 
 class OrderController extends Controller
 {
@@ -58,5 +59,32 @@ class OrderController extends Controller
         ]);
 
         return redirect()->route('admin.orders.show', $order)->with('success', 'Order marked as complete');
+    }
+
+    public function destroy(Request $request, Order $order): RedirectResponse
+    {
+        $this->authorize('delete', $order);
+
+        if (! $order->canAdminDelete()) {
+            return $this->redirectBack($request)
+                ->with('error', 'Only pending unpaid orders can be deleted.');
+        }
+
+        $orderNumber = $order->order_number;
+
+        $order->delete();
+
+        return $this->redirectBack($request)
+            ->with('success', "Order {$orderNumber} has been deleted.");
+    }
+
+    private function redirectBack(Request $request): RedirectResponse
+    {
+        return redirect()->route('admin.orders.index', $request->only([
+            'search',
+            'status',
+            'payment_status',
+            'page',
+        ]));
     }
 }

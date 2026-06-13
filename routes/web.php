@@ -181,7 +181,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/domains-pricing', [DomainController::class, 'storePricing'])->name('admin.domains.pricing.store');
         Route::post('admin/domain-extensions', [DomainController::class, 'storeExtension'])->name('admin.domain-extensions.store');
         Route::resource('admin/reseller-packages', ResellerPackageController::class)->names('admin.reseller-packages');
-        Route::resource('admin/orders', OrderController::class)->only(['index', 'show'])->names('admin.orders');
+        Route::resource('admin/orders', OrderController::class)->only(['index', 'show', 'destroy'])->names('admin.orders');
         Route::post('admin/orders/{order}/mark-complete', [OrderController::class, 'markComplete'])->name('admin.orders.mark-complete');
         Route::get('admin/resellers', [ResellerController::class, 'index'])->name('admin.resellers.index');
         Route::get('admin/resellers/create', [ResellerController::class, 'create'])->name('admin.resellers.create');

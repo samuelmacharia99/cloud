@@ -63,4 +63,9 @@ class Order extends Model
     {
         return $this->status === 'failed';
     }
+
+    public function canAdminDelete(): bool
+    {
+        return $this->isPending() && $this->payment_status === 'unpaid';
+    }
 }

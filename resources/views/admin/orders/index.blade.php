@@ -126,6 +126,7 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($orders as $order)
+                        @php $orderFilterQuery = request()->only(['search', 'status', 'payment_status', 'page']); @endphp
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <td class="px-6 py-4 text-sm font-semibold text-slate-900 dark:text-white">{{ $order->order_number }}</td>
                             <td class="px-6 py-4">
@@ -181,9 +182,12 @@
                                                     <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
                                                 </svg>
                                             </button>
-                                            <div x-show="menuOpen" @click.outside="menuOpen = false" class="absolute right-0 mt-1 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-10">
+                                            <div x-show="menuOpen" @click.outside="menuOpen = false" class="absolute right-0 mt-1 w-44 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700 py-1 z-10">
                                                 <form method="POST" action="{{ route('admin.orders.mark-complete', $order) }}" class="block">
                                                     @csrf
+                                                    @foreach ($orderFilterQuery as $key => $value)
+                                                        <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                                                    @endforeach
                                                     <button type="submit" class="w-full text-left px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition flex items-center gap-2">
                                                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
@@ -191,6 +195,21 @@
                                                         Mark Complete
                                                     </button>
                                                 </form>
+                                                @if($order->canAdminDelete())
+                                                    <form method="POST" action="{{ route('admin.orders.destroy', $order) }}" class="block" data-confirm="Delete order {{ $order->order_number }}? This cannot be undone.">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        @foreach ($orderFilterQuery as $key => $value)
+                                                            <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                                                        @endforeach
+                                                        <button type="submit" class="w-full text-left px-4 py-2 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition flex items-center gap-2">
+                                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                            </svg>
+                                                            Delete
+                                                        </button>
+                                                    </form>
+                                                @endif
                                             </div>
                                         </div>
                                     @endif
