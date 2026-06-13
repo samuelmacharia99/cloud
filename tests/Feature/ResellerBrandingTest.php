@@ -7,7 +7,9 @@ use App\Models\User;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerSettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -155,5 +157,104 @@ class ResellerBrandingTest extends TestCase
             ->post(route('reseller.settings.branding.ssl.provision'))
             ->assertRedirect()
             ->assertSessionHas('success');
+    }
+
+    public function test_reseller_can_upload_and_delete_branding_logo(): void
+    {
+        Storage::fake('public');
+
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'settings' => [
+                'branding' => [
+                    'company_name' => 'Acme Hosting',
+                ],
+            ],
+        ]);
+
+        $file = UploadedFile::fake()->image('logo.png', 500, 150);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.settings.branding.upload'), [
+                'type' => 'logo',
+                'file' => $file,
+            ])
+            ->assertRedirect(route('reseller.settings.index', ['tab' => 'branding']))
+            ->assertSessionHas('success');
+
+        $reseller->refresh();
+        $logoPath = $reseller->settings['branding']['logo_path'] ?? null;
+        $logoUrl = $reseller->settings['branding']['logo_url'] ?? null;
+
+        $this->assertNotNull($logoPath);
+        $this->assertNotNull($logoUrl);
+        Storage::disk('public')->assertExists($logoPath);
+
+        $response = $this->actingAs($reseller)
+            ->get(route('reseller.settings.index', ['tab' => 'branding']));
+
+        $response->assertOk();
+        $response->assertSee('Your Logo', false);
+        $response->assertDontSee('Platform default', false);
+
+        $this->actingAs($reseller)
+            ->delete(route('reseller.settings.branding.delete'), [
+                'type' => 'logo',
+            ])
+            ->assertRedirect(route('reseller.settings.index', ['tab' => 'branding']))
+            ->assertSessionHas('success');
+
+        $reseller->refresh();
+        $this->assertArrayNotHasKey('logo_url', $reseller->settings['branding'] ?? []);
+        $this->assertArrayNotHasKey('logo_path', $reseller->settings['branding'] ?? []);
+        Storage::disk('public')->assertMissing($logoPath);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.settings.index', ['tab' => 'branding']))
+            ->assertOk()
+            ->assertDontSee('Your Logo', false);
+    }
+
+    public function test_reseller_can_replace_existing_logo(): void
+    {
+        Storage::fake('public');
+
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'settings' => [
+                'branding' => [
+                    'company_name' => 'Acme Hosting',
+                ],
+            ],
+        ]);
+
+        $firstFile = UploadedFile::fake()->image('logo.png', 500, 150);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.settings.branding.upload'), [
+                'type' => 'logo',
+                'file' => $firstFile,
+            ])
+            ->assertRedirect();
+
+        $reseller->refresh();
+        $firstPath = $reseller->settings['branding']['logo_path'];
+
+        $secondFile = UploadedFile::fake()->image('new-logo.jpg', 500, 150);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.settings.branding.upload'), [
+                'type' => 'logo',
+                'file' => $secondFile,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $reseller->refresh();
+        $secondPath = $reseller->settings['branding']['logo_path'];
+
+        $this->assertNotSame($firstPath, $secondPath);
+        Storage::disk('public')->assertMissing($firstPath);
+        Storage::disk('public')->assertExists($secondPath);
     }
 }

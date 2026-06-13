@@ -589,13 +589,22 @@
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
                             <h4 class="font-medium text-slate-900 dark:text-white mb-4">Logo</h4>
                             <div class="space-y-4">
-                                @php $resellerLogoUrl = branding_asset_url_or_fallback($brandingSettings['logo_url'] ?? null, 'logo'); @endphp
+                                @php
+                                    $storedLogoUrl = $brandingSettings['logo_url'] ?? null;
+                                    $storedLogoPath = $brandingSettings['logo_path'] ?? null;
+                                    $resellerLogoUrl = branding_asset_url($storedLogoUrl);
+                                    if (! $resellerLogoUrl && $storedLogoPath && \Illuminate\Support\Facades\Storage::disk('public')->exists($storedLogoPath)) {
+                                        $resellerLogoUrl = '/storage/'.$storedLogoPath;
+                                    }
+                                    $hasCustomLogo = ! empty($storedLogoUrl) || ! empty($storedLogoPath);
+                                    $platformLogoUrl = branding_asset_url_or_fallback(null, 'logo');
+                                @endphp
                                 @if($resellerLogoUrl)
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
                                             <img src="{{ $resellerLogoUrl }}" alt="Logo" class="h-12 w-auto max-w-[120px] object-contain">
                                             <div>
-                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Current Logo</p>
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Your Logo</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 500x150px</p>
                                             </div>
                                         </div>
@@ -607,6 +616,26 @@
                                                 Remove
                                             </button>
                                         </form>
+                                    </div>
+                                @elseif($hasCustomLogo)
+                                    <div class="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+                                        <p class="text-sm text-amber-800 dark:text-amber-300">Your logo file is missing from storage. Upload a new file or remove the broken entry.</p>
+                                        <form action="{{ route('reseller.settings.branding.delete') }}" method="POST" class="flex shrink-0">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="type" value="logo">
+                                            <button type="submit" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition">
+                                                Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                @elseif($platformLogoUrl)
+                                    <div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                                        <img src="{{ $platformLogoUrl }}" alt="Platform logo" class="h-12 w-auto max-w-[120px] object-contain opacity-60">
+                                        <div>
+                                            <p class="text-sm font-medium text-slate-900 dark:text-white">Platform default</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Customers see this logo until you upload your own.</p>
+                                        </div>
                                     </div>
                                 @endif
                                 <form action="{{ route('reseller.settings.branding.upload') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-2">
@@ -625,7 +654,7 @@
                                         </label>
                                     </div>
                                     <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
-                                        Upload Logo
+                                        {{ $hasCustomLogo ? 'Replace Logo' : 'Upload Logo' }}
                                     </button>
                                     @error('file')
                                         <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -638,13 +667,22 @@
                         <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
                             <h4 class="font-medium text-slate-900 dark:text-white mb-4">Favicon</h4>
                             <div class="space-y-4">
-                                @php $resellerFaviconUrl = branding_asset_url_or_fallback($brandingSettings['favicon_url'] ?? null, 'favicon'); @endphp
+                                @php
+                                    $storedFaviconUrl = $brandingSettings['favicon_url'] ?? null;
+                                    $storedFaviconPath = $brandingSettings['favicon_path'] ?? null;
+                                    $resellerFaviconUrl = branding_asset_url($storedFaviconUrl);
+                                    if (! $resellerFaviconUrl && $storedFaviconPath && \Illuminate\Support\Facades\Storage::disk('public')->exists($storedFaviconPath)) {
+                                        $resellerFaviconUrl = '/storage/'.$storedFaviconPath;
+                                    }
+                                    $hasCustomFavicon = ! empty($storedFaviconUrl) || ! empty($storedFaviconPath);
+                                    $platformFaviconUrl = branding_asset_url_or_fallback(null, 'favicon');
+                                @endphp
                                 @if($resellerFaviconUrl)
                                     <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
                                         <div class="flex items-center gap-3">
                                             <img src="{{ $resellerFaviconUrl }}" alt="Favicon" class="h-8 w-8 object-contain">
                                             <div>
-                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Current Favicon</p>
+                                                <p class="text-sm font-medium text-slate-900 dark:text-white">Your Favicon</p>
                                                 <p class="text-xs text-slate-500 dark:text-slate-400">Recommended size: 32x32px or 64x64px</p>
                                             </div>
                                         </div>
@@ -656,6 +694,26 @@
                                                 Remove
                                             </button>
                                         </form>
+                                    </div>
+                                @elseif($hasCustomFavicon)
+                                    <div class="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+                                        <p class="text-sm text-amber-800 dark:text-amber-300">Your favicon file is missing from storage. Upload a new file or remove the broken entry.</p>
+                                        <form action="{{ route('reseller.settings.branding.delete') }}" method="POST" class="flex shrink-0">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="type" value="favicon">
+                                            <button type="submit" class="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm font-medium rounded-lg transition">
+                                                Remove
+                                            </button>
+                                        </form>
+                                    </div>
+                                @elseif($platformFaviconUrl)
+                                    <div class="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+                                        <img src="{{ $platformFaviconUrl }}" alt="Platform favicon" class="h-8 w-8 object-contain opacity-60">
+                                        <div>
+                                            <p class="text-sm font-medium text-slate-900 dark:text-white">Platform default</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">Customers see this favicon until you upload your own.</p>
+                                        </div>
                                     </div>
                                 @endif
                                 <form action="{{ route('reseller.settings.branding.upload') }}" method="POST" enctype="multipart/form-data" class="flex flex-col gap-2">
@@ -674,7 +732,7 @@
                                         </label>
                                     </div>
                                     <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
-                                        Upload Favicon
+                                        {{ $hasCustomFavicon ? 'Replace Favicon' : 'Upload Favicon' }}
                                     </button>
                                     @error('file')
                                         <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
