@@ -3,13 +3,26 @@
 @section('title', 'My Servers')
 
 @section('content')
+@php
+    $autoShowCatalog = $services->count() === 0 && filled($selectedType);
+@endphp
 <div class="space-y-6" x-data="{
-    open: false,
-    step: 1,
-    serverType: null,
+    open: {{ $autoShowCatalog ? 'true' : 'false' }},
+    step: {{ $autoShowCatalog ? '2' : '1' }},
+    serverType: @js($autoShowCatalog ? $selectedType : null),
     showTypeSelector: {{ $selectedType ? 'false' : 'true' }},
+    autoBrowse: @js($autoShowCatalog),
     selectType(type) {
         window.location.href = '{{ route('customer.servers.index') }}?type=' + type;
+    },
+    closeOrderModal() {
+        if (this.autoBrowse) {
+            window.location.href = '{{ route('customer.servers.index') }}';
+            return;
+        }
+        this.open = false;
+        this.step = 1;
+        this.serverType = null;
     }
 }">
     <!-- Header -->
@@ -31,7 +44,7 @@
                 @endif
             </div>
         </div>
-        <button @click="open = true" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+        <button @click="open = true; step = {{ $selectedType ? '2' : '1' }}; serverType = @js($selectedType)" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
             Order Server
         </button>
     </div>
@@ -188,29 +201,40 @@
             @endforeach
         </div>
     @else
+        @unless($autoShowCatalog)
         <!-- Empty State -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-12 text-center">
             <svg class="w-16 h-16 text-slate-300 dark:text-slate-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"></path>
             </svg>
             <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">No servers yet</h3>
-            <p class="text-slate-600 dark:text-slate-400 mb-6">Get started by ordering your first server</p>
-            <button @click="open = true" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                Order Your First Server
-            </button>
+            <p class="text-slate-600 dark:text-slate-400 mb-6">Choose VPS or dedicated above to browse available plans</p>
         </div>
+        @endunless
     @endif
 
     <!-- Order Modal -->
-    <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="open=false; step=1; serverType=null">
+    <div x-show="open" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" @click.self="closeOrderModal()">
         <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" @click.stop>
             <!-- Modal Header -->
             <div class="sticky top-0 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-8 py-6 flex justify-between items-center">
                 <div>
-                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Order a Server</h2>
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Step <span x-text="step"></span> of 2</p>
+                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">
+                        @if($autoShowCatalog)
+                            Choose a {{ App\Models\Product::typeLabel($selectedType) }}
+                        @else
+                            Order a Server
+                        @endif
+                    </h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        @if($autoShowCatalog)
+                            Select a plan and add it to your cart
+                        @else
+                            Step <span x-text="step"></span> of 2
+                        @endif
+                    </p>
                 </div>
-                <button @click="open=false; step=1; serverType=null" class="text-slate-500 hover:text-slate-900 dark:hover:text-white">
+                <button @click="closeOrderModal()" class="text-slate-500 hover:text-slate-900 dark:hover:text-white">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
