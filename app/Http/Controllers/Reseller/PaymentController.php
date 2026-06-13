@@ -15,6 +15,7 @@ use App\Services\NotificationService;
 use App\Services\PaymentGateway\OnlinePaymentFailureService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -167,12 +168,19 @@ class PaymentController extends Controller
         }
 
         if ($payment->status->value === 'completed') {
-            $invoice->refresh(['items', 'user']);
-            if ($invoice->isPaid()) {
-                app(DomainPushService::class)->ensurePaidInvoiceDomainOrdersPushed($invoice);
+            if (! $invoice->fresh()->isPaid()) {
+                try {
+                    $this->processPaymentCompletion($payment, $invoice);
+                } catch (\Throwable $e) {
+                    Log::error('Reseller M-Pesa poll: payment completed but invoice settlement failed', [
+                        'payment_id' => $payment->id,
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
-            return response()->json(['status' => 'completed']);
+            return response()->json($this->mpesaPollStatusResponse($invoice->fresh(['items', 'user'])));
         }
 
         if ($payment->status->value === 'failed') {
@@ -189,20 +197,30 @@ class PaymentController extends Controller
             $gateway = $this->gatewayFactory->make('mpesa');
             $result = $gateway->verify($payment->transaction_reference);
 
-            if ($result['status'] === 'completed') {
-                $this->processPaymentCompletion($payment, $invoice);
+            if (($result['success'] ?? false) && ($result['status'] ?? null) === 'completed') {
+                try {
+                    $this->processPaymentCompletion($payment, $invoice);
+                } catch (\Throwable $e) {
+                    Log::error('Reseller M-Pesa poll: verification succeeded but settlement failed', [
+                        'payment_id' => $payment->id,
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
 
-                return response()->json(['status' => 'completed']);
+                return response()->json($this->mpesaPollStatusResponse($invoice->fresh(['items', 'user'])));
             }
 
-            if ($result['status'] === 'failed') {
-                $payment->update([
-                    'status' => PaymentStatus::Failed->value,
-                    'notes' => json_encode([
-                        'result_desc' => $result['message'] ?? 'Payment failed',
-                        'result_code' => $result['response_code'] ?? null,
-                    ]),
-                ]);
+            if (($result['status'] ?? null) === 'failed') {
+                if ($payment->status->value !== 'failed') {
+                    $payment->update([
+                        'status' => PaymentStatus::Failed->value,
+                        'notes' => json_encode([
+                            'result_desc' => $result['message'] ?? 'Payment failed',
+                            'result_code' => $result['response_code'] ?? null,
+                        ]),
+                    ]);
+                }
 
                 return response()->json([
                     'status' => 'failed',
@@ -210,9 +228,21 @@ class PaymentController extends Controller
                 ]);
             }
 
-            return response()->json(['status' => $result['status']]);
+            return response()->json([
+                'status' => $result['status'] ?? 'pending',
+                'message' => $result['message'] ?? 'Awaiting payment confirmation',
+            ]);
         } catch (\Exception $e) {
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()]);
+            Log::error('Reseller M-Pesa status poll error', [
+                'invoice_id' => $invoice->id,
+                'checkout_request_id' => $checkoutRequestId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'pending',
+                'message' => 'Unable to check payment status',
+            ]);
         }
     }
 
@@ -391,17 +421,28 @@ class PaymentController extends Controller
 
     private function processPaymentCompletion(?Payment $payment, Invoice $invoice): void
     {
-        if ($payment) {
-            $payment->update(['status' => PaymentStatus::Completed, 'paid_at' => now()]);
-        }
-
-        $invoice = $invoice->fresh();
-
-        if (! $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment)) {
+        if (! $this->invoicePaymentService->completeInvoiceIfFullyPaid($invoice->fresh(), $payment)) {
             return;
         }
 
-        $this->runPostPaymentSideEffects($invoice->fresh(['items', 'user']), $payment);
+        $this->runPostPaymentSideEffects($invoice->fresh(['items', 'user']), $payment?->fresh());
+    }
+
+    /**
+     * @return array{status: string, message?: string}
+     */
+    private function mpesaPollStatusResponse(Invoice $invoice): array
+    {
+        if ($invoice->isPaid()) {
+            app(DomainPushService::class)->ensurePaidInvoiceDomainOrdersPushed($invoice);
+
+            return ['status' => 'completed'];
+        }
+
+        return [
+            'status' => 'pending',
+            'message' => 'Payment received — finalizing invoice…',
+        ];
     }
 
     /**
@@ -416,6 +457,17 @@ class PaymentController extends Controller
                 'invoice_id' => $invoice->id,
                 'error' => $e->getMessage(),
             ]);
+        }
+
+        if ($invoice->type === 'reseller_subscription' && $invoice->isPaid()) {
+            try {
+                app(ResellerPackageSubscriptionService::class)->activateFromPaidInvoice($invoice->fresh());
+            } catch (\Throwable $e) {
+                Log::error('Reseller package activation failed after subscription payment', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         try {

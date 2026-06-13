@@ -11,6 +11,7 @@ use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -88,6 +89,12 @@ class PaymentWebhookController extends Controller
             $invoicePaymentService = app(ResellerInvoicePaymentService::class);
 
             $invoicePaymentService->completeInvoiceIfFullyPaid($invoice, $payment);
+            $invoice = $invoice->fresh(['items', 'user']);
+
+            if ($invoice->type === 'reseller_subscription' && $invoice->isPaid()) {
+                app(ResellerPackageSubscriptionService::class)->activateFromPaidInvoice($invoice);
+            }
+
             app(NotificationService::class)->notifyPaymentReceived($payment);
             app(DomainPushService::class)->handlePaidResellerInvoice($invoice->fresh(['items']));
             app(DomainPushService::class)->ensurePaidInvoiceDomainOrdersPushed($invoice->fresh(['items']));

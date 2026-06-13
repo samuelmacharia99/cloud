@@ -6,7 +6,6 @@ use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
-use App\Services\Billing\InvoiceCurrencyService;
 
 class ResellerInvoicePaymentService
 {
@@ -72,20 +71,35 @@ class ResellerInvoicePaymentService
 
     public function completeInvoiceIfFullyPaid(Invoice $invoice, ?Payment $gatewayPayment = null): bool
     {
-        $remaining = $this->amountDue($invoice);
+        $invoice->refresh();
 
-        if ($gatewayPayment) {
-            $paymentInInvoice = app(InvoiceCurrencyService::class)
-                ->paymentAmountInInvoiceCurrency(
-                    $invoice,
-                    (float) $gatewayPayment->amount,
-                    $gatewayPayment->currency ?? config('currency.base', 'KES')
-                );
-
-            $remaining = max(0, round($remaining - $paymentInInvoice, 2));
+        if ($gatewayPayment && $gatewayPayment->status !== PaymentStatus::Completed) {
+            $gatewayPayment->update([
+                'status' => PaymentStatus::Completed,
+                'paid_at' => now(),
+            ]);
         }
 
-        if ($remaining > 0) {
+        $invoice->refresh();
+
+        if ($invoice->isPaid()) {
+            if (! $invoice->paid_date) {
+                $invoice->update(['paid_date' => now()]);
+            }
+
+            return true;
+        }
+
+        if (! $gatewayPayment && $this->amountDue($invoice) <= 0) {
+            $invoice->update([
+                'status' => 'paid',
+                'paid_date' => now(),
+            ]);
+
+            return true;
+        }
+
+        if ($invoice->getAmountRemaining() > 0) {
             return false;
         }
 
@@ -93,10 +107,6 @@ class ResellerInvoicePaymentService
             'status' => 'paid',
             'paid_date' => now(),
         ]);
-
-        if ($gatewayPayment && $gatewayPayment->status !== PaymentStatus::Completed) {
-            $gatewayPayment->update(['status' => PaymentStatus::Completed, 'paid_at' => now()]);
-        }
 
         return true;
     }
