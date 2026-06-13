@@ -174,6 +174,23 @@ function branding_asset_url_or_fallback(?string $url, string $type = 'logo'): ?s
 }
 
 /**
+ * Format a product description for display: escape unsafe HTML but preserve line breaks from <br> tags and newlines.
+ */
+function format_product_description(?string $description): string
+{
+    $description = trim((string) $description);
+
+    if ($description === '') {
+        return '';
+    }
+
+    $description = preg_replace('/<br\s*\/?>/i', "\n", $description) ?? $description;
+    $description = strip_tags($description);
+
+    return nl2br(e($description), false);
+}
+
+/**
  * Format bytes as human-readable size
  */
 function formatBytes(int $bytes, int $precision = 2): string

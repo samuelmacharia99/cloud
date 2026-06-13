@@ -5,7 +5,7 @@
     $specLines = $configService->specLines($product);
     $locations = $configService->locations($product);
     $defaultLocation = $locations[0] ?? null;
-    $slogan = trim(strip_tags((string) ($product->description ?? '')));
+    $descriptionHtml = format_product_description($product->description ?? '');
     $defaultResolved = $defaultLocation
         ? $configService->resolvedLocationPrices($product, $defaultLocation, null, true)
         : ['monthly' => (float) ($product->wholesale_monthly_price ?? 0), 'yearly' => (float) ($product->wholesale_yearly_price ?? 0), 'setup' => (float) ($product->setup_fee ?? 0)];
@@ -20,8 +20,8 @@
                     <span class="px-2.5 py-1 text-xs font-semibold bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full">Popular</span>
                 @endif
             </div>
-            @if ($slogan !== '')
-                <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">{{ $slogan }}</p>
+            @if ($descriptionHtml !== '')
+                <div class="text-sm text-slate-600 dark:text-slate-400 mb-2">{!! $descriptionHtml !!}</div>
             @endif
             @if ($specLines !== [])
                 <ul class="space-y-1 mb-2">

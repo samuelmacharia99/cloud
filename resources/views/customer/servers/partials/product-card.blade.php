@@ -25,7 +25,7 @@
     $displayMonthly = (float) ($defaultLocation['monthly_price'] ?? $product->monthly_price);
     $displayYearly = (float) ($defaultLocation['yearly_price'] ?? $product->yearly_price);
     $displaySetup = (float) ($defaultLocation['setup_fee'] ?? $product->setup_fee);
-    $slogan = trim(strip_tags((string) ($product->description ?? '')));
+    $descriptionHtml = format_product_description($product->description ?? '');
 @endphp
 
 <article
@@ -51,8 +51,8 @@
                 {{ App\Models\Product::typeLabel($product->type) }}
             </p>
             <h3 class="text-lg font-bold text-slate-900 dark:text-white leading-tight">{{ $product->name }}</h3>
-            @if ($slogan !== '')
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 line-clamp-2">{{ $slogan }}</p>
+            @if ($descriptionHtml !== '')
+                <div class="text-sm text-slate-600 dark:text-slate-400 mt-2 line-clamp-3">{!! $descriptionHtml !!}</div>
             @endif
         </div>
 
