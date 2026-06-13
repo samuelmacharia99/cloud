@@ -9,12 +9,14 @@
 @section('content')
 <div class="space-y-8">
     <!-- Header -->
-    <x-admin-page-header title="Dashboard" description="Welcome back! Here's your business overview." />
+    <x-admin-page-header title="Dashboard" description="Welcome back! Here's what needs you today." />
+
+    <x-admin-action-queue :attention="$adminAttention ?? []" />
 
     <!-- Primary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Total Customers -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.customers.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Customers</p>
@@ -27,10 +29,10 @@
                 </div>
             </div>
             <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">{{ $platformCustomers }} platform · {{ $resellerManagedCustomers }} reseller-managed · {{ $totalResellers }} resellers</p>
-        </div>
+        </a>
 
         <!-- Active Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-emerald-300 dark:hover:border-emerald-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Active Services</p>
@@ -42,11 +44,11 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Running now</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Running now · view services</p>
+        </a>
 
         <!-- Unpaid Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.invoices.index', ['status' => 'unpaid']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-amber-300 dark:hover:border-amber-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Unpaid Invoices</p>
@@ -58,11 +60,11 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Awaiting payment</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Awaiting payment · view invoices</p>
+        </a>
 
         <!-- Total Revenue -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Revenue</p>
@@ -74,14 +76,14 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">All time</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">All time · view payments</p>
+        </a>
     </div>
 
     <!-- Secondary Metrics -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Suspended Services -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.services.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-amber-300 dark:hover:border-amber-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Suspended Services</p>
@@ -93,11 +95,11 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Need attention</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Need attention · view services</p>
+        </a>
 
         <!-- Overdue Invoices -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.invoices.index', ['status' => 'overdue']) }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-red-300 dark:hover:border-red-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Overdue Invoices</p>
@@ -109,11 +111,11 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Payment due</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Payment due · view overdue</p>
+        </a>
 
         <!-- Pending Payments -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('admin.payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-blue-300 dark:hover:border-blue-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
                     <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Pending Payments</p>
@@ -125,15 +127,20 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">In progress</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">In progress · review payments</p>
+        </a>
 
         <!-- Urgent Tickets -->
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-card hover:shadow-card-hover">
+        <a href="{{ route('tickets.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-red-300 dark:hover:border-red-800 transition-all shadow-card hover:shadow-card-hover {{ $openTickets > 0 ? 'ring-1 ring-red-200/60 dark:ring-red-900/40' : '' }}">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Urgent Tickets</p>
-                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $urgentTickets }}</p>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                        Open Tickets
+                        @if($openTickets > 0)
+                            <x-admin-attention-dot :count="$openTickets" />
+                        @endif
+                    </p>
+                    <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">{{ $openTickets }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-950 flex items-center justify-center">
                     <svg class="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -141,8 +148,8 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Needs action</p>
-        </div>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">{{ $urgentTickets }} urgent · click to view</p>
+        </a>
     </div>
 
     <!-- Analytics Section -->
@@ -241,7 +248,7 @@
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 @forelse ($recentCustomers as $customer)
-                    <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('admin.customers.show', $customer) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center flex-shrink-0 text-white font-semibold">
                                 {{ strtoupper(substr($customer->name, 0, 1)) }}
@@ -251,7 +258,7 @@
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $customer->email }}</p>
                             </div>
                         </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="p-8 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400">No customers yet</p>
@@ -270,7 +277,7 @@
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 @forelse ($recentServices as $service)
-                    <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('admin.services.show', $service) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $service->product?->name ?? 'Unknown' }}</p>
@@ -278,7 +285,7 @@
                             </div>
                             <x-status-badge :status="$service->status" type="service" />
                         </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="p-8 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400">No services yet</p>
@@ -297,7 +304,7 @@
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 @forelse ($recentPayments as $payment)
-                    <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('admin.payments.show', $payment) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <div class="flex items-center justify-between gap-3">
                             <div>
                                 <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $payment->user?->name ?? 'Unknown' }}</p>
@@ -305,7 +312,7 @@
                             </div>
                             <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($payment->amount, 2) }}</p>
                         </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="p-8 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400">No payments yet</p>
@@ -327,7 +334,7 @@
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 @forelse ($recentInvoices as $invoice)
-                    <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('admin.invoices.show', $invoice) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</p>
@@ -337,7 +344,7 @@
                                 <p class="text-sm font-semibold text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</p>
                             </div>
                         </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="p-8 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400">No invoices yet</p>
@@ -356,15 +363,15 @@
             </div>
             <div class="divide-y divide-slate-200 dark:divide-slate-800">
                 @forelse ($openTickets_data as $ticket)
-                    <div class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <a href="{{ route('tickets.show', $ticket) }}" class="block p-4 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex-1 min-w-0">
-                                <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $ticket->subject ?? 'No subject' }}</p>
+                                <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $ticket->title ?? 'No subject' }}</p>
                                 <p class="text-xs text-slate-600 dark:text-slate-400">{{ $ticket->user?->name ?? 'Unknown' }}</p>
                             </div>
                             <x-status-badge :status="$ticket->priority" type="priority" />
                         </div>
-                    </div>
+                    </a>
                 @empty
                     <div class="p-8 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400">No open tickets</p>
@@ -459,7 +466,7 @@
                         beginAtZero: true,
                         ticks: {
                             callback: function(value) {
-                                return '$' + value.toLocaleString();
+                                return 'KES ' + value.toLocaleString();
                             },
                             color: window.matchMedia('(prefers-color-scheme: dark)').matches ? '#cbd5e1' : '#64748b',
                             font: { size: 11 }

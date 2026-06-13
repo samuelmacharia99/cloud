@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Listeners\BlockDestructiveProductionCommands;
 use App\Models\Setting;
+use App\Services\AdminAttentionService;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\DomainPushService;
 use App\Services\EmailDeliveryService;
@@ -66,6 +67,18 @@ class AppServiceProvider extends ServiceProvider
         $this->loadMailConfigFromDatabase();
 
         $this->shareResellerWalletData();
+        $this->shareAdminAttentionData();
+    }
+
+    private function shareAdminAttentionData(): void
+    {
+        View::composer(['layouts.admin', 'dashboard.admin'], function ($view) {
+            if (! auth()->check() || ! auth()->user()->isAdmin()) {
+                return;
+            }
+
+            $view->with('adminAttention', app(AdminAttentionService::class)->snapshot(auth()->user()));
+        });
     }
 
     private function shareResellerWalletData(): void

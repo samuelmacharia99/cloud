@@ -37,11 +37,14 @@
                 <nav class="flex-1 px-3 py-6 space-y-8" @click="if (window.innerWidth < 1024) sidebarOpen = false">
                     <!-- Dashboard -->
                     <div class="space-y-1">
-                        <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('dashboard') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }}">
+                        <a href="{{ route('dashboard') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all w-full {{ request()->routeIs('dashboard') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-3m0 0l7-4 7 4M5 9v10a1 1 0 001 1h12a1 1 0 001-1V9m-9 4l4 2m-7-2l4-2"/>
                             </svg>
                             <span class="text-sm font-medium">Dashboard</span>
+                            @if(($adminAttention['new_total'] ?? 0) > 0)
+                                <x-admin-attention-dot class="ml-auto" />
+                            @endif
                         </a>
                     </div>
 
@@ -77,23 +80,23 @@
                             </svg>
                             <span class="text-sm font-medium">Domains & Pricing</span>
                         </a>
-                        <a href="{{ route('admin.domain-orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.domain-orders.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                        <a href="{{ route('admin.domain-orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all w-full {{ request()->routeIs('admin.domain-orders.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                             </svg>
-                            <span class="text-sm font-medium">Domain Orders</span>
+                            <x-admin-nav-label :attention="$adminAttention['domain_orders_new'] ?? 0">Domain Orders</x-admin-nav-label>
                         </a>
                         <a href="{{ route('admin.domain-renewals.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.domain-renewals.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                             </svg>
-                            <span class="text-sm font-medium">Domain Renewals</span>
+                            <x-admin-nav-label :attention="$adminAttention['domain_renewals_new'] ?? 0">Domain Renewals</x-admin-nav-label>
                         </a>
                         <a href="{{ route('admin.orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.orders.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
                             </svg>
-                            <span class="text-sm font-medium">Orders</span>
+                            <x-admin-nav-label :attention="$adminAttention['orders_new'] ?? 0">Orders</x-admin-nav-label>
                         </a>
                         <a href="{{ route('admin.reseller-packages.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.reseller-packages.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,7 +119,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            <span class="text-sm font-medium">Payments</span>
+                            <x-admin-nav-label :attention="$adminAttention['payments_new'] ?? 0">Payments</x-admin-nav-label>
                         </a>
                         <a href="{{ route('admin.credits.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.credits.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,7 +148,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
                             </svg>
-                            <span class="text-sm font-medium">Services</span>
+                            <x-admin-nav-label :attention="$adminAttention['services_new'] ?? 0">Services</x-admin-nav-label>
                         </a>
                         <a href="{{ route('admin.database-templates.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('admin.database-templates.*') ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -197,7 +200,7 @@
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"/>
                             </svg>
-                            <span class="text-sm font-medium">Tickets</span>
+                            <x-admin-nav-label :attention="$adminAttention['tickets_new'] ?? 0">Tickets</x-admin-nav-label>
                         </a>
                     </div>
 
@@ -249,22 +252,30 @@
             <header class="app-header h-16 flex items-center px-4 sm:px-6 min-w-0">
             <!-- Left: Hamburger + Breadcrumb -->
             <div class="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
-                <button type="button" class="lg:hidden shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg" @click="sidebarOpen = !sidebarOpen" aria-label="Open menu">
+                <button type="button" class="lg:hidden shrink-0 p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg relative" @click="sidebarOpen = !sidebarOpen" aria-label="Open menu">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                             </svg>
+                            @if(($adminAttention['new_total'] ?? 0) > 0)
+                                <span class="absolute top-1 right-1 flex h-2 w-2">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                            @endif
                         </button>
                 @yield('breadcrumb')
             </div>
 
             <!-- Center: Search (placeholder) -->
             <div class="hidden xl:block flex-1 max-w-md mx-4">
-                        <div class="w-full relative">
-                            <input type="text" placeholder="Search customers, invoices..." class="w-full pl-4 pr-10 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm placeholder-slate-500 dark:placeholder-slate-400">
-                            <svg class="w-5 h-5 absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                            </svg>
-                        </div>
+                        <form action="{{ route('admin.customers.index') }}" method="GET" class="w-full relative">
+                            <input type="search" name="search" value="{{ request('search') }}" placeholder="Search customers, email…" class="w-full pl-4 pr-10 py-2 bg-slate-100 dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm placeholder-slate-500 dark:placeholder-slate-400">
+                            <button type="submit" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" aria-label="Search">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                            </button>
+                        </form>
             </div>
 
             <!-- Right: Dark Mode + Notifications + Profile -->
@@ -291,13 +302,8 @@
                     </svg>
                 </button>
 
-                <!-- Notifications Bell (placeholder) -->
-                <button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition relative" x-data="{ notificationsOpen: false }">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                            </svg>
-                            <span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-                        </button>
+                <!-- Notifications -->
+                <x-admin-notification-dropdown :attention="$adminAttention ?? []" />
 
                 <!-- Profile Dropdown -->
                 <div class="relative" x-data="{ profileOpen: false }">

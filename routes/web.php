@@ -132,7 +132,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     // Admin-only routes
-    Route::middleware('admin')->group(function () {
+    Route::middleware(['admin', 'admin.attention.seen'])->group(function () {
         Route::resource('admin/customers', CustomerController::class)->names('admin.customers');
         Route::post('admin/customers/{customer}/impersonate', [CustomerController::class, 'impersonate'])->name('admin.customers.impersonate');
         Route::post('admin/customers/{customer}/add-domain', [CustomerController::class, 'addDomain'])->name('admin.customers.add-domain');
