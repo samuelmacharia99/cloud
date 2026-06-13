@@ -268,13 +268,7 @@ class ResellerDomainOrder extends Model
 
     public function fullDomainName(): string
     {
-        $extension = (string) $this->extension;
-
-        if ($extension !== '' && ! str_starts_with($extension, '.')) {
-            $extension = '.'.$extension;
-        }
-
-        return $this->domain_name.$extension;
+        return format_domain_name($this->domain_name, $this->extension);
     }
 
     /**

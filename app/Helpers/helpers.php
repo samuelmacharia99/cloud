@@ -118,6 +118,30 @@ function branding_asset_url(?string $url): ?string
 }
 
 /**
+ * Ensure a domain extension is displayed with a single leading dot (e.g. .co.ke).
+ */
+function format_domain_extension(?string $extension): string
+{
+    $extension = trim((string) $extension);
+
+    if ($extension === '') {
+        return '';
+    }
+
+    return str_starts_with($extension, '.') ? $extension : '.'.$extension;
+}
+
+/**
+ * Build a full domain name from label + extension without double dots.
+ */
+function format_domain_name(?string $name, ?string $extension): string
+{
+    $name = rtrim(trim((string) $name), '.');
+
+    return $name.format_domain_extension($extension);
+}
+
+/**
  * Resolve a branding asset URL from settings, with upload-directory fallback.
  */
 function branding_asset_url_or_fallback(?string $url, string $type = 'logo'): ?string

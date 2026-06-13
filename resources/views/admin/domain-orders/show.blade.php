@@ -7,7 +7,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between">
         <div>
-            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $order->domain_name }}.{{ $order->extension }}</h1>
+            <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $order->fullDomainName() }}</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Order #{{ $order->id }}</p>
         </div>
         <span class="inline-flex items-center px-4 py-2 rounded-full text-lg font-medium {{ match($order->status) {
@@ -82,7 +82,7 @@
             </div>
             <div>
                 <p class="text-sm text-slate-600 dark:text-slate-400">Domain</p>
-                <p class="font-semibold text-slate-900 dark:text-white text-lg">{{ $order->domain_name }}.{{ $order->extension }}</p>
+                <p class="font-semibold text-slate-900 dark:text-white text-lg">{{ $order->fullDomainName() }}</p>
             </div>
             <div>
                 <p class="text-sm text-slate-600 dark:text-slate-400">Duration</p>

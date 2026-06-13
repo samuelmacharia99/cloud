@@ -166,8 +166,9 @@ class WalletNotificationService
         $customer = $order->customer;
         $company = $this->brandingResolver->forReseller($reseller)['company_name'];
 
-        $resellerMessage = "Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
-        $customerMessage = "{$company}: Domain {$order->domain_name}.{$order->extension} has been registered successfully!";
+        $domain = $order->fullDomainName();
+        $resellerMessage = "Domain {$domain} has been registered successfully!";
+        $customerMessage = "{$company}: Domain {$domain} has been registered successfully!";
 
         try {
             $this->smsService->send($reseller->phone, $resellerMessage);
@@ -184,7 +185,7 @@ class WalletNotificationService
         }
 
         if ($reseller->email) {
-            $subject = 'Domain registered - '.$order->domain_name.$order->extension;
+            $subject = 'Domain registered - '.$domain;
             $this->emailDelivery->sendPlatformMailable(
                 $reseller->email,
                 new ResellerDomainOrderMail($order, 'completed'),
@@ -198,7 +199,8 @@ class WalletNotificationService
     public function sendDomainFailedNotification(ResellerDomainOrder $order): void
     {
         $reseller = $order->reseller;
-        $message = "Domain {$order->domain_name}.{$order->extension} registration failed: {$order->failure_reason}";
+        $domain = $order->fullDomainName();
+        $message = "Domain {$domain} registration failed: {$order->failure_reason}";
 
         try {
             $this->smsService->send($reseller->phone, $message);
@@ -207,7 +209,7 @@ class WalletNotificationService
         }
 
         if ($reseller->email) {
-            $subject = 'Domain registration failed - '.$order->domain_name.$order->extension;
+            $subject = 'Domain registration failed - '.$domain;
             $this->emailDelivery->sendPlatformMailable(
                 $reseller->email,
                 new ResellerDomainOrderMail($order, 'failed'),
@@ -223,7 +225,7 @@ class WalletNotificationService
         $order->loadMissing('reseller', 'customer');
         $reseller = $order->reseller;
         $customer = $order->customer;
-        $domain = $order->domain_name.$order->extension;
+        $domain = $order->fullDomainName();
         $walletUrl = route('reseller.wallet.index');
 
         $smsMessage = match ($event) {

@@ -18,6 +18,12 @@
         <p class="text-slate-600 dark:text-slate-400 mt-1">Set your domain pricing on top of admin wholesale rates.</p>
     </div>
 
+    @if (session('success'))
+        <div class="px-4 py-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+            <p class="text-sm text-emerald-800 dark:text-emerald-300">{{ session('success') }}</p>
+        </div>
+    @endif
+
     <!-- Period Tabs -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <div class="flex gap-2 border-b border-slate-200 dark:border-slate-800">
@@ -97,61 +103,66 @@
     <div x-show="showModal" @click="showModal = false" class="fixed inset-0 bg-black/50 z-40"></div>
 
     <div x-show="showModal" x-transition class="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div @click.stop class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 max-w-md w-full">
-            <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-6">Edit Domain Pricing</h2>
-
-            <form @submit.prevent="savePricing" class="space-y-6">
-                <!-- Extension Name (display only) -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Extension</label>
-                    <input type="text" x-model="selectedExtension" disabled class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 text-sm">
-                </div>
-
-                <!-- Wholesale Price (display only) -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Wholesale Price</label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                        <input type="text" x-model="wholesalePrice" disabled class="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 text-sm">
-                    </div>
-                </div>
-
-                <!-- Your Price (editable) -->
-                <div>
-                    <label for="modal_retail_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Your Price</label>
-                    <div class="relative">
-                        <span class="absolute left-4 top-2 text-slate-500 dark:text-slate-400 text-sm">KSH</span>
-                        <input type="number" id="modal_retail_price" x-model.number="retailPrice" @input="calculateModalMargin()" step="0.01" min="0" class="w-full pl-10 pr-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                    </div>
-                </div>
-
-                <!-- Margin Preview -->
-                <div class="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
-                    <p class="text-xs font-semibold text-emerald-900 dark:text-emerald-300 uppercase tracking-wide mb-2">Your Margin</p>
-                    <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300">
-                        <span x-text="'KSH ' + modalMargin.toFixed(2)"></span>
-                        <span x-text="'(' + modalMarginPercent.toFixed(1) + '%)'"></span>
+        <div @click.stop class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+            <div class="p-6 sm:p-8">
+                <div class="mb-6">
+                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Edit Domain Pricing</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                        <span class="font-semibold text-slate-900 dark:text-white" x-text="selectedExtension"></span>
+                        <span class="mx-2 text-slate-400">·</span>
+                        <span x-text="selectedPeriod + ' year' + (selectedPeriod > 1 ? 's' : '')"></span>
                     </p>
                 </div>
 
-                <!-- Enabled Checkbox -->
-                <div>
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" x-model="enabled" class="w-4 h-4 text-blue-600 rounded">
-                        <span class="text-sm text-slate-700 dark:text-slate-300">Enabled</span>
-                    </label>
-                </div>
+                <form @submit.prevent="savePricing" class="space-y-5">
+                    <!-- Wholesale Price (display only) -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Wholesale Price</label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-medium text-slate-500 dark:text-slate-400 shrink-0">KSH</span>
+                            <input type="text" :value="formatPrice(wholesalePrice)" disabled class="flex-1 min-w-0 px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-400 text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Your cost from the platform for this period.</p>
+                    </div>
 
-                <!-- Form Actions -->
-                <div class="flex gap-3 pt-4">
-                    <button type="button" @click="showModal = false" class="flex-1 px-6 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">
-                        Cancel
-                    </button>
-                    <button type="submit" class="flex-1 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
-                        Save
-                    </button>
-                </div>
-            </form>
+                    <!-- Your Price (editable) -->
+                    <div>
+                        <label for="modal_retail_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Your Price</label>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-medium text-slate-500 dark:text-slate-400 shrink-0">KSH</span>
+                            <input type="number" id="modal_retail_price" x-model.number="retailPrice" @input="calculateModalMargin()" step="0.01" min="0" class="flex-1 min-w-0 px-4 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">What you charge your customers.</p>
+                    </div>
+
+                    <!-- Margin Preview -->
+                    <div class="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg">
+                        <p class="text-xs font-semibold text-emerald-900 dark:text-emerald-300 uppercase tracking-wide mb-2">Your Margin</p>
+                        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <p class="text-lg font-bold text-emerald-900 dark:text-emerald-300" x-text="'KSH ' + formatPrice(modalMargin)"></p>
+                            <p class="text-sm font-medium text-emerald-700 dark:text-emerald-400" x-text="'(' + modalMarginPercent.toFixed(1) + '%)'"></p>
+                        </div>
+                    </div>
+
+                    <!-- Enabled Checkbox -->
+                    <div>
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" x-model="enabled" class="w-4 h-4 text-blue-600 rounded">
+                            <span class="text-sm text-slate-700 dark:text-slate-300">Offer this extension to customers</span>
+                        </label>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="flex gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <button type="button" @click="showModal = false" class="flex-1 px-6 py-2.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">
+                            Cancel
+                        </button>
+                        <button type="submit" class="flex-1 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                            Save
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 </div>
@@ -170,9 +181,16 @@ function domainPricingManager() {
         filteredExtensions: [],
         extensions: @json($extensionsData),
         periods: @json($periods),
+        formatExtension(value) {
+            if (!value) {
+                return '';
+            }
+
+            return value.startsWith('.') ? value : '.' + value;
+        },
         get selectedExtension() {
             const ext = this.extensions.find(e => e.id === this.selectedExtensionId);
-            return ext ? '.' + ext.extension : '';
+            return ext ? this.formatExtension(ext.extension) : '';
         },
         init() {
             this.filterExtensions();
