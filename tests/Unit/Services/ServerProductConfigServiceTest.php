@@ -33,11 +33,15 @@ class ServerProductConfigServiceTest extends TestCase
         $this->assertContains('Fully Managed Hosting', $lines);
     }
 
-    public function test_location_pricing_with_ip_addon(): void
+    public function test_additive_location_pricing_with_ip_addon(): void
     {
         $product = new Product([
             'type' => 'vps',
             'monthly_price' => 1000,
+            'yearly_price' => 12000,
+            'setup_fee' => 50,
+            'wholesale_monthly_price' => 800,
+            'wholesale_yearly_price' => 9600,
             'resource_limits' => [
                 'cpu_cores' => 2,
                 'included_ips' => 1,
@@ -45,9 +49,11 @@ class ServerProductConfigServiceTest extends TestCase
                     [
                         'key' => 'usa',
                         'name' => 'USA',
-                        'monthly_price' => 1300,
-                        'yearly_price' => 15600,
-                        'setup_fee' => 100,
+                        'monthly_surcharge' => 300,
+                        'yearly_surcharge' => 3600,
+                        'setup_surcharge' => 50,
+                        'wholesale_monthly_surcharge' => 200,
+                        'wholesale_yearly_surcharge' => 2400,
                         'ip_tiers' => [
                             ['ips' => 1, 'monthly_addon' => 0, 'setup_addon' => 0],
                             ['ips' => 2, 'monthly_addon' => 200, 'setup_addon' => 50],
@@ -56,9 +62,9 @@ class ServerProductConfigServiceTest extends TestCase
                     [
                         'key' => 'eu',
                         'name' => 'Europe',
-                        'monthly_price' => 1500,
-                        'yearly_price' => 18000,
-                        'setup_fee' => 100,
+                        'monthly_surcharge' => 500,
+                        'yearly_surcharge' => 6000,
+                        'setup_surcharge' => 0,
                         'ip_tiers' => [
                             ['ips' => 1, 'monthly_addon' => 0, 'setup_addon' => 0],
                         ],
@@ -69,9 +75,17 @@ class ServerProductConfigServiceTest extends TestCase
 
         $service = app(ServerProductConfigService::class);
 
+        $usaResolved = $service->resolvedLocationPrices($product, $product->resource_limits['locations'][0]);
+        $this->assertSame(1300.0, $usaResolved['monthly']);
+        $this->assertSame(15600.0, $usaResolved['yearly']);
+        $this->assertSame(100.0, $usaResolved['setup']);
+
         $pricing = $service->resolveOrderPricing($product, null, 'usa', 2, 'monthly');
         $this->assertSame(1500.0, $pricing['unit_price']);
         $this->assertSame(150.0, $pricing['setup_fee']);
+
+        $wholesale = $service->resolvedLocationPrices($product, $product->resource_limits['locations'][0], null, true);
+        $this->assertSame(1000.0, $wholesale['monthly']);
 
         $cartPricing = $service->priceForCartItem($product, [
             'location_key' => 'eu',
@@ -80,31 +94,34 @@ class ServerProductConfigServiceTest extends TestCase
         ]);
 
         $this->assertSame(18000.0, $cartPricing['unit_price']);
-        $this->assertSame(100.0, $cartPricing['setup_fee']);
+        $this->assertSame(50.0, $cartPricing['setup_fee']);
     }
 
-    public function test_normalize_from_request_syncs_product_prices(): void
+    public function test_legacy_full_location_prices_are_treated_as_surcharges(): void
     {
-        $service = app(ServerProductConfigService::class);
-
-        $config = $service->normalizeFromRequest([
-            'cpu_cores' => 2,
-            'ram_gb' => 4,
-            'included_ips' => 1,
-            'locations' => [
-                [
-                    'name' => 'USA',
-                    'monthly_price' => 1300,
-                    'yearly_price' => 15600,
-                    'setup_fee' => 100,
+        $product = new Product([
+            'type' => 'vps',
+            'monthly_price' => 1000,
+            'yearly_price' => 12000,
+            'setup_fee' => 50,
+            'resource_limits' => [
+                'locations' => [
+                    [
+                        'key' => 'usa',
+                        'name' => 'USA',
+                        'monthly_price' => 1300,
+                        'yearly_price' => 15600,
+                        'setup_fee' => 100,
+                    ],
                 ],
             ],
-        ], 'vps');
+        ]);
 
-        $synced = $service->syncProductPricesFromConfig($config);
+        $service = app(ServerProductConfigService::class);
+        $resolved = $service->resolvedLocationPrices($product, $product->resource_limits['locations'][0]);
 
-        $this->assertSame(1300.0, $synced['monthly_price']);
-        $this->assertSame(15600.0, $synced['yearly_price']);
-        $this->assertSame(100.0, $synced['setup_fee']);
+        $this->assertSame(1300.0, $resolved['monthly']);
+        $this->assertSame(15600.0, $resolved['yearly']);
+        $this->assertSame(100.0, $resolved['setup']);
     }
 }

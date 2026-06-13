@@ -200,18 +200,21 @@
                         </ul>
                     @endif
                     @if ($locations !== [])
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Surcharges are added to the base product prices shown above.</p>
                         <div class="overflow-x-auto">
                             <table class="min-w-full text-sm">
                                 <thead>
                                     <tr class="text-left text-xs uppercase text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
                                         <th class="py-2 pr-4">Location</th>
-                                        <th class="py-2 pr-4">Monthly</th>
-                                        <th class="py-2 pr-4">Yearly</th>
-                                        <th class="py-2 pr-4">Setup</th>
+                                        <th class="py-2 pr-4">Monthly +</th>
+                                        <th class="py-2 pr-4">Yearly +</th>
+                                        <th class="py-2 pr-4">Setup +</th>
+                                        <th class="py-2 pr-4">Resolved monthly</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach ($locations as $location)
+                                        @php $resolved = $configService->resolvedLocationPrices($product, $location); @endphp
                                         <tr class="border-b border-slate-100 dark:border-slate-800">
                                             <td class="py-2 pr-4 text-slate-900 dark:text-white">
                                                 {{ $location['name'] ?? '—' }}
@@ -219,9 +222,10 @@
                                                     <span class="text-slate-500">({{ $location['city'] }})</span>
                                                 @endif
                                             </td>
-                                            <td class="py-2 pr-4">{{ number_format((float) ($location['monthly_price'] ?? 0), 2) }}</td>
-                                            <td class="py-2 pr-4">{{ number_format((float) ($location['yearly_price'] ?? 0), 2) }}</td>
-                                            <td class="py-2 pr-4">{{ number_format((float) ($location['setup_fee'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4">+{{ number_format((float) ($location['monthly_surcharge'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4">+{{ number_format((float) ($location['yearly_surcharge'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4">+{{ number_format((float) ($location['setup_surcharge'] ?? 0), 2) }}</td>
+                                            <td class="py-2 pr-4 font-medium">{{ number_format($resolved['monthly'], 2) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>

@@ -18,17 +18,17 @@
             'key' => 'default',
             'name' => $config['legacy_location'],
             'city' => '',
-            'monthly_price' => old('monthly_price', ''),
-            'yearly_price' => old('yearly_price', ''),
-            'wholesale_monthly_price' => old('wholesale_monthly_price', ''),
-            'wholesale_yearly_price' => old('wholesale_yearly_price', ''),
-            'setup_fee' => old('setup_fee', ''),
+            'monthly_surcharge' => 0,
+            'yearly_surcharge' => 0,
+            'wholesale_monthly_surcharge' => 0,
+            'wholesale_yearly_surcharge' => 0,
+            'setup_surcharge' => 0,
             'ip_tiers' => [],
         ]];
     }
 
     $maxIpCount = (int) config('server_options.max_ip_count', 8);
-    $initialLocations = collect($locations)->map(function ($location) use ($maxIpCount, $config) {
+    $initialLocations = collect($locations)->map(function ($location) use ($maxIpCount) {
         $tiers = $location['ip_tiers'] ?? [];
         if ($tiers === []) {
             for ($i = 1; $i <= $maxIpCount; $i++) {
@@ -40,11 +40,11 @@
             'key' => $location['key'] ?? '',
             'name' => $location['name'] ?? '',
             'city' => $location['city'] ?? '',
-            'monthly_price' => $location['monthly_price'] ?? '',
-            'yearly_price' => $location['yearly_price'] ?? '',
-            'wholesale_monthly_price' => $location['wholesale_monthly_price'] ?? '',
-            'wholesale_yearly_price' => $location['wholesale_yearly_price'] ?? '',
-            'setup_fee' => $location['setup_fee'] ?? '',
+            'monthly_surcharge' => $location['monthly_surcharge'] ?? $location['monthly_price'] ?? '',
+            'yearly_surcharge' => $location['yearly_surcharge'] ?? $location['yearly_price'] ?? '',
+            'wholesale_monthly_surcharge' => $location['wholesale_monthly_surcharge'] ?? $location['wholesale_monthly_price'] ?? '',
+            'wholesale_yearly_surcharge' => $location['wholesale_yearly_surcharge'] ?? $location['wholesale_yearly_price'] ?? '',
+            'setup_surcharge' => $location['setup_surcharge'] ?? $location['setup_fee'] ?? '',
             'ip_tiers' => $tiers,
         ];
     })->values()->all();
@@ -54,16 +54,14 @@
             'key' => '',
             'name' => '',
             'city' => '',
-            'monthly_price' => '',
-            'yearly_price' => '',
-            'wholesale_monthly_price' => '',
-            'wholesale_yearly_price' => '',
-            'setup_fee' => '',
+            'monthly_surcharge' => '',
+            'yearly_surcharge' => '',
+            'wholesale_monthly_surcharge' => '',
+            'wholesale_yearly_surcharge' => '',
+            'setup_surcharge' => '',
             'ip_tiers' => collect(range(1, $maxIpCount))->map(fn ($i) => ['ips' => $i, 'monthly_addon' => 0, 'setup_addon' => 0])->all(),
         ]];
     }
-
-    $isDedicated = ($productType ?? '') === 'dedicated_server';
 @endphp
 
 <div x-show="productType === 'vps' || productType === 'dedicated_server'" x-cloak>
@@ -73,8 +71,9 @@
 >
     <div class="space-y-4 mb-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Server Configuration</h3>
-        <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <p class="text-sm text-blue-900 dark:text-blue-300">Use the product <strong>description</strong> above as a short slogan only. Enter hardware specs here and set pricing per datacenter location below.</p>
+        <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
+            <p class="text-sm text-blue-900 dark:text-blue-300">Use the product <strong>description</strong> above as a short slogan only. Enter hardware specs below.</p>
+            <p class="text-sm text-blue-900 dark:text-blue-300">Set the <strong>base retail and wholesale prices</strong> in the main pricing fields above. Each datacenter row below adds a surcharge on top of that base (use <strong>0</strong> for the default/cheapest location).</p>
         </div>
     </div>
 
@@ -128,8 +127,8 @@
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <div>
-                <h4 class="text-base font-semibold text-slate-900 dark:text-white">Datacenter Locations &amp; Pricing</h4>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Add one row per datacenter. Customers choose a location when ordering; price updates accordingly.</p>
+                <h4 class="text-base font-semibold text-slate-900 dark:text-white">Datacenter Surcharges</h4>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Added on top of the base prices above. Example: base KES 1,000 + USA surcharge KES 300 = KES 1,300/mo in USA.</p>
             </div>
             <button type="button" @click="addLocation()" class="px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-950/60 transition">
                 + Add location
@@ -157,29 +156,29 @@
                         <input type="text" :name="'resource_limits[locations][' + locIndex + '][key]'" x-model="location.key" placeholder="usa-east" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Monthly price</label>
-                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][monthly_price]'" x-model="location.monthly_price" step="0.01" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Monthly surcharge</label>
+                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][monthly_surcharge]'" x-model="location.monthly_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Yearly price</label>
-                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][yearly_price]'" x-model="location.yearly_price" step="0.01" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Yearly surcharge</label>
+                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][yearly_surcharge]'" x-model="location.yearly_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Setup fee</label>
-                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][setup_fee]'" x-model="location.setup_fee" step="0.01" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Setup surcharge</label>
+                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][setup_surcharge]'" x-model="location.setup_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Wholesale monthly</label>
-                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][wholesale_monthly_price]'" x-model="location.wholesale_monthly_price" step="0.01" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Wholesale monthly surcharge</label>
+                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][wholesale_monthly_surcharge]'" x-model="location.wholesale_monthly_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Wholesale yearly</label>
-                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][wholesale_yearly_price]'" x-model="location.wholesale_yearly_price" step="0.01" min="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
+                        <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Wholesale yearly surcharge</label>
+                        <input type="number" :name="'resource_limits[locations][' + locIndex + '][wholesale_yearly_surcharge]'" x-model="location.wholesale_yearly_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                 </div>
 
                 <div>
-                    <p class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">IP address pricing (monthly add-on per tier)</p>
+                    <p class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">IP address pricing (monthly add-on per tier, on top of resolved total)</p>
                     <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
                         <template x-for="(tier, tierIndex) in location.ip_tiers" :key="tierIndex">
                             <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2">
@@ -212,11 +211,11 @@
                     key: '',
                     name: '',
                     city: '',
-                    monthly_price: '',
-                    yearly_price: '',
-                    wholesale_monthly_price: '',
-                    wholesale_yearly_price: '',
-                    setup_fee: '',
+                    monthly_surcharge: '',
+                    yearly_surcharge: '',
+                    wholesale_monthly_surcharge: '',
+                    wholesale_yearly_surcharge: '',
+                    setup_surcharge: '',
                     ip_tiers: defaultTiers(),
                 }],
                 maxIpCount,
@@ -225,11 +224,11 @@
                         key: '',
                         name: '',
                         city: '',
-                        monthly_price: '',
-                        yearly_price: '',
-                        wholesale_monthly_price: '',
-                        wholesale_yearly_price: '',
-                        setup_fee: '',
+                        monthly_surcharge: '',
+                        yearly_surcharge: '',
+                        wholesale_monthly_surcharge: '',
+                        wholesale_yearly_surcharge: '',
+                        setup_surcharge: '',
                         ip_tiers: defaultTiers(),
                     });
                 },

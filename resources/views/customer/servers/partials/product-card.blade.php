@@ -6,30 +6,25 @@
     $specLines = $configService->specLines($product);
     $locations = $configService->locations($product);
     $isDedicated = ($product->type ?? '') === 'dedicated_server';
-    $useListingPrice = (bool) $listing;
 
-    $locationPayload = collect($locations)->map(function ($location) use ($configService, $product) {
+    $locationPayload = collect($locations)->map(function ($location) use ($configService, $product, $listing) {
+        $resolved = $configService->resolvedLocationPrices($product, $location, $listing, false);
+
         return [
             'key' => $location['key'] ?? '',
             'name' => $location['name'] ?? '',
             'city' => $location['city'] ?? '',
-            'monthly_price' => (float) ($location['monthly_price'] ?? 0),
-            'yearly_price' => (float) ($location['yearly_price'] ?? 0),
-            'setup_fee' => (float) ($location['setup_fee'] ?? 0),
+            'monthly_price' => $resolved['monthly'],
+            'yearly_price' => $resolved['yearly'],
+            'setup_fee' => $resolved['setup'],
             'ip_options' => $configService->ipOptionsForLocation($location, $product),
         ];
     })->values()->all();
 
     $defaultLocation = $locationPayload[0] ?? null;
-    $displayMonthly = $useListingPrice
-        ? (float) ($listing->monthly_price ?? 0)
-        : (float) ($defaultLocation['monthly_price'] ?? $product->monthly_price);
-    $displayYearly = $useListingPrice
-        ? (float) ($listing->yearly_price ?? 0)
-        : (float) ($defaultLocation['yearly_price'] ?? $product->yearly_price);
-    $displaySetup = $useListingPrice
-        ? (float) ($listing->setup_fee ?? 0)
-        : (float) ($defaultLocation['setup_fee'] ?? $product->setup_fee);
+    $displayMonthly = (float) ($defaultLocation['monthly_price'] ?? $product->monthly_price);
+    $displayYearly = (float) ($defaultLocation['yearly_price'] ?? $product->yearly_price);
+    $displaySetup = (float) ($defaultLocation['setup_fee'] ?? $product->setup_fee);
     $slogan = trim(strip_tags((string) ($product->description ?? '')));
 @endphp
 
@@ -41,10 +36,6 @@
     ])
     x-data="serverPlanCard({
         locations: @js($locationPayload),
-        useListingPrice: @js($useListingPrice),
-        listingMonthly: @js((float) ($listing->monthly_price ?? 0)),
-        listingYearly: @js((float) ($listing->yearly_price ?? 0)),
-        listingSetup: @js((float) ($listing->setup_fee ?? 0)),
         currencySymbol: @js($currencySymbol),
     })"
 >
@@ -170,17 +161,13 @@
 
             return {
                 locations: config.locations,
-                useListingPrice: config.useListingPrice,
-                listingMonthly: config.listingMonthly,
-                listingYearly: config.listingYearly,
-                listingSetup: config.listingSetup,
                 currencySymbol: config.currencySymbol,
                 selectedLocationKey: firstLocation?.key ?? '',
                 selectedIpCount: firstLocation?.ip_options?.[0]?.ips ?? 1,
                 ipOptions: firstLocation?.ip_options ?? [],
-                monthlyPrice: config.useListingPrice ? config.listingMonthly : (firstLocation?.monthly_price ?? 0),
-                yearlyPrice: config.useListingPrice ? config.listingYearly : (firstLocation?.yearly_price ?? 0),
-                setupFee: config.useListingPrice ? config.listingSetup : (firstLocation?.setup_fee ?? 0),
+                monthlyPrice: firstLocation?.monthly_price ?? 0,
+                yearlyPrice: firstLocation?.yearly_price ?? 0,
+                setupFee: firstLocation?.setup_fee ?? 0,
                 init() {
                     this.recalculate();
                 },
@@ -201,13 +188,6 @@
                     const tier = this.ipOptions.find((option) => Number(option.ips) === Number(this.selectedIpCount))
                         ?? this.ipOptions[0]
                         ?? { monthly_addon: 0, setup_addon: 0 };
-
-                    if (this.useListingPrice) {
-                        this.monthlyPrice = this.listingMonthly + Number(tier.monthly_addon ?? 0);
-                        this.yearlyPrice = this.listingYearly + (Number(tier.monthly_addon ?? 0) * 12);
-                        this.setupFee = this.listingSetup + Number(tier.setup_addon ?? 0);
-                        return;
-                    }
 
                     this.monthlyPrice = Number(location?.monthly_price ?? 0) + Number(tier.monthly_addon ?? 0);
                     this.yearlyPrice = Number(location?.yearly_price ?? 0) + (Number(tier.monthly_addon ?? 0) * 12);

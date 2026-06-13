@@ -175,11 +175,11 @@ class ProductController extends Controller
             $rules['resource_limits.locations.*.name'] = 'required_with:resource_limits.locations|string|max:255';
             $rules['resource_limits.locations.*.key'] = 'nullable|string|max:100';
             $rules['resource_limits.locations.*.city'] = 'nullable|string|max:255';
-            $rules['resource_limits.locations.*.monthly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.yearly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.wholesale_monthly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.wholesale_yearly_price'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.setup_fee'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.monthly_surcharge'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.yearly_surcharge'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.wholesale_monthly_surcharge'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.wholesale_yearly_surcharge'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.locations.*.setup_surcharge'] = 'nullable|numeric|min:0';
             $rules['resource_limits.locations.*.ip_tiers'] = 'nullable|array';
             $rules['resource_limits.locations.*.ip_tiers.*.ips'] = 'nullable|integer|min:1';
             $rules['resource_limits.locations.*.ip_tiers.*.monthly_addon'] = 'nullable|numeric|min:0';
@@ -226,14 +226,7 @@ class ProductController extends Controller
             $validated['provisioning_driver_key'] = null;
 
             $service = app(ServerProductConfigService::class);
-            $config = $service->normalizeFromRequest($validated['resource_limits'] ?? [], $type);
-            $validated['resource_limits'] = $config;
-
-            foreach ($service->syncProductPricesFromConfig($config) as $field => $value) {
-                if ($value !== null) {
-                    $validated[$field] = $value;
-                }
-            }
+            $validated['resource_limits'] = $service->normalizeFromRequest($validated['resource_limits'] ?? [], $type);
 
             return $validated;
         }

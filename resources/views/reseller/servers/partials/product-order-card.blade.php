@@ -6,9 +6,9 @@
     $locations = $configService->locations($product);
     $defaultLocation = $locations[0] ?? null;
     $slogan = trim(strip_tags((string) ($product->description ?? '')));
-    $wholesaleMonthly = (float) ($defaultLocation['wholesale_monthly_price'] ?? $product->wholesale_monthly_price ?? 0);
-    $wholesaleYearly = (float) ($defaultLocation['wholesale_yearly_price'] ?? $product->wholesale_yearly_price ?? 0);
-    $setupFee = (float) ($defaultLocation['setup_fee'] ?? $product->setup_fee ?? 0);
+    $defaultResolved = $defaultLocation
+        ? $configService->resolvedLocationPrices($product, $defaultLocation, null, true)
+        : ['monthly' => (float) ($product->wholesale_monthly_price ?? 0), 'yearly' => (float) ($product->wholesale_yearly_price ?? 0), 'setup' => (float) ($product->setup_fee ?? 0)];
 @endphp
 
 <div class="border border-slate-200 dark:border-slate-700 rounded-xl p-5 hover:border-purple-400 transition">
@@ -31,8 +31,8 @@
                 </ul>
             @endif
         </div>
-        @if ($setupFee > 0)
-            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencyCode }} {{ number_format($setupFee, 0) }}</p>
+        @if ($defaultResolved['setup'] > 0)
+            <p class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">Setup: {{ $currencyCode }} {{ number_format($defaultResolved['setup'], 0) }}</p>
         @endif
     </div>
 
@@ -45,9 +45,10 @@
                 <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Datacenter</label>
                 <select name="location_key" required class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
                     @foreach ($locations as $location)
+                        @php $resolved = $configService->resolvedLocationPrices($product, $location, null, true); @endphp
                         <option value="{{ $location['key'] }}">
                             {{ $location['name'] }}{{ ! empty($location['city']) ? ' ('.$location['city'].')' : '' }}
-                            — {{ $currencyCode }} {{ number_format($location['wholesale_monthly_price'] ?? 0, 0) }}/mo
+                            — {{ $currencyCode }} {{ number_format($resolved['monthly'], 0) }}/mo
                         </option>
                     @endforeach
                 </select>
@@ -84,12 +85,12 @@
         <div class="flex gap-2 pt-1">
             <button type="submit" name="billing_cycle" value="monthly" class="flex-1 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                 <span class="block text-xs opacity-80">Wholesale Monthly</span>
-                <span class="font-bold">{{ $currencyCode }} {{ number_format($wholesaleMonthly, 0) }}/mo</span>
+                <span class="font-bold">{{ $currencyCode }} {{ number_format($defaultResolved['monthly'], 0) }}/mo</span>
             </button>
-            @if ($wholesaleYearly > 0)
+            @if ($defaultResolved['yearly'] > 0)
                 <button type="submit" name="billing_cycle" value="annual" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition text-center leading-tight">
                     <span class="block text-xs opacity-80">Wholesale Annual — Save!</span>
-                    <span class="font-bold">{{ $currencyCode }} {{ number_format($wholesaleYearly, 0) }}/yr</span>
+                    <span class="font-bold">{{ $currencyCode }} {{ number_format($defaultResolved['yearly'], 0) }}/yr</span>
                 </button>
             @endif
         </div>

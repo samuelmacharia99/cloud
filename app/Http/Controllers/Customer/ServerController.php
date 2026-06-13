@@ -131,9 +131,9 @@ class ServerController extends Controller
         }
 
         if ($validated['billing_cycle'] === 'annual') {
-            $yearlyAvailable = $catalogService->isResellerCustomer($user)
-                ? (float) ($listing?->yearly_price ?? 0) > 0
-                : (float) ($configService->location($product, $locationKey)['yearly_price'] ?? $product->yearly_price ?? 0) > 0;
+            $location = $configService->location($product, $locationKey);
+            $resolved = $configService->resolvedLocationPrices($product, $location, $listing, false);
+            $yearlyAvailable = (float) $resolved['yearly'] > 0;
 
             if (! $yearlyAvailable) {
                 return back()->withErrors(['error' => 'Annual billing is not available for this product.']);

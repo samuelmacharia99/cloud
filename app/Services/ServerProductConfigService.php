@@ -80,11 +80,11 @@ class ServerProductConfigService
             return [[
                 'key' => 'default',
                 'name' => $this->config($product)['legacy_location'] ?? 'Default',
-                'monthly_price' => (float) $product->monthly_price,
-                'yearly_price' => (float) ($product->yearly_price ?? 0),
-                'wholesale_monthly_price' => (float) ($product->wholesale_monthly_price ?? 0),
-                'wholesale_yearly_price' => (float) ($product->wholesale_yearly_price ?? 0),
-                'setup_fee' => (float) ($product->setup_fee ?? 0),
+                'monthly_surcharge' => 0.0,
+                'yearly_surcharge' => 0.0,
+                'wholesale_monthly_surcharge' => 0.0,
+                'wholesale_yearly_surcharge' => 0.0,
+                'setup_surcharge' => 0.0,
                 'ip_tiers' => $this->defaultIpTiers((int) ($this->config($product)['included_ips'] ?? 1)),
             ]];
         }
@@ -101,6 +101,50 @@ class ServerProductConfigService
         }
 
         return null;
+    }
+
+    /**
+     * Base product price + datacenter surcharge (+ optional reseller listing base).
+     *
+     * @return array{monthly: float, yearly: float, setup: float}
+     */
+    public function resolvedLocationPrices(
+        Product $product,
+        array $location,
+        ?ResellerProduct $listing = null,
+        bool $useWholesale = false,
+    ): array {
+        if ($listing && ! $useWholesale) {
+            $monthlyBase = (float) ($listing->monthly_price ?? 0);
+            $yearlyBase = (float) ($listing->yearly_price ?? 0);
+            if ($yearlyBase <= 0 && $monthlyBase > 0) {
+                $yearlyBase = $monthlyBase * 12;
+            }
+
+            return [
+                'monthly' => $monthlyBase + $this->locationSurcharge($location, $product, 'monthly', false),
+                'yearly' => $yearlyBase + $this->locationSurcharge($location, $product, 'yearly', false),
+                'setup' => (float) ($listing->setup_fee ?? 0) + $this->locationSurcharge($location, $product, 'setup', false),
+            ];
+        }
+
+        $monthlyBase = $useWholesale
+            ? (float) ($product->wholesale_monthly_price ?? 0)
+            : (float) ($product->monthly_price ?? 0);
+
+        $yearlyBase = $useWholesale
+            ? (float) ($product->wholesale_yearly_price ?? 0)
+            : (float) ($product->yearly_price ?? 0);
+
+        if ($yearlyBase <= 0 && $monthlyBase > 0) {
+            $yearlyBase = $monthlyBase * 12;
+        }
+
+        return [
+            'monthly' => $monthlyBase + $this->locationSurcharge($location, $product, 'monthly', $useWholesale),
+            'yearly' => $yearlyBase + $this->locationSurcharge($location, $product, 'yearly', $useWholesale),
+            'setup' => (float) ($product->setup_fee ?? 0) + $this->locationSurcharge($location, $product, 'setup', $useWholesale),
+        ];
     }
 
     /**
@@ -193,50 +237,24 @@ class ServerProductConfigService
         }
 
         $ipTier = $this->ipTierForCount($location, $ipCount, $product);
-        $monthlyAddon = (float) ($ipTier['monthly_addon'] ?? 0);
-        $setupAddon = (float) ($ipTier['setup_addon'] ?? 0);
-
-        if ($listing && ! $useWholesale) {
-            $base = $listing->priceForBillingCycle($billingCycle === 'annual' ? 'annual' : 'monthly');
-            $unitPrice = $billingCycle === 'annual'
-                ? $base + ($monthlyAddon * 12)
-                : $base + $monthlyAddon;
-            $setupFee = (float) ($listing->setup_fee ?? 0) + $setupAddon;
-
-            return [
-                'unit_price' => round($unitPrice, 2),
-                'setup_fee' => round($setupFee, 2),
-                'location' => $location,
-                'ip_count' => $ipCount,
-                'monthly_addon' => $monthlyAddon,
-                'setup_addon' => $setupAddon,
-            ];
-        }
-
-        $monthlyBase = $useWholesale
-            ? (float) ($location['wholesale_monthly_price'] ?? $product->wholesale_monthly_price ?? 0)
-            : (float) ($location['monthly_price'] ?? $product->monthly_price ?? 0);
-
-        $yearlyBase = $useWholesale
-            ? (float) ($location['wholesale_yearly_price'] ?? $product->wholesale_yearly_price ?? 0)
-            : (float) ($location['yearly_price'] ?? $product->yearly_price ?? ($monthlyBase * 12));
-
-        $setupBase = (float) ($location['setup_fee'] ?? $product->setup_fee ?? 0);
+        $ipMonthlyAddon = (float) ($ipTier['monthly_addon'] ?? 0);
+        $ipSetupAddon = (float) ($ipTier['setup_addon'] ?? 0);
+        $resolved = $this->resolvedLocationPrices($product, $location, $listing, $useWholesale);
 
         $unitPrice = match ($billingCycle) {
-            'annual' => $yearlyBase + ($monthlyAddon * 12),
-            'semi-annual' => ($monthlyBase * 6) + ($monthlyAddon * 6),
-            'quarterly' => ($monthlyBase * 3) + ($monthlyAddon * 3),
-            default => $monthlyBase + $monthlyAddon,
+            'annual' => $resolved['yearly'] + ($ipMonthlyAddon * 12),
+            'semi-annual' => ($resolved['monthly'] * 6) + ($ipMonthlyAddon * 6),
+            'quarterly' => ($resolved['monthly'] * 3) + ($ipMonthlyAddon * 3),
+            default => $resolved['monthly'] + $ipMonthlyAddon,
         };
 
         return [
             'unit_price' => round($unitPrice, 2),
-            'setup_fee' => round($setupBase + $setupAddon, 2),
+            'setup_fee' => round($resolved['setup'] + $ipSetupAddon, 2),
             'location' => $location,
             'ip_count' => $ipCount,
-            'monthly_addon' => $monthlyAddon,
-            'setup_addon' => $setupAddon,
+            'monthly_addon' => $ipMonthlyAddon,
+            'setup_addon' => $ipSetupAddon,
         ];
     }
 
@@ -302,44 +320,16 @@ class ServerProductConfigService
                 'key' => $key,
                 'name' => $name,
                 'city' => $this->nullableString($location['city'] ?? null),
-                'monthly_price' => (float) ($location['monthly_price'] ?? 0),
-                'yearly_price' => (float) ($location['yearly_price'] ?? 0),
-                'wholesale_monthly_price' => (float) ($location['wholesale_monthly_price'] ?? 0),
-                'wholesale_yearly_price' => (float) ($location['wholesale_yearly_price'] ?? 0),
-                'setup_fee' => (float) ($location['setup_fee'] ?? 0),
+                'monthly_surcharge' => (float) ($location['monthly_surcharge'] ?? $location['monthly_price'] ?? 0),
+                'yearly_surcharge' => (float) ($location['yearly_surcharge'] ?? $location['yearly_price'] ?? 0),
+                'wholesale_monthly_surcharge' => (float) ($location['wholesale_monthly_surcharge'] ?? $location['wholesale_monthly_price'] ?? 0),
+                'wholesale_yearly_surcharge' => (float) ($location['wholesale_yearly_surcharge'] ?? $location['wholesale_yearly_price'] ?? 0),
+                'setup_surcharge' => (float) ($location['setup_surcharge'] ?? $location['setup_fee'] ?? 0),
                 'ip_tiers' => $ipTiers,
             ];
         }
 
         return $config;
-    }
-
-    /**
-     * Sync legacy top-level product prices from the first configured location.
-     *
-     * @param  array<string, mixed>  $config
-     * @return array{monthly_price: float|null, yearly_price: float|null, wholesale_monthly_price: float|null, wholesale_yearly_price: float|null, setup_fee: float|null}
-     */
-    public function syncProductPricesFromConfig(array $config): array
-    {
-        $first = $config['locations'][0] ?? null;
-        if (! $first) {
-            return [
-                'monthly_price' => null,
-                'yearly_price' => null,
-                'wholesale_monthly_price' => null,
-                'wholesale_yearly_price' => null,
-                'setup_fee' => null,
-            ];
-        }
-
-        return [
-            'monthly_price' => (float) ($first['monthly_price'] ?? 0),
-            'yearly_price' => (float) ($first['yearly_price'] ?? 0),
-            'wholesale_monthly_price' => (float) ($first['wholesale_monthly_price'] ?? 0),
-            'wholesale_yearly_price' => (float) ($first['wholesale_yearly_price'] ?? 0),
-            'setup_fee' => (float) ($first['setup_fee'] ?? 0),
-        ];
     }
 
     /**
@@ -361,6 +351,54 @@ class ServerProductConfigService
             'legacy_location' => $limits['location'] ?? null,
             'locations' => [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $location
+     */
+    private function locationSurcharge(array $location, Product $product, string $type, bool $wholesale): float
+    {
+        $newKey = match ($type) {
+            'monthly' => $wholesale ? 'wholesale_monthly_surcharge' : 'monthly_surcharge',
+            'yearly' => $wholesale ? 'wholesale_yearly_surcharge' : 'yearly_surcharge',
+            'setup' => 'setup_surcharge',
+            default => null,
+        };
+
+        if ($newKey && array_key_exists($newKey, $location)) {
+            return (float) $location[$newKey];
+        }
+
+        return $this->legacyLocationSurcharge($location, $product, $type, $wholesale);
+    }
+
+    /**
+     * Convert legacy full location prices into surcharges when old data is still stored.
+     *
+     * @param  array<string, mixed>  $location
+     */
+    private function legacyLocationSurcharge(array $location, Product $product, string $type, bool $wholesale): float
+    {
+        $legacyKey = match ($type) {
+            'monthly' => $wholesale ? 'wholesale_monthly_price' : 'monthly_price',
+            'yearly' => $wholesale ? 'wholesale_yearly_price' : 'yearly_price',
+            'setup' => 'setup_fee',
+            default => null,
+        };
+
+        if (! $legacyKey || ! array_key_exists($legacyKey, $location)) {
+            return 0.0;
+        }
+
+        $legacyValue = (float) $location[$legacyKey];
+        $productBase = match ($type) {
+            'monthly' => $wholesale ? (float) ($product->wholesale_monthly_price ?? 0) : (float) ($product->monthly_price ?? 0),
+            'yearly' => $wholesale ? (float) ($product->wholesale_yearly_price ?? 0) : (float) ($product->yearly_price ?? 0),
+            'setup' => (float) ($product->setup_fee ?? 0),
+            default => 0.0,
+        };
+
+        return max(0.0, $legacyValue - $productBase);
     }
 
     /**
