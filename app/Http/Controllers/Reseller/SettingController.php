@@ -8,12 +8,14 @@ use App\Http\Requests\TestSmsRequest;
 use App\Http\Requests\TestSmtpRequest;
 use App\Http\Requests\UpdateBrandingSettingsRequest;
 use App\Http\Requests\UpdateMpesaSettingsRequest;
+use App\Http\Requests\UpdateResellerNameserverSettingsRequest;
 use App\Http\Requests\UpdateSmsSettingsRequest;
 use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\UploadBrandingFileRequest;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
 use App\Services\ResellerMailService;
+use App\Services\ResellerNameserverService;
 use App\Services\ResellerSettingsService;
 use App\Services\ResellerSslService;
 use App\Services\TalksasaSmsService;
@@ -25,7 +27,7 @@ use Illuminate\View\View;
 
 class SettingController extends Controller
 {
-    private const SETTINGS_TABS = ['payment', 'sms', 'email', 'branding'];
+    private const SETTINGS_TABS = ['payment', 'sms', 'email', 'branding', 'nameservers'];
 
     public function __construct(
         private ResellerSettingsService $settingsService,
@@ -34,6 +36,7 @@ class SettingController extends Controller
         private ResellerSslService $sslService,
         private ResellerBrandingResolver $brandingResolver,
         private ResellerMailService $resellerMail,
+        private ResellerNameserverService $nameserverService,
     ) {}
 
     public function index(Request $request): View
@@ -46,6 +49,8 @@ class SettingController extends Controller
             'smsSettings' => $this->settingsService->getSmsSettings($user),
             'smtpSettings' => $this->settingsService->getSmtpSettings($user),
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
+            'nameserverSettings' => $this->nameserverService->getSettings($user),
+            'platformNameservers' => $this->nameserverService->platformDefaults(),
             'brandingStatus' => $this->brandingResolver->status($user),
             'registrationInviteUrl' => $this->brandingResolver->signedRegistrationUrl($user),
             'activeSettingsTab' => $this->resolveSettingsTab($request),
@@ -239,6 +244,27 @@ class SettingController extends Controller
 
             return $this->redirectToSettingsTab('branding', [
                 'error' => 'Failed to update branding settings. Please try again.',
+            ]);
+        }
+    }
+
+    public function updateNameservers(UpdateResellerNameserverSettingsRequest $request): RedirectResponse
+    {
+        try {
+            $this->nameserverService->updateSettings(auth()->user(), $request->validated());
+
+            return $this->redirectToSettingsTab('nameservers', [
+                'success' => 'Nameserver settings saved successfully.',
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update reseller nameserver settings', [
+                'error' => $e->getMessage(),
+                'reseller_id' => auth()->id(),
+                'exception' => $e,
+            ]);
+
+            return $this->redirectToSettingsTab('nameservers', [
+                'error' => 'Failed to save nameserver settings. Please try again.',
             ]);
         }
     }

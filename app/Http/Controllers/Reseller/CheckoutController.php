@@ -20,12 +20,14 @@ use App\Services\NotificationService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerInvoicePaymentService;
+use App\Services\ResellerNameserverService;
 use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
 use App\Services\TaxService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class CheckoutController extends Controller
@@ -38,6 +40,7 @@ class CheckoutController extends Controller
         protected DomainRenewalService $renewalService,
         protected ResellerCustomerOrderService $customerOrders,
         protected ResellerScopeService $scope,
+        protected ResellerNameserverService $nameservers,
     ) {}
 
     public function show(): View|RedirectResponse
@@ -53,7 +56,7 @@ class CheckoutController extends Controller
         $subtotal = 0;
 
         foreach ($cart as $key => $item) {
-            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_renewal'], true)) {
+            if (in_array($item['type'] ?? 'domain', ['domain', 'domain_renewal', 'domain_transfer'], true)) {
                 $total = CartController::cartItemTotal($item);
                 $subtotal += $total;
                 $items[$key] = array_merge($item, ['total' => $total]);
@@ -82,6 +85,8 @@ class CheckoutController extends Controller
             'walletApplicable' => $walletApplicable,
             'checkoutCustomer' => $checkoutCustomer,
             'isCustomerCheckout' => $isCustomerCheckout,
+            'resellerDefaults' => $this->nameservers->defaultsForReseller($user),
+            'platformDefaults' => $this->nameservers->platformDefaults(),
         ]);
     }
 
@@ -98,6 +103,20 @@ class CheckoutController extends Controller
         }
 
         $reseller = auth()->user();
+
+        try {
+            $cart = $this->nameservers->mergeSubmittedIntoCart(
+                $reseller,
+                $cart,
+                $request->input('nameservers', []),
+            );
+            $this->nameservers->validateCartNameservers($reseller, $cart);
+            session()->put(CartController::CART_KEY, $cart);
+        } catch (ValidationException $e) {
+            return redirect()->route('reseller.checkout.show')
+                ->withInput()
+                ->withErrors($e->errors());
+        }
 
         $checkoutCustomer = $this->resolveCheckoutCustomer();
         if ($checkoutCustomer) {
@@ -161,6 +180,8 @@ class CheckoutController extends Controller
                         $item['old_registrar_url'] ?? null,
                     );
 
+                    $domain->update($this->nameservers->domainColumnsForItem($reseller, $item));
+
                     $order = ResellerDomainOrder::create([
                         'reseller_id' => $reseller->id,
                         'customer_id' => $reseller->id,
@@ -188,6 +209,7 @@ class CheckoutController extends Controller
                             'domain_order_id' => $order->id,
                             'type' => 'domain_transfer',
                             'domain_id' => $domain->id,
+                            'nameservers' => $item['nameservers'] ?? null,
                         ],
                     ];
 
@@ -215,14 +237,14 @@ class CheckoutController extends Controller
                     $subtotal += $wholesaleAmount;
 
                     // Create domain
-                    $domain = Domain::create([
+                    $domain = Domain::create(array_merge([
                         'user_id' => $reseller->id,
                         'name' => $item['domain'],
                         'extension' => $item['extension'],
                         'status' => 'pending',
                         'type' => 'registration',
                         'auto_renew' => false,
-                    ]);
+                    ], $this->nameservers->domainColumnsForItem($reseller, $item)));
 
                     // Create reseller domain order
                     $order = ResellerDomainOrder::create([
@@ -247,7 +269,10 @@ class CheckoutController extends Controller
                         'description' => $item['domain'].$item['extension'].' ('.$item['years'].' year'.($item['years'] > 1 ? 's' : '').')',
                         'quantity' => 1,
                         'unit_price' => $wholesaleAmount,
-                        'custom_options' => ['domain_order_id' => $order->id],
+                        'custom_options' => [
+                            'domain_order_id' => $order->id,
+                            'nameservers' => $item['nameservers'] ?? null,
+                        ],
                     ];
                 }
             }

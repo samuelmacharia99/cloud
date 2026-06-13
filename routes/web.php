@@ -383,6 +383,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/settings/smtp', [App\Http\Controllers\Reseller\SettingController::class, 'updateSmtp'])->name('reseller.settings.smtp.update');
         Route::post('reseller/settings/smtp/test', [App\Http\Controllers\Reseller\SettingController::class, 'testSmtp'])->name('reseller.settings.smtp.test');
         Route::post('reseller/settings/branding', [App\Http\Controllers\Reseller\SettingController::class, 'updateBranding'])->name('reseller.settings.branding.update');
+        Route::post('reseller/settings/nameservers', [App\Http\Controllers\Reseller\SettingController::class, 'updateNameservers'])->name('reseller.settings.nameservers.update');
         Route::post('reseller/settings/branding/upload', [App\Http\Controllers\Reseller\SettingController::class, 'uploadBrandingFile'])->name('reseller.settings.branding.upload');
         Route::delete('reseller/settings/branding/file', [App\Http\Controllers\Reseller\SettingController::class, 'deleteBrandingFile'])->name('reseller.settings.branding.delete');
         Route::get('reseller/settings/branding/ssl/check-dns', [App\Http\Controllers\Reseller\SettingController::class, 'checkSslDns'])->name('reseller.settings.branding.ssl.check-dns');
@@ -427,6 +428,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('reseller/cart/context', [CartController::class, 'setContext'])->name('reseller.cart.context');
             Route::post('reseller/cart/add', [CartController::class, 'add'])->name('reseller.cart.add');
             Route::post('reseller/cart/transfer', [CartController::class, 'addTransfer'])->name('reseller.cart.transfer');
+            Route::post('reseller/cart/{key}/nameservers', [CartController::class, 'updateNameservers'])->name('reseller.cart.nameservers');
             Route::delete('reseller/cart/{key}', [CartController::class, 'remove'])->name('reseller.cart.remove');
             Route::post('reseller/cart/clear', [CartController::class, 'clear'])->name('reseller.cart.clear');
             Route::get('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'show'])->name('reseller.checkout.show');

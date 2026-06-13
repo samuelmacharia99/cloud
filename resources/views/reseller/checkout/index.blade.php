@@ -46,32 +46,50 @@
                 </div>
             @endif
 
-            <!-- Order Items -->
-            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Orders</h2>
-                <div class="space-y-4">
-                    @foreach($items as $item)
-                        <div class="flex justify-between items-start p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                            <div>
-                                <p class="font-semibold text-slate-900 dark:text-white">{{ $item['domain'] }}{{ $item['extension'] }}</p>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                                    @if(($item['type'] ?? 'domain') === 'domain_renewal')
-                                        <span class="text-amber-700 dark:text-amber-300 font-medium">Renewal</span> ·
-                                    @elseif(($item['type'] ?? 'domain') === 'domain_transfer')
-                                        <span class="text-blue-700 dark:text-blue-300 font-medium">Transfer</span>
-                                    @else
-                                        <span class="text-emerald-700 dark:text-emerald-300 font-medium">Registration</span> ·
-                                        {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
-                                    @endif
-                                </p>
+            <!-- Order Items + Checkout Form -->
+            <form method="POST" action="{{ route('reseller.checkout.process') }}" class="space-y-6">
+                @csrf
+
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Orders</h2>
+                    <div class="space-y-4">
+                        @foreach($items as $key => $item)
+                            <div class="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg space-y-4">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <p class="font-semibold text-slate-900 dark:text-white">{{ $item['domain'] }}{{ $item['extension'] }}</p>
+                                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                            @if(($item['type'] ?? 'domain') === 'domain_renewal')
+                                                <span class="text-amber-700 dark:text-amber-300 font-medium">Renewal</span> ·
+                                            @elseif(($item['type'] ?? 'domain') === 'domain_transfer')
+                                                <span class="text-blue-700 dark:text-blue-300 font-medium">Transfer</span>
+                                            @else
+                                                <span class="text-emerald-700 dark:text-emerald-300 font-medium">Registration</span> ·
+                                                {{ $item['years'] }} Year{{ $item['years'] > 1 ? 's' : '' }}
+                                            @endif
+                                        </p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
+                                    </div>
+                                </div>
+
+                                @if(in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer'], true))
+                                    @include('reseller.partials.nameserver-config', [
+                                        'cartKey' => $key,
+                                        'stored' => $item['nameservers'] ?? [],
+                                        'defaults' => $resellerDefaults,
+                                        'platformDefaults' => $platformDefaults,
+                                        'inputPrefix' => "nameservers[{$key}]",
+                                    ])
+                                    @error('nameservers.'.$key.'.ns1')
+                                        <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p>
+                                    @enderror
+                                @endif
                             </div>
-                            <div class="text-right">
-                                <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
-                            </div>
-                        </div>
-                    @endforeach
+                        @endforeach
+                    </div>
                 </div>
-            </div>
 
             @if ($isCustomerCheckout ?? false)
                 <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
@@ -106,10 +124,8 @@
                 </div>
             @endif
 
-            <!-- Place Order Form -->
-            <form method="POST" action="{{ route('reseller.checkout.process') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                @csrf
-
+            <!-- Place Order -->
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                 @if(!($isCustomerCheckout ?? false) && $wallet->balance > 0)
                 <div class="mb-6 p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg">
                     <div class="flex items-center justify-between mb-3">
@@ -152,6 +168,7 @@
                         {{ ($isCustomerCheckout ?? false) ? 'Create customer invoice' : 'Place Order' }}
                     </button>
                 </div>
+            </div>
             </form>
         </div>
 

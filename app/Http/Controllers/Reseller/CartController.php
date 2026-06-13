@@ -9,12 +9,14 @@ use App\Services\DomainAvailabilityService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerDomainOrderService;
+use App\Services\ResellerNameserverService;
 use App\Services\ResellerScopeService;
 use App\Services\TaxService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class CartController extends Controller
@@ -25,6 +27,7 @@ class CartController extends Controller
         private ResellerScopeService $scope,
         private ResellerCustomerOrderService $orders,
         private DomainAvailabilityService $availability,
+        private ResellerNameserverService $nameservers,
     ) {}
 
     public function index(): View
@@ -45,6 +48,8 @@ class CartController extends Controller
 
         $cartContext = ResellerCartContext::summary();
         $checkoutCustomer = $this->resolveCheckoutCustomer();
+        $resellerDefaults = $this->nameservers->defaultsForReseller(auth()->user());
+        $platformDefaults = $this->nameservers->platformDefaults();
 
         return view('reseller.cart.index', [
             'items' => $items,
@@ -56,6 +61,8 @@ class CartController extends Controller
             'total' => $taxBreakdown['total'],
             'cartContext' => $cartContext,
             'checkoutCustomer' => $checkoutCustomer,
+            'resellerDefaults' => $resellerDefaults,
+            'platformDefaults' => $platformDefaults,
         ]);
     }
 
@@ -144,6 +151,7 @@ class CartController extends Controller
             'extension' => $validated['extension'],
             'years' => (int) $validated['years'],
             'price' => $expectedUnitPrice,
+            'nameservers' => $this->nameservers->cartDefaultPayload(auth()->user()),
             'added_at' => now()->toIso8601String(),
         ];
 
@@ -208,6 +216,7 @@ class CartController extends Controller
             'years' => (int) $validated['years'],
             'price' => round($expectedRetail / (int) $validated['years'], 2),
             'retail_total' => $expectedRetail,
+            'nameservers' => $this->nameservers->cartDefaultPayload($reseller),
             'added_at' => now()->toIso8601String(),
         ];
 
@@ -273,6 +282,7 @@ class CartController extends Controller
             'epp_code' => $validated['epp_code'],
             'old_registrar' => $validated['old_registrar'],
             'old_registrar_url' => $validated['old_registrar_url'] ?? null,
+            'nameservers' => $this->nameservers->cartDefaultPayload(auth()->user()),
             'added_at' => now()->toIso8601String(),
         ];
 
@@ -328,6 +338,7 @@ class CartController extends Controller
             'epp_code' => $validated['epp_code'],
             'old_registrar' => $validated['old_registrar'],
             'old_registrar_url' => $validated['old_registrar_url'] ?? null,
+            'nameservers' => $this->nameservers->cartDefaultPayload($reseller),
             'added_at' => now()->toIso8601String(),
         ];
 
@@ -356,6 +367,34 @@ class CartController extends Controller
 
         return redirect()->route('reseller.cart.index')
             ->with('success', 'Cart cleared');
+    }
+
+    public function updateNameservers(string $key, Request $request): JsonResponse
+    {
+        $cart = session(self::CART_KEY, []);
+
+        if (! isset($cart[$key])) {
+            return response()->json(['success' => false, 'message' => 'Cart item not found.'], 404);
+        }
+
+        if (! $this->nameservers->itemNeedsNameservers($cart[$key])) {
+            return response()->json(['success' => false, 'message' => 'This item does not support nameservers.'], 422);
+        }
+
+        try {
+            $cart[$key]['nameservers'] = $this->nameservers->parseSubmitted(
+                $request->all(),
+                auth()->user(),
+            );
+            session()->put(self::CART_KEY, $cart);
+
+            return response()->json(['success' => true, 'message' => 'Nameservers saved.']);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Invalid nameservers.',
+            ], 422);
+        }
     }
 
     public static function cartItemTotal(array $item): float

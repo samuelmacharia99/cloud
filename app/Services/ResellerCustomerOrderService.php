@@ -371,6 +371,7 @@ class ResellerCustomerOrderService
                         (string) $item['old_registrar'],
                         $item['old_registrar_url'] ?? null,
                         isset($item['retail_total']) ? (float) $item['retail_total'] : null,
+                        $item,
                     );
                 } else {
                     $prepared = $this->prepareDomainRegistration(
@@ -379,6 +380,9 @@ class ResellerCustomerOrderService
                         (string) $item['domain'],
                         $extension,
                         (int) $item['years'],
+                        null,
+                        null,
+                        $item,
                     );
                 }
 
@@ -431,6 +435,7 @@ class ResellerCustomerOrderService
         string $oldRegistrar,
         ?string $oldRegistrarUrl = null,
         ?float $retailAmount = null,
+        array $cartItem = [],
     ): array {
         $domainName = strtolower($domainName);
         $wholesaleAmount = app(ResellerDomainOrderService::class)
@@ -453,7 +458,7 @@ class ResellerCustomerOrderService
             throw new \InvalidArgumentException("Domain {$domainName}{$extension->extension} already exists for this customer.");
         }
 
-        $domain = Domain::create([
+        $domain = Domain::create(array_merge([
             'user_id' => $customer->id,
             'reseller_id' => $reseller->id,
             'name' => $domainName,
@@ -466,7 +471,7 @@ class ResellerCustomerOrderService
             'old_registrar_url' => $oldRegistrarUrl,
             'transfer_notes' => 'Transfer initiated on '.now()->format('Y-m-d H:i:s'),
             'auto_renew' => false,
-        ]);
+        ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
 
         $retailMargin = max(0, round($retailAmount - $wholesaleAmount, 2));
 
@@ -502,6 +507,7 @@ class ResellerCustomerOrderService
                     'type' => 'domain_transfer',
                     'domain_id' => $domain->id,
                     'domain_order_id' => $order->id,
+                    'nameservers' => $cartItem['nameservers'] ?? null,
                 ],
             ],
         ];
@@ -518,6 +524,7 @@ class ResellerCustomerOrderService
         int $years,
         ?float $retailAmount = null,
         ?string $expiresAt = null,
+        array $cartItem = [],
     ): array {
         $wholesale = $extension->pricing()
             ->where('tier', 'wholesale')
@@ -533,7 +540,7 @@ class ResellerCustomerOrderService
         $domainName = strtolower($domainName);
         $domainExpiresAt = $this->resolveDomainExpiresAt($expiresAt, $years);
 
-        $domain = Domain::create([
+        $domain = Domain::create(array_merge([
             'user_id' => $customer->id,
             'reseller_id' => $reseller->id,
             'name' => $domainName,
@@ -542,7 +549,7 @@ class ResellerCustomerOrderService
             'type' => 'registration',
             'auto_renew' => false,
             'expires_at' => $domainExpiresAt,
-        ]);
+        ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
 
         $order = ResellerDomainOrder::create([
             'reseller_id' => $reseller->id,
@@ -567,7 +574,10 @@ class ResellerCustomerOrderService
                 'product_id' => null,
                 'product_type' => 'Domain',
                 'domain_id' => $domain->id,
-                'custom_options' => ['domain_order_id' => $order->id],
+                'custom_options' => [
+                    'domain_order_id' => $order->id,
+                    'nameservers' => $cartItem['nameservers'] ?? null,
+                ],
             ],
         ];
     }
