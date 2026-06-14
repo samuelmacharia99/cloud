@@ -188,6 +188,10 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_OPTIONS=--max-old-space-size=650 NODE_ENV=production /usr/local/bin/npm run build',
             $runtime->npmBuildShellCommand(1000)
         );
+        $this->assertStringContainsString(
+            'NODE_OPTIONS=--max-old-space-size=4096',
+            $runtime->npmBuildShellCommand(null, true)
+        );
         $this->assertSame(650, $runtime->nodeBuildHeapLimitMb(1000));
         $this->assertStringContainsString(
             'tailwindcss',

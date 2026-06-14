@@ -1238,6 +1238,11 @@ class ContainerDeploymentService
         return max(30, min(900, $timeout));
     }
 
+    public function resolveTemplateDockerImage(object $template, ?string $selectedVersion = null): string
+    {
+        return $this->resolveDockerImage($template, $selectedVersion);
+    }
+
     private function resolveDockerImage($template, ?string $selectedVersion = null): string
     {
         if ($this->runtimeImages->usesRuntimeImage($template)) {

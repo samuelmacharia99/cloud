@@ -9,9 +9,15 @@ use App\Services\SSH\SSHService;
 class ContainerStackCommandService
 {
     public function __construct(
-        private ?ContainerApplicationRuntimeService $runtimeService = null
+        private ?ContainerApplicationRuntimeService $runtimeService = null,
+        private ?ContainerDeploymentService $deploymentService = null
     ) {
         $this->runtimeService ??= new ContainerApplicationRuntimeService;
+    }
+
+    private function deploymentService(): ContainerDeploymentService
+    {
+        return $this->deploymentService ??= app(ContainerDeploymentService::class);
     }
 
     public function resolveWorkDir(object $template): string
@@ -146,7 +152,7 @@ class ContainerStackCommandService
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
         $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson);
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
-        $memoryLimitMb = $this->resolveNodeBuildMemoryLimitMb($deployment);
+        $dockerImage = $this->resolveNodeDockerImage($deployment);
 
         try {
             if ($requiresBuild) {
@@ -180,15 +186,13 @@ class ContainerStackCommandService
                 $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
-                $this->runOneOffInContainer(
+                $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
-                    $containerPath,
-                    $containerName,
-                    $this->runtimeService->npmBuildShellCommand($memoryLimitMb),
+                    $dockerImage,
+                    $hostAppPath,
+                    $this->runtimeService->npmBuildShellCommand(null, true),
                     '/app',
-                    $buildTimeout,
-                    $buildEnv,
-                    true
+                    $buildTimeout
                 );
                 $this->runOneOffInContainer(
                     $ssh,
@@ -390,13 +394,16 @@ class ContainerStackCommandService
         }
     }
 
-    private function resolveNodeBuildMemoryLimitMb(ContainerDeployment $deployment): int
+    private function resolveNodeDockerImage(ContainerDeployment $deployment): string
     {
-        if ($deployment->memory_limit_mb !== null && (int) $deployment->memory_limit_mb > 0) {
-            return (int) $deployment->memory_limit_mb;
+        $deployment->loadMissing('service.product.containerTemplate');
+        $template = $deployment->service?->product?->containerTemplate;
+
+        if ($template === null) {
+            throw new \RuntimeException('Container template is missing for this deployment.');
         }
 
-        return 1024;
+        return $this->deploymentService()->resolveTemplateDockerImage($template, $deployment->selected_version);
     }
 
     private function nodeModulesNeedFreshInstall(SSHService $ssh, string $hostAppPath, ?string $packageJson): bool
@@ -467,6 +474,42 @@ class ContainerStackCommandService
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    public function runUnlimitedMemoryNodeCommand(
+        SSHService $ssh,
+        string $dockerImage,
+        string $hostAppPath,
+        string $command,
+        string $workDir = '/app',
+        int $timeout = 900
+    ): string {
+        if (! $this->isSafeCommand($command)) {
+            throw new \InvalidArgumentException('Unsafe container command rejected.');
+        }
+
+        if (! $this->isSafeDockerImageReference($dockerImage)) {
+            throw new \InvalidArgumentException('Unsafe Docker image reference rejected.');
+        }
+
+        $imageArg = escapeshellarg($dockerImage);
+        $volumeArg = escapeshellarg(rtrim($hostAppPath, '/').':'.rtrim($workDir, '/'));
+        $workDirArg = escapeshellarg($workDir);
+        $commandArg = escapeshellarg($command);
+
+        return trim($ssh->exec(
+            "docker run --rm -v {$volumeArg} -w {$workDirArg} {$imageArg} sh -c {$commandArg}",
+            $timeout
+        ));
+    }
+
+    private function isSafeDockerImageReference(string $image): bool
+    {
+        $image = trim($image);
+
+        return $image !== ''
+            && strlen($image) <= 200
+            && (bool) preg_match('/^[a-z0-9][a-z0-9._\/-]*(?::[A-Za-z0-9._-]+)?$/', $image);
     }
 
     public function runOneOffInContainer(

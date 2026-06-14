@@ -546,13 +546,28 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
     }
 
-    public function npmBuildShellCommand(?int $containerMemoryLimitMb = null): string
+    public function npmBuildShellCommand(?int $containerMemoryLimitMb = null, bool $withoutContainerMemoryLimit = false): string
     {
-        $heapLimit = $this->nodeBuildHeapLimitMb($containerMemoryLimitMb);
+        $extra = [];
 
-        return $this->nodeCleanNpmCommand('run build', 'production', [
-            'NODE_OPTIONS' => '--max-old-space-size='.$heapLimit,
-        ]);
+        if ($withoutContainerMemoryLimit) {
+            $heapLimit = 4096;
+
+            if (function_exists('config')) {
+                try {
+                    $heapLimit = (int) config('containers.node_build.unlimited_heap_limit_mb', 4096);
+                } catch (\Throwable) {
+                }
+            }
+
+            if ($heapLimit > 0) {
+                $extra['NODE_OPTIONS'] = '--max-old-space-size='.$heapLimit;
+            }
+        } else {
+            $extra['NODE_OPTIONS'] = '--max-old-space-size='.$this->nodeBuildHeapLimitMb($containerMemoryLimitMb);
+        }
+
+        return $this->nodeCleanNpmCommand('run build', 'production', $extra);
     }
 
     public function npmPruneShellCommand(): string
