@@ -64,6 +64,10 @@ class ContainerController extends Controller
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $supportsGitRepository = $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug);
         $gitRepository = $supportsGitRepository ? $gitRepositoryService->repositorySettings($service) : null;
+        $containerLimits = $service->product->getIncludedContainerLimits(
+            $service->product->containerTemplate,
+            $deployment
+        );
 
         return view('customer.services.container', compact(
             'service',
@@ -74,6 +78,7 @@ class ContainerController extends Controller
             'isLaravelTemplate',
             'supportsGitRepository',
             'gitRepository',
+            'containerLimits',
         ));
     }
 
@@ -637,6 +642,11 @@ class ContainerController extends Controller
             $diskReadData = $metrics->map(fn ($m) => $m->block_io_read_bytes ?? 0)->toArray();
             $diskWriteData = $metrics->map(fn ($m) => $m->block_io_write_bytes ?? 0)->toArray();
 
+            $includedLimits = $service->product->getIncludedContainerLimits(
+                $service->product->containerTemplate,
+                $deployment
+            );
+
             // Calculate summary stats
             $summary = null;
             if ($metrics->count() > 0) {
@@ -645,7 +655,7 @@ class ContainerController extends Controller
                     'cpu_peak' => round($metrics->max('cpu_percentage'), 2),
                     'memory_avg' => round($metrics->avg('memory_used_mb'), 0),
                     'memory_peak' => (int) $metrics->max('memory_used_mb'),
-                    'memory_limit_mb' => $metrics->first()?->memory_limit_mb ?? 0,
+                    'memory_limit_mb' => $metrics->first()?->memory_limit_mb ?: $includedLimits['memory_mb'],
                     'net_rx_total' => $metrics->sum('net_io_rx_bytes'),
                     'net_tx_total' => $metrics->sum('net_io_tx_bytes'),
                     'uptime_seconds' => $deployment->getUptimeSeconds(),
@@ -1095,8 +1105,9 @@ class ContainerController extends Controller
         }
         usort($timeline, fn ($a, $b) => $b['at'] <=> $a['at']);
 
-        // Template allocation
+        // Package allocation (product limits override template defaults)
         $template = $service->product->containerTemplate;
+        $containerLimits = $service->product->getIncludedContainerLimits($template, $deployment);
 
         return response()->json([
             'status' => $deployment->status,
@@ -1130,9 +1141,9 @@ class ContainerController extends Controller
             ],
             'activity_rate_bytes_per_min' => (int) $activityRate,
             'allocation' => [
-                'cpu_cores' => $deployment->cpu_limit ?? $template?->required_cpu_cores,
-                'memory_mb' => $deployment->memory_limit_mb ?? $template?->required_ram_mb,
-                'storage_gb' => $template?->required_storage_gb,
+                'cpu_cores' => $containerLimits['cpu'],
+                'memory_mb' => $containerLimits['memory_mb'],
+                'storage_gb' => $containerLimits['disk_gb'],
             ],
             'timeline' => $timeline,
             'restart_policy' => $deployment->restart_policy,

@@ -32,6 +32,7 @@ class ContainerOverageBillingServiceTest extends TestCase
         $template = ContainerTemplate::factory()->create([
             'required_cpu_cores' => 4.0,
             'required_ram_mb' => 4096,
+            'required_storage_gb' => 40,
         ]);
 
         $product = Product::factory()->containerHosting()->create([
@@ -52,6 +53,26 @@ class ContainerOverageBillingServiceTest extends TestCase
         $this->assertSame(1.0, $limits['cpu']);
         $this->assertSame(512, $limits['memory_mb']);
         $this->assertSame(10.0, $limits['disk_gb']);
+    }
+
+    public function test_template_defaults_are_used_when_product_limits_are_missing(): void
+    {
+        $template = ContainerTemplate::factory()->create([
+            'required_cpu_cores' => 0.5,
+            'required_ram_mb' => 256,
+            'required_storage_gb' => 2,
+        ]);
+
+        $product = Product::factory()->containerHosting()->create([
+            'container_template_id' => $template->id,
+            'resource_limits' => null,
+        ]);
+
+        $limits = $product->getIncludedContainerLimits($template);
+
+        $this->assertSame(0.5, $limits['cpu']);
+        $this->assertSame(256, $limits['memory_mb']);
+        $this->assertSame(2.0, $limits['disk_gb']);
     }
 
     public function test_adds_cpu_and_ram_overage_items_to_invoice_when_usage_exceeds_limits(): void

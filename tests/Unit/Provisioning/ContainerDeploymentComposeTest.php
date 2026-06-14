@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerTemplate;
+use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ApplicationRuntime;
 use App\Services\Provisioning\ContainerDeploymentService;
@@ -36,6 +37,31 @@ class ContainerDeploymentComposeTest extends TestCase
         $method->setAccessible(true);
 
         $this->assertNull($method->invoke($deployer, $service, $template));
+    }
+
+    #[Test]
+    public function product_package_limits_override_template_defaults_for_display(): void
+    {
+        $template = new ContainerTemplate([
+            'required_cpu_cores' => 0.5,
+            'required_ram_mb' => 256,
+            'required_storage_gb' => 2,
+        ]);
+
+        $product = new Product([
+            'type' => 'container_hosting',
+            'resource_limits' => [
+                'cpu' => 1,
+                'memory' => 1000,
+                'disk' => 10,
+            ],
+        ]);
+
+        $limits = $product->getIncludedContainerLimits($template);
+
+        $this->assertSame(1.0, $limits['cpu']);
+        $this->assertSame(1000, $limits['memory_mb']);
+        $this->assertSame(10.0, $limits['disk_gb']);
     }
 
     #[Test]

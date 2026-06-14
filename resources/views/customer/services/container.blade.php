@@ -43,17 +43,17 @@
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
                 <div class="text-center">
                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">CPU</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $service->product->containerTemplate->required_cpu_cores }}</p>
+                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ rtrim(rtrim(number_format($containerLimits['cpu'], 1, '.', ''), '0'), '.') }}</p>
                     <p class="text-xs text-slate-500 dark:text-slate-500">cores</p>
                 </div>
                 <div class="text-center">
                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Memory</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $service->product->containerTemplate->required_ram_mb }}</p>
+                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $containerLimits['memory_mb'] }}</p>
                     <p class="text-xs text-slate-500 dark:text-slate-500">MB</p>
                 </div>
                 <div class="text-center">
                     <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Storage</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $service->product->containerTemplate->required_storage_gb }}</p>
+                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ rtrim(rtrim(number_format($containerLimits['disk_gb'], 1, '.', ''), '0'), '.') }}</p>
                     <p class="text-xs text-slate-500 dark:text-slate-500">GB</p>
                 </div>
                 <div class="text-center">

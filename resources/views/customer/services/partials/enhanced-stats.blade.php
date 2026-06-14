@@ -341,7 +341,7 @@
                     <div class="flex items-center gap-2 mb-2">
                         <span class="text-xs font-semibold bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-300 px-2 py-1 rounded">Manual Scaling</span>
                     </div>
-                    <p class="text-xs text-slate-600 dark:text-slate-400">Current allocation: {{ $deployment?->cpu_limit ?? $service->product->containerTemplate->required_cpu_cores }} CPU, {{ $deployment?->memory_limit_mb ?? $service->product->containerTemplate->required_ram_mb }}MB RAM</p>
+                    <p class="text-xs text-slate-600 dark:text-slate-400">Current allocation: {{ rtrim(rtrim(number_format($containerLimits['cpu'], 1, '.', ''), '0'), '.') }} CPU, {{ $containerLimits['memory_mb'] }}MB RAM, {{ rtrim(rtrim(number_format($containerLimits['disk_gb'], 1, '.', ''), '0'), '.') }}GB disk</p>
                     <p class="text-xs text-slate-500 dark:text-slate-500 mt-2">Contact support to adjust resource limits</p>
                 </div>
             </div>

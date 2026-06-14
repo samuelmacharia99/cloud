@@ -149,10 +149,14 @@ class Product extends Model
             $memoryMb = (int) $deployment->memory_limit_mb;
         }
 
+        if ($diskGb === null && $template) {
+            $diskGb = (float) $template->required_storage_gb;
+        }
+
         return [
             'cpu' => $cpu ?? 1.0,
             'memory_mb' => $memoryMb ?? 256,
-            'disk_gb' => $diskGb ?? 0.0,
+            'disk_gb' => $diskGb ?? (float) ($template?->required_storage_gb ?? 0),
         ];
     }
 }

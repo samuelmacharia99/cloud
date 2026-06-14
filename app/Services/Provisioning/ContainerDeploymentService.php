@@ -1820,17 +1820,28 @@ class ContainerDeploymentService
      */
     private function containerResourceLimitsForService(Service $service): array
     {
-        $meta = $service->service_meta ?? [];
-        $limits = $meta['reseller_catalog_limits'] ?? [];
+        $service->loadMissing('product.containerTemplate', 'containerDeployment');
+
+        $included = $service->product?->getIncludedContainerLimits(
+            $service->product?->containerTemplate,
+            $service->containerDeployment
+        ) ?? [];
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $resellerLimits = $meta['reseller_catalog_limits'] ?? [];
 
         $payload = [];
 
-        if (! empty($limits['cpu'])) {
-            $payload['cpu_limit'] = (float) $limits['cpu'];
+        if (! empty($resellerLimits['cpu'])) {
+            $payload['cpu_limit'] = (float) $resellerLimits['cpu'];
+        } elseif (! empty($included['cpu'])) {
+            $payload['cpu_limit'] = (float) $included['cpu'];
         }
 
-        if (! empty($limits['memory_mb'])) {
-            $payload['memory_limit_mb'] = (int) $limits['memory_mb'];
+        if (! empty($resellerLimits['memory_mb'])) {
+            $payload['memory_limit_mb'] = (int) $resellerLimits['memory_mb'];
+        } elseif (! empty($included['memory_mb'])) {
+            $payload['memory_limit_mb'] = (int) $included['memory_mb'];
         }
 
         return $payload;
