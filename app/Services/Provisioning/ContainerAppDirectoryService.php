@@ -190,6 +190,28 @@ class ContainerAppDirectoryService
         $ssh->exec('sh -lc '.escapeshellarg($script), 30);
     }
 
+    public function reclaimHostAppOwnershipForGit(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $this->reclaimHostPathOwnershipForGit($ssh, $this->hostAppPath($deployment));
+    }
+
+    public function reclaimHostPathOwnershipForGit(SSHService $ssh, string $hostAppPath): void
+    {
+        $hostAppPathArg = escapeshellarg($hostAppPath);
+
+        try {
+            $ssh->exec(
+                'sh -lc '.escapeshellarg('chown -R $(id -u):$(id -g) '.$hostAppPathArg),
+                60
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to reclaim host /app ownership before Git sync', [
+                'host_app_path' => $hostAppPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     public function inContainerPermissionNormalizationScript(): string
     {
         $skipDependencyTrees = '\( -path /app/node_modules -o -path /app/vendor \) -prune -o';

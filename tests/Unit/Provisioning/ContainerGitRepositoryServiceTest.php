@@ -41,4 +41,16 @@ class ContainerGitRepositoryServiceTest extends TestCase
         $this->assertTrue($service->supportsTemplate('ruby'));
         $this->assertFalse($service->supportsTemplate('wordpress'));
     }
+
+    #[Test]
+    public function it_marks_container_git_directories_as_safe(): void
+    {
+        $service = new ContainerGitRepositoryService(new ContainerAppDirectoryService);
+        $path = '/opt/talksasa/containers/user-4-service-82-nodejs/app';
+
+        $this->assertSame(
+            "git -c safe.directory='{$path}'",
+            $service->gitInvocation($path)
+        );
+    }
 }

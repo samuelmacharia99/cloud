@@ -90,6 +90,7 @@ class ContainerGitRepositoryService
                 );
             }
 
+            $this->appDirectory->reclaimHostAppOwnershipForGit($ssh, $deployment);
             $this->syncToHost($ssh, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
 
             $commit = $this->readShortCommit($ssh, $hostAppPath);
@@ -143,6 +144,7 @@ class ContainerGitRepositoryService
 
         try {
             $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
+            $this->appDirectory->reclaimHostPathOwnershipForGit($ssh, $hostAppPath);
             $this->syncToHost($ssh, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -202,6 +204,11 @@ class ContainerGitRepositoryService
         return in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby'], true);
     }
 
+    public function gitInvocation(string $hostAppPath): string
+    {
+        return 'git -c safe.directory='.escapeshellarg($hostAppPath);
+    }
+
     private function syncToHost(
         SSHService $ssh,
         string $hostAppPath,
@@ -212,17 +219,18 @@ class ContainerGitRepositoryService
         $pathArg = escapeshellarg($hostAppPath);
         $repoArg = escapeshellarg($repoUrl);
         $branchArg = escapeshellarg($branch);
+        $git = $this->gitInvocation($hostAppPath);
 
         if ($freshClone) {
             $script = 'set -e; '
                 ."rm -rf {$pathArg}; "
-                ."git clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}";
+                ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg}";
         } else {
             $script = 'set -e; '
                 ."cd {$pathArg}; "
-                ."git fetch --depth=1 origin {$branchArg}; "
-                ."git checkout -f {$branchArg}; "
-                .'git reset --hard FETCH_HEAD';
+                ."{$git} fetch --depth=1 origin {$branchArg}; "
+                ."{$git} checkout -f {$branchArg}; "
+                ."{$git} reset --hard FETCH_HEAD";
         }
 
         $ssh->exec('sh -lc '.escapeshellarg($script), 180);
@@ -238,8 +246,9 @@ class ContainerGitRepositoryService
     private function readShortCommit(SSHService $ssh, string $hostAppPath): ?string
     {
         $pathArg = escapeshellarg($hostAppPath);
+        $git = $this->gitInvocation($hostAppPath);
         $output = trim($ssh->exec(
-            "sh -lc 'cd {$pathArg} && git rev-parse --short HEAD 2>/dev/null || true'",
+            "sh -lc 'cd {$pathArg} && {$git} rev-parse --short HEAD 2>/dev/null || true'",
             15
         ));
 
