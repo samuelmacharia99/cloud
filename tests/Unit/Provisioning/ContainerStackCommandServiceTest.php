@@ -63,7 +63,8 @@ class ContainerStackCommandServiceTest extends TestCase
         $ssh = $this->createMock(SSHService::class);
         $ssh->expects($this->once())
             ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, '-e \'NPM_CONFIG_PRODUCTION=false\'')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, '-e \'npm_config_production=false\'')
+                && str_contains($command, '-e \'NPM_CONFIG_PRODUCTION=false\'')
                 && str_contains($command, '-e \'NODE_ENV=development\'')
                 && str_contains($command, 'npm install --production=false --include=dev')))
             ->willReturn('');
@@ -77,6 +78,7 @@ class ContainerStackCommandServiceTest extends TestCase
             120,
             [
                 'NPM_CONFIG_PRODUCTION' => 'false',
+                'npm_config_production' => 'false',
                 'NODE_ENV' => 'development',
             ]
         );

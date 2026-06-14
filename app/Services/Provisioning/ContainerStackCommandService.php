@@ -147,13 +147,14 @@ class ContainerStackCommandService
 
         try {
             if ($requiresBuild) {
-                $installForBuild = $this->runtimeService->npmInstallForProductionBuildCommand();
+                $hasLockFile = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
+                $installForBuild = $this->runtimeService->npmInstallForProductionBuildCommand($hasLockFile);
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installForBuild, '/app', $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout, $buildEnv);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
                 return ['Node dependencies updated and production build completed.'];

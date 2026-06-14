@@ -261,7 +261,7 @@ class ContainerTemplateSeeder extends Seeder
                     [
                         'key' => 'npm_config_production',
                         'label' => 'Production Dependencies',
-                        'default' => 'true',
+                        'default' => 'false',
                         'required' => false,
                         'secret' => false,
                     ],

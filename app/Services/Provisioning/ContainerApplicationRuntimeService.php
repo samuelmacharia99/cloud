@@ -442,8 +442,12 @@ class ContainerApplicationRuntimeService
         return 'dist';
     }
 
-    public function npmInstallForProductionBuildCommand(): string
+    public function npmInstallForProductionBuildCommand(bool $hasLockFile = false): string
     {
+        if ($hasLockFile) {
+            return 'npm ci --production=false --include=dev';
+        }
+
         return 'npm install --production=false --include=dev';
     }
 
@@ -454,13 +458,14 @@ class ContainerApplicationRuntimeService
     {
         return [
             'NPM_CONFIG_PRODUCTION' => 'false',
+            'npm_config_production' => 'false',
             'NODE_ENV' => 'development',
         ];
     }
 
     public function nodeBuildEnvironmentPrefix(): string
     {
-        return 'NPM_CONFIG_PRODUCTION=false NODE_ENV=development';
+        return 'npm_config_production=false NPM_CONFIG_PRODUCTION=false NODE_ENV=development';
     }
 
     public function nodeBootstrap(?string $packageJson = null): string
