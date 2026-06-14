@@ -444,13 +444,15 @@ class ContainerApplicationRuntimeService
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
+        $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
+
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
-            return '[ -f package.json ] && npm install --omit=dev';
+            return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
         }
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then npm install && npm run build && npm prune --omit=dev; else npm install --omit=dev; fi; }';
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && npm install && '.$binFix.' && npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

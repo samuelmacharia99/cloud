@@ -147,14 +147,18 @@ class ContainerStackCommandService
 
         try {
             if ($requiresBuild) {
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install', '/app', $timeout);
+                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
+                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
                 return ['Node dependencies updated and production build completed.'];
             }
 
             $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install --omit=dev', '/app', $timeout);
+            $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
             return ['Node dependencies updated.'];
         } catch (\Throwable $e) {
@@ -220,6 +224,21 @@ class ContainerStackCommandService
         } catch (\Throwable $e) {
             return ['pip install failed: '.$e->getMessage()];
         }
+    }
+
+    private function restoreNodeModuleBinPermissions(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName
+    ): void {
+        $this->runOneOffInContainer(
+            $ssh,
+            $containerPath,
+            $containerName,
+            'find node_modules/.bin -type f -exec chmod u+x {} +',
+            '/app',
+            60
+        );
     }
 
     private function hostFileExists(SSHService $ssh, string $path): bool

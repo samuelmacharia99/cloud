@@ -212,6 +212,13 @@ class ContainerAppDirectoryService
         }
     }
 
+    public function nodeModulesBinPermissionRestoreScript(string $appRoot = '/app'): string
+    {
+        $binDir = rtrim($appRoot, '/').'/node_modules/.bin';
+
+        return 'find '.escapeshellarg($binDir).' -type f -exec chmod u+x {} + 2>/dev/null || true';
+    }
+
     public function inContainerPermissionNormalizationScript(): string
     {
         $skipDependencyTrees = '\( -path /app/node_modules -o -path /app/vendor \) -prune -o';
@@ -220,7 +227,8 @@ class ContainerAppDirectoryService
             .' else chown -R 33:33 /app; fi;'
             .'find /app '.$skipDependencyTrees.' -type d -exec chmod 775 {} + 2>/dev/null;'
             .'find /app '.$skipDependencyTrees.' -type f -exec chmod 664 {} + 2>/dev/null;'
-            .'chmod 775 /app/artisan 2>/dev/null || true';
+            .'chmod 775 /app/artisan 2>/dev/null || true; '
+            .$this->nodeModulesBinPermissionRestoreScript();
     }
 
     public function normalizePermissions(SSHService $ssh, ContainerDeployment $deployment): void

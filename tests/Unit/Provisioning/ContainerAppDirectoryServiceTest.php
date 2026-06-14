@@ -41,5 +41,7 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('-path /app/node_modules', $script);
         $this->assertStringContainsString('-path /app/vendor', $script);
         $this->assertStringContainsString('-prune -o', $script);
+        $this->assertStringContainsString('/node_modules/.bin', $script);
+        $this->assertStringContainsString('chmod u+x', $script);
     }
 }
