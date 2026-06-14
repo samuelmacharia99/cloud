@@ -199,6 +199,22 @@
                             @endforeach
                         </ul>
                     @endif
+                    @php
+                        $limits = $product->resource_limits ?? [];
+                        $additionalIpMonthly = (float) ($limits['additional_ip_monthly'] ?? 0);
+                        $additionalIpSetup = (float) ($limits['additional_ip_setup'] ?? 0);
+                    @endphp
+                    @if ($additionalIpMonthly > 0 || $additionalIpSetup > 0)
+                        <p class="text-sm text-slate-700 dark:text-slate-300 mb-6">
+                            Additional IP pricing:
+                            @if ($additionalIpMonthly > 0)
+                                <span class="font-medium">+{{ number_format($additionalIpMonthly, 2) }}/mo each</span>
+                            @endif
+                            @if ($additionalIpSetup > 0)
+                                <span class="font-medium">+{{ number_format($additionalIpSetup, 2) }} setup each</span>
+                            @endif
+                        </p>
+                    @endif
                     @if ($locations !== [])
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Surcharges are added to the base product prices shown above.</p>
                         <div class="overflow-x-auto">

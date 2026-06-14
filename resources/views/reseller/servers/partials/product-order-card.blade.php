@@ -70,7 +70,7 @@
             <div>
                 <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">IP Addresses</label>
                 <select name="ip_count" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-                    @php $ipOptions = $defaultLocation ? $configService->ipOptionsForLocation($defaultLocation, $product) : []; @endphp
+                    @php $ipOptions = $configService->ipOptions($product); @endphp
                     @forelse ($ipOptions as $option)
                         <option value="{{ $option['ips'] }}">{{ $option['label'] }}</option>
                     @empty

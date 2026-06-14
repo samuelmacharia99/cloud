@@ -40,8 +40,8 @@ class ServerProductConfigService
             $lines[] = $config['bandwidth_tb'].' TB Bandwidth';
         }
 
-        if ($config['included_ips'] ?? null) {
-            $lines[] = $config['included_ips'].' Dedicated '.Str::plural('IP', (int) $config['included_ips']);
+        if ($this->hasStructuredConfig($config)) {
+            $lines[] = '1 Dedicated IP included';
         }
 
         if ($config['managed'] ?? false) {
@@ -85,7 +85,6 @@ class ServerProductConfigService
                 'wholesale_monthly_surcharge' => 0.0,
                 'wholesale_yearly_surcharge' => 0.0,
                 'setup_surcharge' => 0.0,
-                'ip_tiers' => $this->defaultIpTiers((int) ($this->config($product)['included_ips'] ?? 1)),
             ]];
         }
 
@@ -150,22 +149,21 @@ class ServerProductConfigService
     /**
      * @return array<int, array{ips: int, monthly_addon: float, setup_addon: float, label: string}>
      */
-    public function ipOptionsForLocation(array $location, Product $product): array
+    public function ipOptions(Product $product): array
     {
-        $included = (int) ($this->config($product)['included_ips'] ?? 1);
-        $tiers = $location['ip_tiers'] ?? $this->defaultIpTiers($included);
+        $included = 1;
+        $max = (int) config('server_options.max_ip_count', 8);
+        $monthlyPerExtra = $this->additionalIpMonthly($product);
+        $setupPerExtra = $this->additionalIpSetup($product);
         $options = [];
 
-        foreach ($tiers as $tier) {
-            $ips = (int) ($tier['ips'] ?? 0);
-            if ($ips < 1) {
-                continue;
-            }
-
-            $monthlyAddon = (float) ($tier['monthly_addon'] ?? 0);
-            $setupAddon = (float) ($tier['setup_addon'] ?? 0);
+        for ($ips = $included; $ips <= $max; $ips++) {
+            $extraIps = max(0, $ips - $included);
+            $monthlyAddon = $extraIps * $monthlyPerExtra;
+            $setupAddon = $extraIps * $setupPerExtra;
             $label = $ips.' '.Str::plural('IP', $ips);
-            if ($monthlyAddon > 0) {
+
+            if ($extraIps > 0 && $monthlyPerExtra > 0) {
                 $label .= ' (+'.number_format($monthlyAddon, 0).'/mo)';
             }
 
@@ -178,6 +176,16 @@ class ServerProductConfigService
         }
 
         return $options;
+    }
+
+    /**
+     * @deprecated Use ipOptions() — IP pricing is product-level, not per location.
+     *
+     * @return array<int, array{ips: int, monthly_addon: float, setup_addon: float, label: string}>
+     */
+    public function ipOptionsForLocation(array $location, Product $product): array
+    {
+        return $this->ipOptions($product);
     }
 
     /**
@@ -236,9 +244,9 @@ class ServerProductConfigService
             throw new \InvalidArgumentException('Invalid datacenter location selected.');
         }
 
-        $ipTier = $this->ipTierForCount($location, $ipCount, $product);
-        $ipMonthlyAddon = (float) ($ipTier['monthly_addon'] ?? 0);
-        $ipSetupAddon = (float) ($ipTier['setup_addon'] ?? 0);
+        $ipAddon = $this->ipAddonForCount($product, $ipCount);
+        $ipMonthlyAddon = (float) ($ipAddon['monthly_addon'] ?? 0);
+        $ipSetupAddon = (float) ($ipAddon['setup_addon'] ?? 0);
         $resolved = $this->resolvedLocationPrices($product, $location, $listing, $useWholesale);
 
         $unitPrice = match ($billingCycle) {
@@ -271,7 +279,9 @@ class ServerProductConfigService
             'storage_type' => $this->nullableString($input['storage_type'] ?? null),
             'raid' => $type === 'dedicated_server' ? $this->nullableString($input['raid'] ?? null) : null,
             'bandwidth_tb' => $this->nullableFloat($input['bandwidth_tb'] ?? null),
-            'included_ips' => max(1, (int) ($input['included_ips'] ?? 1)),
+            'included_ips' => 1,
+            'additional_ip_monthly' => (float) ($input['additional_ip_monthly'] ?? 0),
+            'additional_ip_setup' => (float) ($input['additional_ip_setup'] ?? 0),
             'managed' => filter_var($input['managed'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'money_back_days' => $this->nullableInt($input['money_back_days'] ?? null),
             'locations' => [],
@@ -292,30 +302,6 @@ class ServerProductConfigService
                 $key = Str::slug($name) ?: 'location-'.($index + 1);
             }
 
-            $ipTiers = [];
-            foreach ($location['ip_tiers'] ?? [] as $tier) {
-                if (! is_array($tier)) {
-                    continue;
-                }
-
-                $ips = (int) ($tier['ips'] ?? 0);
-                if ($ips < 1) {
-                    continue;
-                }
-
-                $ipTiers[] = [
-                    'ips' => $ips,
-                    'monthly_addon' => (float) ($tier['monthly_addon'] ?? 0),
-                    'setup_addon' => (float) ($tier['setup_addon'] ?? 0),
-                ];
-            }
-
-            if ($ipTiers === []) {
-                $ipTiers = $this->defaultIpTiers($config['included_ips']);
-            }
-
-            usort($ipTiers, fn ($a, $b) => $a['ips'] <=> $b['ips']);
-
             $config['locations'][] = [
                 'key' => $key,
                 'name' => $name,
@@ -325,7 +311,6 @@ class ServerProductConfigService
                 'wholesale_monthly_surcharge' => (float) ($location['wholesale_monthly_surcharge'] ?? $location['wholesale_monthly_price'] ?? 0),
                 'wholesale_yearly_surcharge' => (float) ($location['wholesale_yearly_surcharge'] ?? $location['wholesale_yearly_price'] ?? 0),
                 'setup_surcharge' => (float) ($location['setup_surcharge'] ?? $location['setup_fee'] ?? 0),
-                'ip_tiers' => $ipTiers,
             ];
         }
 
@@ -401,39 +386,72 @@ class ServerProductConfigService
         return max(0.0, $legacyValue - $productBase);
     }
 
+    private function additionalIpMonthly(Product $product): float
+    {
+        $config = $this->config($product);
+
+        if (array_key_exists('additional_ip_monthly', $config)) {
+            return (float) $config['additional_ip_monthly'];
+        }
+
+        return $this->legacyAdditionalIpMonthly($config);
+    }
+
+    private function additionalIpSetup(Product $product): float
+    {
+        $config = $this->config($product);
+
+        if (array_key_exists('additional_ip_setup', $config)) {
+            return (float) $config['additional_ip_setup'];
+        }
+
+        return $this->legacyAdditionalIpSetup($config);
+    }
+
     /**
-     * @param  array<string, mixed>  $location
+     * @param  array<string, mixed>  $config
+     */
+    private function legacyAdditionalIpMonthly(array $config): float
+    {
+        foreach ($config['locations'] ?? [] as $location) {
+            foreach ($location['ip_tiers'] ?? [] as $tier) {
+                if ((int) ($tier['ips'] ?? 0) === 2) {
+                    return (float) ($tier['monthly_addon'] ?? 0);
+                }
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function legacyAdditionalIpSetup(array $config): float
+    {
+        foreach ($config['locations'] ?? [] as $location) {
+            foreach ($location['ip_tiers'] ?? [] as $tier) {
+                if ((int) ($tier['ips'] ?? 0) === 2) {
+                    return (float) ($tier['setup_addon'] ?? 0);
+                }
+            }
+        }
+
+        return 0.0;
+    }
+
+    /**
      * @return array{ips: int, monthly_addon: float, setup_addon: float}
      */
-    private function ipTierForCount(array $location, int $ipCount, Product $product): array
+    private function ipAddonForCount(Product $product, int $ipCount): array
     {
-        $options = $this->ipOptionsForLocation($location, $product);
-        foreach ($options as $option) {
+        foreach ($this->ipOptions($product) as $option) {
             if ((int) $option['ips'] === $ipCount) {
                 return $option;
             }
         }
 
-        throw new \InvalidArgumentException('Invalid IP count for selected location.');
-    }
-
-    /**
-     * @return list<array{ips: int, monthly_addon: float, setup_addon: float}>
-     */
-    private function defaultIpTiers(int $includedIps): array
-    {
-        $max = (int) config('server_options.max_ip_count', 8);
-        $tiers = [];
-
-        for ($ips = 1; $ips <= $max; $ips++) {
-            $tiers[] = [
-                'ips' => $ips,
-                'monthly_addon' => 0.0,
-                'setup_addon' => 0.0,
-            ];
-        }
-
-        return $tiers;
+        throw new \InvalidArgumentException('Invalid IP count selected.');
     }
 
     /**

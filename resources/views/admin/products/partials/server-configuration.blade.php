@@ -23,19 +23,10 @@
             'wholesale_monthly_surcharge' => 0,
             'wholesale_yearly_surcharge' => 0,
             'setup_surcharge' => 0,
-            'ip_tiers' => [],
         ]];
     }
 
-    $maxIpCount = (int) config('server_options.max_ip_count', 8);
-    $initialLocations = collect($locations)->map(function ($location) use ($maxIpCount) {
-        $tiers = $location['ip_tiers'] ?? [];
-        if ($tiers === []) {
-            for ($i = 1; $i <= $maxIpCount; $i++) {
-                $tiers[] = ['ips' => $i, 'monthly_addon' => 0, 'setup_addon' => 0];
-            }
-        }
-
+    $initialLocations = collect($locations)->map(function ($location) {
         return [
             'key' => $location['key'] ?? '',
             'name' => $location['name'] ?? '',
@@ -45,7 +36,6 @@
             'wholesale_monthly_surcharge' => $location['wholesale_monthly_surcharge'] ?? $location['wholesale_monthly_price'] ?? '',
             'wholesale_yearly_surcharge' => $location['wholesale_yearly_surcharge'] ?? $location['wholesale_yearly_price'] ?? '',
             'setup_surcharge' => $location['setup_surcharge'] ?? $location['setup_fee'] ?? '',
-            'ip_tiers' => $tiers,
         ];
     })->values()->all();
 
@@ -59,7 +49,6 @@
             'wholesale_monthly_surcharge' => '',
             'wholesale_yearly_surcharge' => '',
             'setup_surcharge' => '',
-            'ip_tiers' => collect(range(1, $maxIpCount))->map(fn ($i) => ['ips' => $i, 'monthly_addon' => 0, 'setup_addon' => 0])->all(),
         ]];
     }
 @endphp
@@ -67,13 +56,14 @@
 <div x-show="productType === 'vps' || productType === 'dedicated_server'" x-cloak>
 <div
     class="border-t border-slate-200 dark:border-slate-800 pt-6"
-    x-data="serverProductConfig(@js($initialLocations), @js($maxIpCount))"
+    x-data="serverProductConfig(@js($initialLocations))"
 >
     <div class="space-y-4 mb-6">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Server Configuration</h3>
         <div class="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
             <p class="text-sm text-blue-900 dark:text-blue-300">Use the product <strong>description</strong> above as a short slogan only. Enter hardware specs below.</p>
             <p class="text-sm text-blue-900 dark:text-blue-300">Set the <strong>base retail and wholesale prices</strong> in the main pricing fields above. Each datacenter row below adds a surcharge on top of that base (use <strong>0</strong> for the default/cheapest location).</p>
+            <p class="text-sm text-blue-900 dark:text-blue-300">Every plan includes <strong>1 IP address</strong>. Set the price for each additional IP below.</p>
         </div>
     </div>
 
@@ -108,8 +98,13 @@
             <input type="number" name="resource_limits[bandwidth_tb]" value="{{ old('resource_limits.bandwidth_tb', $config['bandwidth_tb'] ?? '') }}" min="0" step="0.1" placeholder="e.g. 10" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
         </div>
         <div>
-            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Included IPs</label>
-            <input type="number" name="resource_limits[included_ips]" value="{{ old('resource_limits.included_ips', $config['included_ips'] ?? 1) }}" min="1" max="{{ $maxIpCount }}" step="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Additional IP price (monthly)</label>
+            <input type="number" name="resource_limits[additional_ip_monthly]" value="{{ old('resource_limits.additional_ip_monthly', $config['additional_ip_monthly'] ?? '') }}" min="0" step="0.01" placeholder="e.g. 200" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Per extra IP beyond the included 1</p>
+        </div>
+        <div>
+            <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Additional IP setup fee</label>
+            <input type="number" name="resource_limits[additional_ip_setup]" value="{{ old('resource_limits.additional_ip_setup', $config['additional_ip_setup'] ?? '') }}" min="0" step="0.01" placeholder="e.g. 50" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
         </div>
         <div>
             <label class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Money-back (days)</label>
@@ -176,20 +171,6 @@
                         <input type="number" :name="'resource_limits[locations][' + locIndex + '][wholesale_yearly_surcharge]'" x-model="location.wholesale_yearly_surcharge" step="0.01" min="0" placeholder="0" class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg">
                     </div>
                 </div>
-
-                <div>
-                    <p class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">IP address pricing (monthly add-on per tier, on top of resolved total)</p>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-                        <template x-for="(tier, tierIndex) in location.ip_tiers" :key="tierIndex">
-                            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-2">
-                                <input type="hidden" :name="'resource_limits[locations][' + locIndex + '][ip_tiers][' + tierIndex + '][ips]'" :value="tier.ips">
-                                <p class="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1" x-text="tier.ips + ' IP'"></p>
-                                <input type="number" :name="'resource_limits[locations][' + locIndex + '][ip_tiers][' + tierIndex + '][monthly_addon]'" x-model="tier.monthly_addon" step="0.01" min="0" placeholder="+/mo" class="w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded mb-1">
-                                <input type="number" :name="'resource_limits[locations][' + locIndex + '][ip_tiers][' + tierIndex + '][setup_addon]'" x-model="tier.setup_addon" step="0.01" min="0" placeholder="+setup" class="w-full px-2 py-1 text-xs border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded">
-                            </div>
-                        </template>
-                    </div>
-                </div>
             </div>
         </template>
     </div>
@@ -199,13 +180,7 @@
 @once
     @push('scripts')
     <script>
-        function serverProductConfig(initialLocations, maxIpCount) {
-            const defaultTiers = () => Array.from({ length: maxIpCount }, (_, i) => ({
-                ips: i + 1,
-                monthly_addon: 0,
-                setup_addon: 0,
-            }));
-
+        function serverProductConfig(initialLocations) {
             return {
                 locations: initialLocations.length ? initialLocations : [{
                     key: '',
@@ -216,9 +191,7 @@
                     wholesale_monthly_surcharge: '',
                     wholesale_yearly_surcharge: '',
                     setup_surcharge: '',
-                    ip_tiers: defaultTiers(),
                 }],
-                maxIpCount,
                 addLocation() {
                     this.locations.push({
                         key: '',
@@ -229,7 +202,6 @@
                         wholesale_monthly_surcharge: '',
                         wholesale_yearly_surcharge: '',
                         setup_surcharge: '',
-                        ip_tiers: defaultTiers(),
                     });
                 },
                 removeLocation(index) {

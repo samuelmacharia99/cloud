@@ -168,7 +168,8 @@ class ProductController extends Controller
             $rules['resource_limits.storage_type'] = 'nullable|string|max:50';
             $rules['resource_limits.raid'] = 'nullable|string|max:100';
             $rules['resource_limits.bandwidth_tb'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.included_ips'] = 'nullable|integer|min:1|max:'.config('server_options.max_ip_count', 8);
+            $rules['resource_limits.additional_ip_monthly'] = 'nullable|numeric|min:0';
+            $rules['resource_limits.additional_ip_setup'] = 'nullable|numeric|min:0';
             $rules['resource_limits.money_back_days'] = 'nullable|integer|min:0';
             $rules['resource_limits.managed'] = 'nullable|boolean';
             $rules['resource_limits.locations'] = 'nullable|array';
@@ -180,10 +181,6 @@ class ProductController extends Controller
             $rules['resource_limits.locations.*.wholesale_monthly_surcharge'] = 'nullable|numeric|min:0';
             $rules['resource_limits.locations.*.wholesale_yearly_surcharge'] = 'nullable|numeric|min:0';
             $rules['resource_limits.locations.*.setup_surcharge'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.ip_tiers'] = 'nullable|array';
-            $rules['resource_limits.locations.*.ip_tiers.*.ips'] = 'nullable|integer|min:1';
-            $rules['resource_limits.locations.*.ip_tiers.*.monthly_addon'] = 'nullable|numeric|min:0';
-            $rules['resource_limits.locations.*.ip_tiers.*.setup_addon'] = 'nullable|numeric|min:0';
 
             return $rules;
         }

@@ -18,7 +18,6 @@ class ServerProductConfigServiceTest extends TestCase
                 'storage_gb' => 160,
                 'storage_type' => 'NVMe',
                 'bandwidth_tb' => 10,
-                'included_ips' => 1,
                 'managed' => true,
                 'money_back_days' => 30,
             ],
@@ -30,10 +29,11 @@ class ServerProductConfigServiceTest extends TestCase
         $this->assertContains('8 GB RAM', $lines);
         $this->assertContains('160 GB NVMe Storage', $lines);
         $this->assertContains('10 TB Bandwidth', $lines);
+        $this->assertContains('1 Dedicated IP included', $lines);
         $this->assertContains('Fully Managed Hosting', $lines);
     }
 
-    public function test_additive_location_pricing_with_ip_addon(): void
+    public function test_additive_location_pricing_with_per_additional_ip(): void
     {
         $product = new Product([
             'type' => 'vps',
@@ -44,7 +44,8 @@ class ServerProductConfigServiceTest extends TestCase
             'wholesale_yearly_price' => 9600,
             'resource_limits' => [
                 'cpu_cores' => 2,
-                'included_ips' => 1,
+                'additional_ip_monthly' => 200,
+                'additional_ip_setup' => 50,
                 'locations' => [
                     [
                         'key' => 'usa',
@@ -54,10 +55,6 @@ class ServerProductConfigServiceTest extends TestCase
                         'setup_surcharge' => 50,
                         'wholesale_monthly_surcharge' => 200,
                         'wholesale_yearly_surcharge' => 2400,
-                        'ip_tiers' => [
-                            ['ips' => 1, 'monthly_addon' => 0, 'setup_addon' => 0],
-                            ['ips' => 2, 'monthly_addon' => 200, 'setup_addon' => 50],
-                        ],
                     ],
                     [
                         'key' => 'eu',
@@ -65,9 +62,6 @@ class ServerProductConfigServiceTest extends TestCase
                         'monthly_surcharge' => 500,
                         'yearly_surcharge' => 6000,
                         'setup_surcharge' => 0,
-                        'ip_tiers' => [
-                            ['ips' => 1, 'monthly_addon' => 0, 'setup_addon' => 0],
-                        ],
                     ],
                 ],
             ],
@@ -84,6 +78,10 @@ class ServerProductConfigServiceTest extends TestCase
         $this->assertSame(1500.0, $pricing['unit_price']);
         $this->assertSame(150.0, $pricing['setup_fee']);
 
+        $threeIps = $service->resolveOrderPricing($product, null, 'usa', 3, 'monthly');
+        $this->assertSame(1700.0, $threeIps['unit_price']);
+        $this->assertSame(200.0, $threeIps['setup_fee']);
+
         $wholesale = $service->resolvedLocationPrices($product, $product->resource_limits['locations'][0], null, true);
         $this->assertSame(1000.0, $wholesale['monthly']);
 
@@ -95,6 +93,33 @@ class ServerProductConfigServiceTest extends TestCase
 
         $this->assertSame(18000.0, $cartPricing['unit_price']);
         $this->assertSame(50.0, $cartPricing['setup_fee']);
+    }
+
+    public function test_legacy_location_ip_tiers_map_to_additional_ip_price(): void
+    {
+        $product = new Product([
+            'type' => 'vps',
+            'monthly_price' => 1000,
+            'resource_limits' => [
+                'locations' => [
+                    [
+                        'key' => 'usa',
+                        'name' => 'USA',
+                        'ip_tiers' => [
+                            ['ips' => 1, 'monthly_addon' => 0, 'setup_addon' => 0],
+                            ['ips' => 2, 'monthly_addon' => 250, 'setup_addon' => 75],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $service = app(ServerProductConfigService::class);
+        $options = $service->ipOptions($product);
+
+        $this->assertSame(250.0, $options[1]['monthly_addon']);
+        $this->assertSame(500.0, $options[2]['monthly_addon']);
+        $this->assertSame(150.0, $options[2]['setup_addon']);
     }
 
     public function test_legacy_full_location_prices_are_treated_as_surcharges(): void

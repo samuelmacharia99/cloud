@@ -7,6 +7,8 @@
     $locations = $configService->locations($product);
     $isDedicated = ($product->type ?? '') === 'dedicated_server';
 
+    $ipOptions = $configService->ipOptions($product);
+
     $locationPayload = collect($locations)->map(function ($location) use ($configService, $product, $listing) {
         $resolved = $configService->resolvedLocationPrices($product, $location, $listing, false);
 
@@ -17,7 +19,6 @@
             'monthly_price' => $resolved['monthly'],
             'yearly_price' => $resolved['yearly'],
             'setup_fee' => $resolved['setup'],
-            'ip_options' => $configService->ipOptionsForLocation($location, $product),
         ];
     })->values()->all();
 
@@ -36,6 +37,7 @@
     ])
     x-data="serverPlanCard({
         locations: @js($locationPayload),
+        ipOptions: @js($ipOptions),
         currencySymbol: @js($currencySymbol),
     })"
 >
@@ -158,13 +160,14 @@
     <script>
         function serverPlanCard(config) {
             const firstLocation = config.locations[0] ?? null;
+            const ipOptions = config.ipOptions ?? [];
 
             return {
                 locations: config.locations,
+                ipOptions,
                 currencySymbol: config.currencySymbol,
                 selectedLocationKey: firstLocation?.key ?? '',
-                selectedIpCount: firstLocation?.ip_options?.[0]?.ips ?? 1,
-                ipOptions: firstLocation?.ip_options ?? [],
+                selectedIpCount: ipOptions[0]?.ips ?? 1,
                 monthlyPrice: firstLocation?.monthly_price ?? 0,
                 yearlyPrice: firstLocation?.yearly_price ?? 0,
                 setupFee: firstLocation?.setup_fee ?? 0,
@@ -178,9 +181,6 @@
                     return this.locations.find((location) => location.key === this.selectedLocationKey) ?? this.locations[0] ?? null;
                 },
                 onLocationChange() {
-                    const location = this.currentLocation();
-                    this.ipOptions = location?.ip_options ?? [];
-                    this.selectedIpCount = this.ipOptions[0]?.ips ?? 1;
                     this.recalculate();
                 },
                 recalculate() {
