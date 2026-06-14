@@ -876,7 +876,6 @@ class ContainerDeploymentService
         $dockerImage = $this->resolveDockerImage($template, $selectedVersion);
 
         $compose = [
-            'version' => '3.9',
             'services' => [
                 $containerName => [
                     'image' => $dockerImage,

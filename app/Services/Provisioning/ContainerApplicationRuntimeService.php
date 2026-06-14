@@ -444,13 +444,30 @@ class ContainerApplicationRuntimeService
 
     public function npmInstallForProductionBuildCommand(): string
     {
-        return 'npm install --include=dev';
+        return 'npm install --production=false --include=dev';
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function nodeBuildEnvironmentOverrides(): array
+    {
+        return [
+            'NPM_CONFIG_PRODUCTION' => 'false',
+            'NODE_ENV' => 'development',
+        ];
+    }
+
+    public function nodeBuildEnvironmentPrefix(): string
+    {
+        return 'NPM_CONFIG_PRODUCTION=false NODE_ENV=development';
     }
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
         $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
-        $installForBuild = $this->npmInstallForProductionBuildCommand();
+        $installForBuild = $this->nodeBuildEnvironmentPrefix().' '.$this->npmInstallForProductionBuildCommand();
+        $buildPrefix = $this->nodeBuildEnvironmentPrefix();
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
@@ -458,7 +475,7 @@ class ContainerApplicationRuntimeService
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildPrefix.' npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

@@ -148,10 +148,11 @@ class ContainerStackCommandService
         try {
             if ($requiresBuild) {
                 $installForBuild = $this->runtimeService->npmInstallForProductionBuildCommand();
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installForBuild, '/app', $timeout);
+                $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installForBuild, '/app', $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout, $buildEnv);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
@@ -276,7 +277,8 @@ class ContainerStackCommandService
         string $containerName,
         string $command,
         string $workDir = '/app',
-        int $timeout = 600
+        int $timeout = 600,
+        array $environment = []
     ): string {
         if (! $this->isSafeCommand($command)) {
             throw new \InvalidArgumentException('Unsafe container command rejected.');
@@ -286,11 +288,38 @@ class ContainerStackCommandService
         $serviceArg = escapeshellarg($containerName);
         $workDirArg = escapeshellarg($workDir);
         $commandArg = escapeshellarg($command);
+        $envFlags = $this->composeRunEnvironmentFlags($environment);
 
         return trim($ssh->exec(
-            "cd {$pathArg} && docker compose run --rm -T -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}",
+            "cd {$pathArg} && docker compose run --rm -T{$envFlags} -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}",
             $timeout
         ));
+    }
+
+    /**
+     * @param  array<string, string>  $environment
+     */
+    private function composeRunEnvironmentFlags(array $environment): string
+    {
+        if ($environment === []) {
+            return '';
+        }
+
+        $flags = '';
+        foreach ($environment as $key => $value) {
+            if (! is_string($key) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
+                throw new \InvalidArgumentException('Invalid container environment key.');
+            }
+
+            $value = (string) $value;
+            if ($value === '' || ! preg_match('/^[A-Za-z0-9._-]+$/', $value)) {
+                throw new \InvalidArgumentException('Invalid container environment value.');
+            }
+
+            $flags .= ' -e '.escapeshellarg($key.'='.$value);
+        }
+
+        return $flags;
     }
 
     public function execInContainer(

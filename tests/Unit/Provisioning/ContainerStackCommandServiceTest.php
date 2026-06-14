@@ -53,7 +53,33 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertTrue($service->isSafeCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
         $this->assertTrue($service->isSafeCommand('rm -rf node_modules'));
-        $this->assertTrue($service->isSafeCommand('npm install --include=dev'));
+        $this->assertTrue($service->isSafeCommand('npm install --production=false --include=dev'));
+    }
+
+    #[Test]
+    public function it_passes_environment_overrides_to_one_off_containers(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, '-e \'NPM_CONFIG_PRODUCTION=false\'')
+                && str_contains($command, '-e \'NODE_ENV=development\'')
+                && str_contains($command, 'npm install --production=false --include=dev')))
+            ->willReturn('');
+
+        $service->runOneOffInContainer(
+            $ssh,
+            '/var/lib/talksasa/containers/user-1-service-1',
+            'user-1-service-1-nodejs',
+            'npm install --production=false --include=dev',
+            '/app',
+            120,
+            [
+                'NPM_CONFIG_PRODUCTION' => 'false',
+                'NODE_ENV' => 'development',
+            ]
+        );
     }
 
     #[Test]
