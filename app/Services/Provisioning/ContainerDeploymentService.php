@@ -555,6 +555,11 @@ class ContainerDeploymentService
         try {
             $deployment = $service->containerDeployment;
 
+            if ($deployment) {
+                $this->unbindAllDomainsForService($service);
+                $this->purgeBackupsForService($service);
+            }
+
             if ($deployment && $deployment->node) {
                 $node = $deployment->node;
 
@@ -1714,6 +1719,60 @@ class ContainerDeploymentService
                 'deployment_id' => $deployment?->id,
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    private function purgeBackupsForService(Service $service): void
+    {
+        try {
+            app(ContainerBackupService::class)->purgeAllForService($service);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to purge container backups during termination', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function unbindAllDomainsForService(Service $service): void
+    {
+        $domains = ContainerDomain::query()
+            ->whereHas('deployment', function ($query) use ($service) {
+                $query->where('service_id', $service->id);
+            })
+            ->with('deployment.node')
+            ->get();
+
+        if ($domains->isEmpty()) {
+            return;
+        }
+
+        $nginxService = app(NginxProxyService::class);
+
+        foreach ($domains as $domain) {
+            try {
+                if ($domain->deployment?->node) {
+                    $nginxService->unbind($domain);
+                } else {
+                    $domain->delete();
+                }
+            } catch (\Throwable $e) {
+                \Log::warning('Failed to unbind container domain during termination', [
+                    'service_id' => $service->id,
+                    'domain' => $domain->domain,
+                    'error' => $e->getMessage(),
+                ]);
+
+                try {
+                    $domain->delete();
+                } catch (\Throwable $deleteError) {
+                    \Log::warning('Failed to delete container domain record after unbind failure', [
+                        'service_id' => $service->id,
+                        'domain_id' => $domain->id,
+                        'error' => $deleteError->getMessage(),
+                    ]);
+                }
+            }
         }
     }
 

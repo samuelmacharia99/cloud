@@ -3,17 +3,18 @@
 namespace App\Services\Provisioning;
 
 use App\Models\ContainerBackup;
-use App\Models\ContainerDeployment;
 use App\Models\Node;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
-use Illuminate\Database\Eloquent\Collection;
 use Exception;
+use Illuminate\Database\Eloquent\Collection;
 
 class ContainerBackupService
 {
     private const CONTAINER_BASE_PATH = '/opt/talksasa/containers';
+
     private const BACKUP_BASE_PATH = '/opt/talksasa/backups';
+
     private const BACKUP_TIMEOUT = 600; // 10 minutes
 
     /**
@@ -23,13 +24,13 @@ class ContainerBackupService
     {
         $deployment = $service->containerDeployment;
 
-        if (!$deployment || !$deployment->node) {
+        if (! $deployment || ! $deployment->node) {
             throw new Exception('Container deployment not found for service');
         }
 
         $node = $deployment->node;
-        $backupName = 'backup-' . $service->id . '-' . now()->format('YmdHis');
-        $backupPath = self::BACKUP_BASE_PATH . '/' . $backupName . '.tar.gz';
+        $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHis');
+        $backupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
 
         $backup = ContainerBackup::create([
             'container_deployment_id' => $deployment->id,
@@ -46,15 +47,15 @@ class ContainerBackupService
             $ssh = SSHService::forNode($node);
 
             // Create backup directory if needed
-            $ssh->exec("mkdir -p " . self::BACKUP_BASE_PATH);
+            $ssh->exec('mkdir -p '.self::BACKUP_BASE_PATH);
 
-            $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
             // Update backup status to running
             $backup->update(['status' => 'running']);
 
             // Ensure docker-compose.yml exists before using it
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
             // Stop container briefly during backup
@@ -63,7 +64,7 @@ class ContainerBackupService
             try {
                 // Create tarball of container directory
                 $ssh->exec(
-                    "tar -czf {$backupPath} -C " . self::CONTAINER_BASE_PATH . " {$deployment->container_name}",
+                    "tar -czf {$backupPath} -C ".self::CONTAINER_BASE_PATH." {$deployment->container_name}",
                     self::BACKUP_TIMEOUT
                 );
 
@@ -83,7 +84,7 @@ class ContainerBackupService
                     'completed_at' => now(),
                 ]);
 
-                \Log::info("Container backup created successfully", [
+                \Log::info('Container backup created successfully', [
                     'service_id' => $service->id,
                     'backup_id' => $backup->id,
                     'backup_name' => $backup->backup_name,
@@ -123,19 +124,19 @@ class ContainerBackupService
         $deployment = $backup->deployment;
         $node = $backup->node;
 
-        if (!$deployment || !$node) {
+        if (! $deployment || ! $node) {
             throw new Exception('Backup deployment or node not found');
         }
 
         try {
             $ssh = SSHService::forNode($node);
-            $containerPath = self::CONTAINER_BASE_PATH . '/' . $deployment->container_name;
+            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
             // Update backup status
             $backup->update(['status' => 'restoring']);
 
             // Ensure docker-compose.yml exists before using it
-            $deploymentService = new ContainerDeploymentService();
+            $deploymentService = new ContainerDeploymentService;
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
             // Stop and remove current container
@@ -149,7 +150,7 @@ class ContainerBackupService
 
             // Extract backup tarball
             $ssh->exec(
-                "tar -xzf {$backup->backup_path} -C " . self::CONTAINER_BASE_PATH,
+                "tar -xzf {$backup->backup_path} -C ".self::CONTAINER_BASE_PATH,
                 self::BACKUP_TIMEOUT
             );
 
@@ -162,7 +163,7 @@ class ContainerBackupService
             // Update backup status
             $backup->update(['status' => 'completed']);
 
-            \Log::info("Container restored from backup", [
+            \Log::info('Container restored from backup', [
                 'backup_id' => $backup->id,
                 'service_id' => $backup->service_id,
                 'deployment_id' => $deployment->id,
@@ -185,27 +186,66 @@ class ContainerBackupService
      */
     public function deleteBackup(ContainerBackup $backup): void
     {
-        $node = $backup->node;
-
-        if ($node && $backup->backup_path) {
-            try {
-                $ssh = SSHService::forNode($node);
-                @$ssh->exec("rm -f {$backup->backup_path}");
-                $ssh->disconnect();
-            } catch (Exception $e) {
-                \Log::warning("Failed to delete backup file from node {$node->id}", [
-                    'backup_id' => $backup->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
+        $this->removeBackupFile($backup);
 
         // Mark backup as deleted in database
         $backup->update(['status' => 'deleted']);
 
-        \Log::info("Container backup marked as deleted", [
+        \Log::info('Container backup marked as deleted', [
             'backup_id' => $backup->id,
         ]);
+    }
+
+    /**
+     * Remove all backup files and database rows when a service is terminated.
+     */
+    public function purgeAllForService(Service $service): void
+    {
+        $backups = ContainerBackup::query()
+            ->where('service_id', $service->id)
+            ->get();
+
+        foreach ($backups as $backup) {
+            $this->purgeBackup($backup);
+        }
+    }
+
+    /**
+     * Delete backup tarball from the node and remove the database row.
+     */
+    public function purgeBackup(ContainerBackup $backup): void
+    {
+        $this->removeBackupFile($backup);
+
+        $backupId = $backup->id;
+        $serviceId = $backup->service_id;
+        $backup->delete();
+
+        \Log::info('Container backup purged', [
+            'backup_id' => $backupId,
+            'service_id' => $serviceId,
+        ]);
+    }
+
+    private function removeBackupFile(ContainerBackup $backup): void
+    {
+        $node = $backup->node;
+
+        if (! $node || ! $backup->backup_path) {
+            return;
+        }
+
+        try {
+            $ssh = SSHService::forNode($node);
+            @$ssh->exec('rm -f '.escapeshellarg($backup->backup_path));
+            $ssh->disconnect();
+        } catch (Exception $e) {
+            \Log::warning("Failed to delete backup file from node {$node->id}", [
+                'backup_id' => $backup->id,
+                'backup_path' => $backup->backup_path,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

@@ -23,6 +23,7 @@ use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ServiceController extends Controller
 {
@@ -411,10 +412,38 @@ class ServiceController extends Controller
 
     public function destroy(Service $service)
     {
-        $service->delete();
+        if ($this->serviceRequiresInfrastructureCleanup($service)) {
+            $alreadyInactive = in_array($service->status->value, ['terminated', 'cancelled'], true);
+
+            try {
+                app(ProvisioningService::class)->terminate($service->fresh());
+            } catch (\Throwable $e) {
+                Log::warning('Admin service delete: infrastructure cleanup failed', [
+                    'service_id' => $service->id,
+                    'status' => $service->status->value,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if (! $alreadyInactive) {
+                    return back()->with(
+                        'error',
+                        'Could not deprovision service infrastructure. Use Terminate first or fix the host connection, then delete.'
+                    );
+                }
+            }
+        }
+
+        $service->fresh()->delete();
 
         return redirect()->route('admin.services.index')
             ->with('success', "Service #{$service->id} deleted.");
+    }
+
+    private function serviceRequiresInfrastructureCleanup(Service $service): bool
+    {
+        $driver = $service->provisioning_driver_key ?: $service->product?->provisioning_driver_key;
+
+        return in_array($driver, ['container', 'directadmin'], true);
     }
 
     public function refreshStatus(Service $service, ServiceStatusSyncService $syncService)
