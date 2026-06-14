@@ -8,16 +8,17 @@ use App\Services\SSH\SSHService;
 
 class ContainerStackCommandService
 {
+    private ?ContainerDeploymentService $resolvedDeploymentService = null;
+
     public function __construct(
         private ?ContainerApplicationRuntimeService $runtimeService = null,
-        private ?ContainerDeploymentService $deploymentService = null
     ) {
         $this->runtimeService ??= new ContainerApplicationRuntimeService;
     }
 
     private function deploymentService(): ContainerDeploymentService
     {
-        return $this->deploymentService ??= app(ContainerDeploymentService::class);
+        return $this->resolvedDeploymentService ??= app(ContainerDeploymentService::class);
     }
 
     public function resolveWorkDir(object $template): string
