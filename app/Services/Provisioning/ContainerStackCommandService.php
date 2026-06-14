@@ -120,7 +120,7 @@ class ContainerStackCommandService
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         return match ($slug) {
-            'nodejs' => $this->installNodeDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+            'nodejs' => $this->installNodeDependencies($ssh, $containerPath, $containerName, $hostAppPath, $deployment, $timeout),
             'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             default => [],
@@ -135,6 +135,7 @@ class ContainerStackCommandService
         string $containerPath,
         string $containerName,
         string $hostAppPath,
+        ContainerDeployment $deployment,
         int $timeout
     ): array {
         $packageJsonPath = $hostAppPath.'/package.json';
@@ -144,21 +145,28 @@ class ContainerStackCommandService
 
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
         $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson);
+        $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
+        $memoryLimitMb = $this->resolveNodeBuildMemoryLimitMb($deployment);
 
         try {
             if ($requiresBuild) {
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
-                $this->runOneOffInContainer(
-                    $ssh,
-                    $containerPath,
-                    $containerName,
-                    $this->runtimeService->npmCacheCleanShellCommand(),
-                    '/app',
-                    120,
-                    $buildEnv
-                );
+
+                if ($this->nodeModulesNeedFreshInstall($ssh, $hostAppPath, $packageJson)) {
+                    $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv, true);
+                    $this->runOneOffInContainer(
+                        $ssh,
+                        $containerPath,
+                        $containerName,
+                        $this->runtimeService->npmCacheCleanShellCommand(),
+                        '/app',
+                        120,
+                        $buildEnv,
+                        true
+                    );
+                }
+
                 $this->runOneOffInContainer(
                     $ssh,
                     $containerPath,
@@ -166,18 +174,21 @@ class ContainerStackCommandService
                     $this->runtimeService->npmInstallShellCommand(),
                     '/app',
                     $timeout,
-                    $buildEnv
+                    $buildEnv,
+                    true
                 );
                 $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
+                $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer(
                     $ssh,
                     $containerPath,
                     $containerName,
-                    $this->runtimeService->npmBuildShellCommand(),
+                    $this->runtimeService->npmBuildShellCommand($memoryLimitMb),
                     '/app',
-                    $timeout,
-                    $buildEnv
+                    $buildTimeout,
+                    $buildEnv,
+                    true
                 );
                 $this->runOneOffInContainer(
                     $ssh,
@@ -186,7 +197,8 @@ class ContainerStackCommandService
                     $this->runtimeService->npmPruneShellCommand(),
                     '/app',
                     $timeout,
-                    $buildEnv
+                    $buildEnv,
+                    true
                 );
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
@@ -315,7 +327,7 @@ class ContainerStackCommandService
             return;
         }
 
-        $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
+        $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv, true);
         $this->runOneOffInContainer(
             $ssh,
             $containerPath,
@@ -323,7 +335,8 @@ class ContainerStackCommandService
             $this->runtimeService->npmCacheCleanShellCommand(),
             '/app',
             120,
-            $buildEnv
+            $buildEnv,
+            true
         );
         $this->runOneOffInContainer(
             $ssh,
@@ -332,7 +345,8 @@ class ContainerStackCommandService
             $this->runtimeService->npmInstallShellCommand(true),
             '/app',
             $timeout,
-            $buildEnv
+            $buildEnv,
+            true
         );
 
         if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
@@ -346,7 +360,8 @@ class ContainerStackCommandService
             $this->runtimeService->npmInstallDevPackagesShellCommand($packageJson),
             '/app',
             $timeout,
-            $buildEnv
+            $buildEnv,
+            true
         );
 
         if (! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
@@ -373,6 +388,46 @@ class ContainerStackCommandService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function resolveNodeBuildMemoryLimitMb(ContainerDeployment $deployment): int
+    {
+        if ($deployment->memory_limit_mb !== null && (int) $deployment->memory_limit_mb > 0) {
+            return (int) $deployment->memory_limit_mb;
+        }
+
+        return 1024;
+    }
+
+    private function nodeModulesNeedFreshInstall(SSHService $ssh, string $hostAppPath, ?string $packageJson): bool
+    {
+        if (! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/next')) {
+            return true;
+        }
+
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return true;
+        }
+
+        $devDependencies = $data['devDependencies'] ?? [];
+        if (! is_array($devDependencies) || $devDependencies === []) {
+            return false;
+        }
+
+        $probePackage = array_key_exists('tailwindcss', $devDependencies)
+            ? 'tailwindcss'
+            : (string) array_key_first($devDependencies);
+
+        if ($probePackage === '') {
+            return false;
+        }
+
+        return ! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage);
     }
 
     private function hostFileExists(SSHService $ssh, string $path): bool
@@ -421,7 +476,8 @@ class ContainerStackCommandService
         string $command,
         string $workDir = '/app',
         int $timeout = 600,
-        array $environment = []
+        array $environment = [],
+        bool $noDeps = false
     ): string {
         if (! $this->isSafeCommand($command)) {
             throw new \InvalidArgumentException('Unsafe container command rejected.');
@@ -432,9 +488,10 @@ class ContainerStackCommandService
         $workDirArg = escapeshellarg($workDir);
         $commandArg = escapeshellarg($command);
         $envFlags = $this->composeRunEnvironmentFlags($environment);
+        $noDepsFlag = $noDeps ? ' --no-deps' : '';
 
         return trim($ssh->exec(
-            "cd {$pathArg} && docker compose run --rm -T{$envFlags} -w {$workDirArg} {$serviceArg} sh -c {$commandArg}",
+            "cd {$pathArg} && docker compose run --rm -T{$noDepsFlag}{$envFlags} -w {$workDirArg} {$serviceArg} sh -c {$commandArg}",
             $timeout
         ));
     }

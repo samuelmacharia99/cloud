@@ -446,15 +446,49 @@ class ContainerApplicationRuntimeService
 
     private const NODE_CLEAN_ENV = 'HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit=';
 
-    public function nodeCleanNpmCommand(string $npmArgs, ?string $nodeEnv = null): string
+    public function nodeCleanNpmCommand(string $npmArgs, ?string $nodeEnv = null, array $extraEnv = []): string
     {
         $npmArgs = trim($npmArgs);
         $env = 'env -i '.self::NODE_CLEAN_ENV;
+        foreach ($extraEnv as $key => $value) {
+            if (! is_string($key) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value === '' || preg_match('/\s/', $value)) {
+                continue;
+            }
+
+            $env .= ' '.$key.'='.$value;
+        }
         if ($nodeEnv !== null && $nodeEnv !== '') {
             $env .= ' NODE_ENV='.$nodeEnv;
         }
 
         return $env.' '.self::NODE_NPM_BIN.' '.$npmArgs;
+    }
+
+    public function nodeBuildHeapLimitMb(?int $containerMemoryLimitMb = null): int
+    {
+        $ratio = 0.65;
+        $minimum = 384;
+
+        if (function_exists('config')) {
+            try {
+                $ratio = (float) config('containers.node_build.heap_limit_ratio', 0.65);
+                $minimum = (int) config('containers.node_build.min_heap_limit_mb', 384);
+            } catch (\Throwable) {
+            }
+        }
+
+        if ($containerMemoryLimitMb === null || $containerMemoryLimitMb <= 0) {
+            return max($minimum, 768);
+        }
+
+        $heap = (int) floor($containerMemoryLimitMb * $ratio);
+
+        return max($minimum, min($heap, $containerMemoryLimitMb - 128));
     }
 
     public function nodeNpmProductionOffPrefix(): string
@@ -512,9 +546,13 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
     }
 
-    public function npmBuildShellCommand(): string
+    public function npmBuildShellCommand(?int $containerMemoryLimitMb = null): string
     {
-        return $this->nodeCleanNpmCommand('run build', 'production');
+        $heapLimit = $this->nodeBuildHeapLimitMb($containerMemoryLimitMb);
+
+        return $this->nodeCleanNpmCommand('run build', 'production', [
+            'NODE_OPTIONS' => '--max-old-space-size='.$heapLimit,
+        ]);
     }
 
     public function npmPruneShellCommand(): string
