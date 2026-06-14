@@ -14,6 +14,7 @@ use App\Models\ContainerMetric;
 use App\Models\DatabaseTemplate;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
@@ -1310,6 +1311,38 @@ class ContainerController extends Controller
             \Log::error("Failed to delete backup {$backup->id}: ".$e->getMessage());
 
             return back()->withErrors(['error' => 'Delete failed: '.$e->getMessage()]);
+        }
+    }
+
+    public function destroy(Request $request, Service $service, CustomerServiceCancellationService $cancellation): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $request->validate([
+            'service_name' => [
+                'required',
+                'string',
+                function (string $attribute, mixed $value, \Closure $fail) use ($service): void {
+                    if ((string) $value !== (string) $service->name) {
+                        $fail('The service name does not match. Type the exact name to confirm deletion.');
+                    }
+                },
+            ],
+        ], [
+            'service_name.required' => 'Enter the service name to confirm deletion.',
+        ]);
+
+        try {
+            $result = $cancellation->cancel(
+                $service,
+                auth()->user(),
+                'Customer deleted service from container dashboard after confirming service name.'
+            );
+
+            return redirect()->route('customer.services.index')
+                ->with($result['deprovisioned'] ? 'success' : 'warning', $result['message']);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         }
     }
 }

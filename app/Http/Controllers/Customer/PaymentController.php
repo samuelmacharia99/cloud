@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\CreditService;
+use App\Services\CustomerCreditTopupService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\BankTransferPaymentService;
 use App\Services\PaymentGateway\OnlinePaymentFailureService;
@@ -338,6 +339,11 @@ class PaymentController extends Controller
                 }
 
                 // Process completion (handles overpayments and provisioning)
+                if ($this->handleTopupPaymentCompletion($payment)) {
+                    return redirect()->route('customer.credits.index')
+                        ->with('success', 'Credits added to your account successfully!');
+                }
+
                 $this->processPaymentCompletion($payment, $invoice);
 
                 return redirect()->route('customer.payment.success', ['invoice' => $invoice])
@@ -372,6 +378,11 @@ class PaymentController extends Controller
     public function stripeCancel(Request $request, Invoice $invoice)
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
+
+        if ($this->isCreditTopupInvoice($invoice)) {
+            return redirect()->route('customer.credits.index')
+                ->with('info', 'Credit purchase cancelled. You can try again anytime.');
+        }
 
         app(OnlinePaymentFailureService::class)->recordAndNotify(
             $invoice,
@@ -440,6 +451,11 @@ class PaymentController extends Controller
                 }
 
                 // Process completion (handles overpayments and provisioning)
+                if ($this->handleTopupPaymentCompletion($payment)) {
+                    return redirect()->route('customer.credits.index')
+                        ->with('success', 'Credits added to your account successfully!');
+                }
+
                 $this->processPaymentCompletion($payment, $invoice);
 
                 return redirect()->route('customer.payment.success', ['invoice' => $invoice])
@@ -475,6 +491,11 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
+        if ($this->isCreditTopupInvoice($invoice)) {
+            return redirect()->route('customer.credits.index')
+                ->with('info', 'Credit purchase cancelled. You can try again anytime.');
+        }
+
         app(OnlinePaymentFailureService::class)->recordAndNotify(
             $invoice,
             'paypal',
@@ -507,6 +528,10 @@ class PaymentController extends Controller
 
             // If payment was successful, trigger provisioning
             if ($result['success'] && isset($result['payment_id'])) {
+                if (isset($result['wallet_topup']) || isset($result['credit_topup'])) {
+                    return response('', 200);
+                }
+
                 $payment = Payment::find($result['payment_id']);
                 if ($payment && $payment->invoice) {
                     try {
@@ -563,6 +588,10 @@ class PaymentController extends Controller
             // If payment was successful, trigger provisioning
             if ($result['success'] && isset($result['payment_id'])) {
                 $payment = Payment::find($result['payment_id']);
+                if ($payment && $payment->payment_purpose === 'credit_topup') {
+                    return response()->json($result);
+                }
+
                 if ($payment && $payment->invoice) {
                     try {
                         $this->provisionServices($payment->invoice);
@@ -628,7 +657,27 @@ class PaymentController extends Controller
      */
     private function processPaymentCompletion(Payment $payment, Invoice $invoice): void
     {
+        if ($this->handleTopupPaymentCompletion($payment)) {
+            return;
+        }
+
         app(InvoiceSettlementService::class)->settleFromPayment($payment);
+    }
+
+    private function handleTopupPaymentCompletion(Payment $payment): bool
+    {
+        if ($payment->payment_purpose === 'credit_topup') {
+            app(CustomerCreditTopupService::class)->processTopupPayment($payment);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isCreditTopupInvoice(Invoice $invoice): bool
+    {
+        return str_starts_with((string) $invoice->invoice_number, 'CREDIT-');
     }
 
     /**

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceCurrencyService;
+use App\Services\CustomerCreditTopupService;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -404,6 +405,12 @@ class MpesaService implements PaymentGatewayInterface
                         return ['success' => true, 'payment_id' => $lockedPayment->id, 'wallet_topup' => true];
                     }
 
+                    if ($lockedPayment->payment_purpose === 'credit_topup') {
+                        app(CustomerCreditTopupService::class)->processTopupPayment($lockedPayment);
+
+                        return ['success' => true, 'payment_id' => $lockedPayment->id, 'credit_topup' => true];
+                    }
+
                     if ($lockedPayment->invoice) {
                         $lockedPayment->invoice->update(['status' => InvoiceStatus::Paid->value]);
 
@@ -461,10 +468,22 @@ class MpesaService implements PaymentGatewayInterface
     }
 
     /**
-     * Initiate wallet top-up via M-Pesa STK push
+     * Initiate wallet or account-credit top-up via M-Pesa STK push
      */
-    public function initiateTopup(User $reseller, float $amount, string $phone, Invoice $topupInvoice): array
-    {
+    public function initiateTopup(
+        User $user,
+        float $amount,
+        string $phone,
+        Invoice $topupInvoice,
+        string $paymentPurpose = 'wallet_topup'
+    ): array {
+        $purposeLabels = [
+            'wallet_topup' => ['prefix' => 'WALLET', 'desc' => 'Wallet top-up'],
+            'credit_topup' => ['prefix' => 'CREDIT', 'desc' => 'Account credit purchase'],
+        ];
+
+        $labels = $purposeLabels[$paymentPurpose] ?? $purposeLabels['wallet_topup'];
+
         try {
             if (! $this->isConfigured()) {
                 throw new \Exception('M-Pesa is not configured');
@@ -490,12 +509,13 @@ class MpesaService implements PaymentGatewayInterface
                 'PartyB' => $this->businessShortCode,
                 'PhoneNumber' => $phone,
                 'CallBackURL' => $this->buildCallbackUrl(),
-                'AccountReference' => "WALLET-{$reseller->id}",
-                'TransactionDesc' => "Wallet top-up - {$amount} KES",
+                'AccountReference' => "{$labels['prefix']}-{$user->id}",
+                'TransactionDesc' => "{$labels['desc']} - {$amount} KES",
             ];
 
-            Log::info('M-Pesa Wallet Topup STK Push Request', [
-                'reseller_id' => $reseller->id,
+            Log::info('M-Pesa top-up STK Push Request', [
+                'user_id' => $user->id,
+                'payment_purpose' => $paymentPurpose,
                 'phone' => $phone,
                 'amount' => $amount,
             ]);
@@ -505,8 +525,9 @@ class MpesaService implements PaymentGatewayInterface
             ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
 
             if (! $response->successful()) {
-                Log::error('M-Pesa wallet topup STK Push failed', [
-                    'reseller_id' => $reseller->id,
+                Log::error('M-Pesa top-up STK Push failed', [
+                    'user_id' => $user->id,
+                    'payment_purpose' => $paymentPurpose,
                     'status_code' => $response->status(),
                     'response' => $response->json(),
                 ]);
@@ -518,8 +539,9 @@ class MpesaService implements PaymentGatewayInterface
             $checkoutRequestId = $data['CheckoutRequestID'] ?? null;
 
             if ($responseCode !== '0' || empty($checkoutRequestId)) {
-                Log::warning('M-Pesa wallet topup STK Push rejected', [
-                    'reseller_id' => $reseller->id,
+                Log::warning('M-Pesa top-up STK Push rejected', [
+                    'user_id' => $user->id,
+                    'payment_purpose' => $paymentPurpose,
                     'response_code' => $responseCode,
                     'checkout_request_id' => $checkoutRequestId,
                     'response' => $data,
@@ -533,12 +555,12 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             Payment::create([
-                'user_id' => $reseller->id,
+                'user_id' => $user->id,
                 'invoice_id' => $topupInvoice->id,
                 'amount' => $amount,
                 'currency' => 'KES',
                 'payment_method' => 'mpesa',
-                'payment_purpose' => 'wallet_topup',
+                'payment_purpose' => $paymentPurpose,
                 'transaction_reference' => $checkoutRequestId,
                 'status' => 'pending',
                 'notes' => json_encode([
@@ -554,8 +576,9 @@ class MpesaService implements PaymentGatewayInterface
                 'response_code' => $responseCode,
             ];
         } catch (\Exception $e) {
-            Log::error('M-Pesa wallet topup initiate failed', [
-                'reseller_id' => $reseller->id,
+            Log::error('M-Pesa top-up initiate failed', [
+                'user_id' => $user->id,
+                'payment_purpose' => $paymentPurpose,
                 'error' => $e->getMessage(),
             ]);
 

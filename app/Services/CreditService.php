@@ -64,6 +64,23 @@ class CreditService
     }
 
     /**
+     * Create a credit from a customer purchase
+     */
+    public static function createPurchaseCredit(User $user, float $amount, Payment $payment): Credit
+    {
+        return Credit::create([
+            'user_id' => $user->id,
+            'amount' => $amount,
+            'source' => 'purchase',
+            'payment_id' => $payment->id,
+            'invoice_id' => $payment->invoice_id,
+            'notes' => 'Credit purchase via '.$payment->payment_method->value,
+            'status' => 'active',
+            'expires_at' => now()->addYear(),
+        ]);
+    }
+
+    /**
      * Create a refund credit
      */
     public static function createRefundCredit(

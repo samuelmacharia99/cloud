@@ -2,8 +2,10 @@
 
 namespace Tests\Feature\Customer;
 
+use App\Http\Controllers\Customer\CheckoutController;
 use App\Models\Invoice;
 use App\Models\Order;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\Ticket;
 use App\Models\User;
@@ -56,12 +58,12 @@ class CustomerPortalTest extends TestCase
         $customer = $this->customer();
         CreditService::createManualCredit($customer, 1000, 'Checkout credit');
 
-        $product = \App\Models\Product::factory()->create([
+        $product = Product::factory()->create([
             'monthly_price' => 500,
             'is_active' => true,
         ]);
 
-        session([\App\Http\Controllers\Customer\CheckoutController::CART_SESSION_KEY => [
+        session([CheckoutController::CART_SESSION_KEY => [
             'item-1' => [
                 'type' => 'product',
                 'product_id' => $product->id,
@@ -213,5 +215,60 @@ class CustomerPortalTest extends TestCase
                 'reason' => 'No longer needed for this project',
             ])
             ->assertRedirect(route('customer.services.index'));
+    }
+
+    public function test_customer_can_delete_container_service_with_name_confirmation(): void
+    {
+        $customer = $this->customer();
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'name' => 'My Test App',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($customer)
+            ->delete(route('customer.services.container.destroy', $service), [
+                'service_name' => 'Wrong Name',
+            ])
+            ->assertSessionHasErrors('service_name');
+
+        $this->mock(ProvisioningService::class, function ($mock) use ($service) {
+            $mock->shouldReceive('terminate')
+                ->once()
+                ->with(\Mockery::on(fn ($s) => $s->id === $service->id));
+        });
+
+        $this->actingAs($customer)
+            ->delete(route('customer.services.container.destroy', $service), [
+                'service_name' => 'My Test App',
+            ])
+            ->assertRedirect(route('customer.services.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('tickets', [
+            'user_id' => $customer->id,
+            'title' => 'Service Cancellation: My Test App',
+        ]);
+    }
+
+    public function test_customer_cannot_delete_another_customers_container_service(): void
+    {
+        $owner = $this->customer();
+        $other = $this->customer();
+        $product = Product::factory()->containerHosting()->create();
+        $service = Service::factory()->create([
+            'user_id' => $owner->id,
+            'product_id' => $product->id,
+            'name' => 'Owner App',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($other)
+            ->delete(route('customer.services.container.destroy', $service), [
+                'service_name' => 'Owner App',
+            ])
+            ->assertForbidden();
     }
 }

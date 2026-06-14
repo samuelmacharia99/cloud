@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceCurrencyService;
+use App\Services\CustomerCreditTopupService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -105,8 +106,8 @@ class PayPalService implements PaymentGatewayInterface
                 ],
                 'application_context' => [
                     'brand_name' => 'Talksasa Cloud',
-                    'return_url' => route('payment.paypal.success', ['invoice_id' => $invoice->id]),
-                    'cancel_url' => route('payment.paypal.cancel', ['invoice_id' => $invoice->id]),
+                    'return_url' => route('customer.payment.paypal.success', ['invoice' => $invoice->id]),
+                    'cancel_url' => route('customer.payment.paypal.cancel', ['invoice' => $invoice->id]),
                     'user_action' => 'PAY_NOW',
                     'locale' => 'en-US',
                 ],
@@ -406,6 +407,16 @@ class PayPalService implements PaymentGatewayInterface
 
                 // Update invoice if payment completed
                 if ($status === 'COMPLETED') {
+                    if ($payment->payment_purpose === 'credit_topup') {
+                        app(CustomerCreditTopupService::class)->processTopupPayment($payment);
+
+                        return [
+                            'success' => true,
+                            'message' => 'Credit purchase received',
+                            'payment_id' => $payment->id,
+                        ];
+                    }
+
                     $payment->invoice->update(['status' => 'paid']);
 
                     if ($payment->invoice->order) {

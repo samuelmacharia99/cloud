@@ -491,6 +491,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('my/orders', App\Http\Controllers\Customer\OrderController::class)->only(['index', 'show'])->names('customer.orders');
         Route::post('my/orders/{order}/cancel', [App\Http\Controllers\Customer\OrderController::class, 'cancel'])->name('customer.orders.cancel');
         Route::get('my/credits', [App\Http\Controllers\Customer\CreditController::class, 'index'])->name('customer.credits.index');
+        Route::post('my/credits/topup', [App\Http\Controllers\Customer\CreditController::class, 'initiateTopup'])->name('customer.credits.topup');
+        Route::get('my/credits/topup/status/{invoice}', [App\Http\Controllers\Customer\CreditController::class, 'checkTopupStatus'])->name('customer.credits.topup.status');
         Route::resource('my/invoices', App\Http\Controllers\Customer\InvoiceController::class)->only(['index', 'show'])->names('customer.invoices');
         Route::get('my/invoices/{invoice}/download', [App\Http\Controllers\Customer\InvoiceController::class, 'download'])->name('customer.invoices.download');
         Route::get('my/invoices/{invoice}/preview', [App\Http\Controllers\Customer\InvoiceController::class, 'preview'])->name('customer.invoices.preview');
@@ -566,6 +568,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Container management
         Route::get('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'show'])->name('customer.services.container.show');
+        Route::delete('my/services/{service}/container', [App\Http\Controllers\Customer\ContainerController::class, 'destroy'])->name('customer.services.container.destroy');
         Route::post('my/services/{service}/container/restart', [App\Http\Controllers\Customer\ContainerController::class, 'restart'])->name('customer.services.container.restart');
         Route::post('my/services/{service}/container/redeploy', [App\Http\Controllers\Customer\ContainerController::class, 'redeploy'])->middleware('throttle:10,10')->name('customer.services.container.redeploy');
         Route::post('my/services/{service}/container/initialize-laravel', [App\Http\Controllers\Customer\ContainerController::class, 'initializeLaravel'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.initialize-laravel');

@@ -5,6 +5,7 @@ namespace App\Services\PaymentGateway;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Services\CustomerCreditTopupService;
 use App\Support\CurrencyFormatter;
 use Illuminate\Support\Facades\Log;
 use Stripe\Checkout\Session;
@@ -86,8 +87,8 @@ class StripeService implements PaymentGatewayInterface
                 'payment_method_types' => ['card'],
                 'line_items' => $lineItems,
                 'mode' => 'payment',
-                'success_url' => route('payment.stripe.success', ['invoice_id' => $invoice->id]).'?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => route('payment.stripe.cancel', ['invoice_id' => $invoice->id]),
+                'success_url' => route('customer.payment.stripe.success', ['invoice' => $invoice->id]).'?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url' => route('customer.payment.stripe.cancel', ['invoice' => $invoice->id]),
                 'customer_email' => $user->email,
                 'client_reference_id' => $invoice->invoice_number,
                 'metadata' => [
@@ -244,6 +245,16 @@ class StripeService implements PaymentGatewayInterface
                         'status' => 'completed',
                         'paid_at' => now(),
                     ]);
+                }
+
+                if ($payment->payment_purpose === 'credit_topup') {
+                    app(CustomerCreditTopupService::class)->processTopupPayment($payment);
+
+                    return [
+                        'success' => true,
+                        'message' => 'Credit purchase received',
+                        'payment_id' => $payment->id,
+                    ];
                 }
 
                 // Update invoice
