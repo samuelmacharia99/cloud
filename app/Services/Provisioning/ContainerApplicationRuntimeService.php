@@ -442,9 +442,15 @@ class ContainerApplicationRuntimeService
         return 'dist';
     }
 
+    public function npmInstallForProductionBuildCommand(): string
+    {
+        return 'npm install --include=dev';
+    }
+
     public function nodeBootstrap(?string $packageJson = null): string
     {
         $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
+        $installForBuild = $this->npmInstallForProductionBuildCommand();
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
@@ -452,7 +458,7 @@ class ContainerApplicationRuntimeService
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && npm install && '.$binFix.' && npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

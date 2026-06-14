@@ -53,7 +53,7 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertTrue($service->isSafeCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
         $this->assertTrue($service->isSafeCommand('rm -rf node_modules'));
-        $this->assertTrue($service->isSafeCommand('find node_modules/.bin -type f -exec chmod u+x {} +'));
+        $this->assertTrue($service->isSafeCommand('npm install --include=dev'));
     }
 
     #[Test]

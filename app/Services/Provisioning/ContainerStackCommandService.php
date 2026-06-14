@@ -147,8 +147,9 @@ class ContainerStackCommandService
 
         try {
             if ($requiresBuild) {
+                $installForBuild = $this->runtimeService->npmInstallForProductionBuildCommand();
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installForBuild, '/app', $timeout);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);

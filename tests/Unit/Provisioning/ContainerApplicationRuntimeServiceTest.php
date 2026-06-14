@@ -170,6 +170,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $bootstrap = $this->service->nodeBootstrap($packageJson);
 
         $this->assertStringContainsString('[ ! -d .next ]', $bootstrap);
+        $this->assertStringContainsString('npm install --include=dev', $bootstrap);
         $this->assertStringContainsString('npm run build', $bootstrap);
     }
 
