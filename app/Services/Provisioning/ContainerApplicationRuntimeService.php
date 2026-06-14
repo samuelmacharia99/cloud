@@ -442,30 +442,84 @@ class ContainerApplicationRuntimeService
         return 'dist';
     }
 
+    private const NODE_NPM_BIN = '/usr/local/bin/npm';
+
+    private const NODE_CLEAN_ENV = 'HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit=';
+
+    public function nodeCleanNpmCommand(string $npmArgs, ?string $nodeEnv = null): string
+    {
+        $npmArgs = trim($npmArgs);
+        $env = 'env -i '.self::NODE_CLEAN_ENV;
+        if ($nodeEnv !== null && $nodeEnv !== '') {
+            $env .= ' NODE_ENV='.$nodeEnv;
+        }
+
+        return $env.' '.self::NODE_NPM_BIN.' '.$npmArgs;
+    }
+
     public function nodeNpmProductionOffPrefix(): string
     {
         return 'npm_config_production=false NPM_CONFIG_PRODUCTION=false';
     }
 
-    public function npmInstallForProductionBuildCommand(bool $hasLockFile = false, bool $force = false): string
+    public function npmInstallForProductionBuildCommand(bool $force = false): string
     {
         $forceFlag = $force ? ' --force' : '';
 
-        if ($hasLockFile) {
-            return 'npm ci --production=false --include=dev'.$forceFlag;
-        }
-
-        return 'npm install --production=false --include=dev'.$forceFlag;
+        return 'install --production=false --include=dev --no-audit --no-fund'.$forceFlag;
     }
 
-    public function npmInstallShellCommand(bool $hasLockFile = false, bool $force = false): string
+    public function npmInstallShellCommand(bool $force = false): string
     {
-        return $this->nodeNpmProductionOffPrefix().' '.$this->npmInstallForProductionBuildCommand($hasLockFile, $force);
+        return $this->nodeCleanNpmCommand($this->npmInstallForProductionBuildCommand($force), 'development');
+    }
+
+    public function npmCacheCleanShellCommand(): string
+    {
+        return $this->nodeCleanNpmCommand('cache clean --force');
+    }
+
+    public function npmInstallDevPackagesShellCommand(?string $packageJson): string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return $this->npmInstallShellCommand(true);
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return $this->npmInstallShellCommand(true);
+        }
+
+        $devDependencies = $data['devDependencies'] ?? [];
+        if (! is_array($devDependencies) || $devDependencies === []) {
+            return $this->npmInstallShellCommand(true);
+        }
+
+        $names = array_values(array_filter(
+            array_keys($devDependencies),
+            fn (string $name): bool => (bool) preg_match('/^[@a-zA-Z0-9._\/-]+$/', $name)
+        ));
+
+        if ($names === []) {
+            return $this->npmInstallShellCommand(true);
+        }
+
+        $list = implode(' ', $names);
+        if (strlen($list) > 300) {
+            return $this->npmInstallShellCommand(true);
+        }
+
+        return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
     }
 
     public function npmBuildShellCommand(): string
     {
-        return $this->nodeNpmProductionOffPrefix().' NODE_ENV=production npm run build';
+        return $this->nodeCleanNpmCommand('run build', 'production');
+    }
+
+    public function npmPruneShellCommand(): string
+    {
+        return $this->nodeCleanNpmCommand('prune --omit=dev', 'production');
     }
 
     /**
@@ -490,6 +544,7 @@ class ContainerApplicationRuntimeService
         $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
         $installForBuild = $this->npmInstallShellCommand();
         $buildCommand = $this->npmBuildShellCommand();
+        $pruneCommand = $this->npmPruneShellCommand();
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
@@ -497,7 +552,7 @@ class ContainerApplicationRuntimeService
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

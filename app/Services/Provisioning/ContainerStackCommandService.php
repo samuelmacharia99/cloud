@@ -147,19 +147,28 @@ class ContainerStackCommandService
 
         try {
             if ($requiresBuild) {
-                $hasLockFile = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
+                $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
                 $this->runOneOffInContainer(
                     $ssh,
                     $containerPath,
                     $containerName,
-                    $this->runtimeService->npmInstallShellCommand($hasLockFile),
+                    $this->runtimeService->npmCacheCleanShellCommand(),
+                    '/app',
+                    120,
+                    $buildEnv
+                );
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $this->runtimeService->npmInstallShellCommand(),
                     '/app',
                     $timeout,
                     $buildEnv
                 );
-                $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $hasLockFile, $timeout, $buildEnv);
+                $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->runOneOffInContainer(
                     $ssh,
@@ -174,7 +183,7 @@ class ContainerStackCommandService
                     $ssh,
                     $containerPath,
                     $containerName,
-                    $this->runtimeService->nodeNpmProductionOffPrefix().' npm prune --omit=dev',
+                    $this->runtimeService->npmPruneShellCommand(),
                     '/app',
                     $timeout,
                     $buildEnv
@@ -277,7 +286,6 @@ class ContainerStackCommandService
         string $containerName,
         string $hostAppPath,
         ?string $packageJson,
-        bool $hasLockFile,
         int $timeout,
         array $buildEnv
     ): void {
@@ -307,15 +315,64 @@ class ContainerStackCommandService
             return;
         }
 
+        $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
         $this->runOneOffInContainer(
             $ssh,
             $containerPath,
             $containerName,
-            $this->runtimeService->npmInstallShellCommand($hasLockFile, true),
+            $this->runtimeService->npmCacheCleanShellCommand(),
+            '/app',
+            120,
+            $buildEnv
+        );
+        $this->runOneOffInContainer(
+            $ssh,
+            $containerPath,
+            $containerName,
+            $this->runtimeService->npmInstallShellCommand(true),
             '/app',
             $timeout,
             $buildEnv
         );
+
+        if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+            return;
+        }
+
+        $this->runOneOffInContainer(
+            $ssh,
+            $containerPath,
+            $containerName,
+            $this->runtimeService->npmInstallDevPackagesShellCommand($packageJson),
+            '/app',
+            $timeout,
+            $buildEnv
+        );
+
+        if (! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+            throw new \RuntimeException(
+                'Dev dependencies such as '.$probePackage.' were not installed after npm install retries. '
+                .'Stop the application container, remove node_modules, and run npm install with dev dependencies included.'
+            );
+        }
+    }
+
+    private function stopApplicationServiceForMaintenance(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $serviceArg = escapeshellarg($containerName);
+
+        try {
+            $ssh->exec("cd {$pathArg} && docker compose stop {$serviceArg}", 120);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to stop application container before Node post-pull maintenance', [
+                'container_name' => $containerName,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function hostFileExists(SSHService $ssh, string $path): bool
@@ -377,7 +434,7 @@ class ContainerStackCommandService
         $envFlags = $this->composeRunEnvironmentFlags($environment);
 
         return trim($ssh->exec(
-            "cd {$pathArg} && docker compose run --rm -T{$envFlags} -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}",
+            "cd {$pathArg} && docker compose run --rm -T{$envFlags} -w {$workDirArg} {$serviceArg} sh -c {$commandArg}",
             $timeout
         ));
     }

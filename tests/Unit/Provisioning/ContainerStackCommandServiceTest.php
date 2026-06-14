@@ -53,7 +53,7 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertTrue($service->isSafeCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
         $this->assertTrue($service->isSafeCommand('rm -rf node_modules'));
-        $this->assertTrue($service->isSafeCommand('npm install --production=false --include=dev'));
+        $this->assertTrue($service->isSafeCommand('env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --no-audit --no-fund'));
     }
 
     #[Test]
@@ -63,16 +63,17 @@ class ContainerStackCommandServiceTest extends TestCase
         $ssh = $this->createMock(SSHService::class);
         $ssh->expects($this->once())
             ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, '-e \'npm_config_production=false\'')
-                && str_contains($command, '-e \'NPM_CONFIG_PRODUCTION=false\'')
-                && str_contains($command, 'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm install --production=false --include=dev')))
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker compose run --rm -T')
+                && str_contains($command, ' sh -c ')
+                && str_contains($command, 'env -i HOME=/tmp')
+                && str_contains($command, '/usr/local/bin/npm install --production=false --include=dev')))
             ->willReturn('');
 
         $service->runOneOffInContainer(
             $ssh,
             '/var/lib/talksasa/containers/user-1-service-1',
             'user-1-service-1-nodejs',
-            'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm install --production=false --include=dev',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --no-audit --no-fund',
             '/app',
             120,
             [

@@ -170,23 +170,32 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $runtime = new ContainerApplicationRuntimeService;
         $bootstrap = $runtime->nodeBootstrap($packageJson);
 
-        $this->assertStringContainsString('npm_config_production=false NPM_CONFIG_PRODUCTION=false', $bootstrap);
-        $this->assertStringContainsString('npm install --production=false --include=dev', $bootstrap);
-        $this->assertStringContainsString('NODE_ENV=production npm run build', $bootstrap);
+        $this->assertStringContainsString('env -i HOME=/tmp', $bootstrap);
+        $this->assertStringContainsString('/usr/local/bin/npm install --production=false --include=dev', $bootstrap);
+        $this->assertStringContainsString('/usr/local/bin/npm run build', $bootstrap);
     }
 
     #[Test]
-    public function it_builds_npm_install_and_build_shell_commands_with_inline_env_overrides(): void
+    public function it_builds_npm_install_and_build_shell_commands_with_clean_env(): void
     {
         $runtime = new ContainerApplicationRuntimeService;
 
-        $this->assertSame(
-            'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm ci --production=false --include=dev',
-            $runtime->npmInstallShellCommand(true)
+        $this->assertStringContainsString(
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm install --production=false --include=dev --no-audit --no-fund',
+            $runtime->npmInstallShellCommand()
         );
         $this->assertSame(
-            'npm_config_production=false NPM_CONFIG_PRODUCTION=false NODE_ENV=production npm run build',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=production /usr/local/bin/npm run build',
             $runtime->npmBuildShellCommand()
+        );
+        $this->assertStringContainsString(
+            'tailwindcss',
+            $runtime->npmInstallDevPackagesShellCommand(json_encode([
+                'devDependencies' => [
+                    'tailwindcss' => '^3.4.1',
+                    'typescript' => '^5',
+                ],
+            ], JSON_THROW_ON_ERROR))
         );
     }
 
