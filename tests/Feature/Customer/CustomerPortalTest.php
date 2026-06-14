@@ -80,7 +80,11 @@ class CustomerPortalTest extends TestCase
 
         $invoice = Invoice::where('user_id', $customer->id)->latest()->first();
         $this->assertNotNull($invoice);
-        $this->assertTrue($invoice->fresh()->status->value === 'paid' || $invoice->getAppliedCredits() > 0);
+        $this->assertSame('paid', $invoice->fresh()->status->value);
+
+        $order = Order::where('user_id', $customer->id)->latest()->first();
+        $this->assertNotNull($order);
+        $this->assertSame('paid', $order->fresh()->payment_status);
     }
 
     public function test_customer_can_apply_partial_credits(): void

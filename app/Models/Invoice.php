@@ -145,7 +145,7 @@ class Invoice extends Model
      */
     public function getAppliedCredits(): float
     {
-        $kesApplied = (float) ($this->credits()->sum('credit_applications.amount_applied') ?? 0);
+        $kesApplied = (float) ($this->credits()->sum('amount_applied') ?? 0);
 
         if ($kesApplied <= 0 || $this->displayCurrency() === config('currency.base', 'KES')) {
             return $kesApplied;

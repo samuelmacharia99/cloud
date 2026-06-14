@@ -2,8 +2,10 @@
 
 namespace App\Services\Billing;
 
+use App\Enums\InvoiceStatus;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
+use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Service;
 use App\Services\CreditService;
@@ -45,6 +47,8 @@ class InvoiceSettlementService
         $invoice->refresh();
 
         if ($invoice->status->value === 'paid') {
+            $this->syncOrderPaymentStatus($invoice->fresh(['order']));
+
             return true;
         }
 
@@ -55,9 +59,18 @@ class InvoiceSettlementService
             return false;
         }
 
-        $invoice->update(['status' => 'paid']);
+        $this->markInvoiceAsPaid($invoice);
 
-        $this->finalizePaidInvoice($invoice);
+        try {
+            app(NotificationService::class)->notifyPaymentReceived($invoice->fresh());
+        } catch (\Throwable $e) {
+            Log::error('Failed to send payment received notification after credit settlement', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $this->finalizePaidInvoice($invoice->fresh());
 
         return true;
     }
@@ -84,7 +97,7 @@ class InvoiceSettlementService
             ]);
         }
 
-        $invoice->update(['status' => 'paid']);
+        $this->markInvoiceAsPaid($invoice);
 
         try {
             app(NotificationService::class)->notifyPaymentReceived($payment);
@@ -95,7 +108,49 @@ class InvoiceSettlementService
             ]);
         }
 
-        $this->finalizePaidInvoice($invoice);
+        $this->finalizePaidInvoice($invoice->fresh());
+    }
+
+    /**
+     * Mark an invoice (and linked checkout order) as paid.
+     */
+    public function markInvoiceAsPaid(Invoice $invoice): void
+    {
+        $invoice->refresh();
+
+        $updates = [];
+
+        if (! $invoice->isPaid()) {
+            $updates['status'] = InvoiceStatus::Paid;
+        }
+
+        if (! $invoice->paid_date) {
+            $updates['paid_date'] = now();
+        }
+
+        if ($updates !== []) {
+            $invoice->update($updates);
+        }
+
+        $this->syncOrderPaymentStatus($invoice->fresh(['order']));
+    }
+
+    private function syncOrderPaymentStatus(Invoice $invoice): void
+    {
+        $order = $invoice->order;
+
+        if (! $order instanceof Order) {
+            return;
+        }
+
+        if ($order->payment_status === 'paid' && $order->status === 'paid') {
+            return;
+        }
+
+        $order->update([
+            'status' => 'paid',
+            'payment_status' => 'paid',
+        ]);
     }
 
     private function finalizePaidInvoice(Invoice $invoice): void

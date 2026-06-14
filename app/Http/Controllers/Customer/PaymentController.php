@@ -687,7 +687,7 @@ class PaymentController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403, 'Unauthorized');
 
-        if ($invoice->status === 'paid') {
+        if ($invoice->isPaid()) {
             return redirect()->route('customer.invoices.show', $invoice)
                 ->with('info', 'This invoice has already been paid');
         }

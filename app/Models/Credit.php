@@ -61,7 +61,7 @@ class Credit extends Model
             'credit_id',
             'invoice_id'
         )->withPivot('amount_applied')
-        ->withTimestamps();
+            ->withTimestamps();
     }
 
     /**
@@ -73,8 +73,7 @@ class Credit extends Model
             return 0;
         }
 
-        $totalApplied = $this->appliedToInvoices()
-            ->sum('credit_applications.amount_applied') ?? 0;
+        $totalApplied = (float) ($this->appliedToInvoices()->sum('amount_applied') ?? 0);
 
         return $this->amount - $totalApplied;
     }
@@ -173,6 +172,7 @@ class Credit extends Model
     public function scopeForUser($query, User|int $user)
     {
         $userId = $user instanceof User ? $user->id : $user;
+
         return $query->where('user_id', $userId);
     }
 }
