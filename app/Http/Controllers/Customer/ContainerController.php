@@ -26,6 +26,8 @@ use App\Services\SSH\SSHService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ContainerController extends Controller
@@ -1163,57 +1165,108 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not a container hosting service']);
             }
 
-            $request->validate([
-                'domain' => 'required|string|regex:/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z]{2,}$/i|unique:container_domains,domain',
+            $validator = Validator::make($request->all(), [
+                'domain' => ['required', 'string', 'regex:'.$this->containerDomainRegex(), 'unique:container_domains,domain'],
             ]);
+
+            if ($validator->fails()) {
+                return $this->domainsTabRedirect($service)->withErrors($validator)->withInput();
+            }
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return back()->withErrors(['error' => 'Container not deployed yet']);
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Container not deployed yet']);
             }
 
-            // Check DNS configuration
             $nginxService = new NginxProxyService;
             $dnsCorrect = $nginxService->checkDns($request->domain, $deployment->node->ip_address);
 
-            // Create domain record
             $domain = ContainerDomain::create([
                 'container_deployment_id' => $deployment->id,
                 'domain' => strtolower($request->domain),
                 'status' => 'pending',
             ]);
 
-            // Bind domain to nginx
             $nginxService->bind($domain);
 
             $message = "Domain {$domain->domain} bound successfully";
-            if (! $dnsCorrect) {
-                $message .= " (Note: DNS is not yet pointing to {$deployment->node->ip_address})";
-            } else {
-                // Auto-attempt SSL issuance once domain is bound and DNS resolves.
-                // Keep binding successful even if certificate issuance fails so the
-                // user can retry manually from the Domains tab.
-                try {
-                    $nginxService->enableSsl($domain);
-                    $message .= ' SSL certificate issued successfully.';
-                } catch (\Throwable $sslError) {
-                    \Log::warning("Auto SSL issuance failed for domain {$domain->domain}", [
-                        'service_id' => $service->id,
-                        'domain' => $domain->domain,
-                        'error' => $sslError->getMessage(),
-                    ]);
-                    $message .= " Domain is active without SSL. Use 'Get SSL' to retry once DNS/propagation is ready.";
-                }
-            }
+            $message .= $this->appendAutoSslMessage($nginxService, $domain, $service, $dnsCorrect, $deployment->node->ip_address);
 
-            return back()->with('success', $message);
+            return $this->domainsTabRedirect($service)->with('success', $message);
         } catch (\Exception $e) {
             \Log::error("Failed to bind domain for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to bind domain: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to bind domain: '.$e->getMessage()]);
+        }
+    }
+
+    /**
+     * Update a bound domain name.
+     */
+    public function updateDomain(Service $service, ContainerDomain $domain, Request $request): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
+            return $response;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'domain' => [
+                'required',
+                'string',
+                'regex:'.$this->containerDomainRegex(),
+                Rule::unique('container_domains', 'domain')->ignore($domain->id),
+            ],
+        ]);
+
+        if ($validator->fails()) {
+            return $this->domainsTabRedirect($service)->withErrors($validator)->withInput();
+        }
+
+        $newDomain = strtolower($request->domain);
+        if ($newDomain === $domain->domain) {
+            return $this->domainsTabRedirect($service)->with('success', 'Domain unchanged.');
+        }
+
+        try {
+            $deployment = $service->containerDeployment;
+            $nginxService = new NginxProxyService;
+
+            $nginxService->removeProxyConfig($domain);
+            $nginxService->cleanupSslCertificate($domain);
+
+            $domain->update([
+                'domain' => $newDomain,
+                'status' => 'pending',
+                'ssl_enabled' => false,
+                'ssl_certificate_path' => null,
+                'ssl_key_path' => null,
+                'nginx_config_path' => null,
+                'verified_at' => null,
+                'error_message' => null,
+            ]);
+
+            $domain->refresh();
+            $nginxService->bind($domain);
+
+            $message = "Domain updated to {$domain->domain}";
+            $message .= $this->appendAutoSslMessage(
+                $nginxService,
+                $domain,
+                $service,
+                $nginxService->checkDns($domain->domain, $deployment->node->ip_address),
+                $deployment->node->ip_address
+            );
+
+            return $this->domainsTabRedirect($service)->with('success', $message);
+        } catch (\Exception $e) {
+            \Log::error("Failed to update domain for service {$service->id}: ".$e->getMessage());
+
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to update domain: '.$e->getMessage()]);
         }
     }
 
@@ -1224,25 +1277,21 @@ class ContainerController extends Controller
     {
         abort_if($service->user_id !== auth()->id(), 403);
 
+        if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
+            return $response;
+        }
+
         try {
-            if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
-            }
-
-            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
-                return back()->withErrors(['error' => 'Domain does not belong to this service']);
-            }
-
             $domainName = $domain->domain;
 
             $nginxService = new NginxProxyService;
             $nginxService->unbind($domain);
 
-            return back()->with('success', "Domain {$domainName} unbind successfully");
+            return $this->domainsTabRedirect($service)->with('success', "Domain {$domainName} removed successfully");
         } catch (\Exception $e) {
             \Log::error("Failed to unbind domain for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to unbind domain: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to remove domain: '.$e->getMessage()]);
         }
     }
 
@@ -1253,27 +1302,76 @@ class ContainerController extends Controller
     {
         abort_if($service->user_id !== auth()->id(), 403);
 
+        if ($response = $this->assertContainerDomainOwnership($service, $domain)) {
+            return $response;
+        }
+
         try {
-            if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
-            }
-
-            if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
-                return back()->withErrors(['error' => 'Domain does not belong to this service']);
-            }
-
             if ($domain->status !== 'active') {
-                return back()->withErrors(['error' => 'Domain must be active to enable SSL']);
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain must be active to enable SSL']);
             }
 
             $nginxService = new NginxProxyService;
             $nginxService->enableSsl($domain);
 
-            return back()->with('success', "SSL enabled for {$domain->domain}");
+            return $this->domainsTabRedirect($service)->with('success', "SSL enabled for {$domain->domain}");
         } catch (\Exception $e) {
             \Log::error("Failed to enable SSL for domain {$domain->domain}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Failed to enable SSL: '.$e->getMessage()]);
+        }
+    }
+
+    private function domainsTabRedirect(Service $service): RedirectResponse
+    {
+        return redirect()->route('customer.services.container.show', [
+            'service' => $service,
+            'tab' => 'domains',
+        ]);
+    }
+
+    private function assertContainerDomainOwnership(Service $service, ContainerDomain $domain): ?RedirectResponse
+    {
+        if ($service->product?->type !== 'container_hosting') {
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not a container hosting service']);
+        }
+
+        if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Domain does not belong to this service']);
+        }
+
+        return null;
+    }
+
+    private function containerDomainRegex(): string
+    {
+        return '/^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z]{2,}$/i';
+    }
+
+    private function appendAutoSslMessage(
+        NginxProxyService $nginxService,
+        ContainerDomain $domain,
+        Service $service,
+        bool $dnsCorrect,
+        string $nodeIp
+    ): string {
+        if (! $dnsCorrect) {
+            return " (Note: DNS is not yet pointing to {$nodeIp})";
+        }
+
+        try {
+            $nginxService->enableSsl($domain);
+            $domain->refresh();
+
+            return ' SSL certificate issued successfully.';
+        } catch (\Throwable $sslError) {
+            \Log::warning("Auto SSL issuance failed for domain {$domain->domain}", [
+                'service_id' => $service->id,
+                'domain' => $domain->domain,
+                'error' => $sslError->getMessage(),
+            ]);
+
+            return " Domain is active without SSL. Use 'Get SSL' to retry once DNS/propagation is ready.";
         }
     }
 

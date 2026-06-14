@@ -116,20 +116,28 @@
                 $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
             @endphp
             <!-- Tab Navigation -->
-            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8" x-data="{ activeTab: @js($initialTab) }">
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8" x-data="{
+                activeTab: @js($initialTab),
+                setTab(tab) {
+                    this.activeTab = tab;
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('tab', tab);
+                    history.replaceState({}, '', url);
+                }
+            }">
                 <div class="border-b border-slate-200 dark:border-slate-700">
                     <nav class="flex flex-wrap" role="tablist">
-                        <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📊 Overview</button>
-                        <button @click="activeTab = 'files'" :class="activeTab === 'files' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📁 Files</button>
-                        <button @click="activeTab = 'terminal'" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
-                        <button @click="activeTab = 'backups'" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
-                        <button @click="activeTab = 'domains'" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
-                        <button @click="activeTab = 'database'" :class="activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🗄️ Database</button>
+                        <button @click="setTab('overview')" :class="activeTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📊 Overview</button>
+                        <button @click="setTab('files')" :class="activeTab === 'files' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📁 Files</button>
+                        <button @click="setTab('terminal')" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
+                        <button @click="setTab('backups')" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
+                        <button @click="setTab('domains')" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
+                        <button @click="setTab('database')" :class="activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🗄️ Database</button>
                         @if (!empty($supportsGitRepository))
-                            <button @click="activeTab = 'github'" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🐙 GitHub</button>
+                            <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🐙 GitHub</button>
                         @endif
-                        <button @click="activeTab = 'logs'" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
-                        <button @click="activeTab = 'documentation'" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📖 Documentation</button>
+                        <button @click="setTab('logs')" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
+                        <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📖 Documentation</button>
                     </nav>
                 </div>
 
@@ -267,58 +275,83 @@
                                 <h3 class="text-xl font-bold text-slate-900 dark:text-white">Custom Domains</h3>
                             </div>
 
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                                <p class="text-sm text-blue-800 dark:text-blue-200">
+                                    <strong>DNS setup:</strong> Point your domain's A record to
+                                    <code class="font-mono">{{ $deployment->node->ip_address }}</code>
+                                    before binding or updating a domain.
+                                </p>
+                            </div>
+
                             @if ($deployment->domains()->count() > 0)
                                 <div class="space-y-3">
                                     @foreach ($deployment->domains as $domain)
-                                        <div class="flex items-center justify-between bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600">
-                                            <div>
-                                                <p class="font-mono font-semibold text-slate-900 dark:text-white">{{ $domain->domain }}</p>
-                                                <div class="flex items-center gap-2 mt-2">
-                                                    @php
-                                                        $statusColor = match($domain->status) {
-                                                            'pending' => 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-                                                            'active' => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-                                                            'failed' => 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-                                                            default => 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
-                                                        };
-                                                    @endphp
-                                                    <span class="px-2 py-1 rounded text-xs font-semibold {{ $statusColor }}">
-                                                        {{ ucfirst($domain->status) }}
-                                                    </span>
-                                                    @if ($domain->ssl_enabled && $domain->status === 'active')
-                                                        <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🔒 SSL</span>
-                                                    @endif
-                                                </div>
-                                            </div>
-                                            <div class="flex gap-2">
-                                                @if ($domain->status === 'active' && !$domain->ssl_enabled)
-                                                    <form method="POST" action="{{ route('customer.services.container.domains.ssl', [$service, $domain]) }}" style="display:inline;">
+                                        <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600" x-data="{ editing: false }">
+                                            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                                <div class="min-w-0 flex-1">
+                                                    <div x-show="!editing">
+                                                        <p class="font-mono font-semibold text-slate-900 dark:text-white break-all">{{ $domain->domain }}</p>
+                                                        <div class="flex flex-wrap items-center gap-2 mt-2">
+                                                            @php
+                                                                $statusColor = match($domain->status) {
+                                                                    'pending' => 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+                                                                    'active' => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+                                                                    'failed' => 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+                                                                    default => 'bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200',
+                                                                };
+                                                            @endphp
+                                                            <span class="px-2 py-1 rounded text-xs font-semibold {{ $statusColor }}">
+                                                                {{ ucfirst($domain->status) }}
+                                                            </span>
+                                                            @if ($domain->ssl_enabled && $domain->status === 'active')
+                                                                <span class="px-2 py-1 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">🔒 SSL</span>
+                                                            @endif
+                                                            @if ($domain->error_message)
+                                                                <span class="text-xs text-red-600 dark:text-red-400">{{ $domain->error_message }}</span>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                    <form x-show="editing" x-cloak method="POST" action="{{ route('customer.services.container.domains.update', [$service, $domain]) }}" class="flex flex-col sm:flex-row gap-2">
                                                         @csrf
-                                                        <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
-                                                            Get SSL
+                                                        @method('PATCH')
+                                                        <input type="text" name="domain" value="{{ old('domain', $domain->domain) }}" class="flex-1 px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-800 dark:text-white font-mono text-sm" required>
+                                                        <div class="flex gap-2">
+                                                            <button type="submit" class="px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">Save</button>
+                                                            <button type="button" @click="editing = false" class="px-3 py-2 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">Cancel</button>
+                                                        </div>
+                                                    </form>
+                                                </div>
+                                                <div class="flex flex-wrap gap-2 shrink-0">
+                                                    <button type="button" x-show="!editing" @click="editing = true" class="px-3 py-1 bg-slate-200 dark:bg-slate-600 text-slate-800 dark:text-slate-200 text-sm rounded hover:bg-slate-300 dark:hover:bg-slate-500">
+                                                        Edit
+                                                    </button>
+                                                    @if ($domain->status === 'active' && !$domain->ssl_enabled)
+                                                        <form method="POST" action="{{ route('customer.services.container.domains.ssl', [$service, $domain]) }}" class="inline">
+                                                            @csrf
+                                                            <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
+                                                                Get SSL
+                                                            </button>
+                                                        </form>
+                                                    @endif
+                                                    <form method="POST" action="{{ route('customer.services.container.domains.unbind', [$service, $domain]) }}" class="inline" onsubmit="return confirm('Remove {{ $domain->domain }} from this container? This also removes nginx routing and SSL for that hostname.');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+                                                            Remove
                                                         </button>
                                                     </form>
-                                                @endif
-                                                <form method="POST" action="{{ route('customer.services.container.domains.unbind', [$service, $domain]) }}" style="display:inline;">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
-                                                        Remove
-                                                    </button>
-                                                </form>
+                                                </div>
                                             </div>
                                         </div>
                                     @endforeach
                                 </div>
                             @else
-                                <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-                                    <p class="text-sm text-blue-800 dark:text-blue-200"><strong>DNS Setup:</strong> Point your domain's A record to <code class="font-mono">{{ $deployment->node->ip_address }}</code></p>
-                                </div>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">No custom domains bound yet. Add one below after DNS is configured.</p>
                             @endif
 
-                            <form method="POST" action="{{ route('customer.services.container.domains.bind', $service) }}" class="flex gap-2">
+                            <form method="POST" action="{{ route('customer.services.container.domains.bind', $service) }}" class="flex flex-col sm:flex-row gap-2">
                                 @csrf
-                                <input type="text" name="domain" placeholder="example.com" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white" required>
+                                <input type="text" name="domain" value="{{ old('domain') }}" placeholder="example.com" class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg dark:bg-slate-700 dark:text-white font-mono" required>
                                 <button type="submit" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
                                     Add Domain
                                 </button>

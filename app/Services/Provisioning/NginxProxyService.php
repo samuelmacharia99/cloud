@@ -80,44 +80,87 @@ class NginxProxyService
     }
 
     /**
-     * Unbind a domain from nginx
+     * Remove nginx reverse-proxy config for a domain (keeps the database record).
      */
-    public function unbind(ContainerDomain $domain): void
+    public function removeProxyConfig(ContainerDomain $domain): void
     {
-        $deployment = $domain->deployment;
-        $node = $deployment->node;
+        $domain->loadMissing('deployment.node');
 
-        if (!$node) {
-            throw new Exception('Container deployment has no assigned node');
+        $deployment = $domain->deployment;
+        $node = $deployment?->node;
+
+        if (! $node) {
+            return;
         }
 
-        try {
-            $ssh = SSHService::forNode($node);
+        $ssh = SSHService::forNode($node);
 
-            // Remove config file — escape the path to prevent injection
+        try {
             if ($domain->nginx_config_path) {
-                @$ssh->exec("rm -f " . escapeshellarg($domain->nginx_config_path));
-            } else {
-                $fallbackDir = $this->resolveNginxConfigDir($ssh);
-                @$ssh->exec("rm -f " . escapeshellarg("{$fallbackDir}/{$domain->domain}.conf"));
+                @$ssh->exec('rm -f '.escapeshellarg($domain->nginx_config_path));
             }
 
-            // Reload nginx if available; unbind should still succeed on missing nginx.
+            $fallbackDir = $this->resolveNginxConfigDir($ssh);
+            @$ssh->exec('rm -f '.escapeshellarg("{$fallbackDir}/{$domain->domain}.conf"));
+
             if ($this->isNginxInstalled($ssh)) {
                 try {
                     $this->reloadNginx($ssh, $node);
                 } catch (Exception $e) {
-                    \Log::warning("Failed to reload nginx on node {$node->id}: " . $e->getMessage());
-                    // Don't fail the unbind operation if reload fails
+                    \Log::warning("Failed to reload nginx on node {$node->id}: ".$e->getMessage());
                 }
             }
-
+        } finally {
             $ssh->disconnect();
+        }
+    }
 
-            // Delete domain record
+    /**
+     * Best-effort removal of a Let's Encrypt certificate for this domain.
+     */
+    public function cleanupSslCertificate(ContainerDomain $domain): void
+    {
+        if (! $domain->ssl_enabled) {
+            return;
+        }
+
+        $domain->loadMissing('deployment.node');
+        $node = $domain->deployment?->node;
+
+        if (! $node) {
+            return;
+        }
+
+        try {
+            $ssh = SSHService::forNode($node);
+            @$ssh->exec(
+                'certbot delete --cert-name '.escapeshellarg($domain->domain).' --non-interactive 2>&1'
+            );
+            $ssh->disconnect();
+        } catch (Exception $e) {
+            \Log::warning("Failed to cleanup SSL certificate for {$domain->domain}: ".$e->getMessage());
+        }
+    }
+
+    /**
+     * Unbind a domain from nginx
+     */
+    public function unbind(ContainerDomain $domain): void
+    {
+        $domain->loadMissing('deployment.node');
+
+        if (! $domain->deployment?->node) {
+            $domain->delete();
+
+            return;
+        }
+
+        try {
+            $this->removeProxyConfig($domain);
+            $this->cleanupSslCertificate($domain);
             $domain->delete();
         } catch (Exception $e) {
-            \Log::error("Failed to unbind domain {$domain->domain}: " . $e->getMessage());
+            \Log::error("Failed to unbind domain {$domain->domain}: ".$e->getMessage());
             throw $e;
         }
     }

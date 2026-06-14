@@ -285,7 +285,11 @@ class ContainerTerminalService
             .'eval "$(printf %s '.escapeshellarg($encodedCmd).' | base64 -d)"; '
             .'printf "\n__EXIT:%d\n" "$?"; pwd';
 
-        return 'docker exec -u www-data '.escapeshellarg($containerName)
+        $session->loadMissing('service.product.containerTemplate');
+        $templateSlug = $session->service?->product?->containerTemplate?->slug;
+        $userFlag = ContainerDockerExecUserResolver::execUserFlag($templateSlug);
+
+        return 'docker exec '.$userFlag.escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
     }
 

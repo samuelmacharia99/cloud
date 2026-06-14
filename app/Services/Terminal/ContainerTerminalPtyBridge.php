@@ -35,6 +35,10 @@ class ContainerTerminalPtyBridge
 
         $this->ssh = SSHInteractiveSession::connect($deployment->node);
 
+        $this->session->loadMissing('service.product.containerTemplate');
+        $templateSlug = $this->session->service?->product?->containerTemplate?->slug;
+        $execUser = ContainerDockerExecUserResolver::execUser($templateSlug);
+
         $session = $this->session;
         $ws = $this->connection;
 
@@ -45,7 +49,8 @@ class ContainerTerminalPtyBridge
             function (string $output) use ($session, $ws) {
                 $ws->send($output);
                 $session->extendExpiry();
-            }
+            },
+            $execUser,
         );
 
         $this->session->update([

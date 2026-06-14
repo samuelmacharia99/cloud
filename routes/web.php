@@ -603,6 +603,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::delete('my/services/{service}/terminal', [ContainerTerminalController::class, 'close'])->name('customer.services.container.terminal.close');
 
         Route::post('my/services/{service}/container/domains', [App\Http\Controllers\Customer\ContainerController::class, 'bindDomain'])->name('customer.services.container.domains.bind');
+        Route::patch('my/services/{service}/container/domains/{domain}', [App\Http\Controllers\Customer\ContainerController::class, 'updateDomain'])->name('customer.services.container.domains.update');
         Route::delete('my/services/{service}/container/domains/{domain}', [App\Http\Controllers\Customer\ContainerController::class, 'unbindDomain'])->name('customer.services.container.domains.unbind');
         Route::post('my/services/{service}/container/domains/{domain}/ssl', [App\Http\Controllers\Customer\ContainerController::class, 'enableSsl'])->name('customer.services.container.domains.ssl');
         Route::post('my/services/{service}/container/backups', [App\Http\Controllers\Customer\ContainerController::class, 'createBackup'])->name('customer.services.container.backups.create');

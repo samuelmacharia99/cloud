@@ -1,4 +1,7 @@
 <div x-data="containerTerminal()" class="space-y-4">
+@php
+    $terminalTemplateSlug = $service->product?->containerTemplate?->slug ?? '';
+@endphp
     <div class="flex items-center justify-between">
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Terminal</h3>
         <div class="flex items-center gap-2">
@@ -30,7 +33,13 @@
 
     <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-            Interactive shell inside your container. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
+            @if (in_array($terminalTemplateSlug, ['laravel', 'php'], true))
+                Interactive shell inside your container. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
+            @elseif ($terminalTemplateSlug === 'nodejs')
+                Interactive shell inside your Node.js container. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
+            @else
+                Interactive shell inside your container. Run stack commands and inspect files in <code class="font-mono text-xs">/app</code>.
+            @endif
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
             Full PTY mode uses the WebSocket service (<code class="font-mono">php artisan container:terminal-ws</code>). If that service is unavailable, the terminal falls back to one command at a time over HTTP.
@@ -213,7 +222,11 @@ function containerTerminal() {
             this.mode = 'http';
             this.connected = true;
             this.terminal.write('⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\r\n');
+            @if ($terminalTemplateSlug === 'laravel')
             this.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
+            @elseif ($terminalTemplateSlug === 'nodejs')
+            this.terminal.write('  Tip: Git pull rebuilds your app automatically; run npm run build manually if needed.\r\n');
+            @endif
             this.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
             this.writePrompt();
         },
