@@ -3,6 +3,7 @@
 namespace Tests\Unit\Provisioning;
 
 use App\Services\Provisioning\ContainerStackCommandService;
+use App\Services\SSH\SSHService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -51,5 +52,26 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertFalse($service->isLongRunningCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm run build'));
         $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
+    }
+
+    #[Test]
+    public function it_runs_post_pull_commands_in_one_off_containers(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker compose run --rm -T')
+                && str_contains($command, 'npm install')))
+            ->willReturn('');
+
+        $service->runOneOffInContainer(
+            $ssh,
+            '/var/lib/talksasa/containers/user-1-service-1',
+            'user-1-service-1-nodejs',
+            'npm install',
+            '/app',
+            120
+        );
     }
 }

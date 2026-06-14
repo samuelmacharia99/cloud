@@ -116,12 +116,13 @@ class ContainerStackCommandService
         $slug = $service->product?->containerTemplate?->slug ?? '';
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $containerName = $deployment->container_name;
+        $hostAppPath = app(ContainerAppDirectoryService::class)->hostAppPath($deployment);
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         return match ($slug) {
-            'nodejs' => $this->installNodeDependencies($ssh, $containerPath, $containerName, $timeout),
-            'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $timeout),
-            'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $timeout),
+            'nodejs' => $this->installNodeDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+            'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+            'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             default => [],
         };
     }
@@ -133,25 +134,27 @@ class ContainerStackCommandService
         SSHService $ssh,
         string $containerPath,
         string $containerName,
+        string $hostAppPath,
         int $timeout
     ): array {
-        if (! $this->containerFileExists($ssh, $containerPath, $containerName, 'package.json')) {
+        $packageJsonPath = $hostAppPath.'/package.json';
+        if (! $this->hostFileExists($ssh, $packageJsonPath)) {
             return ['No package.json found; skipped npm install.'];
         }
 
-        $packageJson = $this->readContainerFile($ssh, $containerPath, $containerName, 'package.json');
+        $packageJson = $this->readHostFile($ssh, $packageJsonPath);
         $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson);
 
         try {
             if ($requiresBuild) {
-                $this->execInContainer($ssh, $containerPath, $containerName, 'npm install', '/app', $timeout);
-                $this->execInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
-                $this->execInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
+                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
 
                 return ['Node dependencies updated and production build completed.'];
             }
 
-            $this->execInContainer($ssh, $containerPath, $containerName, 'npm install --omit=dev', '/app', $timeout);
+            $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install --omit=dev', '/app', $timeout);
 
             return ['Node dependencies updated.'];
         } catch (\Throwable $e) {
@@ -166,14 +169,15 @@ class ContainerStackCommandService
         SSHService $ssh,
         string $containerPath,
         string $containerName,
+        string $hostAppPath,
         int $timeout
     ): array {
-        if (! $this->containerFileExists($ssh, $containerPath, $containerName, 'Gemfile')) {
+        if (! $this->hostFileExists($ssh, $hostAppPath.'/Gemfile')) {
             return ['No Gemfile found; skipped bundle install.'];
         }
 
         try {
-            $this->execInContainer(
+            $this->runOneOffInContainer(
                 $ssh,
                 $containerPath,
                 $containerName,
@@ -195,14 +199,15 @@ class ContainerStackCommandService
         SSHService $ssh,
         string $containerPath,
         string $containerName,
+        string $hostAppPath,
         int $timeout
     ): array {
-        if (! $this->containerFileExists($ssh, $containerPath, $containerName, 'requirements.txt')) {
+        if (! $this->hostFileExists($ssh, $hostAppPath.'/requirements.txt')) {
             return ['No requirements.txt found; skipped pip install.'];
         }
 
         try {
-            $this->execInContainer(
+            $this->runOneOffInContainer(
                 $ssh,
                 $containerPath,
                 $containerName,
@@ -217,56 +222,55 @@ class ContainerStackCommandService
         }
     }
 
-    private function containerFileExists(
-        SSHService $ssh,
-        string $containerPath,
-        string $containerName,
-        string $relativePath
-    ): bool {
-        $fileArg = escapeshellarg('/app/'.$relativePath);
+    private function hostFileExists(SSHService $ssh, string $path): bool
+    {
+        $pathArg = escapeshellarg($path);
 
         try {
-            $output = $this->execInContainer(
-                $ssh,
-                $containerPath,
-                $containerName,
-                "[ -f {$fileArg} ] && echo yes || echo no",
-                '/app',
-                30
-            );
-
-            return trim($output) === 'yes';
+            return trim($ssh->exec("[ -f {$pathArg} ] && echo yes || echo no", 10)) === 'yes';
         } catch (\Throwable) {
             return false;
         }
     }
 
-    private function readContainerFile(
-        SSHService $ssh,
-        string $containerPath,
-        string $containerName,
-        string $relativePath
-    ): ?string {
-        if (! $this->containerFileExists($ssh, $containerPath, $containerName, $relativePath)) {
+    private function readHostFile(SSHService $ssh, string $path): ?string
+    {
+        if (! $this->hostFileExists($ssh, $path)) {
             return null;
         }
 
-        try {
-            $output = $this->execInContainer(
-                $ssh,
-                $containerPath,
-                $containerName,
-                'head -c 65536 '.escapeshellarg('/app/'.$relativePath),
-                '/app',
-                30
-            );
+        $pathArg = escapeshellarg($path);
 
-            $output = trim($output);
+        try {
+            $output = trim($ssh->exec('head -c 65536 '.$pathArg, 15));
 
             return $output !== '' ? $output : null;
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    public function runOneOffInContainer(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName,
+        string $command,
+        string $workDir = '/app',
+        int $timeout = 600
+    ): string {
+        if (! $this->isSafeCommand($command)) {
+            throw new \InvalidArgumentException('Unsafe container command rejected.');
+        }
+
+        $pathArg = escapeshellarg($containerPath);
+        $serviceArg = escapeshellarg($containerName);
+        $workDirArg = escapeshellarg($workDir);
+        $commandArg = escapeshellarg($command);
+
+        return trim($ssh->exec(
+            "cd {$pathArg} && docker compose run --rm -T -w {$workDirArg} {$serviceArg} sh -lc {$commandArg}",
+            $timeout
+        ));
     }
 
     public function execInContainer(

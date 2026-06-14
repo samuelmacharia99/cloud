@@ -31,4 +31,15 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertFalse($service->isAllowedRelativePath('myapp'));
         $this->assertFalse($service->isAllowedRelativePath('public/hot'));
     }
+
+    #[Test]
+    public function it_preserves_dependency_tree_permissions_when_normalizing_app_files(): void
+    {
+        $service = new ContainerAppDirectoryService;
+        $script = $service->inContainerPermissionNormalizationScript();
+
+        $this->assertStringContainsString('-path /app/node_modules', $script);
+        $this->assertStringContainsString('-path /app/vendor', $script);
+        $this->assertStringContainsString('-prune -o', $script);
+    }
 }

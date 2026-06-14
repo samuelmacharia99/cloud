@@ -91,7 +91,6 @@ class ContainerGitRepositoryService
             }
 
             $this->syncToHost($ssh, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
-            $this->appDirectory->normalizePermissions($ssh, $deployment);
 
             $commit = $this->readShortCommit($ssh, $hostAppPath);
             $messages = ['Repository synced to /app'.($commit ? " ({$commit})" : '').'.'];
@@ -107,6 +106,11 @@ class ContainerGitRepositoryService
                 );
             } else {
                 $messages = array_merge($messages, $this->stackCommands->runPostPullSteps($service, $deployment, $ssh));
+            }
+
+            $this->appDirectory->normalizePermissions($ssh, $deployment);
+
+            if (! $this->isLaravelService($service)) {
                 $runtimeMessage = $this->deploymentService->refreshApplicationRuntimeCompose($service, $deployment, $ssh);
                 if ($runtimeMessage !== '') {
                     $messages[] = $runtimeMessage;

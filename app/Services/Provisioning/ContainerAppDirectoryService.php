@@ -190,15 +190,22 @@ class ContainerAppDirectoryService
         $ssh->exec('sh -lc '.escapeshellarg($script), 30);
     }
 
+    public function inContainerPermissionNormalizationScript(): string
+    {
+        $skipDependencyTrees = '\( -path /app/node_modules -o -path /app/vendor \) -prune -o';
+
+        return 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data /app;'
+            .' else chown -R 33:33 /app; fi;'
+            .'find /app '.$skipDependencyTrees.' -type d -exec chmod 775 {} + 2>/dev/null;'
+            .'find /app '.$skipDependencyTrees.' -type f -exec chmod 664 {} + 2>/dev/null;'
+            .'chmod 775 /app/artisan 2>/dev/null || true';
+    }
+
     public function normalizePermissions(SSHService $ssh, ContainerDeployment $deployment): void
     {
         $containerName = escapeshellarg($deployment->container_name);
         $hostAppPath = escapeshellarg($this->hostAppPath($deployment));
-        $ownership = 'if id www-data >/dev/null 2>&1; then chown -R www-data:www-data /app;'
-            .' else chown -R 33:33 /app; fi;'
-            .'find /app -type d -exec chmod 775 {} + 2>/dev/null;'
-            .'find /app -type f -exec chmod 664 {} + 2>/dev/null;'
-            .'chmod 775 /app/artisan 2>/dev/null || true';
+        $ownership = $this->inContainerPermissionNormalizationScript();
 
         try {
             $ssh->exec('docker exec -u 0 '.$containerName.' sh -lc '.escapeshellarg($ownership), 60);
