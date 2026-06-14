@@ -119,4 +119,73 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         $this->service->sanitizeInnerCommand('npm start; rm -rf /');
     }
+
+    #[Test]
+    public function it_detects_next_js_as_requiring_production_build(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => [
+                'next' => '14.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertTrue($this->service->packageJsonRequiresProductionBuild($packageJson));
+        $this->assertSame('.next', $this->service->packageJsonBuildOutputDir($packageJson));
+    }
+
+    #[Test]
+    public function it_skips_build_for_plain_express_apps(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'start' => 'node server.js',
+            ],
+            'dependencies' => [
+                'express' => '^4.18.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertFalse($this->service->packageJsonRequiresProductionBuild($packageJson));
+        $this->assertStringContainsString('npm install --omit=dev', $this->service->nodeBootstrap($packageJson));
+        $this->assertStringNotContainsString('npm run build', $this->service->nodeBootstrap($packageJson));
+    }
+
+    #[Test]
+    public function it_builds_next_js_on_container_start_when_artifact_is_missing(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => [
+                'next' => '14.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $bootstrap = $this->service->nodeBootstrap($packageJson);
+
+        $this->assertStringContainsString('[ ! -d .next ]', $bootstrap);
+        $this->assertStringContainsString('npm run build', $bootstrap);
+    }
+
+    #[Test]
+    public function it_includes_production_build_bootstrap_for_next_start(): void
+    {
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            '{"scripts":{"build":"next build","start":"next start"},"dependencies":{"next":"14.0.0"}}',
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertStringContainsString('npm run build', $runtime->command[2]);
+        $this->assertStringContainsString('exec npm start', $runtime->command[2]);
+    }
 }

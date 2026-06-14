@@ -109,7 +109,7 @@
 
         @if ($deployment)
             @php
-                $containerTabs = ['overview', 'files', 'terminal', 'backups', 'domains', 'database', 'logs'];
+                $containerTabs = ['overview', 'files', 'terminal', 'backups', 'domains', 'database', 'logs', 'documentation'];
                 if (! empty($supportsGitRepository)) {
                     array_splice($containerTabs, array_search('database', $containerTabs, true) + 1, 0, 'github');
                 }
@@ -129,6 +129,7 @@
                             <button @click="activeTab = 'github'" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🐙 GitHub</button>
                         @endif
                         <button @click="activeTab = 'logs'" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
+                        <button @click="activeTab = 'documentation'" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📖 Documentation</button>
                     </nav>
                 </div>
 
@@ -464,6 +465,11 @@
                                 <p class="text-slate-500">Click "Load Logs" to fetch container logs</p>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Documentation Tab -->
+                    <div x-show="activeTab === 'documentation'">
+                        @include('customer.services.partials.documentation')
                     </div>
                 </div>
             </div>

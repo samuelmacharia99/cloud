@@ -42,4 +42,14 @@ class ContainerStackCommandServiceTest extends TestCase
         $this->assertFalse($service->isSafeCommand('npm install; rm -rf /'));
         $this->assertTrue($service->isSafeCommand('bundle install --without development test'));
     }
+
+    #[Test]
+    public function it_allows_npm_build_commands(): void
+    {
+        $service = new ContainerStackCommandService;
+
+        $this->assertFalse($service->isLongRunningCommand('npm run build'));
+        $this->assertTrue($service->isSafeCommand('npm run build'));
+        $this->assertTrue($service->isSafeCommand('npm prune --omit=dev'));
+    }
 }

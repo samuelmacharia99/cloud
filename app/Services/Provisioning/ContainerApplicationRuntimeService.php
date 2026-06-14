@@ -59,7 +59,7 @@ class ContainerApplicationRuntimeService
                 $defaultPort,
                 'procfile',
                 'Procfile web process',
-                $this->nodeBootstrap()
+                $this->nodeBootstrap($packageJson)
             );
         }
 
@@ -72,7 +72,7 @@ class ContainerApplicationRuntimeService
                         $defaultPort,
                         'package.json',
                         'npm start',
-                        $this->nodeBootstrap()
+                        $this->nodeBootstrap($packageJson)
                     );
                 }
 
@@ -84,7 +84,7 @@ class ContainerApplicationRuntimeService
                             $defaultPort,
                             'package.json',
                             'node '.$main,
-                            $this->nodeBootstrap()
+                            $this->nodeBootstrap($packageJson)
                         );
                     }
                 }
@@ -92,15 +92,15 @@ class ContainerApplicationRuntimeService
         }
 
         if ($hasServerJs) {
-            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $this->nodeBootstrap());
+            return $this->shellRuntime('node server.js', $defaultPort, 'entrypoint', 'node server.js', $this->nodeBootstrap($packageJson));
         }
 
         if ($hasAppJs) {
-            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $this->nodeBootstrap());
+            return $this->shellRuntime('node app.js', $defaultPort, 'entrypoint', 'node app.js', $this->nodeBootstrap($packageJson));
         }
 
         if ($hasIndexJs) {
-            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $this->nodeBootstrap());
+            return $this->shellRuntime('node index.js', $defaultPort, 'entrypoint', 'node index.js', $this->nodeBootstrap($packageJson));
         }
 
         return $this->fallbackRuntime('nodejs', $defaultPort);
@@ -364,9 +364,93 @@ class ContainerApplicationRuntimeService
         return trim($ssh->exec("[ {$flag} {$pathArg} ] && echo yes || echo no", 10)) === 'yes';
     }
 
-    private function nodeBootstrap(): string
+    public function packageJsonRequiresProductionBuild(?string $packageJson): bool
     {
-        return '[ -f package.json ] && npm install --omit=dev';
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $scripts = $data['scripts'] ?? [];
+        if (! is_array($scripts) || empty($scripts['build'])) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        $buildPackages = [
+            'next',
+            'nuxt',
+            '@sveltejs/kit',
+            '@remix-run/react',
+            '@remix-run/node',
+            '@angular/core',
+            '@angular/cli',
+        ];
+
+        foreach ($buildPackages as $package) {
+            if (isset($dependencies[$package])) {
+                return true;
+            }
+        }
+
+        $start = strtolower((string) ($scripts['start'] ?? ''));
+        if (str_contains($start, 'next start')
+            || str_contains($start, 'nuxt start')
+            || str_contains($start, 'remix-serve')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public function packageJsonBuildOutputDir(?string $packageJson): string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return 'dist';
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return 'dist';
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        if (isset($dependencies['next'])) {
+            return '.next';
+        }
+
+        if (isset($dependencies['nuxt'])) {
+            return '.output';
+        }
+
+        if (isset($dependencies['@angular/core']) || isset($dependencies['@angular/cli'])) {
+            return 'dist';
+        }
+
+        return 'dist';
+    }
+
+    public function nodeBootstrap(?string $packageJson = null): string
+    {
+        if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
+            return '[ -f package.json ] && npm install --omit=dev';
+        }
+
+        $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
+
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then npm install && npm run build && npm prune --omit=dev; else npm install --omit=dev; fi; }';
     }
 
     private function rubyBootstrap(): string

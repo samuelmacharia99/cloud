@@ -8,6 +8,12 @@ use App\Services\SSH\SSHService;
 
 class ContainerStackCommandService
 {
+    public function __construct(
+        private ?ContainerApplicationRuntimeService $runtimeService = null
+    ) {
+        $this->runtimeService ??= new ContainerApplicationRuntimeService;
+    }
+
     public function resolveWorkDir(object $template): string
     {
         $volumePaths = $template->volume_paths ?? null;
@@ -133,12 +139,23 @@ class ContainerStackCommandService
             return ['No package.json found; skipped npm install.'];
         }
 
+        $packageJson = $this->readContainerFile($ssh, $containerPath, $containerName, 'package.json');
+        $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson);
+
         try {
+            if ($requiresBuild) {
+                $this->execInContainer($ssh, $containerPath, $containerName, 'npm install', '/app', $timeout);
+                $this->execInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout);
+                $this->execInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout);
+
+                return ['Node dependencies updated and production build completed.'];
+            }
+
             $this->execInContainer($ssh, $containerPath, $containerName, 'npm install --omit=dev', '/app', $timeout);
 
             return ['Node dependencies updated.'];
         } catch (\Throwable $e) {
-            return ['npm install failed: '.$e->getMessage()];
+            return ['Node post-pull step failed: '.$e->getMessage()];
         }
     }
 
@@ -221,6 +238,34 @@ class ContainerStackCommandService
             return trim($output) === 'yes';
         } catch (\Throwable) {
             return false;
+        }
+    }
+
+    private function readContainerFile(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName,
+        string $relativePath
+    ): ?string {
+        if (! $this->containerFileExists($ssh, $containerPath, $containerName, $relativePath)) {
+            return null;
+        }
+
+        try {
+            $output = $this->execInContainer(
+                $ssh,
+                $containerPath,
+                $containerName,
+                'head -c 65536 '.escapeshellarg('/app/'.$relativePath),
+                '/app',
+                30
+            );
+
+            $output = trim($output);
+
+            return $output !== '' ? $output : null;
+        } catch (\Throwable) {
+            return null;
         }
     }
 
