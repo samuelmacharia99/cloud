@@ -65,21 +65,19 @@ class ContainerStackCommandServiceTest extends TestCase
             ->method('exec')
             ->with($this->callback(fn (string $command): bool => str_contains($command, '-e \'npm_config_production=false\'')
                 && str_contains($command, '-e \'NPM_CONFIG_PRODUCTION=false\'')
-                && str_contains($command, '-e \'NODE_ENV=development\'')
-                && str_contains($command, 'npm install --production=false --include=dev')))
+                && str_contains($command, 'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm install --production=false --include=dev')))
             ->willReturn('');
 
         $service->runOneOffInContainer(
             $ssh,
             '/var/lib/talksasa/containers/user-1-service-1',
             'user-1-service-1-nodejs',
-            'npm install --production=false --include=dev',
+            'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm install --production=false --include=dev',
             '/app',
             120,
             [
                 'NPM_CONFIG_PRODUCTION' => 'false',
                 'npm_config_production' => 'false',
-                'NODE_ENV' => 'development',
             ]
         );
     }

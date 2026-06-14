@@ -442,13 +442,30 @@ class ContainerApplicationRuntimeService
         return 'dist';
     }
 
-    public function npmInstallForProductionBuildCommand(bool $hasLockFile = false): string
+    public function nodeNpmProductionOffPrefix(): string
     {
+        return 'npm_config_production=false NPM_CONFIG_PRODUCTION=false';
+    }
+
+    public function npmInstallForProductionBuildCommand(bool $hasLockFile = false, bool $force = false): string
+    {
+        $forceFlag = $force ? ' --force' : '';
+
         if ($hasLockFile) {
-            return 'npm ci --production=false --include=dev';
+            return 'npm ci --production=false --include=dev'.$forceFlag;
         }
 
-        return 'npm install --production=false --include=dev';
+        return 'npm install --production=false --include=dev'.$forceFlag;
+    }
+
+    public function npmInstallShellCommand(bool $hasLockFile = false, bool $force = false): string
+    {
+        return $this->nodeNpmProductionOffPrefix().' '.$this->npmInstallForProductionBuildCommand($hasLockFile, $force);
+    }
+
+    public function npmBuildShellCommand(): string
+    {
+        return $this->nodeNpmProductionOffPrefix().' NODE_ENV=production npm run build';
     }
 
     /**
@@ -459,20 +476,20 @@ class ContainerApplicationRuntimeService
         return [
             'NPM_CONFIG_PRODUCTION' => 'false',
             'npm_config_production' => 'false',
-            'NODE_ENV' => 'development',
         ];
     }
 
+    /** @deprecated use nodeNpmProductionOffPrefix() */
     public function nodeBuildEnvironmentPrefix(): string
     {
-        return 'npm_config_production=false NPM_CONFIG_PRODUCTION=false NODE_ENV=development';
+        return $this->nodeNpmProductionOffPrefix();
     }
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
         $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
-        $installForBuild = $this->nodeBuildEnvironmentPrefix().' '.$this->npmInstallForProductionBuildCommand();
-        $buildPrefix = $this->nodeBuildEnvironmentPrefix();
+        $installForBuild = $this->npmInstallShellCommand();
+        $buildCommand = $this->npmBuildShellCommand();
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
@@ -480,7 +497,7 @@ class ContainerApplicationRuntimeService
 
         $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildPrefix.' npm run build && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && npm prune --omit=dev && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

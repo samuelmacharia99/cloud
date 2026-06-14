@@ -167,12 +167,27 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             ],
         ], JSON_THROW_ON_ERROR);
 
-        $bootstrap = $this->service->nodeBootstrap($packageJson);
+        $runtime = new ContainerApplicationRuntimeService;
+        $bootstrap = $runtime->nodeBootstrap($packageJson);
 
-        $this->assertStringContainsString('[ ! -d .next ]', $bootstrap);
-        $this->assertStringContainsString('npm_config_production=false', $bootstrap);
+        $this->assertStringContainsString('npm_config_production=false NPM_CONFIG_PRODUCTION=false', $bootstrap);
         $this->assertStringContainsString('npm install --production=false --include=dev', $bootstrap);
-        $this->assertStringContainsString('npm run build', $bootstrap);
+        $this->assertStringContainsString('NODE_ENV=production npm run build', $bootstrap);
+    }
+
+    #[Test]
+    public function it_builds_npm_install_and_build_shell_commands_with_inline_env_overrides(): void
+    {
+        $runtime = new ContainerApplicationRuntimeService;
+
+        $this->assertSame(
+            'npm_config_production=false NPM_CONFIG_PRODUCTION=false npm ci --production=false --include=dev',
+            $runtime->npmInstallShellCommand(true)
+        );
+        $this->assertSame(
+            'npm_config_production=false NPM_CONFIG_PRODUCTION=false NODE_ENV=production npm run build',
+            $runtime->npmBuildShellCommand()
+        );
     }
 
     #[Test]

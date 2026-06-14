@@ -148,13 +148,37 @@ class ContainerStackCommandService
         try {
             if ($requiresBuild) {
                 $hasLockFile = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
-                $installForBuild = $this->runtimeService->npmInstallForProductionBuildCommand($hasLockFile);
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
                 $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installForBuild, '/app', $timeout, $buildEnv);
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $this->runtimeService->npmInstallShellCommand($hasLockFile),
+                    '/app',
+                    $timeout,
+                    $buildEnv
+                );
+                $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $hasLockFile, $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm run build', '/app', $timeout, $buildEnv);
-                $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm prune --omit=dev', '/app', $timeout, $buildEnv);
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $this->runtimeService->npmBuildShellCommand(),
+                    '/app',
+                    $timeout,
+                    $buildEnv
+                );
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $this->runtimeService->nodeNpmProductionOffPrefix().' npm prune --omit=dev',
+                    '/app',
+                    $timeout,
+                    $buildEnv
+                );
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
                 return ['Node dependencies updated and production build completed.'];
@@ -244,12 +268,73 @@ class ContainerStackCommandService
         );
     }
 
+    /**
+     * @param  array<string, string>  $buildEnv
+     */
+    private function ensureNodeDevDependenciesInstalled(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName,
+        string $hostAppPath,
+        ?string $packageJson,
+        bool $hasLockFile,
+        int $timeout,
+        array $buildEnv
+    ): void {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return;
+        }
+
+        $devDependencies = $data['devDependencies'] ?? [];
+        if (! is_array($devDependencies) || $devDependencies === []) {
+            return;
+        }
+
+        $probePackage = array_key_exists('tailwindcss', $devDependencies)
+            ? 'tailwindcss'
+            : (string) array_key_first($devDependencies);
+
+        if ($probePackage === '') {
+            return;
+        }
+
+        if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+            return;
+        }
+
+        $this->runOneOffInContainer(
+            $ssh,
+            $containerPath,
+            $containerName,
+            $this->runtimeService->npmInstallShellCommand($hasLockFile, true),
+            '/app',
+            $timeout,
+            $buildEnv
+        );
+    }
+
     private function hostFileExists(SSHService $ssh, string $path): bool
     {
         $pathArg = escapeshellarg($path);
 
         try {
             return trim($ssh->exec("[ -f {$pathArg} ] && echo yes || echo no", 10)) === 'yes';
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    private function hostDirectoryExists(SSHService $ssh, string $path): bool
+    {
+        $pathArg = escapeshellarg($path);
+
+        try {
+            return trim($ssh->exec("[ -d {$pathArg} ] && echo yes || echo no", 10)) === 'yes';
         } catch (\Throwable) {
             return false;
         }
