@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
 use App\Models\WalletTransaction;
+use App\Services\Telegram\TelegramMonitorBridge;
 
 class WalletNotificationService
 {
@@ -26,6 +27,8 @@ class WalletNotificationService
         }
 
         $reseller = $wallet->reseller;
+        app(TelegramMonitorBridge::class)->walletLowBalance($reseller, $wallet->getFormattedBalance());
+
         $company = $this->brandingResolver->forReseller($reseller)['company_name'];
         $event = NotificationEvent::ResellerWalletLow;
         $walletUrl = route('reseller.wallet.index');
@@ -54,6 +57,13 @@ class WalletNotificationService
     {
         $transaction->loadMissing('wallet.reseller');
         $reseller = $transaction->wallet->reseller;
+        app(TelegramMonitorBridge::class)->walletAdjustment(
+            $reseller,
+            $signedAmount,
+            (float) $transaction->balance_after,
+            $transaction->description,
+        );
+
         $event = NotificationEvent::ResellerWalletAdjustment;
         $currency = $transaction->wallet->currency ?? 'KES';
         $previous = number_format((float) $transaction->balance_before, 2);
@@ -119,7 +129,14 @@ class WalletNotificationService
 
     public function sendTopupConfirmation(WalletTransaction $transaction): void
     {
+        $transaction->loadMissing('wallet.reseller');
         $reseller = $transaction->wallet->reseller;
+        app(TelegramMonitorBridge::class)->walletTopup(
+            $reseller,
+            (float) $transaction->amount,
+            (float) $transaction->balance_after,
+        );
+
         $event = NotificationEvent::ResellerWalletTopup;
         $message = "Wallet top-up confirmed! Amount: {$transaction->amount} KES. New balance: {$transaction->balance_after} KES";
 

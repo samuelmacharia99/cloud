@@ -6,6 +6,7 @@ use App\Mail\CronFailureMail;
 use App\Models\CronJob;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -76,10 +77,16 @@ class ApplicationSchedule
             ->withoutOverlapping(10)
             ->name('Registrar Domain Status Sync');
 
+        $telegramLogs = $schedule->command('telegram:monitor-logs')
+            ->everyMinute()
+            ->withoutOverlapping(2)
+            ->name('Telegram Log Monitor');
+
         if (config('scheduler.use_on_one_server')) {
             $health->onOneServer();
             $terminal->onOneServer();
             $registrarSync->onOneServer();
+            $telegramLogs->onOneServer();
         }
     }
 
@@ -107,6 +114,12 @@ class ApplicationSchedule
             Log::critical("Cron job '{$job->name}' failed", [
                 'command' => $job->command,
                 'schedule' => $job->schedule,
+            ]);
+
+            app(TelegramMonitorBridge::class)->systemAlert('Cron job failed', [
+                'Job' => $job->name,
+                'Command' => $job->command,
+                'Schedule' => $job->schedule,
             ]);
         } catch (\Exception $e) {
             Log::error('Failed to log cron failure', [

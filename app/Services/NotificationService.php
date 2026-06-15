@@ -40,6 +40,7 @@ use App\Models\SmsTemplate;
 use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
+use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -53,6 +54,11 @@ class NotificationService
         private TalksasaSmsService $talksasaSms,
         private AuthCodeSmsService $authCodeSms,
     ) {}
+
+    private function telegram(): TelegramMonitorBridge
+    {
+        return app(TelegramMonitorBridge::class);
+    }
 
     private function siteNameFor(User $customer): string
     {
@@ -151,6 +157,8 @@ class NotificationService
 
     public function notifyAdminResellerDomainOrder(ResellerDomainOrder $order, string $stage, string $paymentMethod = 'awaiting payment'): void
     {
+        $this->telegram()->resellerDomainOrder($order, $stage, $paymentMethod);
+
         $order->loadMissing('reseller', 'customer');
         $domain = $order->fullDomainName();
         $wholesale = number_format((float) $order->wholesale_amount, 0);
@@ -251,6 +259,9 @@ class NotificationService
 
     public function notifyInvoiceGenerated(Invoice $invoice): void
     {
+        $invoice->loadMissing('user');
+        $this->telegram()->invoiceGenerated($invoice);
+
         $event = NotificationEvent::InvoiceGenerated;
         if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -348,6 +359,8 @@ class NotificationService
             $invoice = $payment->invoice;
         }
 
+        $this->telegram()->paymentReceived($payment);
+
         if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
@@ -372,6 +385,9 @@ class NotificationService
 
     private function notifyInvoicePaidWithoutPaymentRecord(Invoice $invoice): void
     {
+        $invoice->loadMissing('user');
+        $this->telegram()->invoiceGenerated($invoice);
+
         $event = NotificationEvent::PaymentReceived;
         if (! $this->emailDelivery->mailConfiguredFor($invoice->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -395,6 +411,8 @@ class NotificationService
 
     public function notifyServiceActivated(Service $service): void
     {
+        $this->telegram()->serviceLifecycle($service, 'activated');
+
         $event = NotificationEvent::ServiceActivated;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -419,6 +437,8 @@ class NotificationService
 
     public function notifyServiceSuspended(Service $service): void
     {
+        $this->telegram()->serviceLifecycle($service, 'suspended');
+
         $event = NotificationEvent::ServiceSuspended;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -443,6 +463,8 @@ class NotificationService
 
     public function notifyServiceUnsuspended(Service $service): void
     {
+        $this->telegram()->serviceLifecycle($service, 'unsuspended');
+
         $event = NotificationEvent::ServiceUnsuspended;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -467,6 +489,8 @@ class NotificationService
 
     public function notifyServiceTerminated(Service $service): void
     {
+        $this->telegram()->serviceLifecycle($service, 'terminated');
+
         $event = NotificationEvent::ServiceTerminated;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -543,6 +567,8 @@ class NotificationService
 
     public function notifyNewOrder(Order $order, Invoice $invoice, string $paymentMethod = 'unknown', bool $notifyAdmin = true): void
     {
+        $this->telegram()->orderPlaced($order, $invoice, $paymentMethod);
+
         $customerEvent = NotificationEvent::NewOrder;
         $adminEvent = NotificationEvent::AdminNewOrder;
 
@@ -598,16 +624,20 @@ class NotificationService
 
     public function notifyTicketCreated(Ticket $ticket): void
     {
+        $this->telegram()->ticketEvent($ticket, 'created');
         app(TicketNotificationService::class)->notifyCreated($ticket);
     }
 
     public function notifyTicketReplied(Ticket $ticket, TicketReply $reply): void
     {
+        $this->telegram()->ticketEvent($ticket, 'replied');
         app(TicketNotificationService::class)->notifyReplied($ticket, $reply);
     }
 
     public function notifyManualPaymentSubmitted(Payment $payment): void
     {
+        $this->telegram()->manualPaymentSubmitted($payment);
+
         $event = NotificationEvent::ManualPaymentSubmitted;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -649,6 +679,13 @@ class NotificationService
 
     public function notifyContainerBackupFailed(Service $service, string $error): void
     {
+        $service->loadMissing('user');
+        $this->telegram()->systemAlert('Container backup failed', [
+            'Service' => $service->name,
+            'Customer' => $service->user?->name ?? '—',
+            'Error' => Str::limit($error, 500),
+        ]);
+
         $event = NotificationEvent::ContainerBackupFailed;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -674,6 +711,13 @@ class NotificationService
 
     public function notifyContainerFailed(Service $service, string $reason): void
     {
+        $service->loadMissing('user');
+        $this->telegram()->systemAlert('Container failure', [
+            'Service' => $service->name,
+            'Customer' => $service->user?->name ?? '—',
+            'Reason' => Str::limit($reason, 500),
+        ]);
+
         $event = NotificationEvent::ContainerFailed;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -699,6 +743,13 @@ class NotificationService
 
     public function notifyContainerAutoRestarted(Service $service, int $attemptCount): void
     {
+        $service->loadMissing('user');
+        $this->telegram()->systemAlert('Container auto-restarted', [
+            'Service' => $service->name,
+            'Customer' => $service->user?->name ?? '—',
+            'Attempts' => (string) $attemptCount,
+        ]);
+
         $event = NotificationEvent::ContainerRestart;
         if (! $this->emailDelivery->mailConfiguredFor($service->user) || ! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -724,6 +775,8 @@ class NotificationService
 
     public function notifyAdminNodeOffline(string $subject, string $body): void
     {
+        $this->telegram()->systemAlert($subject, ['Details' => Str::limit($body, 800)]);
+
         $event = NotificationEvent::AdminNodeOffline;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -740,6 +793,8 @@ class NotificationService
     public function notifyServiceProvisionFailed(Service $service, string $reason): void
     {
         $service->loadMissing('user', 'product');
+        $this->telegram()->serviceLifecycle($service, 'provision failed', $reason);
+
         $event = NotificationEvent::ServiceProvisionFailed;
 
         if ($this->preferences->isGloballyEnabled($event) && $this->emailDelivery->mailConfiguredFor($service->user)) {
@@ -798,6 +853,8 @@ class NotificationService
     public function notifyPaymentFailed(Payment $payment, string $reason): void
     {
         $payment->loadMissing('invoice.user');
+        $this->telegram()->paymentFailed($payment, $reason);
+
         $invoice = $payment->invoice;
         if (! $invoice?->user) {
             return;
@@ -849,6 +906,8 @@ class NotificationService
 
     public function notifyResellerSuspended(User $reseller, string $reason): void
     {
+        $this->telegram()->resellerEvent($reseller, 'Reseller suspended', ['Reason' => Str::limit($reason, 500)]);
+
         $event = NotificationEvent::ResellerSuspended;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -888,6 +947,11 @@ class NotificationService
 
     public function notifyResellerDiskPoolWarning(User $reseller, float $usedGb, float $poolGb): void
     {
+        $this->telegram()->resellerEvent($reseller, 'Disk pool exceeded', [
+            'Used' => number_format($usedGb, 1).' GB',
+            'Pool limit' => number_format($poolGb, 1).' GB',
+        ]);
+
         $event = NotificationEvent::ResellerDiskPoolWarning;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
@@ -930,6 +994,10 @@ class NotificationService
         if ($count <= 0) {
             return;
         }
+
+        $this->telegram()->resellerEvent($reseller, 'Queued domain orders expired', [
+            'Expired orders' => (string) $count,
+        ]);
 
         $event = NotificationEvent::ResellerDomainOrderExpired;
         if (! $this->preferences->isGloballyEnabled($event)) {
@@ -1069,6 +1137,8 @@ class NotificationService
     public function notifyManualPaymentRejected(Payment $payment, string $rejectionReason): void
     {
         $payment->loadMissing('invoice.user');
+        $this->telegram()->manualPaymentRejected($payment, $rejectionReason);
+
         $invoice = $payment->invoice;
         if (! $invoice?->user) {
             return;
@@ -1118,6 +1188,11 @@ class NotificationService
 
     public function notifyResellerSslProvisionFailed(User $reseller, string $domain, string $reason): void
     {
+        $this->telegram()->resellerEvent($reseller, 'SSL provisioning failed', [
+            'Domain' => $domain,
+            'Reason' => Str::limit($reason, 500),
+        ]);
+
         $event = NotificationEvent::ResellerSslProvisionFailed;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;

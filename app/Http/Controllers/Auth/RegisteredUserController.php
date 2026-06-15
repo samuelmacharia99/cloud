@@ -7,6 +7,7 @@ use App\Http\Requests\Auth\RegisterUserRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\RegistrationGuardService;
+use App\Services\Telegram\TelegramMonitorBridge;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -67,6 +68,8 @@ class RegisteredUserController extends Controller
         }
 
         session()->forget('registration_reseller_id');
+
+        app(TelegramMonitorBridge::class)->userRegistered($user);
 
         return redirect()->route('verification.code.show')
             ->with('email', $user->email)

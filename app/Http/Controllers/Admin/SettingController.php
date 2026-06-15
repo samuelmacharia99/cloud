@@ -17,6 +17,7 @@ use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
 use App\Services\PaymentGateway\StripeService;
 use App\Services\SmsService;
+use App\Services\Telegram\TelegramBotService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 
@@ -94,6 +95,10 @@ class SettingController extends Controller
         ],
         'security' => [
             'recaptcha_enabled', 'recaptcha_site_key', 'recaptcha_secret_key',
+            'telegram_monitor_enabled', 'telegram_bot_token', 'telegram_chat_id',
+            'telegram_monitor_errors', 'telegram_monitor_payments', 'telegram_monitor_services',
+            'telegram_monitor_orders', 'telegram_monitor_registrations', 'telegram_monitor_tickets',
+            'telegram_monitor_resellers', 'telegram_monitor_system',
         ],
     ];
 
@@ -180,7 +185,7 @@ class SettingController extends Controller
         'primary_', 'company_', 'footer_', 'notify_', 'email_', 'cron_',
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
-        'reseller_', 'service_', 'currency',
+        'reseller_', 'service_', 'currency', 'telegram_',
     ];
 
     public function update(Request $request)
@@ -204,6 +209,7 @@ class SettingController extends Controller
             'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret', 'mpesa_callback_token',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
             'paypal_client_secret', 'paypal_partner_client_secret', 'recaptcha_secret_key',
+            'telegram_bot_token',
         ];
 
         foreach ($settings as $key => $value) {
@@ -518,6 +524,35 @@ class SettingController extends Controller
 
         // Return JSON response
         return response()->json($result);
+    }
+
+    public function testTelegram(Request $request, TelegramBotService $bot)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        $token = trim((string) Setting::getValue('telegram_bot_token', ''));
+        $chatId = trim((string) Setting::getValue('telegram_chat_id', ''));
+
+        if ($token === '' || $chatId === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Save a bot token and chat ID before testing.',
+            ], 400);
+        }
+
+        $result = $bot->validateCredentials($token, $chatId);
+
+        if (! ($result['ok'] ?? false)) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Telegram test failed.',
+            ], 400);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Test message sent to Telegram'.(isset($result['username']) ? ' via @'.$result['username'] : '').'.',
+        ]);
     }
 
     public function debugLog(Request $request)

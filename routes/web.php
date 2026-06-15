@@ -203,6 +203,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');
         Route::post('admin/settings/upload-file', [SettingController::class, 'uploadFile'])->name('admin.settings.upload-file');
         Route::post('admin/settings/test-smtp', [SettingController::class, 'testSmtp'])->name('admin.settings.test-smtp');
+        Route::post('admin/settings/test-telegram', [SettingController::class, 'testTelegram'])->name('admin.settings.test-telegram');
         Route::post('admin/settings/test-sms', [SettingController::class, 'testSms'])->name('admin.settings.test-sms');
         Route::post('admin/settings/paypal/connect', [SettingController::class, 'startPayPalConnect'])->name('admin.settings.paypal.connect');
         Route::get('admin/settings/paypal/connect/callback', [SettingController::class, 'payPalConnectCallback'])->name('admin.settings.paypal.connect.callback');

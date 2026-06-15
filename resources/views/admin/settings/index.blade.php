@@ -2110,6 +2110,8 @@
             @include('admin.settings.partials.registrars-tab')
 
             <div x-show="activeTab === 'security'" class="space-y-6">
+                @include('admin.settings.partials.telegram-monitor-card')
+
                 <form method="POST" action="{{ route('admin.settings.update') }}" class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 space-y-6" @submit.prevent="window.submitForm($el)">
                     @csrf
 
@@ -2523,6 +2525,42 @@
             }
         } catch (error) {
             alert('Error: ' + error.message);
+        }
+    }
+
+    async function sendTestTelegram() {
+        const statusEl = document.getElementById('telegram_test_status');
+        if (!statusEl) {
+            return;
+        }
+
+        statusEl.style.display = 'block';
+        statusEl.textContent = 'Sending test message…';
+        statusEl.className = 'text-sm text-slate-600 dark:text-slate-400';
+
+        try {
+            const response = await fetch('{{ route("admin.settings.test-telegram") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': settingsCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.success) {
+                statusEl.textContent = '✅ ' + (data.message || 'Test message sent.');
+                statusEl.className = 'text-sm text-green-600 dark:text-green-400';
+            } else {
+                statusEl.textContent = '❌ ' + (data.message || 'Failed to send test message.');
+                statusEl.className = 'text-sm text-red-600 dark:text-red-400';
+            }
+        } catch (error) {
+            statusEl.textContent = '❌ Error: ' + error.message;
+            statusEl.className = 'text-sm text-red-600 dark:text-red-400';
         }
     }
 
