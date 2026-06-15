@@ -29,7 +29,7 @@ class InvoicePdfService
             'company_name', 'company_address', 'company_phone', 'company_email', 'company_website',
             'site_email', 'site_url', 'logo_url', 'footer_text',
             'tax_enabled', 'tax_inclusive', 'tax_rate', 'tax_name', 'tax_number',
-            'mpesa_enabled', 'mpesa_shortcode', 'stripe_enabled', 'paypal_enabled', 'bank_transfer_enabled',
+            'mpesa_enabled', 'mpesa_shortcode', 'stripe_enabled', 'paypal_enabled', 'bank_transfer_enabled', 'manual_enabled',
             'bank_name', 'bank_account_name', 'bank_account_number', 'bank_branch', 'bank_swift_code',
             'currency_symbol', 'primary_color',
         ];
@@ -81,6 +81,7 @@ class InvoicePdfService
             'stripe' => in_array($settings['stripe_enabled'] ?? '', ['1', 'true', true], true),
             'paypal' => in_array($settings['paypal_enabled'] ?? '', ['1', 'true', true], true),
             'bank' => in_array($settings['bank_transfer_enabled'] ?? '', ['1', 'true', true], true),
+            'manual' => in_array($settings['manual_enabled'] ?? '', ['1', 'true', true], true),
         ];
 
         // M-Pesa shortcode for paybill (may already be set from reseller config above)

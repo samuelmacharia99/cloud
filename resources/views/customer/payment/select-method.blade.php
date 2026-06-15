@@ -81,6 +81,11 @@
         @endif
 
         <!-- Payment Methods Grid -->
+        @if (count($availableGateways) === 0)
+            <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4">
+                <p class="text-sm text-amber-900 dark:text-amber-200">No online payment methods are currently available. Apply account credit above or contact support.</p>
+            </div>
+        @else
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             @foreach ($availableGateways as $method => $gateway)
                 <button type="button" @click="selectedMethod = '{{ $method }}'; @if($method === 'manual') showManualModal = true @endif" class="relative group overflow-hidden rounded-lg border-2 transition-all duration-300 p-4 text-center hover:shadow-lg" :class="selectedMethod === '{{ $method }}' ? (selectedMethod === 'mpesa' ? 'border-green-500 dark:border-green-400 bg-green-50 dark:bg-slate-800 shadow-lg' : (selectedMethod === 'stripe' ? 'border-purple-500 dark:border-purple-400 bg-purple-50 dark:bg-slate-800 shadow-lg' : 'border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-slate-800 shadow-lg')) : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'">
@@ -120,13 +125,15 @@
 
                     <!-- Label -->
                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white">{{ $gateway['label'] }}</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $gateway['description'] }}</p>
 
-                    @if ($method === 'mpesa')
+                    @if ($method === 'mpesa' && count($availableGateways) > 1)
                         <p class="text-xs text-green-700 dark:text-green-300 font-medium mt-1">Recommended</p>
                     @endif
                 </button>
             @endforeach
         </div>
+        @endif
 
         <!-- Input Section (appears when method selected) -->
         <div x-show="selectedMethod !== null && selectedMethod !== 'manual' && selectedMethod !== 'bank_transfer'" class="border-2 border-slate-200 dark:border-slate-700 rounded-lg p-6 bg-slate-50 dark:bg-slate-800/50" x-transition>

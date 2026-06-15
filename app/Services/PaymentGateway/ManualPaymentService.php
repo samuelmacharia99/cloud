@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Setting;
 use App\Services\NotificationService;
 
 class ManualPaymentService implements PaymentGatewayInterface
@@ -130,10 +131,10 @@ class ManualPaymentService implements PaymentGatewayInterface
     }
 
     /**
-     * Check if manual payment is configured (always available).
+     * Check if manual payment is enabled in admin settings.
      */
     public function isConfigured(): bool
     {
-        return true;
+        return in_array(Setting::getValue('manual_enabled', '0'), ['1', 'true', true], true);
     }
 }

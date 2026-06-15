@@ -866,13 +866,56 @@
                         </form>
                     </div>
                 </div>
+
+                <!-- Manual Payment Card -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                    <div class="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-slate-50 dark:from-slate-800 to-slate-50/50 dark:to-slate-900 cursor-pointer" @click="open.manual = !open.manual">
+                        <div class="flex items-center gap-4 flex-1">
+                            <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Manual Payment</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400">Customers submit payment proof; admin approves in the dashboard</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            @if($gatewayStatus['manual'] ?? false)
+                                <span class="px-3 py-1 rounded-full bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-300 text-xs font-medium">ACTIVE ✓</span>
+                            @endif
+                            <svg :class="open.manual ? 'rotate-180' : ''" class="w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                            </svg>
+                        </div>
+                    </div>
+
+                    <div x-show="open.manual" class="px-6 py-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                        <form @submit.prevent="saveManual($el)" class="space-y-4">
+                            @csrf
+                            <div>
+                                <input type="hidden" name="enabled_hidden" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="manual_enabled" value="1" @checked(in_array($settings['manual_enabled'] ?? '0', ['1', 'true', true], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Show manual payment on customer checkout</span>
+                                </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">When enabled, customers can submit bank/M-Pesa references for admin approval. Bank account details shown in the manual payment modal come from the Bank Transfer settings above.</p>
+                            </div>
+
+                            <div class="flex gap-3 pt-2">
+                                <button type="submit" :disabled="saving.manual" class="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-50">
+                                    <span x-show="!saving.manual">Save Manual Payment Settings</span>
+                                    <span x-show="saving.manual">Saving...</span>
+                                </button>
+                            </div>
+                            <p x-show="status.manual" :class="status.manual?.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm mt-2" x-text="status.manual?.message"></p>
+                        </form>
+                    </div>
+                </div>
             </div>
 
             <script>
                 function paymentGateways() {
                     return {
-                        open: { mpesa: true, stripe: false, paypal: {{ $gatewayStatus['paypal'] || $paypalConnection['connected'] ? 'true' : 'false' }}, bank: false },
-                        saving: { mpesa: false, stripe: false, paypal: false, bank: false },
+                        open: { mpesa: true, stripe: false, paypal: {{ $gatewayStatus['paypal'] || $paypalConnection['connected'] ? 'true' : 'false' }}, bank: false, manual: false },
+                        saving: { mpesa: false, stripe: false, paypal: false, bank: false, manual: false },
                         testing: { mpesa: false, paypal: false },
                         registering: { mpesa: false },
                         simulating: { mpesa: false },
@@ -881,7 +924,7 @@
                         refreshing: { paypal: false },
                         paypalConnectEnvironment: '{{ $settings['paypal_environment'] ?? 'sandbox' }}',
                         paypalConnectAvailable: @js($paypalConnectAvailable),
-                        status: { mpesa: null, stripe: null, paypal: null, bank: null, registration: null, simulation: null },
+                        status: { mpesa: null, stripe: null, paypal: null, bank: null, manual: null, registration: null, simulation: null },
                         testPayment: { phone: '', amount: 100 },
 
                         async saveMpesa(form) {
@@ -976,6 +1019,9 @@
                         },
                         async saveBank(form) {
                             await this.saveForm(form, 'bank');
+                        },
+                        async saveManual(form) {
+                            await this.saveForm(form, 'manual');
                         },
 
                         async saveForm(form, gateway) {

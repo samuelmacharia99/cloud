@@ -54,6 +54,8 @@ class SettingController extends Controller
             // Bank Transfer
             'bank_transfer_enabled', 'bank_name', 'bank_account_name', 'bank_account_number',
             'bank_branch', 'bank_swift_code',
+            // Manual payment (customer submits proof for admin approval)
+            'manual_enabled',
         ],
         'provisioning' => [
             'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
@@ -151,6 +153,7 @@ class SettingController extends Controller
             'mpesa' => Setting::getValue('mpesa_enabled') == '1' && ! empty(Setting::getValue('mpesa_consumer_key')),
             'stripe' => Setting::getValue('stripe_enabled') == '1' && ! empty(Setting::getValue('stripe_secret_key')),
             'paypal' => $this->paypalGatewayActive(),
+            'manual' => in_array(Setting::getValue('manual_enabled', '0'), ['1', 'true', true], true),
         ];
 
         $paypalConnectAvailable = PayPalConnectService::isPartnerConfigured();

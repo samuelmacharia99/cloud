@@ -18,6 +18,7 @@ use App\Services\PaymentGateway\PayPalService;
 use App\Services\PaymentGateway\StripeService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Stripe\Checkout\Session;
 use Stripe\Exception\SignatureVerificationException;
 use Stripe\Stripe;
@@ -127,8 +128,10 @@ class PaymentController extends Controller
         // Verify invoice belongs to authenticated user
         $this->authorize('pay', $invoice);
 
+        $availableMethods = array_keys(PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice));
+
         $request->validate([
-            'payment_method' => 'required|string|in:mpesa,stripe,paypal,manual,bank_transfer',
+            'payment_method' => ['required', 'string', Rule::in($availableMethods)],
             'phone' => 'required_if:payment_method,mpesa|nullable|string',
         ]);
 
