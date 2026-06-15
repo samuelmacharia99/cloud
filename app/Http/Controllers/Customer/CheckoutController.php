@@ -19,13 +19,13 @@ use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
-use App\Services\NodeNameserverService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
+use App\Services\ResellerNameserverService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\UserCurrencyService;
@@ -148,7 +148,8 @@ class CheckoutController extends Controller
         ));
 
         $domainExtensions = DomainExtension::where('enabled', true)->orderBy('extension')->get();
-        $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
+        $nameserverService = app(ResellerNameserverService::class);
+        $defaultNameservers = $nameserverService->defaultsForCustomer($user);
 
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
@@ -409,8 +410,7 @@ class CheckoutController extends Controller
                         ]);
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
-                        $ns = $item['nameservers'] ?? [];
-                        $platformNs = app(NodeNameserverService::class)->platformDefaults();
+                        $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
 
                         // Create Domain
                         $domain = Domain::create([
@@ -418,10 +418,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
-                            'nameserver_1' => $ns['ns1'] ?? $platformNs['ns1'],
-                            'nameserver_2' => $ns['ns2'] ?? $platformNs['ns2'],
-                            'nameserver_3' => $ns['ns3'] ?? $platformNs['ns3'],
-                            'nameserver_4' => $ns['ns4'] ?? $platformNs['ns4'],
+                            'nameserver_1' => $resolvedNs['ns1'],
+                            'nameserver_2' => $resolvedNs['ns2'],
+                            'nameserver_3' => $resolvedNs['ns3'],
+                            'nameserver_4' => $resolvedNs['ns4'],
                         ]);
 
                         // Get or create domain product
@@ -452,7 +452,7 @@ class CheckoutController extends Controller
                                 'domain' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
-                                'nameservers' => $ns,
+                                'nameservers' => $resolvedNs,
                             ],
                         ]);
 
@@ -472,7 +472,7 @@ class CheckoutController extends Controller
                                 'domain_name' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
-                                'nameservers' => $ns,
+                                'nameservers' => $resolvedNs,
                             ],
                         ]);
 
@@ -1076,8 +1076,7 @@ class CheckoutController extends Controller
                         ]);
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
-                        $ns = $item['nameservers'] ?? [];
-                        $platformNs = app(NodeNameserverService::class)->platformDefaults();
+                        $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
 
                         // Create Domain
                         $domain = Domain::create([
@@ -1085,10 +1084,10 @@ class CheckoutController extends Controller
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
-                            'nameserver_1' => $ns['ns1'] ?? $platformNs['ns1'],
-                            'nameserver_2' => $ns['ns2'] ?? $platformNs['ns2'],
-                            'nameserver_3' => $ns['ns3'] ?? $platformNs['ns3'],
-                            'nameserver_4' => $ns['ns4'] ?? $platformNs['ns4'],
+                            'nameserver_1' => $resolvedNs['ns1'],
+                            'nameserver_2' => $resolvedNs['ns2'],
+                            'nameserver_3' => $resolvedNs['ns3'],
+                            'nameserver_4' => $resolvedNs['ns4'],
                         ]);
 
                         // Get or create domain product
@@ -1119,7 +1118,7 @@ class CheckoutController extends Controller
                                 'domain' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
-                                'nameservers' => $ns,
+                                'nameservers' => $resolvedNs,
                             ],
                         ]);
 
@@ -1139,7 +1138,7 @@ class CheckoutController extends Controller
                                 'domain_name' => $item['domain'],
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
-                                'nameservers' => $ns,
+                                'nameservers' => $resolvedNs,
                             ],
                         ]);
 

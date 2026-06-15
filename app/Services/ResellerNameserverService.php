@@ -58,6 +58,76 @@ class ResellerNameserverService
         return $this->nodeNameserver->platformDefaults();
     }
 
+    public function resellerForCustomer(User $customer): ?User
+    {
+        if (! $customer->reseller_id) {
+            return null;
+        }
+
+        return $customer->relationLoaded('reseller')
+            ? $customer->reseller
+            : User::find($customer->reseller_id);
+    }
+
+    /**
+     * Default nameservers for a customer (reseller-owned or platform).
+     *
+     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function defaultsForCustomer(User $customer): array
+    {
+        $reseller = $this->resellerForCustomer($customer);
+
+        if ($reseller) {
+            return $this->defaultsForReseller($reseller);
+        }
+
+        return $this->platformDefaults();
+    }
+
+    /**
+     * Initial nameserver payload stored on customer cart domain items.
+     *
+     * @return array{use_default: bool, ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function cartDefaultPayloadForCustomer(User $customer): array
+    {
+        return [
+            'use_default' => true,
+            ...$this->defaultsForCustomer($customer),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     */
+    public function resolveForCustomerItem(User $customer, array $item): array
+    {
+        $reseller = $this->resellerForCustomer($customer);
+
+        if ($reseller) {
+            return $this->resolveForItem($reseller, $item);
+        }
+
+        $stored = $item['nameservers'] ?? null;
+
+        if (! is_array($stored)) {
+            return $this->platformDefaults();
+        }
+
+        if (! empty($stored['use_default'])) {
+            return $this->platformDefaults();
+        }
+
+        return $this->normalizeNs(
+            (string) ($stored['ns1'] ?? ''),
+            $stored['ns2'] ?? null,
+            $stored['ns3'] ?? null,
+            $stored['ns4'] ?? null,
+        );
+    }
+
     /**
      * Default nameservers applied to new reseller domain cart items.
      *

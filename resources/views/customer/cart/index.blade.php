@@ -3,7 +3,8 @@
 @section('title', 'Shopping Cart')
 
 @php
-    $defaultNs = $defaultNameservers ?? app(\App\Services\NodeNameserverService::class)->platformDefaults();
+    $defaultNs = $defaultNameservers ?? app(\App\Services\ResellerNameserverService::class)->defaultsForCustomer(auth()->user());
+    $defaultNameserverLabel = $defaultNameserverLabel ?? app(\App\Services\ResellerBrandingResolver::class)->forCustomer(auth()->user())['company_name'];
 @endphp
 
 @section('content')
@@ -92,7 +93,7 @@
                                                         <input type="radio" name="ns_mode_{{ $item['key'] }}" @change="useDefault = true" :checked="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
                                                         <div>
                                                             <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                Use Talksasa Cloud Nameservers
+                                                                Use {{ $defaultNameserverLabel }} Nameservers
                                                                 <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Recommended</span>
                                                             </p>
                                                             <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">

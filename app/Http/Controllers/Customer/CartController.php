@@ -8,8 +8,9 @@ use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainInputParser;
-use App\Services\NodeNameserverService;
+use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerNameserverService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use Exception;
@@ -93,7 +94,9 @@ class CartController extends Controller
 
         $taxBreakdown = TaxService::calculateForUser($subtotal, auth()->user());
 
-        $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
+        $nameserverService = app(ResellerNameserverService::class);
+        $defaultNameservers = $nameserverService->defaultsForCustomer($user);
+        $defaultNameserverLabel = app(ResellerBrandingResolver::class)->forCustomer($user)['company_name'];
 
         return view('customer.cart.index', [
             'cartItems' => $cartItems,
@@ -105,6 +108,7 @@ class CartController extends Controller
             'total' => $taxBreakdown['total'],
             'itemCount' => count($cartItems),
             'defaultNameservers' => $defaultNameservers,
+            'defaultNameserverLabel' => $defaultNameserverLabel,
             'hasSharedHosting' => $hasSharedHosting,
         ]);
     }
@@ -230,17 +234,12 @@ class CartController extends Controller
                 return back()->with('error', $message);
             }
 
-            $defaultNameservers = app(NodeNameserverService::class)->platformDefaults();
-
             $item = [
                 'type' => 'domain',
                 'domain' => strtolower($request->domain),
                 'extension' => $request->extension,
                 'years' => $request->years,
-                'nameservers' => [
-                    ...$defaultNameservers,
-                    'use_default' => true,
-                ],
+                'nameservers' => app(ResellerNameserverService::class)->cartDefaultPayloadForCustomer($user),
             ];
         } else {
             $response = [
@@ -409,13 +408,19 @@ class CartController extends Controller
             'ns4' => 'nullable|string|min:3|max:253|regex:/^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$/i',
         ]);
 
-        $cart[$key]['nameservers'] = [
-            'ns1' => $validated['ns1'],
-            'ns2' => $validated['ns2'] ?? null,
-            'ns3' => $validated['ns3'] ?? null,
-            'ns4' => $validated['ns4'] ?? null,
-            'use_default' => (bool) $validated['use_default'],
-        ];
+        $nameserverService = app(ResellerNameserverService::class);
+
+        if ((bool) $validated['use_default']) {
+            $cart[$key]['nameservers'] = $nameserverService->cartDefaultPayloadForCustomer(auth()->user());
+        } else {
+            $cart[$key]['nameservers'] = [
+                'ns1' => strtolower(trim($validated['ns1'])),
+                'ns2' => ! empty($validated['ns2']) ? strtolower(trim($validated['ns2'])) : null,
+                'ns3' => ! empty($validated['ns3']) ? strtolower(trim($validated['ns3'])) : null,
+                'ns4' => ! empty($validated['ns4']) ? strtolower(trim($validated['ns4'])) : null,
+                'use_default' => false,
+            ];
+        }
 
         session([self::CART_SESSION_KEY => $cart]);
 
