@@ -42,13 +42,13 @@ class SharedHostingCheckoutService
 
         foreach ($cart as $key => $item) {
             if (($item['type'] ?? null) === 'reseller_product') {
-                $listing = ResellerProduct::query()->find($item['reseller_product_id'] ?? null);
-                if (! $listing?->usesDirectAdminPackage()) {
+                $listing = ResellerProduct::query()->with('adminProduct')->find($item['reseller_product_id'] ?? null);
+                if (! $listing) {
                     continue;
                 }
 
                 $product = $resolver->resolve($listing);
-                if (! $product) {
+                if (! $product || ! $this->isDirectAdminSharedHostingProduct($product, $listing)) {
                     continue;
                 }
 
@@ -66,7 +66,7 @@ class SharedHostingCheckoutService
             }
 
             $product = Product::find($item['product_id'] ?? null);
-            if (! $product || $product->type !== 'shared_hosting' || $product->provisioning_driver_key !== 'directadmin') {
+            if (! $product || ! $this->isDirectAdminSharedHostingProduct($product)) {
                 continue;
             }
 
@@ -238,8 +238,7 @@ class SharedHostingCheckoutService
             ),
         };
 
-        if ($resellerProduct?->usesDirectAdminPackage()) {
-            $reseller = User::query()->find($resellerProduct->reseller_id);
+        if ($reseller = $this->resolveResellerForDirectAdminOrder($user, $resellerProduct, $product)) {
             $setup = app(ResellerHostingSetupService::class)->buildProvisioningContext(
                 $reseller,
                 $user,
@@ -386,6 +385,37 @@ class SharedHostingCheckoutService
 
             InvoiceItem::create($attributes);
         }
+    }
+
+    private function resolveResellerForDirectAdminOrder(
+        User $customer,
+        ?ResellerProduct $resellerProduct,
+        Product $product,
+    ): ?User {
+        if (! $this->isDirectAdminSharedHostingProduct($product, $resellerProduct)) {
+            return null;
+        }
+
+        $resellerId = $resellerProduct?->reseller_id ?? $customer->reseller_id;
+
+        if (! $resellerId) {
+            return null;
+        }
+
+        return User::query()->whereKey($resellerId)->where('is_reseller', true)->first();
+    }
+
+    private function isDirectAdminSharedHostingProduct(Product $product, ?ResellerProduct $listing = null): bool
+    {
+        if ($listing?->usesDirectAdminPackage()) {
+            return true;
+        }
+
+        return $product->type === 'shared_hosting'
+            && (
+                $product->provisioning_driver_key === 'directadmin'
+                || $product->direct_admin_package_id
+            );
     }
 
     private function domainProduct(): Product

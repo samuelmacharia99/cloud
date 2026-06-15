@@ -273,6 +273,12 @@ class ProvisioningService
                 ->value('directadmin_username');
         }
 
+        if ($service->reseller_id && ! filled($ownerReseller)) {
+            throw new \Exception(
+                'Reseller DirectAdmin username is not configured — customer hosting cannot be created under the reseller account.'
+            );
+        }
+
         $this->directAdminSetup->ensurePackageLimitsOnServer(
             $daService,
             $service,
@@ -301,6 +307,7 @@ class ProvisioningService
                     'node_id' => $node->id,
                     'node_name' => $node->name,
                     'provisioned_at' => now()->toIso8601String(),
+                    'directadmin_reseller' => filled($ownerReseller) ? (string) $ownerReseller : ($meta['directadmin_reseller'] ?? null),
                 ]),
                 'credentials' => json_encode($result['credentials']),
             ]);
