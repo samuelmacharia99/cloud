@@ -17,7 +17,7 @@ class ServiceController extends Controller
     public function index()
     {
         $services = auth()->user()->services()
-            ->with('product')
+            ->with(['product', 'invoice'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', function ($q) {
                 $q->where('type', '!=', 'domain');
@@ -31,6 +31,11 @@ class ServiceController extends Controller
     public function show(Service $service)
     {
         $this->authorize('view', $service);
+
+        if ($invoice = $service->unpaidActivationInvoice()) {
+            return redirect()->route('customer.payment.select-method', $invoice)
+                ->with('info', 'Complete payment to activate this service.');
+        }
 
         // Redirect container services to their dedicated dashboard
         if ($service->product?->type === 'container_hosting') {

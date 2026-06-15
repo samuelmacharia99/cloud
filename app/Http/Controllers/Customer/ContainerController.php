@@ -35,9 +35,14 @@ class ContainerController extends Controller
     /**
      * Show container dashboard
      */
-    public function show(Service $service): View
+    public function show(Service $service): View|RedirectResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($invoice = $service->unpaidActivationInvoice()) {
+            return redirect()->route('customer.payment.select-method', $invoice)
+                ->with('info', 'Complete payment to activate this service.');
+        }
 
         if ($service->product?->type !== 'container_hosting') {
             abort(404);

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -118,6 +119,39 @@ class Service extends Model
     public function isPending(): bool
     {
         return $this->status === ServiceStatus::Pending;
+    }
+
+    /**
+     * Unpaid invoice blocking activation for a newly ordered pending service.
+     */
+    public function unpaidActivationInvoice(): ?Invoice
+    {
+        if (! $this->isPending()) {
+            return null;
+        }
+
+        $invoice = $this->relationLoaded('invoice') ? $this->invoice : null;
+        if (! $invoice && $this->invoice_id) {
+            $invoice = $this->invoice()->first();
+        }
+
+        if (! $invoice) {
+            $invoice = $this->invoiceItems()->with('invoice')->latest('id')->first()?->invoice;
+        }
+
+        if (! $invoice) {
+            return null;
+        }
+
+        $status = $invoice->status instanceof InvoiceStatus
+            ? $invoice->status
+            : InvoiceStatus::tryFrom((string) $invoice->status);
+
+        if (! in_array($status, [InvoiceStatus::Draft, InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)) {
+            return null;
+        }
+
+        return $invoice;
     }
 
     public function isProvisioning(): bool

@@ -16,9 +16,15 @@
     @if ($services->count() > 0)
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
             @foreach ($services as $service)
-                @php $canRenew = in_array($service->status->value, ['active', 'suspended']); @endphp
+                @php
+                    $canRenew = in_array($service->status->value, ['active', 'suspended']);
+                    $payInvoice = $service->unpaidActivationInvoice();
+                    $manageUrl = $payInvoice
+                        ? route('customer.payment.select-method', $payInvoice)
+                        : route('customer.services.show', $service);
+                @endphp
                 <article class="ui-card ui-card-interactive flex flex-col overflow-hidden group">
-                    <a href="{{ route('customer.services.show', $service) }}" class="block p-5 sm:p-6 flex-1">
+                    <a href="{{ $manageUrl }}" class="block p-5 sm:p-6 flex-1">
                         <div class="flex items-start justify-between gap-3 mb-4">
                             <div class="min-w-0">
                                 <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->product->name }}</h3>
@@ -49,7 +55,9 @@
                     </a>
 
                     <div class="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex gap-2">
-                        <a href="{{ route('customer.services.show', $service) }}" class="btn-secondary flex-1 btn-sm">Manage</a>
+                        <a href="{{ $manageUrl }}" class="{{ $payInvoice ? 'btn-primary' : 'btn-secondary' }} flex-1 btn-sm">
+                            {{ $payInvoice ? 'Pay invoice' : 'Manage' }}
+                        </a>
                         @if($canRenew)
                             <form method="POST" action="{{ route('customer.services.renew', $service) }}" class="flex-1"
                                 data-confirm="Generate a renewal invoice for {{ addslashes($service->product->name) }}?">
