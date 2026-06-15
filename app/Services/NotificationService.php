@@ -11,6 +11,7 @@ use App\Mail\ContainerBackupCompletedMail;
 use App\Mail\ContainerBackupFailedMail;
 use App\Mail\ContainerFailedMail;
 use App\Mail\DomainExpiryMail;
+use App\Mail\DomainTransferInitiatedMail;
 use App\Mail\GenericNotificationMail;
 use App\Mail\InvoiceGeneratedMail;
 use App\Mail\InvoiceOverdueMail;
@@ -964,6 +965,30 @@ class NotificationService
                 Log::error('Failed to send domain order expiry SMS', ['reseller_id' => $reseller->id, 'error' => $e->getMessage()]);
             }
         }
+    }
+
+    public function notifyDomainTransferInitiated(Domain $domain): void
+    {
+        $domain->loadMissing('user');
+        $event = NotificationEvent::DomainTransfer;
+
+        if (! $domain->user || ! $this->emailDelivery->mailConfiguredFor($domain->user)) {
+            return;
+        }
+
+        if (! $this->preferences->isEmailEnabledForUser($domain->user, $event)) {
+            return;
+        }
+
+        $fqdn = format_domain_name($domain->name, $domain->extension);
+        $subject = 'Domain transfer initiated — '.$fqdn;
+
+        $this->sendCustomerEmail(
+            $domain->user,
+            new DomainTransferInitiatedMail($domain),
+            $subject,
+            $event,
+        );
     }
 
     public function notifyDomainTransferCompleted(Domain $domain): void

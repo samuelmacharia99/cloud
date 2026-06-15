@@ -106,9 +106,5 @@
     <strong>Keep this email for your records.</strong> It serves as your payment receipt. You can also download a copy of your invoice from your account.
 </div>
 
-<p style="margin-top: 30px;">
-    Best regards,<br>
-    <strong>{{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}</strong><br>
-    Support Team
-</p>
+@include('emails.partials.signature', ['supportLine' => 'Support Team'])
 @endsection

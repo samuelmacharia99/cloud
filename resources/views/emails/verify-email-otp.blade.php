@@ -5,7 +5,7 @@
 
 <p>Hello {{ $user->name }},</p>
 
-<p>Thank you for registering with {{ \App\Models\Setting::getValue('company_name', 'Talksasa Cloud') }}. To complete your account setup and gain full access to your dashboard, please enter the verification code below.</p>
+<p>Thank you for registering with {{ email_company_name() }}. To complete your account setup and gain full access to your dashboard, please enter the verification code below.</p>
 
 <div style="background-color: #f3f4f6; border: 2px solid #e5e7eb; border-radius: 8px; padding: 30px; margin: 30px 0; text-align: center;">
     <p style="color: #6b7280; font-size: 14px; margin: 0 0 20px 0;">Your verification code is:</p>
@@ -21,6 +21,6 @@
 <p>Enter this code on the verification page to complete your registration. If you did not create an account with us, you can safely ignore this email.</p>
 
 <div class="alert alert-info">
-    <strong>Need help?</strong> If you have any questions, please contact our support team at <a href="mailto:{{ \App\Models\Setting::getValue('support_email', 'support@talksasa.cloud') }}">support</a>.
+    <strong>Need help?</strong> If you have any questions, please contact our support team at <a href="mailto:{{ email_support_email() }}">support</a>.
 </div>
 @endsection

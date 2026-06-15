@@ -18,5 +18,5 @@
     @endcomponent
 
     Thanks,<br>
-    {{ config('app.name') }}
+    {{ $siteName ?? email_company_name() }}
 @endcomponent

@@ -2,10 +2,9 @@
 
 @section('content')
 @php
-    $company = \App\Models\Setting::getValue('company_name', config('app.name', 'Talksasa Cloud'));
     $portalLabel = $accountType === 'reseller' ? 'reseller portal' : 'customer portal';
 @endphp
-<h1>Welcome to {{ $company }}</h1>
+<h1>Welcome to {{ email_company_name() }}</h1>
 
 <p>Hello {{ $user->name }},</p>
 
@@ -40,8 +39,5 @@
 
 <p>If you did not expect this account or need help, please contact our support team.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', $company) }}
-</p>
+@include('emails.partials.signature')
 @endsection

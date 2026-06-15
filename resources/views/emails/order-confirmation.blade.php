@@ -91,9 +91,5 @@
 <h2>Questions?</h2>
 <p>If you have any questions about your order or need help getting started, please don't hesitate to contact our support team. We're here to help!</p>
 
-<p>
-    Best regards,<br>
-    <strong>{{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}</strong><br>
-    Support Team
-</p>
+@include('emails.partials.signature', ['supportLine' => 'Support Team'])
 @endsection

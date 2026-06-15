@@ -77,9 +77,5 @@
     <a href="{{ route('customer.domains.index') }}" class="cta-button">View My Domains</a>
 </p>
 
-<p>
-    Best regards,<br>
-    <strong>{{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}</strong><br>
-    Domain Management Team
-</p>
+@include('emails.partials.signature', ['supportLine' => 'Domain Management Team'])
 @endsection

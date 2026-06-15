@@ -45,8 +45,5 @@
 
 <p>If you have any questions about domain renewal, please contact our support team.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

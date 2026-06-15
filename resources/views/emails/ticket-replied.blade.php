@@ -22,5 +22,5 @@
 <p><a href="{{ route('customer.tickets.show', $ticket) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Full Ticket</a></p>
 
 <p>Thank you!<br>
-{{ config('app.name') }} Support Team</p>
+{{ email_company_name() }} Support Team</p>
 @endsection

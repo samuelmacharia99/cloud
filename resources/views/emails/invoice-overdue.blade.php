@@ -41,8 +41,5 @@
 
 <p>If payment has already been made, please disregard this notice and contact our support team with proof of payment.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

@@ -46,7 +46,9 @@ class ResellerMailService
 
         $mailer = $this->configureMailer($reseller);
 
-        Mail::mailer($mailer)->to($customer->email)->send($mailable);
+        // sendNow() is required: ShouldQueue mailables would otherwise be queued and
+        // lose the View::shared emailBranding context in the worker.
+        Mail::mailer($mailer)->to($customer->email)->sendNow($mailable);
     }
 
     public function sendRaw(User $recipient, string $subject, string $body, ?User $reseller = null): void

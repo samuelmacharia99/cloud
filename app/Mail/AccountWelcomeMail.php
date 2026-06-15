@@ -2,8 +2,8 @@
 
 namespace App\Mail;
 
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -22,7 +22,7 @@ class AccountWelcomeMail extends Mailable
 
     public function envelope(): Envelope
     {
-        $company = Setting::getValue('company_name', config('app.name', 'Talksasa Cloud'));
+        $company = app(ResellerBrandingResolver::class)->forCustomer($this->user)['company_name'];
 
         return new Envelope(
             subject: "Welcome to {$company} — Your Account Details",

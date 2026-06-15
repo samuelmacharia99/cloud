@@ -7,7 +7,7 @@
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #2563eb; margin: 0;">{{ config('app.name') }}</h1>
+            <h1 style="color: #2563eb; margin: 0;">{{ email_company_name() }}</h1>
         </div>
 
         <!-- Content -->
@@ -36,7 +36,7 @@
         <!-- Footer -->
         <div style="text-align: center; margin-top: 30px; color: #9ca3af; font-size: 12px;">
             <p style="margin: 0;">
-                © {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+                © {{ date('Y') }} {{ email_company_name() }}. All rights reserved.
             </p>
         </div>
     </div>

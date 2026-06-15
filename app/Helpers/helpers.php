@@ -3,7 +3,9 @@
 use App\Helpers\CronHelper;
 use App\Helpers\CurrencyHelper;
 use App\Models\Setting;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\View;
 
 /**
  * Generate the dynamic cron command for the current environment
@@ -83,6 +85,35 @@ function isBaseCurrency(): bool
 function setting(string $key, $default = null)
 {
     return Setting::getValue($key, $default);
+}
+
+/**
+ * Branding for transactional emails (header, signatures, support links).
+ *
+ * @return array{company_name: string, logo_url: ?string, footer_text: string, primary_color: string, support_email: ?string, support_phone: ?string, portal_url: string, reseller_id: ?int, is_white_label: bool}
+ */
+function email_branding(): array
+{
+    $shared = View::getShared();
+
+    if (isset($shared['emailBranding']) && is_array($shared['emailBranding'])) {
+        return $shared['emailBranding'];
+    }
+
+    return app(ResellerBrandingResolver::class)->defaults();
+}
+
+function email_company_name(): string
+{
+    return email_branding()['company_name'] ?? config('app.name', 'Talksasa Cloud');
+}
+
+function email_support_email(): string
+{
+    $branding = email_branding();
+
+    return $branding['support_email']
+        ?? Setting::getValue('site_email', Setting::getValue('company_email', 'support@talksasa.cloud'));
 }
 
 /**

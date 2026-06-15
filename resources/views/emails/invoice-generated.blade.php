@@ -143,9 +143,5 @@
     <strong>💡 Pro Tip:</strong> You can download a PDF copy of this invoice from your account dashboard for your records.
 </div>
 
-<p>
-    Best regards,<br>
-    <strong>{{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}</strong><br>
-    Support Team
-</p>
+@include('emails.partials.signature', ['supportLine' => 'Support Team'])
 @endsection

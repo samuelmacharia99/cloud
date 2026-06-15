@@ -31,8 +31,5 @@
 
 <p>You can now access and use your service normally. If you experience any issues, please contact our support team.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

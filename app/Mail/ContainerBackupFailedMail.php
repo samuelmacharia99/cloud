@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Service;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -16,13 +17,12 @@ class ContainerBackupFailedMail extends Mailable
     public function __construct(
         public Service $service,
         public string $error,
-    ) {
-    }
+    ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'ALERT: Container Backup Failed for ' . $this->service->name,
+            subject: 'ALERT: Container Backup Failed for '.$this->service->name,
         );
     }
 
@@ -33,7 +33,7 @@ class ContainerBackupFailedMail extends Mailable
             with: [
                 'service' => $this->service,
                 'error' => $this->error,
-                'siteName' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                'siteName' => app(ResellerBrandingResolver::class)->forCustomer($this->service->user)['company_name'],
             ],
         );
     }

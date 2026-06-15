@@ -3,6 +3,7 @@
 namespace App\Mail;
 
 use App\Models\Service;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
@@ -16,13 +17,12 @@ class ContainerAutoRestartedMail extends Mailable
     public function __construct(
         public Service $service,
         public int $attemptCount,
-    ) {
-    }
+    ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Container Auto-Restarted: ' . $this->service->name,
+            subject: 'Container Auto-Restarted: '.$this->service->name,
         );
     }
 
@@ -33,7 +33,7 @@ class ContainerAutoRestartedMail extends Mailable
             with: [
                 'service' => $this->service,
                 'attemptCount' => $this->attemptCount,
-                'siteName' => \App\Models\Setting::getValue('site_name', 'Talksasa Cloud'),
+                'siteName' => app(ResellerBrandingResolver::class)->forCustomer($this->service->user)['company_name'],
             ],
         );
     }

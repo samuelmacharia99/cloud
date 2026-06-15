@@ -72,8 +72,5 @@
 
 <p>If you need any assistance with your service, please don't hesitate to contact our support team.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

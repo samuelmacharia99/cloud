@@ -3,7 +3,7 @@
 @section('content')
 <h1>Verify Your Email Address</h1>
 
-<p>Thank you for registering with {{ \App\Models\Setting::getValue('company_name', 'Talksasa Cloud') }}. To complete your account setup and gain full access to your dashboard, please verify your email address by clicking the button below.</p>
+<p>Thank you for registering with {{ email_company_name() }}. To complete your account setup and gain full access to your dashboard, please verify your email address by clicking the button below.</p>
 
 <center>
     <a href="{{ $url }}" class="cta-button">Verify Email Address</a>

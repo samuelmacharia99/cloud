@@ -4,12 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     @php
-        $branding = $emailBranding ?? [
-            'company_name' => \App\Models\Setting::getValue('company_name', config('app.name', 'Talksasa Cloud')),
-            'logo_url' => \App\Models\Setting::getValue('logo_url'),
-            'footer_text' => \App\Models\Setting::getValue('footer_text', ''),
-            'primary_color' => \App\Models\Setting::getValue('primary_color', '#2563eb'),
-        ];
+        $branding = email_branding();
         $primaryColor = $branding['primary_color'] ?? '#2563eb';
     @endphp
     <style>

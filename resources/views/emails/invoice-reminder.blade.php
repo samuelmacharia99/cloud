@@ -41,8 +41,5 @@
 
 <p>Paying on time helps us provide you with the best service. Thank you!</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

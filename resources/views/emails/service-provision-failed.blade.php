@@ -12,5 +12,5 @@ View service
 @endcomponent
 
 Thanks,<br>
-{{ config('app.name') }}
+{{ email_company_name() }}
 @endcomponent

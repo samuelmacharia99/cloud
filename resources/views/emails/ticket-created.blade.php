@@ -41,5 +41,5 @@
 <p>Thank you for contacting us!</p>
 
 <p>Best regards,<br>
-{{ config('app.name') }} Support Team</p>
+{{ email_company_name() }} Support Team</p>
 @endsection

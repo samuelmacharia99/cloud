@@ -39,8 +39,5 @@
 
 <p>Please change your password after your first login and keep these credentials secure.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection

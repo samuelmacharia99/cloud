@@ -25,5 +25,5 @@
     **Important:** Your service will remain offline until the issue is resolved.
 
     Thanks,<br>
-    {{ config('app.name') }}
+    {{ $siteName ?? email_company_name() }}
 @endcomponent

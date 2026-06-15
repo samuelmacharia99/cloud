@@ -2,11 +2,9 @@
 
 namespace App\Services;
 
-use App\Mail\DomainTransferInitiatedMail;
 use App\Models\Domain;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 
 class DomainTransferService
 {
@@ -70,10 +68,18 @@ class DomainTransferService
                 'transfer_notes' => "Transfer initiated with {$domain->old_registrar} on ".now()->format('Y-m-d H:i:s'),
             ]);
 
-            // Send email to user
-            Mail::to($domain->user->email)->send(
-                new DomainTransferInitiatedMail($domain)
-            );
+            // Send email to user (reseller-branded when customer belongs to a reseller)
+            $domain->loadMissing('user');
+            if ($domain->user) {
+                try {
+                    app(NotificationService::class)->notifyDomainTransferInitiated($domain);
+                } catch (\Throwable $e) {
+                    Log::error('Domain transfer initiation email failed', [
+                        'domain_id' => $domain->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             // In real scenario, you would:
             // 1. Contact old registrar API to authorize transfer

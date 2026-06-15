@@ -37,8 +37,5 @@
 
 <p>If you have any questions or believe this is an error, please reach out to us immediately.</p>
 
-<p>
-    Best regards,<br>
-    {{ \App\Models\Setting::getValue('mail_from_name', 'Talksasa Cloud') }}
-</p>
+@include('emails.partials.signature')
 @endsection
