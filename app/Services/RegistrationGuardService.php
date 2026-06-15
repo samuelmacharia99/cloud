@@ -12,15 +12,39 @@ class RegistrationGuardService
 {
     public function shouldRejectAsBot(Request $request): bool
     {
-        if ($this->honeypotFilled($request)) {
-            return true;
+        return $this->honeypotFilled($request);
+    }
+
+    /**
+     * User-facing validation for the encrypted registration timing token.
+     * Returns null when the submission timing is acceptable.
+     */
+    public function submissionTimingError(Request $request): ?string
+    {
+        $token = (string) $request->input('registration_token', '');
+        if ($token === '') {
+            return 'Your registration session expired. Please refresh the page and try again.';
         }
 
-        if ($this->isTooFastSubmission($request)) {
-            return true;
+        try {
+            $startedAt = (int) Crypt::decryptString($token);
+        } catch (\Throwable) {
+            return 'Your registration session expired. Please refresh the page and try again.';
         }
 
-        return false;
+        $elapsed = now()->timestamp - $startedAt;
+        $minSeconds = (int) config('registration.min_submit_seconds', 3);
+        $maxAge = (int) config('registration.max_form_age_seconds', 7200);
+
+        if ($elapsed < $minSeconds) {
+            return 'Please wait a moment after the form loads, then try again.';
+        }
+
+        if ($elapsed > $maxAge) {
+            return 'Your registration session expired. Please refresh the page and try again.';
+        }
+
+        return null;
     }
 
     public function fakeSuccessRedirect(Request $request): RedirectResponse
@@ -128,34 +152,6 @@ class RegistrationGuardService
         $field = (string) config('registration.honeypot_field', 'contact_website');
 
         return trim((string) $request->input($field, '')) !== '';
-    }
-
-    private function isTooFastSubmission(Request $request): bool
-    {
-        $token = (string) $request->input('registration_token', '');
-        if ($token === '') {
-            return true;
-        }
-
-        try {
-            $startedAt = (int) Crypt::decryptString($token);
-        } catch (\Throwable) {
-            return true;
-        }
-
-        $elapsed = now()->timestamp - $startedAt;
-        $minSeconds = (int) config('registration.min_submit_seconds', 3);
-        $maxAge = (int) config('registration.max_form_age_seconds', 7200);
-
-        if ($elapsed < $minSeconds) {
-            return true;
-        }
-
-        if ($elapsed > $maxAge) {
-            return true;
-        }
-
-        return false;
     }
 
     private function looksLikeRandomName(string $name): bool

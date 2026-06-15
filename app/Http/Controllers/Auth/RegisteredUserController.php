@@ -10,6 +10,7 @@ use App\Services\RegistrationGuardService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\View\View;
 
@@ -32,31 +33,40 @@ class RegisteredUserController extends Controller
             return $guard->fakeSuccessRedirect($request);
         }
 
+        if ($timingError = $guard->submissionTimingError($request)) {
+            return back()
+                ->withInput($request->except('password', 'password_confirmation'))
+                ->withErrors(['registration_token' => $timingError]);
+        }
+
         $validated = $request->validated();
         $resellerId = session('registration_reseller_id');
 
-        $user = User::create([
-            'name' => $validated['name'],
-            'company' => $validated['company'] ?? null,
-            'country' => $validated['country'],
-            'email' => $validated['email'],
-            'password' => Hash::make($validated['password']),
-            'email_verified_at' => null,
-            'status' => 'inactive',
-            'reseller_id' => $resellerId ?: null,
-        ]);
-
-        app(UserCurrencyService::class)->syncFromCountry($user, true);
-
-        session()->forget('registration_reseller_id');
-
         try {
-            $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
+            [$user, $delivery] = DB::transaction(function () use ($validated, $resellerId) {
+                $user = User::create([
+                    'name' => $validated['name'],
+                    'company' => $validated['company'] ?? null,
+                    'country' => $validated['country'],
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'email_verified_at' => null,
+                    'status' => 'inactive',
+                    'reseller_id' => $resellerId ?: null,
+                ]);
+
+                app(UserCurrencyService::class)->syncFromCountry($user, true);
+                $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
+
+                return [$user, $delivery];
+            });
         } catch (\Throwable $e) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
                 ->withErrors(['email' => $e->getMessage()]);
         }
+
+        session()->forget('registration_reseller_id');
 
         return redirect()->route('verification.code.show')
             ->with('email', $user->email)

@@ -8,8 +8,15 @@
     <div class="space-y-3">
         <h1 class="text-4xl font-bold tracking-tight">Verify Your Email</h1>
         <p class="text-base text-slate-600 dark:text-slate-400 font-medium">
-            We sent a 6-digit code to <strong>{{ $email }}</strong>@if($phoneHint) and your phone ending in <strong>{{ $phoneHint }}</strong>@endif.
+            @if($email)
+                We sent a 6-digit code to <strong>{{ $email }}</strong>@if($phoneHint) and your phone ending in <strong>{{ $phoneHint }}</strong>@endif.
+            @else
+                Enter the 6-digit verification code we sent you.
+            @endif
         </p>
+        @if (session('message'))
+            <p class="text-sm text-slate-600 dark:text-slate-400">{{ session('message') }}</p>
+        @endif
     </div>
 
     <!-- Verification Form -->
@@ -36,6 +43,9 @@
                 autofocus
             />
             @error('code')
+                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+            @error('email')
                 <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
             @enderror
         </div>
