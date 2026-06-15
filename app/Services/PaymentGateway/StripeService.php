@@ -21,7 +21,8 @@ class StripeService implements PaymentGatewayInterface
 
     public function __construct()
     {
-        $this->apiKey = Setting::getValue('stripe_secret_key', '');
+        $this->apiKey = Setting::getValue('stripe_secret_key', '')
+            ?: Setting::getValue('stripe_key', '');
         $this->publishableKey = Setting::getValue('stripe_publishable_key', '');
 
         if ($this->apiKey && $this->sdkAvailable()) {
@@ -331,9 +332,15 @@ class StripeService implements PaymentGatewayInterface
 
     public function isConfigured(): bool
     {
-        return $this->sdkAvailable()
-            && Setting::getValue('stripe_enabled') == '1'
-            && ! empty($this->apiKey)
-            && ! empty($this->publishableKey);
+        if (! $this->sdkAvailable() || empty($this->apiKey) || empty($this->publishableKey)) {
+            return false;
+        }
+
+        $enabled = Setting::getValue('stripe_enabled');
+        if (in_array($enabled, ['1', 'true', true], true)) {
+            return true;
+        }
+
+        return in_array(Setting::getValue('card_enabled'), ['1', 'true', true], true);
     }
 }

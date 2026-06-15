@@ -58,7 +58,7 @@
 
     <!-- Top-up Modal -->
     <div x-show="openTopupForm" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
-        <div class="modal-form ui-card p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: 'mpesa' }">
+        <div class="modal-form ui-card p-6 w-full max-w-md max-h-screen overflow-y-auto" x-data="{ paymentMethod: '{{ array_key_first($availableGateways ?? []) ?? 'mpesa' }}' }">
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Buy Account Credits</h3>
                 <button type="button" @click="openTopupForm = false" class="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300">✕</button>
@@ -107,37 +107,7 @@
 
                     <div>
                         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Payment Method</label>
-                        <div class="space-y-2">
-                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-emerald-500 dark:hover:border-emerald-400 cursor-pointer transition" @click="paymentMethod = 'mpesa'">
-                                <input type="radio" name="payment_method" value="mpesa" x-model="paymentMethod" class="w-4 h-4 text-emerald-600">
-                                <div class="ml-3 flex-1">
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">M-Pesa</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">Instant payment via M-Pesa</p>
-                                </div>
-                            </label>
-
-                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-emerald-500 dark:hover:border-emerald-400 cursor-pointer transition" @click="paymentMethod = 'stripe'">
-                                <input type="radio" name="payment_method" value="stripe" x-model="paymentMethod" class="w-4 h-4 text-emerald-600">
-                                <div class="ml-3 flex-1">
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">Card</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">Pay with credit or debit card</p>
-                                </div>
-                            </label>
-
-                            <label class="flex items-center p-3 border-2 border-slate-300 dark:border-slate-600 rounded-lg hover:border-emerald-500 dark:hover:border-emerald-400 cursor-pointer transition" @click="paymentMethod = 'paypal'">
-                                <input type="radio" name="payment_method" value="paypal" x-model="paymentMethod" class="w-4 h-4 text-emerald-600">
-                                <div class="ml-3 flex-1">
-                                    <p class="text-sm font-medium text-slate-900 dark:text-white">PayPal</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">Pay via PayPal</p>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div x-show="paymentMethod === 'mpesa'" class="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">M-Pesa Phone Number</label>
-                        <input type="tel" name="phone" placeholder="+254712345678" :required="paymentMethod === 'mpesa'" class="form-input w-full">
-                        <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Enter your M-Pesa registered phone number</p>
+                        <x-payment-method-options :availableGateways="$availableGateways ?? []" accent="emerald" />
                     </div>
 
                     <button type="submit" :disabled="loading" class="btn-primary w-full">

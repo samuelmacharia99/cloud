@@ -6,7 +6,6 @@ use App\Enums\PaymentMethod;
 use App\Models\Invoice;
 use App\Models\User;
 use App\Services\ResellerBrandingResolver;
-use App\Support\CountryCurrency;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -45,6 +44,20 @@ class PaymentGatewayFactory
         return self::buildGatewayList(null);
     }
 
+    /**
+     * Online gateways available for wallet top-up and similar KES flows.
+     *
+     * @return array<string, array{label: string, icon: string, color: string, description: string}>
+     */
+    public static function getAvailableGatewaysForUser(?User $user = null): array
+    {
+        $user ??= auth()->user();
+        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+        $gateways = self::buildGatewayList($reseller);
+
+        return array_intersect_key($gateways, array_flip(['mpesa', 'stripe', 'paypal']));
+    }
+
     public static function getAvailableGatewaysForInvoice(Invoice $invoice): array
     {
         $invoice->loadMissing('user');
@@ -73,7 +86,7 @@ class PaymentGatewayFactory
     {
         $gateways = [];
 
-        $mpesa = new MpesaService($reseller);
+        $mpesa = self::resolveMpesaService($reseller);
         if ($mpesa->isConfigured()) {
             $gateways['mpesa'] = [
                 'label' => 'M-PESA',
@@ -130,17 +143,27 @@ class PaymentGatewayFactory
         return $gateways;
     }
 
+    private static function resolveMpesaService(?User $reseller): MpesaService
+    {
+        if ($reseller) {
+            $resellerMpesa = new MpesaService($reseller);
+            if ($resellerMpesa->isConfigured()) {
+                return $resellerMpesa;
+            }
+        }
+
+        return new MpesaService(null);
+    }
+
     /**
      * @param  array<string, array<string, string>>  $gateways
      * @return array<string, array<string, string>>
      */
     private static function filterGatewaysForInvoice(array $gateways, Invoice $invoice): array
     {
-        $user = $invoice->user;
         $invoiceCurrency = $invoice->displayCurrency();
-        $isKenya = CountryCurrency::isKenya($user?->country);
 
-        if ($invoiceCurrency !== config('currency.base', 'KES') || ! $isKenya) {
+        if ($invoiceCurrency !== config('currency.base', 'KES')) {
             unset($gateways['mpesa']);
         }
 

@@ -12,6 +12,7 @@ use App\Services\CustomerCreditTopupService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CreditController extends Controller
 {
@@ -35,6 +36,7 @@ class CreditController extends Controller
             'credits' => $credits,
             'availableBalance' => CreditService::getAvailableBalance($user),
             'activeCredits' => CreditService::getActiveCredits($user),
+            'availableGateways' => PaymentGatewayFactory::getAvailableGatewaysForUser($user),
         ]);
     }
 
@@ -42,9 +44,11 @@ class CreditController extends Controller
     {
         $customer = auth()->user();
 
+        $availableMethods = array_keys(PaymentGatewayFactory::getAvailableGatewaysForUser($customer));
+
         $validated = $request->validate([
             'amount' => 'required|numeric|min:5|max:50000',
-            'payment_method' => 'required|string|in:mpesa,stripe,paypal',
+            'payment_method' => ['required', 'string', Rule::in($availableMethods)],
             'phone' => 'required_if:payment_method,mpesa|nullable|string',
         ], [
             'amount.min' => 'Minimum top-up amount is KES 5',

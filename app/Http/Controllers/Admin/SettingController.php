@@ -15,6 +15,7 @@ use App\Models\Setting;
 use App\Models\SmsTemplate;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
+use App\Services\PaymentGateway\StripeService;
 use App\Services\SmsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
@@ -151,7 +152,7 @@ class SettingController extends Controller
         // Gateway status for auto-expand in payment methods tab
         $gatewayStatus = [
             'mpesa' => Setting::getValue('mpesa_enabled') == '1' && ! empty(Setting::getValue('mpesa_consumer_key')),
-            'stripe' => Setting::getValue('stripe_enabled') == '1' && ! empty(Setting::getValue('stripe_secret_key')),
+            'stripe' => (new StripeService)->isConfigured(),
             'paypal' => $this->paypalGatewayActive(),
             'manual' => in_array(Setting::getValue('manual_enabled', '0'), ['1', 'true', true], true),
         ];
@@ -173,7 +174,7 @@ class SettingController extends Controller
      */
     private const ALLOWED_SETTING_PREFIXES = [
         'site_', 'admin_', 'mail_', 'smtp_', 'billing_', 'tax_', 'mpesa_',
-        'stripe_', 'paypal_', 'bank_', 'sms_', 'domain_', 'currency_',
+        'stripe_', 'paypal_', 'bank_', 'manual_', 'sms_', 'domain_', 'currency_',
         'security_', 'recaptcha_', 'two_factor_', 'maintenance_',
         'registration_', 'invoice_', 'support_', 'logo_', 'favicon_',
         'primary_', 'company_', 'footer_', 'notify_', 'email_', 'cron_',

@@ -21,6 +21,7 @@ use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
 use App\Services\NodeNameserverService;
 use App\Services\NotificationService;
+use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
@@ -56,6 +57,7 @@ class CheckoutController extends Controller
                 'user' => auth()->user(),
                 'currency' => $currency,
                 'currencyCode' => $currencyCode,
+                'availableGateways' => PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice),
             ]);
         }
 
