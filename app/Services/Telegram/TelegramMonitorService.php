@@ -3,7 +3,6 @@
 namespace App\Services\Telegram;
 
 use App\Enums\TelegramMonitorCategory;
-use App\Jobs\SendTelegramMonitorAlertJob;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
@@ -39,12 +38,8 @@ class TelegramMonitorService
             return;
         }
 
-        SendTelegramMonitorAlertJob::dispatch(
-            $category->value,
-            $title,
-            $fields,
-            $footer,
-        );
+        // Deliver immediately — monitoring alerts must not depend on a queue worker.
+        $this->sendNow($category, $title, $fields, $footer);
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\CronJob;
 use App\Models\CronJobLog;
+use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 
@@ -70,5 +71,16 @@ abstract class BaseCronCommand extends Command
             'last_status' => $status,
             'next_run_at' => $this->cronJob->calculateNextRunAt(),
         ]);
+
+        if ($status === 'failed' && $this->cronJob && ! config('telegram.cron_manual_run', false)) {
+            app(TelegramMonitorBridge::class)->cronJobRun(
+                $this->cronJob,
+                'failed',
+                'scheduled',
+                $output,
+                $e?->getMessage(),
+                $durationMs,
+            );
+        }
     }
 }

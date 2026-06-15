@@ -2,23 +2,23 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Controller;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
+use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Http\Request;
-use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Artisan;
-use Carbon\Carbon;
 
 class CronController extends Controller
 {
     public function index(Request $request)
     {
         $jobs = CronJob::withCount([
-            'logs as logs_24h' => fn($q) => $q->where('started_at', '>=', now()->subDay())
+            'logs as logs_24h' => fn ($q) => $q->where('started_at', '>=', now()->subDay()),
         ])
-        ->with('latestLog')
-        ->latest('updated_at')
-        ->paginate(15);
+            ->with('latestLog')
+            ->latest('updated_at')
+            ->paginate(15);
 
         // Calculate summary stats
         $stats = [
@@ -69,25 +69,58 @@ class CronController extends Controller
 
     public function run(CronJob $job)
     {
+        config(['telegram.cron_manual_run' => true]);
+        $started = microtime(true);
+
         try {
-            $output = Artisan::call($job->command);
-            $outputText = Artisan::output();
+            $exitCode = Artisan::call($job->command);
+            $outputText = trim(Artisan::output());
+            $durationMs = (int) round((microtime(true) - $started) * 1000);
+
+            app(TelegramMonitorBridge::class)->cronJobRun(
+                $job,
+                $exitCode === 0 ? 'completed' : 'failed',
+                'manual',
+                $outputText !== '' ? $outputText : null,
+                $exitCode !== 0 ? "Command exited with code {$exitCode}" : null,
+                $durationMs,
+            );
+
+            if ($exitCode !== 0) {
+                return response()->json([
+                    'success' => false,
+                    'output' => $outputText !== '' ? $outputText : "Command exited with code {$exitCode}",
+                ], 500);
+            }
 
             return response()->json([
                 'success' => true,
                 'output' => $outputText,
             ]);
         } catch (\Exception $e) {
+            $durationMs = (int) round((microtime(true) - $started) * 1000);
+
+            app(TelegramMonitorBridge::class)->cronJobRun(
+                $job,
+                'failed',
+                'manual',
+                null,
+                $e->getMessage(),
+                $durationMs,
+            );
+
             return response()->json([
                 'success' => false,
                 'output' => $e->getMessage(),
             ], 500);
+        } finally {
+            config(['telegram.cron_manual_run' => false]);
         }
     }
 
     public function toggle(CronJob $job)
     {
-        $job->update(['enabled' => !$job->enabled]);
+        $job->update(['enabled' => ! $job->enabled]);
 
         return back()->with('success', $job->enabled
             ? "Cron job '{$job->name}' enabled."
@@ -129,7 +162,7 @@ class CronController extends Controller
         // Fill in actual data from logs collection (PHP-level grouping for SQLite compatibility)
         foreach ($logs as $log) {
             $hour = $log->started_at->format('H:00');
-            if (!isset($hourly[$hour])) {
+            if (! isset($hourly[$hour])) {
                 $hourly[$hour] = ['success' => 0, 'failed' => 0, 'total_duration' => 0, 'count' => 0];
             }
 

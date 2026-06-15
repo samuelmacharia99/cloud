@@ -4,6 +4,7 @@ namespace App\Services\Telegram;
 
 use App\Enums\PaymentMethod;
 use App\Enums\TelegramMonitorCategory;
+use App\Models\CronJob;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
@@ -185,6 +186,42 @@ class TelegramMonitorBridge
                 'Reseller ID' => (string) $reseller->id,
             ], $extra),
         );
+    }
+
+    public function cronJobRun(
+        CronJob $job,
+        string $status,
+        string $trigger,
+        ?string $output = null,
+        ?string $error = null,
+        ?int $durationMs = null,
+    ): void {
+        $title = $status === 'failed' ? 'Cron job failed' : 'Cron job completed';
+
+        $fields = [
+            'Job' => $job->name,
+            'Command' => $job->command,
+            'Status' => $status,
+            'Trigger' => $trigger === 'manual' ? 'Manual (admin panel)' : 'Scheduled',
+        ];
+
+        if ($durationMs !== null) {
+            $fields['Duration'] = $durationMs.' ms';
+        }
+
+        if ($output) {
+            $fields['Output'] = Str::limit($output, 800);
+        }
+
+        if ($error) {
+            $fields['Error'] = Str::limit($error, 800);
+        }
+
+        if ($trigger === 'manual' && auth()->check()) {
+            $fields['Run by'] = auth()->user()->name;
+        }
+
+        $this->monitor->alert(TelegramMonitorCategory::System, $title, $fields);
     }
 
     public function systemAlert(string $title, array $fields = []): void
