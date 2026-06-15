@@ -70,6 +70,7 @@ class ContainerController extends Controller
             $service->product->containerTemplate,
             $deployment
         );
+        $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50);
 
         return view('customer.services.container', compact(
             'service',
@@ -81,6 +82,7 @@ class ContainerController extends Controller
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',
+            'dbImportMaxMb',
         ));
     }
 

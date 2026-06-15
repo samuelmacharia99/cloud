@@ -360,7 +360,6 @@
                     </div>
 
                     <!-- Database Tab -->
-                    @php($dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50))
                     <div x-show="activeTab === 'database'">
                         <div class="space-y-6">
                             @if(empty($databaseConsoleEnabled))
