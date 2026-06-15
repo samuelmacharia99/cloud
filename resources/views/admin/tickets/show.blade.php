@@ -15,6 +15,21 @@
         </a>
     </div>
 
+    @if ($ticket->isEscalated())
+        <div class="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
+            <p class="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                Escalated from {{ $ticket->reseller?->name ?? 'reseller' }}
+                {{ $ticket->escalated_at?->diffForHumans() }}
+                @if ($ticket->escalatedByUser)
+                    by {{ $ticket->escalatedByUser->name }}
+                @endif
+            </p>
+            @if (filled($ticket->escalation_note))
+                <p class="text-sm text-amber-800 dark:text-amber-200 mt-2 whitespace-pre-wrap">{{ $ticket->escalation_note }}</p>
+            @endif
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Main Content -->
         <div class="lg:col-span-2 space-y-6">

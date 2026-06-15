@@ -8,7 +8,7 @@
     <div class="flex justify-between items-center">
         <div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Support Tickets</h1>
-            <p class="mt-2 text-gray-600 dark:text-gray-400">Manage customer and reseller support tickets</p>
+            <p class="mt-2 text-gray-600 dark:text-gray-400">Platform-visible tickets (direct customers, resellers, and escalations)</p>
         </div>
         <a href="{{ route('tickets.create') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-2xl font-medium transition-colors">
             Create Ticket
@@ -74,6 +74,7 @@
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">ID</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Title</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Customer</th>
+                        <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Source</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Status</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Priority</th>
                         <th class="px-6 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">Assigned To</th>
@@ -92,6 +93,18 @@
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
                             <x-admin.customer-link :user="$ticket->user" />
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">
+                            @if ($ticket->isEscalated())
+                                <span class="text-amber-600 font-medium">Escalated</span>
+                                @if ($ticket->reseller)
+                                    <span class="text-slate-500">· {{ $ticket->reseller->name }}</span>
+                                @endif
+                            @elseif ($ticket->user?->is_reseller)
+                                Reseller
+                            @else
+                                Customer
+                            @endif
                         </td>
                         <td class="px-6 py-4">
                             <span class="px-3 py-1 rounded-full text-xs font-semibold
@@ -127,7 +140,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="8" class="px-6 py-8 text-center text-gray-600 dark:text-gray-400">
+                        <td colspan="9" class="px-6 py-8 text-center text-gray-600 dark:text-gray-400">
                             No tickets found.
                         </td>
                     </tr>

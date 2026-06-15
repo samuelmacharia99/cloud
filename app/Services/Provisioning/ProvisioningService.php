@@ -4,6 +4,7 @@ namespace App\Services\Provisioning;
 
 use App\Enums\ServiceStatus;
 use App\Models\Domain;
+use App\Models\Node;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainActivationService;
@@ -76,11 +77,12 @@ class ProvisioningService
             $suspended = false;
 
             if ($driver === 'directadmin' && $hasReference) {
-                if (! $service->node) {
+                $node = $this->resolveDirectAdminNode($service);
+                if (! $node) {
                     throw new \Exception('Service has no DirectAdmin node assigned');
                 }
 
-                $daService = new DirectAdminService($service->node);
+                $daService = new DirectAdminService($node);
                 $suspended = $daService->suspendAccount($service);
                 if (! $suspended) {
                     throw new \Exception('DirectAdmin API failed to suspend account');
@@ -123,11 +125,12 @@ class ProvisioningService
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
 
             if ($driver === 'directadmin' && $hasReference) {
-                if (! $service->node) {
+                $node = $this->resolveDirectAdminNode($service);
+                if (! $node) {
                     throw new \Exception('Service has no DirectAdmin node assigned');
                 }
 
-                $daService = new DirectAdminService($service->node);
+                $daService = new DirectAdminService($node);
                 $unsuspended = $daService->unsuspendAccount($service);
                 if (! $unsuspended) {
                     throw new \Exception('DirectAdmin API failed to unsuspend account');
@@ -162,11 +165,12 @@ class ProvisioningService
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
 
             if ($driver === 'directadmin' && $service->external_reference) {
-                if (! $service->node) {
+                $node = $this->resolveDirectAdminNode($service);
+                if (! $node) {
                     throw new \Exception('Service has no DirectAdmin node assigned');
                 }
 
-                $daService = new DirectAdminService($service->node);
+                $daService = new DirectAdminService($node);
                 $terminated = $daService->terminateAccount($service);
                 if (! $terminated) {
                     throw new \Exception('DirectAdmin API failed to terminate account');
@@ -199,20 +203,35 @@ class ProvisioningService
      * any missing pieces are generated to keep the legacy "auto-provision on
      * payment" path working when no one has supplied them yet.
      */
+    private function resolveDirectAdminNode(Service $service): ?Node
+    {
+        $service->loadMissing('node');
+
+        if ($service->node) {
+            return $service->node;
+        }
+
+        if (! $service->reseller_id) {
+            return null;
+        }
+
+        $reseller = User::query()->find($service->reseller_id);
+        if (! $reseller) {
+            return null;
+        }
+
+        $node = app(ResellerDirectAdminService::class)->resolveNode($reseller);
+        if ($node) {
+            $service->update(['node_id' => $node->id]);
+            $service->setRelation('node', $node);
+        }
+
+        return $node;
+    }
+
     private function provisionDirectAdmin(Service $service): void
     {
-        $node = $service->node;
-
-        if (! $node && $service->reseller_id) {
-            $reseller = User::query()->find($service->reseller_id);
-            if ($reseller) {
-                $node = app(ResellerDirectAdminService::class)->resolveNode($reseller);
-                if ($node) {
-                    $service->update(['node_id' => $node->id]);
-                    $service->setRelation('node', $node);
-                }
-            }
-        }
+        $node = $this->resolveDirectAdminNode($service);
 
         if (! $node) {
             throw new \Exception('Service is not assigned to a DirectAdmin node — cannot provision.');

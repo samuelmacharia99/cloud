@@ -6,8 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Ticket;
 use App\Models\TicketReply;
 use App\Models\User;
-use App\Services\NotificationService;
 use App\Services\TicketAttachmentService;
+use App\Services\TicketNotificationService;
+use App\Services\TicketRoutingService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -25,7 +26,9 @@ class TicketController extends Controller
     {
         $this->authorize('viewAny', Ticket::class);
 
-        $query = Ticket::with('user', 'assignee')->latest();
+        $query = Ticket::with('user', 'assignee', 'reseller', 'escalatedByUser')
+            ->visibleToAdmin()
+            ->latest();
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -64,7 +67,7 @@ class TicketController extends Controller
     {
         $this->authorize('view', $ticket);
 
-        $ticket->load('user', 'replies.user', 'replies.attachments', 'assignee', 'attachments');
+        $ticket->load('user', 'replies.user', 'replies.attachments', 'assignee', 'attachments', 'reseller', 'escalatedByUser');
         $staffMembers = User::where('is_admin', true)->get();
 
         return view('admin.tickets.show', compact('ticket', 'staffMembers'));
@@ -97,8 +100,12 @@ class TicketController extends Controller
             'priority' => 'required|in:low,medium,high,urgent',
         ], TicketAttachmentService::validationRules()));
 
+        $owner = User::findOrFail($validated['user_id']);
+        $routing = app(TicketRoutingService::class)->attributesForCreator($owner);
+
         $ticket = Ticket::create([
             'user_id' => $validated['user_id'],
+            ...$routing,
             'title' => $validated['title'],
             'description' => $validated['description'],
             'priority' => $validated['priority'],
@@ -222,17 +229,14 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        app(NotificationService::class)->notifyTicketCreated($ticket);
+        app(TicketNotificationService::class)->notifyCreated($ticket);
     }
 
-    /**
-     * Notify about ticket reply
-     */
     private function notifyTicketReplied(Ticket $ticket): void
     {
         $latestReply = $ticket->replies()->latest()->first();
         if ($latestReply) {
-            app(NotificationService::class)->notifyTicketReplied($ticket, $latestReply);
+            app(TicketNotificationService::class)->notifyReplied($ticket, $latestReply);
         }
     }
 }

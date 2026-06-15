@@ -41,7 +41,7 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
 
         $invoice = Invoice::factory()->create([
             'user_id' => $customer->id,
-            'status' => 'overdue',
+            'status' => 'unpaid',
             'due_date' => Carbon::parse('2026-04-01'),
         ]);
 
@@ -139,6 +139,39 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
 
         $this->assertCount(1, $services);
         $this->assertSame($service->id, $services->first()->id);
+    }
+
+    public function test_active_services_for_invoice_includes_line_item_services(): void
+    {
+        $customer = User::factory()->create();
+        $product = Product::factory()->create(['provisioning_driver_key' => 'directadmin']);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'overdue',
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Active,
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Hosting renewal',
+            'quantity' => 1,
+            'unit_price' => 500,
+            'amount' => 500,
+        ]);
+
+        $services = $this->enforcement->activeServicesForInvoice($invoice);
+
+        $this->assertCount(1, $services);
+        $this->assertTrue($this->enforcement->isDirectAdminService($service));
     }
 
     public function test_suspension_enabled_when_admin_setting_saved_as_checkbox_value(): void

@@ -75,8 +75,8 @@ class DashboardController extends Controller
         $overdueInvoiceTotal = (float) ($invoiceStatusSums['overdue'] ?? 0);
         $totalRevenue = (float) ($paymentStatusSums['completed'] ?? 0);
         $pendingPayments = (float) ($paymentStatusSums['pending'] ?? 0);
-        $openTickets = Ticket::where('status', '!=', 'closed')->count();
-        $urgentTickets = Ticket::where('status', '!=', 'closed')->where('priority', 'urgent')->count();
+        $openTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->count();
+        $urgentTickets = Ticket::visibleToAdmin()->where('status', '!=', 'closed')->where('priority', 'urgent')->count();
 
         // Recent Activity
         $recentCustomers = User::query()
@@ -89,7 +89,7 @@ class DashboardController extends Controller
         $recentServices = Service::with('user', 'product')->latest()->take(8)->get();
         $recentInvoices = Invoice::with('user')->latest()->take(8)->get();
         $recentPayments = Payment::with('user', 'invoice')->latest()->take(8)->get();
-        $openTickets_data = Ticket::with('user', 'assignee')->where('status', '!=', 'closed')->latest()->take(8)->get();
+        $openTickets_data = Ticket::visibleToAdmin()->with('user', 'assignee')->where('status', '!=', 'closed')->latest()->take(8)->get();
 
         // Status Breakdown
         $serviceStatus = [

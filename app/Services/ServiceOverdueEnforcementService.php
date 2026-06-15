@@ -178,6 +178,43 @@ class ServiceOverdueEnforcementService
         return $service->reseller_id !== null || $service->user?->reseller_id !== null;
     }
 
+    /**
+     * Active services billed on this invoice (direct service link or line items).
+     *
+     * @return Collection<int, Service>
+     */
+    public function activeServicesForInvoice(Invoice $invoice): Collection
+    {
+        if ($invoice->type === 'reseller_subscription') {
+            return collect();
+        }
+
+        $serviceIds = $invoice->items()
+            ->whereNotNull('service_id')
+            ->pluck('service_id');
+
+        return Service::query()
+            ->with(['user', 'product', 'node'])
+            ->where('status', ServiceStatus::Active)
+            ->where(function (Builder $query) use ($invoice, $serviceIds) {
+                $query->where('invoice_id', $invoice->id);
+
+                if ($serviceIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $serviceIds);
+                }
+            })
+            ->get();
+    }
+
+    public function isDirectAdminService(Service $service): bool
+    {
+        $service->loadMissing('product');
+
+        $driver = $service->provisioning_driver_key ?: $service->product?->provisioning_driver_key;
+
+        return $driver === 'directadmin';
+    }
+
     private function applyBillingInvoiceScope(Builder $query): void
     {
         $query->where(function (Builder $q) {
@@ -225,7 +262,8 @@ class ServiceOverdueEnforcementService
                 continue;
             }
 
-            if ($invoice->status === 'overdue' && $invoice->due_date?->lt($graceCutoff)) {
+            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+                && $invoice->due_date?->lt($graceCutoff)) {
                 return true;
             }
         }

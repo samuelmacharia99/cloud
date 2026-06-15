@@ -7,6 +7,7 @@ use App\Models\Service;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\TicketRoutingService;
 use Illuminate\Support\Facades\Log;
 
 class CustomerServiceCancellationService
@@ -47,13 +48,13 @@ class CustomerServiceCancellationService
             $warning = 'Your cancellation was recorded but automated shutdown failed — support will complete it shortly.';
         }
 
-        Ticket::create([
+        Ticket::create(array_merge([
             'user_id' => $customer->id,
             'title' => 'Service Cancellation: '.$service->name,
             'description' => $reason,
             'status' => 'open',
             'priority' => 'low',
-        ]);
+        ], app(TicketRoutingService::class)->attributesForCreator($customer)));
 
         $message = $deprovisioned
             ? 'Service cancelled and deprovisioned successfully.'

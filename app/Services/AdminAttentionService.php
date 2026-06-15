@@ -72,7 +72,7 @@ class AdminAttentionService
 
         $ordersPending = Order::query()->where('status', 'pending');
         $renewalsPending = DomainRenewalOrder::query()->whereIn('status', ['paid', 'pushed', 'failed']);
-        $ticketsOpen = Ticket::query()->where('status', '!=', 'closed');
+        $ticketsOpen = Ticket::query()->visibleToAdmin()->where('status', '!=', 'closed');
         $paymentsPending = Payment::query()->where('status', PaymentStatus::Pending);
         $servicesProvisioning = Service::query()->whereIn('status', ['pending', 'provisioning']);
 
@@ -152,6 +152,7 @@ class AdminAttentionService
             });
 
         Ticket::query()
+            ->visibleToAdmin()
             ->with('user:id,name')
             ->where('status', '!=', 'closed')
             ->latest()

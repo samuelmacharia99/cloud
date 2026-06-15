@@ -27,8 +27,6 @@ use App\Mail\ServiceSuspendedMail;
 use App\Mail\ServiceTerminatedMail;
 use App\Mail\ServiceUnsuspendedMail;
 use App\Mail\SharedHostingCredentialsMail;
-use App\Mail\TicketCreatedMail;
-use App\Mail\TicketRepliedMail;
 use App\Models\ContainerBackup;
 use App\Models\Domain;
 use App\Models\DomainRenewalOrder;
@@ -599,71 +597,12 @@ class NotificationService
 
     public function notifyTicketCreated(Ticket $ticket): void
     {
-        $event = NotificationEvent::TicketCreated;
-        if (! $this->emailDelivery->mailConfiguredFor($ticket->user) || ! $this->preferences->isGloballyEnabled($event)) {
-            return;
-        }
-
-        $subject = 'Support Ticket #'.$ticket->id.' Created';
-        $this->sendCustomerEmail($ticket->user, new TicketCreatedMail($ticket), $subject, $event, $ticket->description);
-
-        if ($this->smsService->isConfigured()) {
-            try {
-                $adminUsers = User::where('is_admin', true)->whereNotNull('notification_phones')->get();
-                foreach ($adminUsers as $admin) {
-                    if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
-                        try {
-                            $message = 'New support ticket #'.$ticket->id.' from '.$ticket->user->name.'. Priority: '.ucfirst($ticket->priority).'. Title: '.Str::limit($ticket->title, 50);
-                            $this->smsService->send($admin->notification_phones, $message);
-                        } catch (\Exception $e) {
-                            Log::error('Failed to send ticket creation SMS to admin', ['ticket_id' => $ticket->id, 'error' => $e->getMessage()]);
-                        }
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to notify admins about ticket creation', ['ticket_id' => $ticket->id, 'error' => $e->getMessage()]);
-            }
-        }
+        app(TicketNotificationService::class)->notifyCreated($ticket);
     }
 
     public function notifyTicketReplied(Ticket $ticket, TicketReply $reply): void
     {
-        $event = NotificationEvent::TicketReplied;
-        if (! $this->preferences->isGloballyEnabled($event)) {
-            return;
-        }
-
-        try {
-            if ($reply->is_staff_reply) {
-                if ($this->emailDelivery->mailConfiguredFor($ticket->user)) {
-                    $subject = 'Re: Support Ticket #'.$ticket->id;
-                    $this->sendCustomerEmail($ticket->user, new TicketRepliedMail($ticket, $reply), $subject, $event, $reply->message);
-                }
-
-                if ($this->smsService->isConfigured() && $ticket->user->phone) {
-                    $message = 'New reply to your support ticket #'.$ticket->id.'. Status: '.ucfirst(str_replace('_', ' ', $ticket->status)).'. Check your email or log in to view.';
-                    $this->sendCustomerSms($ticket->user, $message, $event);
-                }
-            } else {
-                $notifyUser = $ticket->assignee ?? User::where('is_admin', true)->first();
-
-                if ($notifyUser) {
-                    $subject = 'Customer Reply: Support Ticket #'.$ticket->id;
-                    $this->sendPlatformEmail($notifyUser->email, new TicketRepliedMail($ticket, $reply), $subject, $event, $notifyUser, $reply->message);
-
-                    if ($this->smsService->isConfigured() && $notifyUser->notification_phones && is_array($notifyUser->notification_phones)) {
-                        $message = 'Customer reply to ticket #'.$ticket->id.'. Title: '.Str::limit($ticket->title, 50);
-                        $this->smsService->send($notifyUser->notification_phones, $message);
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Failed to send ticket reply notification', [
-                'ticket_id' => $ticket->id,
-                'reply_id' => $reply->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        app(TicketNotificationService::class)->notifyReplied($ticket, $reply);
     }
 
     public function notifyManualPaymentSubmitted(Payment $payment): void

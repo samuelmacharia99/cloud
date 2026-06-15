@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\TicketHandledBy;
+use App\Models\Ticket;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
+
+class TicketRoutingService
+{
+    public function __construct(
+        private ResellerScopeService $resellerScope,
+    ) {}
+
+    /**
+     * @return array{reseller_id: ?int, handled_by: string}
+     */
+    public function attributesForCreator(User $creator): array
+    {
+        if ($creator->is_reseller) {
+            return [
+                'reseller_id' => null,
+                'handled_by' => TicketHandledBy::Platform->value,
+            ];
+        }
+
+        if ($creator->reseller_id) {
+            return [
+                'reseller_id' => $creator->reseller_id,
+                'handled_by' => TicketHandledBy::Reseller->value,
+            ];
+        }
+
+        return [
+            'reseller_id' => null,
+            'handled_by' => TicketHandledBy::Platform->value,
+        ];
+    }
+
+    public function isVisibleToAdmin(Ticket $ticket): bool
+    {
+        return $ticket->handled_by === TicketHandledBy::Platform->value;
+    }
+
+    public function isResellerCustomerTicket(Ticket $ticket): bool
+    {
+        return $ticket->reseller_id !== null
+            && $ticket->handled_by === TicketHandledBy::Reseller->value;
+    }
+
+    public function escalateToPlatform(Ticket $ticket, User $reseller, ?string $note = null): void
+    {
+        if (! $this->resellerScope->ownsCustomer($reseller, $ticket->user)) {
+            throw new \InvalidArgumentException('This ticket does not belong to your customer.');
+        }
+
+        if ($ticket->handled_by === TicketHandledBy::Platform->value) {
+            return;
+        }
+
+        DB::transaction(function () use ($ticket, $reseller, $note) {
+            $ticket->update([
+                'handled_by' => TicketHandledBy::Platform->value,
+                'escalated_at' => now(),
+                'escalated_by' => $reseller->id,
+                'escalation_note' => filled($note) ? trim($note) : null,
+            ]);
+        });
+    }
+
+    public function owningReseller(Ticket $ticket): ?User
+    {
+        if (! $ticket->reseller_id) {
+            return null;
+        }
+
+        return $ticket->relationLoaded('reseller')
+            ? $ticket->reseller
+            : User::find($ticket->reseller_id);
+    }
+}

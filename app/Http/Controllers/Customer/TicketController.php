@@ -5,9 +5,10 @@ namespace App\Http\Controllers\Customer;
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
 use App\Models\TicketReply;
-use App\Services\NotificationService;
 use App\Services\ResellerScopeService;
 use App\Services\TicketAttachmentService;
+use App\Services\TicketNotificationService;
+use App\Services\TicketRoutingService;
 use Illuminate\Http\Request;
 
 class TicketController extends Controller
@@ -96,8 +97,11 @@ class TicketController extends Controller
             'priority' => 'required|in:low,medium,high,urgent',
         ], TicketAttachmentService::validationRules()));
 
+        $routing = app(TicketRoutingService::class)->attributesForCreator($request->user());
+
         $ticket = Ticket::create([
             'user_id' => auth()->id(),
+            ...$routing,
             'title' => $validated['title'],
             'description' => $validated['description'],
             'priority' => $validated['priority'],
@@ -180,17 +184,14 @@ class TicketController extends Controller
      */
     private function notifyTicketCreated(Ticket $ticket): void
     {
-        app(NotificationService::class)->notifyTicketCreated($ticket);
+        app(TicketNotificationService::class)->notifyCreated($ticket);
     }
 
-    /**
-     * Notify about ticket reply
-     */
     private function notifyTicketReplied(Ticket $ticket): void
     {
         $latestReply = $ticket->replies()->latest()->first();
         if ($latestReply) {
-            app(NotificationService::class)->notifyTicketReplied($ticket, $latestReply);
+            app(TicketNotificationService::class)->notifyReplied($ticket, $latestReply);
         }
     }
 }

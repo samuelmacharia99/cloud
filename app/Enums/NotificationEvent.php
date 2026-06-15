@@ -16,6 +16,7 @@ enum NotificationEvent: string
     case DomainExpiry = 'domain_expiry';
     case TicketCreated = 'ticket_created';
     case TicketReplied = 'ticket_replied';
+    case TicketEscalated = 'ticket_escalated';
     case ContainerBackupCompleted = 'container_backup_completed';
     case ContainerBackupFailed = 'container_backup_failed';
     case ContainerFailed = 'container_failed';
@@ -59,6 +60,7 @@ enum NotificationEvent: string
             self::ServiceTerminated => 'notify_service_terminated',
             self::DomainExpiry => 'notify_domain_expiry',
             self::TicketCreated, self::TicketReplied => 'notify_ticket',
+            self::TicketEscalated => 'notify_ticket_platform',
             self::ContainerBackupCompleted => 'notify_container_backup',
             self::ContainerBackupFailed => 'notify_container_backup_failure',
             self::ContainerFailed => 'notify_container_failure',
@@ -100,7 +102,8 @@ enum NotificationEvent: string
             self::CronFailure,
             self::CronHealth,
             self::ContainerBackupFailed,
-            self::ServiceProvisionFailed => 'admin',
+            self::ServiceProvisionFailed,
+            self::TicketEscalated => 'admin',
             self::ResellerDomainQueued,
             self::ResellerDomainPushed,
             self::ResellerNewCustomerOrder,

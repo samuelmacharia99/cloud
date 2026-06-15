@@ -367,11 +367,11 @@ class ResellerEnforcementService
             return;
         }
 
-        $meta = $service->service_meta ?? [];
+        $this->provisioning()->suspend($service->fresh());
+
+        $meta = $service->fresh()->service_meta ?? [];
         $meta[self::META_SUSPENSION_REASON] = $reason;
         $service->update(['service_meta' => $meta]);
-
-        $this->provisioning()->suspend($service->fresh());
     }
 
     protected function wasSuspendedByResellerEnforcement(Service $service): bool

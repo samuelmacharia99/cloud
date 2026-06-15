@@ -337,6 +337,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->only(['index', 'show', 'create', 'store'])
             ->names('reseller.tickets');
         Route::post('reseller/tickets/{ticket}/reply', [App\Http\Controllers\Reseller\TicketController::class, 'reply'])->name('reseller.tickets.reply');
+        Route::post('reseller/tickets/{ticket}/escalate', [App\Http\Controllers\Reseller\TicketController::class, 'escalate'])->name('reseller.tickets.escalate');
         Route::patch('reseller/tickets/{ticket}/close', [App\Http\Controllers\Reseller\TicketController::class, 'close'])->name('reseller.tickets.close');
         Route::get('reseller/tickets/{ticket}/attachments/{attachment}', [TicketAttachmentController::class, 'show'])->name('reseller.tickets.attachments.show');
 

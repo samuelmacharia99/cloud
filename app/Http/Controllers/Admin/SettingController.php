@@ -73,7 +73,7 @@ class SettingController extends Controller
         ],
         'notifications' => [
             'notify_new_order', 'notify_payment', 'notify_payment_failed', 'notify_manual_payment_rejected',
-            'notify_service_suspend', 'notify_ticket',
+            'notify_service_suspend', 'notify_ticket', 'notify_ticket_platform', 'notify_ticket_reseller',
             'notify_invoice_generated', 'notify_invoice_reminder', 'notify_invoice_overdue',
             'notify_service_activated', 'notify_service_unsuspended', 'notify_service_terminated',
             'notify_service_provision_failed', 'notify_domain_expiry', 'notify_password_changed',

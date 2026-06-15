@@ -1308,8 +1308,12 @@
                                 <input type="hidden" name="settings[suspend_on_overdue]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[suspend_on_overdue]" value="1" @checked(in_array($settings['suspend_on_overdue'] ?? 'true', ['1', 'true'], true)) class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Suspend service on overdue invoice (direct and reseller customers)</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Auto-suspend on unpaid invoice (DirectAdmin, containers, and other drivers)</span>
                                 </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">
+                                    Suspends on the invoice due date, again when marked overdue, and after the billing grace period.
+                                    DirectAdmin accounts are unsuspended automatically when the invoice is paid (including via the every-10-minute cron).
+                                </p>
                             </div>
 
                             <div>
@@ -1642,8 +1646,27 @@
                                 <input type="hidden" name="settings[notify_ticket]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_ticket]" value="1" @checked(($settings['notify_ticket'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">New Ticket</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Support tickets (master)</span>
                                 </label>
+                                <p class="text-xs text-slate-500 mt-1">Enables ticket email/SMS notifications globally.</p>
+                            </div>
+
+                            <div>
+                                <input type="hidden" name="settings[notify_ticket_platform]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_ticket_platform]" value="1" @checked(($settings['notify_ticket_platform'] ?? $settings['notify_ticket'] ?? '0') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Platform tickets &amp; escalations</span>
+                                </label>
+                                <p class="text-xs text-slate-500 mt-1">Notify admins for direct customer tickets, reseller tickets, and escalations.</p>
+                            </div>
+
+                            <div>
+                                <input type="hidden" name="settings[notify_ticket_reseller]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[notify_ticket_reseller]" value="1" @checked(($settings['notify_ticket_reseller'] ?? '1') == '1') class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Reseller customer tickets</span>
+                                </label>
+                                <p class="text-xs text-slate-500 mt-1">Notify resellers when their customers open or reply to tickets (admins are not alerted until escalation).</p>
                             </div>
 
                             <div>
