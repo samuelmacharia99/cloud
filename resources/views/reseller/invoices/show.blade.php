@@ -272,14 +272,10 @@
                             @foreach ($invoice->items as $item)
                                 <tr class="border-b border-slate-200 dark:border-slate-700">
                                     <td class="py-3 px-3">
-                                        <p class="text-sm font-medium text-slate-900 dark:text-white">
-                                            @if($item->domain_id)
-                                                Domain
-                                            @else
-                                                {{ $item->product->name ?? 'Unknown Product' }}
-                                            @endif
-                                        </p>
-                                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
+                                        <x-invoice-item-details
+                                            :item="$item"
+                                            title-class="text-sm font-medium text-slate-900 dark:text-white"
+                                        />
                                     </td>
                                     <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">{{ $item->quantity }}</td>
                                     <td class="py-3 px-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($item->unit_price, 2) }}</td>

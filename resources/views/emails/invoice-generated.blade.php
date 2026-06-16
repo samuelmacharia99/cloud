@@ -80,6 +80,11 @@
                     @if($item->description)
                         <div style="font-size: 12px; color: #6b7280;">{{ $item->description }}</div>
                     @endif
+                    @if($attachedDomain = $item->attachedDomainLabel())
+                        <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                            <strong>Domain:</strong> {{ $attachedDomain }}
+                        </div>
+                    @endif
                 </td>
                 <td style="text-align: center;">{{ $item->quantity }}</td>
                 <td style="text-align: right;">Ksh {{ number_format($item->unit_price, 2) }}</td>

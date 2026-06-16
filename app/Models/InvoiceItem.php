@@ -55,4 +55,26 @@ class InvoiceItem extends Model
     {
         return $this->belongsTo(Domain::class);
     }
+
+    /**
+     * Domain label for invoice display (service-attached or domain line item).
+     * Hidden for VPS and dedicated server line items.
+     */
+    public function attachedDomainLabel(): ?string
+    {
+        if ($this->domain_id && $this->domain) {
+            return $this->domain->fqdn();
+        }
+
+        if (! $this->service_id || ! $this->service) {
+            return null;
+        }
+
+        $productType = $this->product?->type ?? $this->service->product?->type;
+        if ($productType && Product::isServerType($productType)) {
+            return null;
+        }
+
+        return $this->service->attachedDomainName();
+    }
 }

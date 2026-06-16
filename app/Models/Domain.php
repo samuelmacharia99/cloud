@@ -102,6 +102,11 @@ class Domain extends Model
         return $this->expires_at ? now()->diffInDays($this->expires_at) : 0;
     }
 
+    public function fqdn(): string
+    {
+        return $this->name.($this->extension ?? '');
+    }
+
     /**
      * Check if domain is a transfer
      */

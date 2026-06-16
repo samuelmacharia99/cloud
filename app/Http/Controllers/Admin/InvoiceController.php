@@ -86,7 +86,7 @@ class InvoiceController extends Controller
 
     public function show(Invoice $invoice)
     {
-        $invoice->load('user', 'items.product', 'payments');
+        $invoice->load('user', 'payments')->loadItemsForDisplay();
 
         return view('admin.invoices.show', compact('invoice'));
     }

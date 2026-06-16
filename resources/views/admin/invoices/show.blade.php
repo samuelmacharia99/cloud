@@ -129,16 +129,7 @@
                                     <tr>
                                         <td class="py-3 px-3 text-slate-900 dark:text-white">{{ $loop->iteration }}</td>
                                         <td class="py-3 px-3">
-                                            <div>
-                                                <p class="font-medium text-slate-900 dark:text-white">
-                                                    @if($item->domain_id)
-                                                        Domain
-                                                    @else
-                                                        {{ $item->product->name ?? 'Unknown Product' }}
-                                                    @endif
-                                                </p>
-                                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $item->description }}</p>
-                                            </div>
+                                            <x-invoice-item-details :item="$item" />
                                         </td>
                                         <td class="py-3 px-3 text-right text-slate-900 dark:text-white">{{ $item->quantity }}</td>
                                         <td class="py-3 px-3 text-right text-slate-900 dark:text-white"><x-invoice-money :invoice="$invoice" :amount="$item->unit_price" /></td>

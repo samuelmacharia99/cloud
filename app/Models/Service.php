@@ -223,6 +223,52 @@ class Service extends Model
         return $this->node?->getDirectAdminPanelUrl();
     }
 
+    /**
+     * Primary domain attached to this service (hosting), if any.
+     * VPS and dedicated servers intentionally return null.
+     */
+    public function attachedDomainName(): ?string
+    {
+        $productType = $this->product?->type;
+        if ($productType && Product::isServerType($productType)) {
+            return null;
+        }
+
+        $meta = $this->service_meta ?? [];
+
+        if (! empty($meta['domain'])) {
+            return (string) $meta['domain'];
+        }
+
+        if (! empty($meta['domain_id'])) {
+            $domain = Domain::query()->find($meta['domain_id']);
+
+            return $domain?->fqdn();
+        }
+
+        if ($this->isContainerHosting()) {
+            $deployment = $this->relationLoaded('containerDeployment')
+                ? $this->containerDeployment
+                : $this->containerDeployment()->with('domains')->first();
+
+            if ($deployment?->domain) {
+                return $deployment->domain;
+            }
+
+            $domains = $deployment?->relationLoaded('domains')
+                ? $deployment->domains
+                : $deployment?->domains;
+
+            $customDomain = $domains?->firstWhere('status', 'active') ?? $domains?->first();
+
+            if ($customDomain?->domain) {
+                return $customDomain->domain;
+            }
+        }
+
+        return null;
+    }
+
     // Scopes
     public function scopeActive($query)
     {

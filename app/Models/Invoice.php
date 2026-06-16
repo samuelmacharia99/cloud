@@ -75,6 +75,26 @@ class Invoice extends Model
         return $this->hasMany(InvoiceItem::class);
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public static function itemDisplayRelations(): array
+    {
+        return [
+            'items.product',
+            'items.domain',
+            'items.service.product',
+            'items.service.containerDeployment.domains',
+        ];
+    }
+
+    public function loadItemsForDisplay(): self
+    {
+        $this->load(self::itemDisplayRelations());
+
+        return $this;
+    }
+
     public function payments()
     {
         return $this->hasMany(Payment::class);

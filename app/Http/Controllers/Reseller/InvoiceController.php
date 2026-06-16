@@ -29,7 +29,7 @@ class InvoiceController extends Controller
     {
         abort_if($invoice->user_id !== auth()->id(), 403);
 
-        $invoice->load('items.product', 'payments');
+        $invoice->loadItemsForDisplay()->load('payments');
         $wallet = $this->walletService->getOrCreate(auth()->user());
         $amountDue = $this->invoicePaymentService->amountDue($invoice);
 

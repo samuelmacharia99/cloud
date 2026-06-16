@@ -260,6 +260,7 @@ class NotificationService
     public function notifyInvoiceGenerated(Invoice $invoice): void
     {
         $invoice->loadMissing('user');
+        $invoice->loadItemsForDisplay();
         $this->telegram()->invoiceGenerated($invoice);
 
         $event = NotificationEvent::InvoiceGenerated;

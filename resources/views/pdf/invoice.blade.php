@@ -299,6 +299,9 @@
                                     <strong>{{ $item->product->name ?? 'Unknown Product' }}</strong><br>
                                 @endif
                                 <small>{{ $item->description }}</small>
+                                @if($attachedDomain = $item->attachedDomainLabel())
+                                    <br><small><strong>Domain:</strong> {{ $attachedDomain }}</small>
+                                @endif
                             </td>
                             <td class="text-right">{{ $item->quantity }}</td>
                             <td class="text-right">Ksh {{ number_format($item->unit_price, 0) }}</td>

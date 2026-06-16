@@ -14,7 +14,7 @@ class InvoicePdfService
      */
     public static function generate(Invoice $invoice): \Barryvdh\DomPDF\PDF
     {
-        $invoice->load('user', 'items.product', 'items.service.product', 'payments', 'credits');
+        $invoice->load('user', 'payments', 'credits')->loadItemsForDisplay();
 
         $amountRemaining = max(0, $invoice->total - $invoice->getAmountPaid() - $invoice->getAppliedCredits());
         $amountPaid = $invoice->getAmountPaid();

@@ -41,7 +41,7 @@ class InvoiceController extends Controller
     {
         $this->authorize('view', $invoice);
 
-        $invoice->load('items.product', 'payments', 'credits');
+        $invoice->loadItemsForDisplay()->load('credits');
 
         return view('customer.invoices.show', [
             'invoice' => $invoice,
