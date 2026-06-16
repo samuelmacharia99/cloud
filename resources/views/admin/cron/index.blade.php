@@ -19,34 +19,59 @@
 
     <div class="p-8 space-y-8">
         @if (!empty($schedulerHealth))
-            <div class="rounded-xl border p-6 {{ ($schedulerHealth['healthy'] ?? false) ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50' }}">
-                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+            <div
+                x-data="{ expanded: {{ ($schedulerHealth['healthy'] ?? false) ? 'false' : 'true' }} }"
+                class="rounded-xl border {{ ($schedulerHealth['healthy'] ?? false) ? 'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900/50' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50' }}"
+            >
+                <button
+                    type="button"
+                    @click="expanded = !expanded"
+                    class="w-full p-6 text-left flex items-center justify-between gap-4"
+                >
                     <div>
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">
                             Scheduler {{ ($schedulerHealth['healthy'] ?? false) ? 'healthy' : 'needs attention' }}
                         </h2>
-                        <ul class="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
-                            <li>Laravel scheduler: <strong>{{ ($schedulerHealth['scheduler_enabled'] ?? false) ? 'enabled' : 'disabled' }}</strong></li>
-                            <li>Heartbeat: <strong>{{ ($schedulerHealth['heartbeat_fresh'] ?? false) ? 'active' : 'missing' }}</strong>
-                                @if ($schedulerHealth['heartbeat_at'] ?? false)
-                                    (last {{ \Carbon\Carbon::parse($schedulerHealth['heartbeat_at'])->diffForHumans() }})
-                                @endif
-                            </li>
-                            <li>Timezone: <strong>{{ $schedulerHealth['cron_timezone'] ?? 'UTC' }}</strong></li>
-                            <li>Enabled jobs: <strong>{{ $schedulerHealth['enabled_jobs'] ?? 0 }}</strong></li>
-                        </ul>
-                        @if (!empty($schedulerHealth['issues']))
-                            <ul class="mt-3 list-disc list-inside text-sm text-amber-900 dark:text-amber-100 space-y-1">
-                                @foreach ($schedulerHealth['issues'] as $issue)
-                                    <li>{{ $issue }}</li>
-                                @endforeach
-                            </ul>
-                        @endif
+                        <p class="text-sm text-slate-700 dark:text-slate-300 mt-1">
+                            Laravel scheduler: <strong>{{ ($schedulerHealth['scheduler_enabled'] ?? false) ? 'enabled' : 'disabled' }}</strong>
+                            · Heartbeat: <strong>{{ ($schedulerHealth['heartbeat_fresh'] ?? false) ? 'active' : 'missing' }}</strong>
+                            · Enabled jobs: <strong>{{ $schedulerHealth['enabled_jobs'] ?? 0 }}</strong>
+                        </p>
                     </div>
-                    <div class="lg:max-w-xl w-full">
-                        <p class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Server crontab entry (run every minute)</p>
-                        <code class="block text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 overflow-x-auto">{{ $schedulerHealth['cron_command'] ?? '' }}</code>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Install with <code class="bg-slate-100 dark:bg-slate-800 px-1 rounded">sudo bash scripts/install-scheduler.sh</code> or add manually to crontab.</p>
+                    <div class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                        <span x-text="expanded ? 'Collapse' : 'Expand'"></span>
+                        <svg class="w-5 h-5 transition-transform" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </button>
+
+                <div x-show="expanded" class="px-6 pb-6">
+                    <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                        <div>
+                            <ul class="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                                <li>Laravel scheduler: <strong>{{ ($schedulerHealth['scheduler_enabled'] ?? false) ? 'enabled' : 'disabled' }}</strong></li>
+                                <li>Heartbeat: <strong>{{ ($schedulerHealth['heartbeat_fresh'] ?? false) ? 'active' : 'missing' }}</strong>
+                                    @if ($schedulerHealth['heartbeat_at'] ?? false)
+                                        (last {{ \Carbon\Carbon::parse($schedulerHealth['heartbeat_at'])->diffForHumans() }})
+                                    @endif
+                                </li>
+                                <li>Timezone: <strong>{{ $schedulerHealth['cron_timezone'] ?? 'UTC' }}</strong></li>
+                                <li>Enabled jobs: <strong>{{ $schedulerHealth['enabled_jobs'] ?? 0 }}</strong></li>
+                            </ul>
+                            @if (!empty($schedulerHealth['issues']))
+                                <ul class="mt-3 list-disc list-inside text-sm text-amber-900 dark:text-amber-100 space-y-1">
+                                    @foreach ($schedulerHealth['issues'] as $issue)
+                                        <li>{{ $issue }}</li>
+                                    @endforeach
+                                </ul>
+                            @endif
+                        </div>
+                        <div class="lg:max-w-xl w-full">
+                            <p class="text-xs font-medium text-slate-600 dark:text-slate-400 mb-2">Server crontab entry (run every minute)</p>
+                            <code class="block text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-3 overflow-x-auto">{{ $schedulerHealth['cron_command'] ?? '' }}</code>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Install with <code class="bg-slate-100 dark:bg-slate-800 px-1 rounded">sudo bash scripts/install-scheduler.sh</code> or add manually to crontab.</p>
+                        </div>
                     </div>
                 </div>
             </div>
