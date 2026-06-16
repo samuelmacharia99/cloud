@@ -47,7 +47,7 @@ class AutoRestartContainersCommand extends BaseCronCommand
                     $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
                     $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r '.[0].State // \"error\"'";
+                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r 'if type==\"array\" then (.[0].State // \"error\") elif type==\"object\" then (.State // \"error\") else \"error\" end'";
                     $status = trim($ssh->exec($statusCmd));
 
                     if ($status !== 'running') {
