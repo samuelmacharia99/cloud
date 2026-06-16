@@ -657,7 +657,9 @@ class DirectAdminCustomerPanelApi
                 $config['ns3'] ?? null,
                 $config['ns4'] ?? null,
             ])),
-            'panel_url' => $this->node->getDirectAdminPanelUrl(),
+            'panel_url' => $domain
+                ? 'https://'.ltrim($domain, '.').':'.($this->node->da_port ?: '2222')
+                : $this->node->getDirectAdminPanelUrl(),
             'webmail_url' => $domain ? 'https://'.ltrim($domain, '.').'/webmail' : null,
         ];
     }

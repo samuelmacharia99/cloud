@@ -196,11 +196,13 @@ class Service extends Model
      */
     public function getHostingCredentials(): ?array
     {
+        $panelUrl = $this->getDirectAdminPanelUrl();
+
         if ($this->credentials) {
             $decoded = json_decode($this->credentials, true);
             if (is_array($decoded) && ! empty($decoded['username'])) {
                 return array_merge($decoded, [
-                    'panel_url' => $this->node?->getDirectAdminPanelUrl(),
+                    'panel_url' => $panelUrl,
                 ]);
             }
         }
@@ -214,13 +216,26 @@ class Service extends Model
             'username' => (string) $meta['username'],
             'password' => (string) $meta['password'],
             'domain' => $meta['domain'] ?? null,
-            'panel_url' => $this->node?->getDirectAdminPanelUrl(),
+            'panel_url' => $panelUrl,
         ];
     }
 
     public function getDirectAdminPanelUrl(): ?string
     {
-        return $this->node?->getDirectAdminPanelUrl();
+        if (! $this->node || $this->node->type !== 'directadmin') {
+            return null;
+        }
+
+        $port = $this->node->da_port ?: '2222';
+
+        if ($this->isSharedHosting()) {
+            $domain = $this->attachedDomainName();
+            if ($domain) {
+                return 'https://'.trim($domain).':'.$port;
+            }
+        }
+
+        return $this->node->getDirectAdminPanelUrl();
     }
 
     /**

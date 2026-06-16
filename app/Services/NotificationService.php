@@ -155,6 +155,24 @@ class NotificationService
         }
     }
 
+    /**
+     * Platform direct customers only — reseller-managed customers are alerted via Telegram/email.
+     */
+    public function shouldNotifyAdminBySmsForCustomer(User $customer): bool
+    {
+        return $customer->reseller_id === null;
+    }
+
+    protected function shouldNotifyAdminBySmsForResellerDomainOrder(ResellerDomainOrder $order, string $stage): bool
+    {
+        if ($order->isPlatformOrder() || $order->isSelfOrder()) {
+            return true;
+        }
+
+        // Reseller's customer placed the order — SMS only when reseller pushes for admin registrar action.
+        return in_array($stage, ['pushed', 'provisioned', 'completed'], true);
+    }
+
     public function notifyAdminResellerDomainOrder(ResellerDomainOrder $order, string $stage, string $paymentMethod = 'awaiting payment'): void
     {
         $this->telegram()->resellerDomainOrder($order, $stage, $paymentMethod);
@@ -208,7 +226,9 @@ class NotificationService
             ]);
         }
 
-        $this->sendAdminSmsAlert($event, $message);
+        if ($this->shouldNotifyAdminBySmsForResellerDomainOrder($order, $stage)) {
+            $this->sendAdminSmsAlert($event, $message);
+        }
     }
 
     public function notifyAdminResellerCustomerInvoiceOrder(
@@ -218,13 +238,12 @@ class NotificationService
         string $summary,
         string $paymentMethod = 'awaiting payment',
     ): void {
+        $this->telegram()->resellerCustomerOrderPlaced($reseller, $customer, $invoice, $summary, $paymentMethod);
+
         $event = NotificationEvent::AdminNewOrder;
         if (! $this->preferences->isGloballyEnabled($event)) {
             return;
         }
-
-        $amount = number_format((float) $invoice->total, 0);
-        $message = "ALERT: Reseller {$reseller->name} ordered {$summary} for customer {$customer->name}. Invoice {$invoice->invoice_number}. KES {$amount}. Payment: ".ucfirst($paymentMethod).'.';
 
         $this->emailDelivery->sendTemplated(null, $event, [
             'order_number' => $invoice->invoice_number,
@@ -232,8 +251,6 @@ class NotificationService
             'payment_method' => ucfirst($paymentMethod),
             'amount' => 'KES '.number_format((float) $invoice->total, 2),
         ]);
-
-        $this->sendAdminSmsAlert($event, $message);
     }
 
     public function notifyAdminDomainRenewalPushed(DomainRenewalOrder $renewalOrder, Order $adminOrder, Invoice $adminInvoice): void
@@ -606,7 +623,9 @@ class NotificationService
                 'amount' => 'KES '.number_format($invoice->total, 0),
             ], 'ALERT: New order #'.$order->order_number.' from '.$customerName.'. Payment: '.ucfirst($paymentMethod).'. Amount: KES '.number_format($invoice->total, 0).'.');
 
-            $this->sendAdminSmsAlert($adminEvent, $adminMessage);
+            if ($this->shouldNotifyAdminBySmsForCustomer($order->user)) {
+                $this->sendAdminSmsAlert($adminEvent, $adminMessage);
+            }
         }
 
         if ($order->user->phone && $this->preferences->isSmsEnabledForUser($order->user, $customerEvent)) {

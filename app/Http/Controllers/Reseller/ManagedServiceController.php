@@ -77,9 +77,7 @@ class ManagedServiceController extends Controller
             'username' => $meta['username'] ?? $service->credentials['username'] ?? null,
             'domain' => $meta['domain'] ?? null,
             'ip_address' => $meta['ip_address'] ?? null,
-            'panel_url' => $driver === 'directadmin' && ! empty($meta['domain'])
-                ? 'https://'.$meta['domain'].':2222'
-                : null,
+            'panel_url' => $service->getDirectAdminPanelUrl(),
             'container_deployment' => $service->containerDeployment?->id,
         ];
     }

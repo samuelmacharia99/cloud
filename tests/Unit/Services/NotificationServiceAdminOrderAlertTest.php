@@ -146,4 +146,63 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
 
         app(NotificationService::class)->notifyAdminResellerDomainOrder($order, 'pushed');
     }
+
+    public function test_notify_new_order_skips_admin_sms_for_reseller_customer(): void
+    {
+        $this->createAdminWithPhones();
+        $reseller = User::factory()->reseller()->create(['name' => 'Beta Reseller']);
+        $customer = User::factory()->customer()->create([
+            'name' => 'Reseller Client',
+            'reseller_id' => $reseller->id,
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'total' => 2500,
+        ]);
+
+        $order = Order::create([
+            'user_id' => $customer->id,
+            'invoice_id' => $invoice->id,
+            'order_number' => 'ORD-RESELLER-1',
+            'status' => 'pending',
+            'payment_status' => 'unpaid',
+            'subtotal' => 2500,
+            'tax' => 0,
+            'total' => 2500,
+        ]);
+
+        $sms = Mockery::mock(SmsService::class);
+        $sms->shouldReceive('isConfigured')->andReturn(true);
+        $sms->shouldReceive('send')->never();
+        $this->app->instance(SmsService::class, $sms);
+
+        app(NotificationService::class)->notifyNewOrder($order, $invoice, 'awaiting payment');
+    }
+
+    public function test_notify_reseller_customer_domain_placed_skips_admin_sms(): void
+    {
+        $this->createAdminWithPhones();
+        $reseller = User::factory()->reseller()->create(['name' => 'Gamma Reseller']);
+        $customer = User::factory()->create(['name' => 'Domain Client', 'reseller_id' => $reseller->id]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'domain_name' => 'client',
+            'extension' => '.co.ke',
+            'years' => 1,
+            'wholesale_amount' => 1200,
+            'retail_amount' => 1800,
+            'status' => 'queued',
+            'queued_at' => now(),
+        ]);
+
+        $sms = Mockery::mock(SmsService::class);
+        $sms->shouldReceive('isConfigured')->andReturn(true);
+        $sms->shouldReceive('send')->never();
+        $this->app->instance(SmsService::class, $sms);
+
+        app(NotificationService::class)->notifyAdminResellerDomainOrder($order, 'placed', 'awaiting payment');
+    }
 }

@@ -125,7 +125,8 @@ class TelegramMonitorService
         ];
 
         if ($user->reseller_id) {
-            $fields['Reseller ID'] = (string) $user->reseller_id;
+            $reseller = $user->relationLoaded('reseller') ? $user->reseller : $user->reseller()->first();
+            $fields['Managed by reseller'] = $reseller?->name ?? 'Reseller #'.$user->reseller_id;
         }
 
         if ($user->is_reseller) {

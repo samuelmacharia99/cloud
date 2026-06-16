@@ -130,19 +130,71 @@ class TelegramMonitorBridge
 
     public function orderPlaced(Order $order, Invoice $invoice, string $paymentMethod = 'unknown'): void
     {
-        $order->loadMissing('user', 'items');
-        $invoice->loadMissing('user');
+        $order->loadMissing('user', 'items.product');
+        $invoice->loadMissing('user', 'items');
+
+        $customer = $order->user ?? $invoice->user;
+        $itemSummary = $invoice->items
+            ->take(3)
+            ->map(fn ($item) => $item->description ?: ($item->product?->name ?? 'Item'))
+            ->implode('; ');
+
+        if ($invoice->items->count() > 3) {
+            $itemSummary .= ' (+'.($invoice->items->count() - 3).' more)';
+        }
+
+        $isResellerCustomer = (bool) $customer?->reseller_id;
+        $reseller = $isResellerCustomer ? $customer->reseller()->first() : null;
+
+        $summary = $isResellerCustomer
+            ? "A customer of reseller {$reseller?->name} placed an order. The reseller manages billing and provisioning — no admin SMS was sent."
+            : 'A direct platform customer placed an order. Review payment and provision services as needed.';
+
+        $nextStep = match (true) {
+            $paymentMethod === 'manual' => 'Customer will submit bank transfer proof. Approve manual payment when received.',
+            $paymentMethod === 'awaiting payment' => 'Waiting for customer payment before provisioning.',
+            default => 'Payment is being processed. Service will provision automatically when payment completes.',
+        };
 
         $this->monitor->alert(
             TelegramMonitorCategory::Orders,
-            'New order placed',
-            array_merge($this->monitor->userContext($order->user ?? $invoice->user), [
-                'Order ID' => (string) $order->id,
+            $isResellerCustomer ? 'Reseller customer order placed' : 'Platform customer order placed',
+            array_merge($this->monitor->userContext($customer), [
+                'Order' => $order->order_number,
                 'Invoice' => $invoice->invoice_number,
                 'Total' => 'KES '.number_format((float) $invoice->total, 2),
-                'Items' => (string) $order->items->count(),
-                'Payment method' => $paymentMethod,
+                'Payment' => ucfirst(str_replace('_', ' ', $paymentMethod)),
+                'Items' => $itemSummary ?: (string) $order->items->count().' item(s)',
+                'Summary' => $summary,
+                'Next step' => $nextStep,
             ]),
+        );
+    }
+
+    public function resellerCustomerOrderPlaced(
+        User $reseller,
+        User $customer,
+        Invoice $invoice,
+        string $summary,
+        string $paymentMethod = 'awaiting payment',
+    ): void {
+        $this->monitor->alert(
+            TelegramMonitorCategory::Resellers,
+            'Reseller placed order for customer',
+            [
+                'Reseller' => $reseller->name,
+                'Reseller email' => $reseller->email,
+                'Customer' => $customer->name,
+                'Customer email' => $customer->email,
+                'Invoice' => $invoice->invoice_number,
+                'Total' => 'KES '.number_format((float) $invoice->total, 2),
+                'Service' => Str::limit($summary, 200),
+                'Payment' => ucfirst(str_replace('_', ' ', $paymentMethod)),
+                'Summary' => 'The reseller created or billed a service for their customer. The reseller handles customer support and billing — admin action is usually not required.',
+                'Next step' => $paymentMethod === 'paid'
+                    ? 'Reseller has paid or marked paid. Provisioning runs under the reseller account.'
+                    : 'Awaiting reseller or customer payment on invoice '.$invoice->invoice_number.'.',
+            ],
         );
     }
 
@@ -255,35 +307,148 @@ class TelegramMonitorBridge
     {
         $order->loadMissing('reseller', 'customer');
 
+        $paymentLabel = ucfirst(str_replace('_', ' ', $paymentMethod));
+        $typeLabel = $order->isTransfer() ? 'Transfer' : 'Registration';
+        $years = $order->years.' year(s)';
+
         if ($order->isPlatformOrder()) {
+            [$summary, $nextStep] = $this->platformDomainOrderContext($order, $stage, $paymentLabel);
+
             $this->monitor->alert(
                 TelegramMonitorCategory::Orders,
-                'Platform domain order '.$stage,
+                'Platform domain order: '.$this->domainOrderStageLabel($stage),
                 [
                     'Domain' => $order->fullDomainName(),
+                    'Type' => $typeLabel,
+                    'Period' => $years,
                     'Customer' => $order->customer?->name ?? '—',
+                    'Customer email' => $order->customer?->email ?? '—',
                     'Amount' => 'KES '.number_format($order->displayAmount(), 2),
-                    'Payment' => $paymentMethod,
+                    'Payment' => $paymentLabel,
+                    'Order status' => $order->statusDisplayLabel(),
                     'Order ID' => (string) $order->id,
+                    'Summary' => $summary,
+                    'Next step' => $nextStep,
                 ],
             );
 
             return;
         }
 
+        [$summary, $nextStep] = $this->resellerDomainOrderContext($order, $stage, $paymentLabel);
+
         $this->monitor->alert(
             TelegramMonitorCategory::Resellers,
-            'Reseller domain order '.$stage,
+            'Reseller domain order: '.$this->domainOrderStageLabel($stage),
             [
                 'Domain' => $order->fullDomainName(),
+                'Type' => $typeLabel,
+                'Period' => $years,
                 'Reseller' => $order->reseller?->name ?? '—',
+                'Reseller email' => $order->reseller?->email ?? '—',
                 'Customer' => $order->customer?->name ?? '—',
                 'Wholesale' => 'KES '.number_format((float) $order->wholesale_amount, 2),
                 'Retail' => 'KES '.number_format((float) $order->retail_amount, 2),
-                'Payment' => $paymentMethod,
+                'Payment' => $paymentLabel,
+                'Order status' => ucfirst($order->status),
                 'Order ID' => (string) $order->id,
+                'Summary' => $summary,
+                'Next step' => $nextStep,
             ],
         );
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function platformDomainOrderContext(ResellerDomainOrder $order, string $stage, string $paymentLabel): array
+    {
+        return match ($stage) {
+            'placed' => [
+                'A platform customer started a domain '.($order->order_type?->value ?? 'registration').' for '.$order->fullDomainName().'.',
+                $paymentLabel === 'Awaiting payment'
+                    ? 'Customer must pay their invoice. After payment the order moves to Ready for registrar.'
+                    : 'Confirm payment, then use Push to registrar at Openprovider.',
+            ],
+            'customer_paid', 'pushed' => [
+                'Customer paid Talksasa directly for '.$order->fullDomainName().'. No reseller wallet is involved.',
+                'Open Admin → Domain orders → Push to registrar. Ensure Openprovider balance and contracts are in place.',
+            ],
+            'provisioned', 'completed' => [
+                'Domain '.$order->fullDomainName().' was registered successfully for platform customer '.$order->customer?->name.'.',
+                'No further action unless the customer reports DNS or transfer issues.',
+            ],
+            'failed' => [
+                'Registrar rejected or failed registration for '.$order->fullDomainName().'.',
+                'Check failure reason on the order, fix Openprovider settings, then retry Push to registrar.',
+            ],
+            default => [
+                'Platform domain order update for '.$order->fullDomainName().' (stage: '.$stage.').',
+                'Review the order in Admin → Domain orders.',
+            ],
+        };
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function resellerDomainOrderContext(ResellerDomainOrder $order, string $stage, string $paymentLabel): array
+    {
+        if ($order->isSelfOrder()) {
+            return match ($stage) {
+                'placed' => [
+                    'Reseller '.$order->reseller?->name.' ordered '.$order->fullDomainName().' for their own account.',
+                    'Reseller will pay wholesale and push to admin when ready.',
+                ],
+                'pushed' => [
+                    'Reseller pushed '.$order->fullDomainName().' for registrar fulfillment.',
+                    'Admin: Push to registrar at Openprovider.',
+                ],
+                default => [
+                    'Reseller self-order update for '.$order->fullDomainName().'.',
+                    'Review in Admin → Domain orders.',
+                ],
+            };
+        }
+
+        return match ($stage) {
+            'placed' => [
+                'Customer '.$order->customer?->name.' (under reseller '.$order->reseller?->name.') placed a domain order. Admin SMS is not sent for reseller customer orders.',
+                'Reseller collects retail payment, pays wholesale, then pushes to admin when funded.',
+            ],
+            'customer_paid' => [
+                'Reseller customer paid for '.$order->fullDomainName().'. The reseller must fund wholesale and push the order.',
+                'No admin action until the reseller pushes — watch for a pushed notification.',
+            ],
+            'pushed' => [
+                'Reseller '.$order->reseller?->name.' pushed '.$order->fullDomainName().' for customer '.$order->customer?->name.'. Wholesale is on file.',
+                'Admin: Push to registrar at Openprovider to complete registration.',
+            ],
+            'provisioned', 'completed' => [
+                'Domain '.$order->fullDomainName().' completed for reseller customer '.$order->customer?->name.'.',
+                'Reseller handles customer communication. No admin action required.',
+            ],
+            'failed' => [
+                'Registrar failed for '.$order->fullDomainName().' (reseller '.$order->reseller?->name.').',
+                'Fix Openprovider issue and retry Push to registrar, or mark failed and notify reseller.',
+            ],
+            default => [
+                'Reseller domain order update for '.$order->fullDomainName().'.',
+                'Review in Admin → Domain orders.',
+            ],
+        };
+    }
+
+    private function domainOrderStageLabel(string $stage): string
+    {
+        return match ($stage) {
+            'placed' => 'placed',
+            'customer_paid' => 'customer paid',
+            'pushed' => 'ready for registrar',
+            'provisioned', 'completed' => 'completed',
+            'failed' => 'failed',
+            default => $stage,
+        };
     }
 
     public function walletTopup(User $reseller, float $amount, float $balanceAfter, string $source = 'top-up'): void
