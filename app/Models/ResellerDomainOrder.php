@@ -250,6 +250,51 @@ class ResellerDomainOrder extends Model
             : ($this->reseller?->name ?? '—');
     }
 
+    public function adminPrepareButtonLabel(): string
+    {
+        return $this->isPlatformOrder() ? 'Prepare for registrar' : 'Push to admin';
+    }
+
+    public function adminPrepareConfirmMessage(): string
+    {
+        if ($this->isPlatformOrder()) {
+            return "Prepare {$this->fullDomainName()} for registrar submission? Customer payment is on file.";
+        }
+
+        if ($this->hasPaidWholesaleInvoice()) {
+            return "Push {$this->fullDomainName()} to admin for registration? Wholesale invoice is already paid — no wallet debit.";
+        }
+
+        return "Push {$this->fullDomainName()} to admin for registration? Uses reseller wallet if no paid invoice is on file.";
+    }
+
+    public function adminPrepareButtonTitle(): string
+    {
+        if ($this->isPlatformOrder()) {
+            return 'Prepare for registrar (customer paid directly to platform)';
+        }
+
+        if ($this->hasPaidWholesaleInvoice()) {
+            return 'Push to admin (wholesale invoice paid — no wallet debit)';
+        }
+
+        return 'Push to admin (uses wallet if wholesale invoice not paid)';
+    }
+
+    public function statusDisplayLabel(): string
+    {
+        return match (true) {
+            $this->isPlatformOrder() && $this->status === 'pushed' => 'Ready for registrar',
+            $this->isPlatformOrder() && $this->status === 'queued' && $this->hasPaidCustomerInvoice() => 'Paid — awaiting preparation',
+            default => ucfirst($this->status),
+        };
+    }
+
+    public function timelinePushedLabel(): string
+    {
+        return $this->isPlatformOrder() ? 'Ready for registrar' : 'Pushed';
+    }
+
     public function customerLabel(): string
     {
         if ($this->isPlatformOrder()) {

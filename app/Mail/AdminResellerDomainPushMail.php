@@ -20,8 +20,10 @@ class AdminResellerDomainPushMail extends Mailable implements ShouldQueue
 
     public function envelope(): Envelope
     {
+        $prefix = $this->order->isPlatformOrder() ? 'Platform domain order' : 'Reseller domain order';
+
         return new Envelope(
-            subject: 'Reseller domain order - '.$this->order->domain_name.$this->order->extension,
+            subject: $prefix.' - '.$this->order->fullDomainName(),
         );
     }
 

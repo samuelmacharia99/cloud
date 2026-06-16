@@ -255,6 +255,22 @@ class TelegramMonitorBridge
     {
         $order->loadMissing('reseller', 'customer');
 
+        if ($order->isPlatformOrder()) {
+            $this->monitor->alert(
+                TelegramMonitorCategory::Orders,
+                'Platform domain order '.$stage,
+                [
+                    'Domain' => $order->fullDomainName(),
+                    'Customer' => $order->customer?->name ?? '—',
+                    'Amount' => 'KES '.number_format($order->displayAmount(), 2),
+                    'Payment' => $paymentMethod,
+                    'Order ID' => (string) $order->id,
+                ],
+            );
+
+            return;
+        }
+
         $this->monitor->alert(
             TelegramMonitorCategory::Resellers,
             'Reseller domain order '.$stage,

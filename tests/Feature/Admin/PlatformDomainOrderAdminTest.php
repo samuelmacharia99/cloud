@@ -51,4 +51,32 @@ class PlatformDomainOrderAdminTest extends TestCase
             ->assertSee('directbuy.co.ke')
             ->assertSee('Platform (direct)');
     }
+
+    public function test_platform_order_uses_platform_labels_not_reseller_push_wording(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_name' => 'platformlabel',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1650,
+            'retail_amount' => 0,
+            'status' => 'pushed',
+            'pushed_at' => now(),
+        ]);
+
+        $this->assertSame('Prepare for registrar', $order->adminPrepareButtonLabel());
+        $this->assertSame('Ready for registrar', $order->statusDisplayLabel());
+
+        $this->actingAs($admin)
+            ->get(route('admin.domain-orders.show', $order))
+            ->assertOk()
+            ->assertSee('Platform direct customer')
+            ->assertSee('Ready for registrar')
+            ->assertDontSee('Push to admin', false);
+    }
 }

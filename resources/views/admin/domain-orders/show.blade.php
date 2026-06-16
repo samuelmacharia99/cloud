@@ -19,7 +19,7 @@
             'expired' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
             default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
         } }}">
-            {{ ucfirst($order->status) }}
+            {{ $order->statusDisplayLabel() }}
         </span>
     </div>
 
@@ -89,11 +89,12 @@
                 <p class="font-semibold text-slate-900 dark:text-white text-lg">{{ $order->years }} Year(s)</p>
             </div>
             <div>
-                <p class="text-sm text-slate-600 dark:text-slate-400">Wholesale Amount</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400">{{ $order->isPlatformOrder() ? 'Registration cost' : 'Wholesale Amount' }}</p>
                 <p class="font-semibold text-slate-900 dark:text-white text-lg">KES {{ number_format($order->wholesale_amount, 2) }}</p>
             </div>
         </div>
 
+        @unless($order->isPlatformOrder())
         <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
                 <p class="text-sm text-slate-600 dark:text-slate-400">Retail Amount</p>
@@ -116,6 +117,20 @@
             </div>
             @endif
         </div>
+        @else
+        <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Customer paid</p>
+                <p class="font-semibold text-slate-900 dark:text-white text-lg">KES {{ number_format($order->displayAmount(), 2) }}</p>
+            </div>
+            @if($paidCustomerInvoice = $order->paidCustomerInvoice())
+            <div>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Payment invoice</p>
+                <p class="font-semibold text-emerald-600 dark:text-emerald-400 text-lg">{{ $paidCustomerInvoice->invoice_number }}</p>
+            </div>
+            @endif
+        </div>
+        @endunless
     </div>
 
     @if($order->isTransfer())
@@ -186,7 +201,7 @@
             @endif
             @if($order->pushed_at)
             <div class="flex gap-4">
-                <div class="text-sm font-semibold text-slate-600 dark:text-slate-400 w-24">Pushed</div>
+                <div class="text-sm font-semibold text-slate-600 dark:text-slate-400 w-24">{{ $order->timelinePushedLabel() }}</div>
                 <div class="text-sm text-slate-900 dark:text-white">{{ $order->pushed_at->format('M d, Y H:i') }}</div>
             </div>
             @endif
@@ -219,7 +234,13 @@
 
     @if($order->status === 'queued')
     <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
-        @if($order->hasPaidWholesaleInvoice())
+        @if($order->isPlatformOrder())
+            @if($order->hasPaidCustomerInvoice())
+                <strong>Customer paid</strong> — this is a direct platform order (no reseller). Use <strong>Prepare for registrar</strong>, then <strong>Push to registrar</strong> at Openprovider.
+            @else
+                <strong>Queued</strong> — waiting for the customer to pay their domain invoice.
+            @endif
+        @elseif($order->hasPaidWholesaleInvoice())
             <strong>Queued</strong> — wholesale invoice is <strong>paid</strong> (M-Pesa/card/bank, not wallet). You can <strong>Complete</strong> directly or use <strong>Push to admin</strong> first; no wallet debit is required.
         @else
             <strong>Queued</strong> — waiting for reseller wallet funds or wholesale payment. Use <strong>Push to admin</strong> when ready (wallet debit) or after the reseller pays their invoice.
@@ -231,8 +252,10 @@
     <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-900 dark:text-violet-200">
         @if($order->status === 'failed')
             <strong>Failed</strong> — registrar submission did not complete. Top up Openprovider balance, verify contact handles, then use <strong>Push to registrar</strong> to retry.
+        @elseif($order->isPlatformOrder())
+            <strong>Ready for registrar</strong> — customer paid Talksasa directly. Use <strong>Push to registrar</strong> to register or transfer at Openprovider.
         @else
-            <strong>Pushed</strong> — ready for registrar API. Use <strong>Push to registrar</strong> to register or transfer at Openprovider (e.g. after topping up balance).
+            <strong>Pushed</strong> — reseller submitted this order. Use <strong>Push to registrar</strong> to register or transfer at Openprovider (e.g. after topping up balance).
         @endif
     </div>
     @endif
@@ -242,12 +265,12 @@
         <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Quick Actions</h3>
         <div class="flex flex-wrap items-center gap-2">
             @if($order->canAdminPush())
-            <form method="POST" action="{{ route('admin.domain-orders.push', $order) }}" data-confirm="Push this domain order to admin for registration?">
+            <form method="POST" action="{{ route('admin.domain-orders.push', $order) }}" data-confirm="{{ $order->adminPrepareConfirmMessage() }}">
                 @csrf
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" title="Push to admin queue">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition" title="{{ $order->adminPrepareButtonTitle() }}">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                    Push to admin
+                    {{ $order->adminPrepareButtonLabel() }}
                 </button>
             </form>
             @endif

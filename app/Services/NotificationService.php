@@ -186,11 +186,14 @@ class NotificationService
             'provisioned' => $order->isPlatformOrder()
                 ? "ALERT: Platform domain {$domain} registered for {$order->customer->name}. Amount: KES ".number_format($order->displayAmount(), 0).'.'
                 : "ALERT: Reseller {$order->reseller->name} registered {$domain} for {$order->customer->name} (no customer invoice). Wholesale: KES {$wholesale}.",
+            'completed' => $order->isPlatformOrder()
+                ? "ALERT: Platform domain {$domain} registered for {$order->customer->name}. Amount: KES ".number_format($order->displayAmount(), 0).'.'
+                : "ALERT: Domain {$domain} registered for {$order->customer->name} via reseller {$order->reseller->name}. Wholesale: KES {$wholesale}.",
             default => "ALERT: Domain order update for {$domain} ({$stage}).",
         };
 
         if ($stage === 'pushed') {
-            $subject = 'Reseller domain order - '.$domain;
+            $subject = ($order->isPlatformOrder() ? 'Platform domain order' : 'Reseller domain order').' - '.$domain;
             $this->emailDelivery->sendToAdmins(new AdminResellerDomainPushMail($order), $subject, $event);
         } elseif ($this->preferences->isGloballyEnabled(NotificationEvent::AdminNewOrder)) {
             $this->emailDelivery->sendTemplated(null, NotificationEvent::AdminNewOrder, [

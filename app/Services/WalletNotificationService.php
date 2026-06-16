@@ -201,7 +201,7 @@ class WalletNotificationService
                 }
             }
 
-            $this->notificationService->notifyAdminResellerDomainOrder($order, 'completed');
+            $this->notificationService->notifyAdminResellerDomainOrder($order, 'provisioned');
 
             return;
         }

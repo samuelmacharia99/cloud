@@ -59,7 +59,7 @@
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Domain</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Reseller</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Channel</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Customer</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
                         <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Amount</th>
@@ -100,7 +100,7 @@
                                     'expired' => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
                                     default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',
                                 } }}">
-                                    {{ ucfirst($order->status) }}
+                                    {{ $order->statusDisplayLabel() }}
                                 </span>
                                 @if($order->status === 'queued' && $order->hasPaidWholesaleInvoice())
                                     <span class="text-xs text-emerald-600 dark:text-emerald-400">Wholesale paid</span>

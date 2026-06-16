@@ -19,7 +19,7 @@
             method="POST"
             action="{{ route('admin.domain-orders.push', $order) }}"
             class="inline"
-            data-confirm="Push {{ $order->fullDomainName() }} to admin for registration?@if($order->isPlatformOrder()) Customer payment is on file.@elseif($order->hasPaidWholesaleInvoice()) Wholesale invoice is already paid — no wallet debit.@else Uses reseller wallet if no paid invoice is on file.@endif"
+            data-confirm="{{ $order->adminPrepareConfirmMessage() }}"
         >
             @csrf
             @foreach ($filterQuery as $key => $value)
@@ -28,7 +28,7 @@
             <button
                 type="submit"
                 class="action-icon-btn text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                title="@if($order->isPlatformOrder()) Push to admin (customer paid) @elseif($order->hasPaidWholesaleInvoice()) Push to admin (wholesale invoice paid — no wallet debit) @else Push to admin (uses wallet if wholesale invoice not paid) @endif"
+                title="{{ $order->adminPrepareButtonTitle() }}"
             >
                 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
