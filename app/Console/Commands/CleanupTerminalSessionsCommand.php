@@ -3,20 +3,17 @@
 namespace App\Console\Commands;
 
 use App\Services\Terminal\ContainerTerminalService;
-use Illuminate\Console\Command;
 
-class CleanupTerminalSessionsCommand extends Command
+class CleanupTerminalSessionsCommand extends BaseCronCommand
 {
     protected $signature = 'terminal:cleanup';
 
     protected $description = 'Clean up expired container terminal sessions';
 
-    public function handle()
+    protected function handleCron(): string
     {
-        $service = new ContainerTerminalService();
-        $service->cleanupExpiredSessions();
+        app(ContainerTerminalService::class)->cleanupExpiredSessions();
 
-        $this->info('Terminal session cleanup completed successfully');
-        return 0;
+        return 'Terminal session cleanup completed successfully';
     }
 }

@@ -4,15 +4,17 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use App\Services\DomainPushService;
-use Illuminate\Console\Command;
 
-class ProcessQueuedDomainOrdersCommand extends Command
+class ProcessQueuedDomainOrdersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:process-queued-domain-orders';
+
     protected $description = 'Process queued domain orders when resellers have sufficient funds';
 
-    public function handle(DomainPushService $domainPushService): int
+    protected function handleCron(): string
     {
+        $domainPushService = app(DomainPushService::class);
+
         $resellers = User::where('is_reseller', true)
             ->whereHas('domainOrders', function ($query) {
                 $query->where('status', 'queued')
@@ -31,9 +33,6 @@ class ProcessQueuedDomainOrdersCommand extends Command
             }
         }
 
-        $message = "{$totalPushed} domain order(s) pushed from {$resellersProcessed} reseller(s)";
-        $this->info($message);
-
-        return self::SUCCESS;
+        return "{$totalPushed} domain order(s) pushed from {$resellersProcessed} reseller(s)";
     }
 }

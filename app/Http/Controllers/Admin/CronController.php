@@ -5,13 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CronJob;
 use App\Models\CronJobLog;
+use App\Services\Cron\SchedulerHealthService;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
 class CronController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, SchedulerHealthService $healthService)
     {
         $jobs = CronJob::withCount([
             'logs as logs_24h' => fn ($q) => $q->where('started_at', '>=', now()->subDay()),
@@ -28,14 +29,12 @@ class CronController extends Controller
             'failed_runs_24h' => CronJobLog::where('started_at', '>=', now()->subDay())->where('status', 'failed')->count(),
         ];
 
-        // Build 24h chart data: group logs by hour for system-wide performance
-        $logs24h = CronJobLog::where('started_at', '>=', now()->subDay())
-            ->with('cronJob')
-            ->get();
+        $logs24h = CronJobLog::where('started_at', '>=', now()->subDay())->get();
 
         $chartData = $this->buildChartData($logs24h);
+        $schedulerHealth = $healthService->status();
 
-        return view('admin.cron.index', compact('jobs', 'stats', 'chartData'));
+        return view('admin.cron.index', compact('jobs', 'stats', 'chartData', 'schedulerHealth'));
     }
 
     public function show(CronJob $job)
@@ -114,13 +113,25 @@ class CronController extends Controller
                 'output' => $e->getMessage(),
             ], 500);
         } finally {
+            $job->refreshNextRunAt();
             config(['telegram.cron_manual_run' => false]);
         }
+    }
+
+    public function chart()
+    {
+        $logs24h = CronJobLog::where('started_at', '>=', now()->subDay())->get();
+
+        return response()->json($this->buildChartData($logs24h));
     }
 
     public function toggle(CronJob $job)
     {
         $job->update(['enabled' => ! $job->enabled]);
+
+        if ($job->enabled) {
+            $job->refreshNextRunAt();
+        }
 
         return back()->with('success', $job->enabled
             ? "Cron job '{$job->name}' enabled."

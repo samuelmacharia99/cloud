@@ -157,6 +157,10 @@ class CronHelper
             }
         }
 
+        if (! config('scheduler.enabled')) {
+            $errors[] = 'Laravel scheduler is disabled — set SCHEDULER_ENABLED=true in .env';
+        }
+
         return [
             'valid' => count($errors) === 0,
             'message' => count($errors) === 0

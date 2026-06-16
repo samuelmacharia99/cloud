@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
@@ -21,7 +22,7 @@ class ApplicationSchedule
         }
 
         $this->registerDatabaseJobs($schedule);
-        $this->registerSystemJobs($schedule);
+        $this->registerHeartbeat($schedule);
 
         $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
     }
@@ -45,6 +46,10 @@ class ApplicationSchedule
                 continue;
             }
 
+            if (! $job->next_run_at) {
+                $job->refreshNextRunAt();
+            }
+
             $event = $schedule->command($job->command)
                 ->cron($job->schedule)
                 ->name($job->name)
@@ -60,33 +65,17 @@ class ApplicationSchedule
         }
     }
 
-    private function registerSystemJobs(Schedule $schedule): void
+    private function registerHeartbeat(Schedule $schedule): void
     {
-        $health = $schedule->command('cron:check-health')
-            ->everyFiveMinutes()
-            ->withoutOverlapping(5)
-            ->name('Cron Health Check');
-
-        $terminal = $schedule->command('terminal:cleanup')
-            ->everyFiveMinutes()
-            ->withoutOverlapping(5)
-            ->name('Terminal Session Cleanup');
-
-        $registrarSync = $schedule->command('registrar:sync-domains')
-            ->everyFifteenMinutes()
-            ->withoutOverlapping(10)
-            ->name('Registrar Domain Status Sync');
-
-        $telegramLogs = $schedule->command('telegram:monitor-logs')
+        $heartbeat = $schedule->call(function () {
+            Cache::put('scheduler.last_heartbeat', now()->toIso8601String(), now()->addMinutes(5));
+        })
             ->everyMinute()
-            ->withoutOverlapping(2)
-            ->name('Telegram Log Monitor');
+            ->name('Scheduler Heartbeat')
+            ->withoutOverlapping(1);
 
         if (config('scheduler.use_on_one_server')) {
-            $health->onOneServer();
-            $terminal->onOneServer();
-            $registrarSync->onOneServer();
-            $telegramLogs->onOneServer();
+            $heartbeat->onOneServer();
         }
     }
 

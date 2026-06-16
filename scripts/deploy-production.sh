@@ -56,6 +56,7 @@ php artisan view:cache
 
 log "Syncing allowlisted seeders (cron jobs, new settings keys, notification templates)"
 php artisan db:seed --class=CronJobSeeder --force
+php artisan cron:refresh-schedules
 php artisan db:seed --class=SettingSeeder --force
 php artisan db:seed --class=EmailTemplateSeeder --force
 php artisan db:seed --class=SmsTemplateSeeder --force

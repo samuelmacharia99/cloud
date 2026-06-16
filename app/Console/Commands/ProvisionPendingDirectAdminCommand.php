@@ -5,18 +5,17 @@ namespace App\Console\Commands;
 use App\Models\Service;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
-use Illuminate\Console\Command;
 
-class ProvisionPendingDirectAdminCommand extends Command
+class ProvisionPendingDirectAdminCommand extends BaseCronCommand
 {
     protected $signature = 'directadmin:provision-pending {--limit=25 : Maximum services to attempt}';
 
     protected $description = 'Retry provisioning for pending or failed DirectAdmin shared hosting services with paid invoices';
 
-    public function handle(
-        InvoiceProvisioningService $invoiceProvisioning,
-        ProvisioningService $provisioningService,
-    ): int {
+    protected function handleCron(): string
+    {
+        $invoiceProvisioning = app(InvoiceProvisioningService::class);
+        $provisioningService = app(ProvisioningService::class);
         $limit = (int) $this->option('limit');
 
         $services = Service::query()
@@ -48,8 +47,6 @@ class ProvisionPendingDirectAdminCommand extends Command
             }
         }
 
-        $this->info("Attempted {$attempted} DirectAdmin services, provisioned {$provisioned}.");
-
-        return Command::SUCCESS;
+        return "Attempted {$attempted} DirectAdmin services, provisioned {$provisioned}.";
     }
 }

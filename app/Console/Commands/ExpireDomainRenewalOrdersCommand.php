@@ -4,17 +4,16 @@ namespace App\Console\Commands;
 
 use App\Models\DomainRenewalOrder;
 use App\Services\DomainRenewalService;
-use Illuminate\Console\Command;
 
-class ExpireDomainRenewalOrdersCommand extends Command
+class ExpireDomainRenewalOrdersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:expire-domain-renewal-orders';
 
     protected $description = 'Expire pending domain renewal orders that have passed their expiration window';
 
-    public function handle()
+    protected function handleCron(): string
     {
-        $renewalService = new DomainRenewalService();
+        $renewalService = new DomainRenewalService;
         $expiredOrders = DomainRenewalOrder::where('status', 'pending')
             ->where('expires_at', '<=', now())
             ->get();
@@ -24,11 +23,9 @@ class ExpireDomainRenewalOrdersCommand extends Command
         }
 
         if ($expiredOrders->count() > 0) {
-            $this->info("Expired {$expiredOrders->count()} domain renewal orders");
-        } else {
-            $this->info('No domain renewal orders to expire');
+            return "Expired {$expiredOrders->count()} domain renewal orders";
         }
 
-        return Command::SUCCESS;
+        return 'No domain renewal orders to expire';
     }
 }

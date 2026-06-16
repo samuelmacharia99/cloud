@@ -4,15 +4,17 @@ namespace App\Console\Commands;
 
 use App\Models\ResellerWallet;
 use App\Services\WalletNotificationService;
-use Illuminate\Console\Command;
 
-class WalletLowBalanceAlertsCommand extends Command
+class WalletLowBalanceAlertsCommand extends BaseCronCommand
 {
     protected $signature = 'cron:wallet-low-balance-alerts';
+
     protected $description = 'Send low balance alerts for reseller wallets that have insufficient funds';
 
-    public function handle(WalletNotificationService $notificationService): int
+    protected function handleCron(): string
     {
+        $notificationService = app(WalletNotificationService::class);
+
         $wallets = ResellerWallet::where('balance', '<', \DB::raw('low_balance_threshold'))
             ->where('status', 'active')
             ->get();
@@ -33,9 +35,6 @@ class WalletLowBalanceAlertsCommand extends Command
             }
         }
 
-        $message = "{$alertsSent} low balance alert(s) sent, {$alreadyNotified} already notified within 24h";
-        $this->info($message);
-
-        return self::SUCCESS;
+        return "{$alertsSent} low balance alert(s) sent, {$alreadyNotified} already notified within 24h";
     }
 }

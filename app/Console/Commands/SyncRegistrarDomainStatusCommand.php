@@ -9,25 +9,24 @@ use App\Models\ResellerDomainOrder;
 use App\Services\DomainPushService;
 use App\Services\DomainTransferService;
 use App\Services\Registrar\RegistrarFulfillmentService;
-use Illuminate\Console\Command;
 
-class SyncRegistrarDomainStatusCommand extends Command
+class SyncRegistrarDomainStatusCommand extends BaseCronCommand
 {
     protected $signature = 'registrar:sync-domains {--limit=100 : Maximum domains to check per run}';
 
     protected $description = 'Sync Openprovider domain statuses and complete pending orders when active';
 
-    public function handle(RegistrarFulfillmentService $fulfillment): int
+    protected function handleCron(): string
     {
+        $fulfillment = app(RegistrarFulfillmentService::class);
+
         $registrar = Registrar::query()
             ->where('driver', RegistrarDriver::Openprovider)
             ->where('is_active', true)
             ->first();
 
         if (! $registrar) {
-            $this->info('No active Openprovider registrar configured.');
-
-            return self::SUCCESS;
+            return 'No active Openprovider registrar configured.';
         }
 
         $limit = (int) $this->option('limit');
@@ -66,9 +65,7 @@ class SyncRegistrarDomainStatusCommand extends Command
             }
         }
 
-        $this->info("Synced {$synced} domain(s); completed {$completed} order(s).");
-
-        return self::SUCCESS;
+        return "Synced {$synced} domain(s); completed {$completed} order(s).";
     }
 
     private function completeLinkedOrders(Domain $domain, string $registrarName): int

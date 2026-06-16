@@ -4,21 +4,20 @@ namespace App\Console\Commands;
 
 use App\Models\Setting;
 use App\Services\Telegram\TelegramMonitorBridge;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
-class TelegramMonitorLogsCommand extends Command
+class TelegramMonitorLogsCommand extends BaseCronCommand
 {
     protected $signature = 'telegram:monitor-logs';
 
     protected $description = 'Scan Laravel logs and send new ERROR/CRITICAL entries to Telegram';
 
-    public function handle(TelegramMonitorBridge $bridge): int
+    protected function handleCron(): string
     {
         $path = storage_path('logs/laravel.log');
 
         if (! File::exists($path)) {
-            return self::SUCCESS;
+            return 'No laravel.log file to scan.';
         }
 
         $offset = (int) Setting::getValue('telegram_log_monitor_offset', '0');
@@ -29,13 +28,13 @@ class TelegramMonitorLogsCommand extends Command
         }
 
         if ($size === $offset) {
-            return self::SUCCESS;
+            return 'No new log lines.';
         }
 
         $handle = fopen($path, 'rb');
 
         if ($handle === false) {
-            return self::FAILURE;
+            throw new \RuntimeException('Unable to open laravel.log for reading.');
         }
 
         fseek($handle, $offset);
@@ -45,8 +44,11 @@ class TelegramMonitorLogsCommand extends Command
         Setting::setValue('telegram_log_monitor_offset', (string) $size);
 
         if ($chunk === '') {
-            return self::SUCCESS;
+            return 'No new log lines.';
         }
+
+        $bridge = app(TelegramMonitorBridge::class);
+        $alerts = 0;
 
         foreach ($this->parseLogEntries($chunk) as $entry) {
             if (! in_array($entry['level'], ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY'], true)) {
@@ -54,9 +56,10 @@ class TelegramMonitorLogsCommand extends Command
             }
 
             $bridge->logError($entry['level'], $entry['message'], $entry['context'] ?? null);
+            $alerts++;
         }
 
-        return self::SUCCESS;
+        return "Scanned log file; sent {$alerts} alert(s).";
     }
 
     /**

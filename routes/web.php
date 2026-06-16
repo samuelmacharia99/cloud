@@ -258,6 +258,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // Cron Jobs
         Route::get('admin/cron', [CronController::class, 'index'])->name('admin.cron.index');
+        Route::get('admin/cron/chart', [CronController::class, 'chart'])->name('admin.cron.chart');
         Route::get('admin/cron/{job}', [CronController::class, 'show'])->name('admin.cron.show');
         Route::post('admin/cron/{job}/run', [CronController::class, 'run'])->name('admin.cron.run');
         Route::post('admin/cron/{job}/toggle', [CronController::class, 'toggle'])->name('admin.cron.toggle');

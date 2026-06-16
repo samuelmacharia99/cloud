@@ -4,33 +4,29 @@ namespace App\Console\Commands;
 
 use App\Models\Service;
 use App\Services\Provisioning\ProvisioningService;
-use Illuminate\Console\Command;
 
-class ProvisionPendingContainersCommand extends Command
+class ProvisionPendingContainersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:provision-pending-containers';
 
     protected $description = 'Auto-provision pending container services';
 
-    public function handle(): int
+    protected function handleCron(): string
     {
         $provisioned = [];
         $failed = [];
 
-        // Find pending container services with paid invoices
         $services = Service::where('status', 'pending')
             ->where('provisioning_driver_key', 'container')
             ->with('invoice')
             ->get()
             ->filter(function ($service) {
-                // Only provision if invoice is paid
                 return $service->invoice && in_array($service->invoice->status, ['paid', 'active']);
             });
 
         foreach ($services as $service) {
             try {
-                $provisioningService = app(ProvisioningService::class);
-                $provisioningService->provision($service);
+                app(ProvisioningService::class)->provision($service);
                 $provisioned[] = $service->id;
             } catch (\Exception $e) {
                 $failed[] = $service->id;
@@ -47,9 +43,8 @@ class ProvisionPendingContainersCommand extends Command
             $message .= ': ['.implode(', ', $failed).']';
         }
 
-        $this->info($message);
         \Log::info($message);
 
-        return Command::SUCCESS;
+        return $message;
     }
 }

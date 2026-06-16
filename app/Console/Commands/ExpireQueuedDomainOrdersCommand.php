@@ -5,15 +5,14 @@ namespace App\Console\Commands;
 use App\Models\ResellerDomainOrder;
 use App\Models\User;
 use App\Services\NotificationService;
-use Illuminate\Console\Command;
 
-class ExpireQueuedDomainOrdersCommand extends Command
+class ExpireQueuedDomainOrdersCommand extends BaseCronCommand
 {
     protected $signature = 'cron:expire-queued-domain-orders';
 
     protected $description = 'Mark queued domain orders as expired if past their expiration date';
 
-    public function handle(): int
+    protected function handleCron(): string
     {
         $expiring = ResellerDomainOrder::query()
             ->where('status', 'queued')
@@ -21,9 +20,7 @@ class ExpireQueuedDomainOrdersCommand extends Command
             ->get();
 
         if ($expiring->isEmpty()) {
-            $this->info('No queued domain orders to expire.');
-
-            return self::SUCCESS;
+            return 'No queued domain orders to expire.';
         }
 
         $countsByReseller = $expiring->groupBy('reseller_id')->map->count();
@@ -42,8 +39,7 @@ class ExpireQueuedDomainOrdersCommand extends Command
         }
 
         $total = $expiring->count();
-        $this->info("{$total} domain order(s) expired for ".$countsByReseller->count().' reseller(s)');
 
-        return self::SUCCESS;
+        return "{$total} domain order(s) expired for ".$countsByReseller->count().' reseller(s)';
     }
 }

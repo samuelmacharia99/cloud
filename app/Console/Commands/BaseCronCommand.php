@@ -7,6 +7,7 @@ use App\Models\CronJobLog;
 use App\Services\Telegram\TelegramMonitorBridge;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 abstract class BaseCronCommand extends Command
 {
@@ -26,7 +27,10 @@ abstract class BaseCronCommand extends Command
     {
         $this->startTime = now();
         $commandName = trim(explode(' ', $this->signature)[0]);
-        $this->cronJob = CronJob::where('command', $commandName)->first();
+
+        if (Schema::hasTable('cron_jobs')) {
+            $this->cronJob = CronJob::where('command', $commandName)->first();
+        }
 
         if ($this->cronJob) {
             $this->cronLog = CronJobLog::create([
@@ -69,7 +73,7 @@ abstract class BaseCronCommand extends Command
 
         $this->cronJob?->update([
             'last_status' => $status,
-            'next_run_at' => $this->cronJob->calculateNextRunAt(),
+            'next_run_at' => $this->cronJob->calculateNextRunAt(now()),
         ]);
 
         if ($status === 'failed' && $this->cronJob && ! config('telegram.cron_manual_run', false)) {

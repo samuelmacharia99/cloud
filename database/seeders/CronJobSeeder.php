@@ -74,6 +74,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Provision Pending Containers',
+                'description' => 'Auto-provisions container services with paid invoices stuck in pending status.',
+                'command' => 'cron:provision-pending-containers',
+                'schedule' => '*/10 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Send Invoice Reminders',
                 'description' => 'Logs reminder actions for invoices due in 7 days and 1 day.',
                 'command' => 'cron:send-invoice-reminders',
@@ -113,6 +120,20 @@ class CronJobSeeder extends Seeder
                 'description' => 'Collects CPU, memory, and I/O metrics from running Docker containers via docker stats.',
                 'command' => 'cron:collect-container-metrics',
                 'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Auto-Restart Containers',
+                'description' => 'Monitors and auto-restarts failed containers with auto-restart enabled.',
+                'command' => 'cron:auto-restart-containers',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Backup Containers',
+                'description' => 'Creates scheduled backups for active container services not backed up in 24 hours.',
+                'command' => 'cron:backup-containers',
+                'schedule' => '30 3 * * *',
                 'enabled' => true,
             ],
             [
@@ -182,14 +203,21 @@ class CronJobSeeder extends Seeder
                 'name' => 'Process Queued Domain Orders',
                 'description' => 'Process queued domain orders when resellers have sufficient wallet funds.',
                 'command' => 'cron:process-queued-domain-orders',
-                'schedule' => '0 * * * *',
+                'schedule' => '*/30 * * * *',
                 'enabled' => true,
             ],
             [
                 'name' => 'Expire Queued Domain Orders',
                 'description' => 'Expire queued domain orders that have passed their 10-day expiration window.',
                 'command' => 'cron:expire-queued-domain-orders',
-                'schedule' => '0 0 * * *',
+                'schedule' => '15 0 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Expire Domain Renewal Orders',
+                'description' => 'Expire pending domain renewal orders past their payment window.',
+                'command' => 'cron:expire-domain-renewal-orders',
+                'schedule' => '45 0 * * *',
                 'enabled' => true,
             ],
             [
@@ -199,13 +227,43 @@ class CronJobSeeder extends Seeder
                 'schedule' => '0 * * * *',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Cron Health Check',
+                'description' => 'Detects hung cron jobs and repeated failures; alerts admins.',
+                'command' => 'cron:check-health',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Terminal Session Cleanup',
+                'description' => 'Removes expired container terminal sessions.',
+                'command' => 'terminal:cleanup',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Registrar Domain Status Sync',
+                'description' => 'Syncs Openprovider domain statuses and completes pending orders when active.',
+                'command' => 'registrar:sync-domains',
+                'schedule' => '*/15 * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Telegram Log Monitor',
+                'description' => 'Scans Laravel logs and sends new errors to Telegram.',
+                'command' => 'telegram:monitor-logs',
+                'schedule' => '* * * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {
-            CronJob::updateOrCreate(
+            $model = CronJob::updateOrCreate(
                 ['command' => $job['command']],
                 $job
             );
+
+            $model->refreshNextRunAt();
         }
     }
 }

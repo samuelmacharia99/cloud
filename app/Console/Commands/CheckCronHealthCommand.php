@@ -7,22 +7,20 @@ use App\Models\CronJobLog;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Telegram\TelegramMonitorBridge;
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
-class CheckCronHealthCommand extends Command
+class CheckCronHealthCommand extends BaseCronCommand
 {
     protected $signature = 'cron:check-health';
 
     protected $description = 'Monitor cron jobs for hung processes and alert if issues detected';
 
-    public function handle(): int
+    protected function handleCron(): string
     {
         $maxExecutionTime = (int) Setting::getValue('max_execution_time', 120);
         $issues = [];
 
-        // Check for hung jobs (still running but exceeded max execution time)
         $hungjobs = CronJobLog::where('status', 'running')
             ->where('started_at', '<', now()->subSeconds($maxExecutionTime))
             ->with('cronJob')
@@ -35,14 +33,12 @@ class CheckCronHealthCommand extends Command
                 'duration' => $log->started_at->diffInSeconds(now()),
             ];
 
-            // Log the hung job
             Log::warning("Hung cron job detected: {$log->cronJob->name}", [
                 'started_at' => $log->started_at,
                 'duration_seconds' => $log->started_at->diffInSeconds(now()),
                 'max_allowed' => $maxExecutionTime,
             ]);
 
-            // Mark job as failed if it's been running too long
             if ($log->started_at->diffInSeconds(now()) > ($maxExecutionTime * 2)) {
                 $log->update([
                     'status' => 'failed',
@@ -52,14 +48,13 @@ class CheckCronHealthCommand extends Command
             }
         }
 
-        // Check for recently failed jobs and alert if consecutive failures
         $recentFails = CronJobLog::whereIn('status', ['failed'])
             ->where('started_at', '>=', now()->subHours(1))
             ->with('cronJob')
             ->get()
             ->groupBy('cron_job_id');
 
-        foreach ($recentFails as $jobId => $logs) {
+        foreach ($recentFails as $logs) {
             if ($logs->count() >= 3) {
                 $job = $logs->first()->cronJob;
                 Log::critical("Cron job has failed 3+ times in last hour: {$job->name}", [
@@ -75,12 +70,13 @@ class CheckCronHealthCommand extends Command
             }
         }
 
-        // Alert admin if issues found
         if (! empty($issues)) {
             $this->alertAdminOfIssues($issues);
         }
 
-        return self::SUCCESS;
+        return empty($issues)
+            ? 'Cron health check passed — no issues detected.'
+            : 'Cron health check found '.count($issues).' issue(s). Alerts sent.';
     }
 
     private function alertAdminOfIssues(array $issues): void

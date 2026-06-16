@@ -47,9 +47,11 @@ return [
         'cron:collect-container-metrics',
         'cron:poll-node-health',
         'cron:check-node-health',
+        'cron:auto-restart-containers',
+        'cron:backup-containers',
+        'cron:provision-pending-containers',
         'directadmin:provision-pending',
         'cron:provision-reseller-ssl',
-        'cron:renew-reseller-ssl',
     ],
 
     /*

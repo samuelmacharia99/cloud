@@ -1,0 +1,15 @@
+[Unit]
+Description=Talksasa Cloud Laravel Scheduler (single run)
+After=network.target
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/talksasa-cloud
+ExecStart=/usr/bin/php artisan schedule:run
+StandardOutput=append:/var/www/talksasa-cloud/storage/logs/cron.log
+StandardError=append:/var/www/talksasa-cloud/storage/logs/cron.log
+
+[Install]
+WantedBy=multi-user.target
