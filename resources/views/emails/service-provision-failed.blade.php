@@ -1,16 +1,16 @@
-@component('mail::message')
-# Service setup could not be completed
+<h2 style="margin:0 0 12px 0;">Service setup could not be completed</h2>
 
-We received your payment, but automatic setup for **{{ $service->name }}** did not finish.
+<p>We received your payment, but automatic setup for <strong>{{ $service->name }}</strong> did not finish.</p>
 
-**Reason:** {{ $reason }}
+<p><strong>Reason:</strong> {{ $reason }}</p>
 
-Our team has been notified. You can also open a support ticket from your dashboard if you need help.
+<p>Our team has been notified. You can also open a support ticket from your dashboard if you need help.</p>
 
-@component('mail::button', ['url' => url('/my/services/'.$service->id)])
-View service
-@endcomponent
+<p>
+    <a href="{{ url('/my/services/'.$service->id) }}"
+       style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
+        View service
+    </a>
+</p>
 
-Thanks,<br>
-{{ email_company_name() }}
-@endcomponent
+<p>Thanks,<br>{{ email_company_name() }}</p>

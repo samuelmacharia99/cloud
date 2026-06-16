@@ -47,50 +47,61 @@ class AutoRestartContainersCommand extends BaseCronCommand
                     $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
                     $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r 'if type==\"array\" then (.[0].State // \"error\") elif type==\"object\" then (.State // \"error\") else \"error\" end'";
+                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r 'if type==\"array\" then (if length==0 then \"missing\" elif any(.[]; ((.State // \"\") | ascii_downcase | startswith(\"running\"))) then \"running\" else ((.[0].State // \"error\") | ascii_downcase) end) elif type==\"object\" then ((.State // \"error\") | ascii_downcase) else \"error\" end'";
                     $status = trim($ssh->exec($statusCmd));
 
-                    if ($status !== 'running') {
-                        $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id}...");
-
-                        $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::RESTART_TIMEOUT);
-
-                        sleep(2);
-
-                        $newStatus = trim($ssh->exec($statusCmd));
-
-                        if ($newStatus === 'running') {
-                            if ($deployment->restart_attempts > 0) {
-                                app(NotificationService::class)->notifyContainerAutoRestarted(
-                                    $deployment->service,
-                                    $deployment->restart_attempts
-                                );
-                            }
-
+                    if (str_starts_with($status, 'running')) {
+                        // Clear stale failure attempts once container is healthy again.
+                        if ($deployment->restart_attempts > 0) {
                             $deployment->update([
                                 'restart_attempts' => 0,
-                                'last_restart_at' => now(),
                                 'last_status_check_at' => now(),
                             ]);
+                        }
 
-                            $this->line("  <fg=green>✓ Restarted</> deployment {$deployment->id}");
-                            $restarted++;
+                        continue;
+                    }
+
+                    $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id}...");
+
+                    $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::RESTART_TIMEOUT);
+
+                    sleep(2);
+
+                    $newStatus = trim($ssh->exec($statusCmd));
+
+                    if (str_starts_with($newStatus, 'running')) {
+                        if ($deployment->restart_attempts > 0) {
+                            app(NotificationService::class)->notifyContainerAutoRestarted(
+                                $deployment->service,
+                                $deployment->restart_attempts
+                            );
+                        }
+
+                        $deployment->update([
+                            'restart_attempts' => 0,
+                            'last_restart_at' => now(),
+                            'last_status_check_at' => now(),
+                        ]);
+
+                        $this->line("  <fg=green>✓ Restarted</> deployment {$deployment->id}");
+                        $restarted++;
+                    } else {
+                        $deployment->increment('restart_attempts');
+                        $deployment->refresh();
+
+                        if ($deployment->restart_attempts >= self::MAX_RESTART_ATTEMPTS) {
+                            $deployment->service->update(['status' => 'failed']);
+                            $this->line("  <fg=red>✗ Failed</> deployment {$deployment->id} after {$deployment->restart_attempts} attempts");
+
+                            app(NotificationService::class)->notifyContainerFailed(
+                                $deployment->service,
+                                'Container failed to restart after '.self::MAX_RESTART_ATTEMPTS.' attempts'
+                            );
+                            $notified++;
+                            $failed++;
                         } else {
-                            $deployment->increment('restart_attempts');
-
-                            if ($deployment->restart_attempts >= self::MAX_RESTART_ATTEMPTS) {
-                                $deployment->service->update(['status' => 'failed']);
-                                $this->line("  <fg=red>✗ Failed</> deployment {$deployment->id} after {$deployment->restart_attempts} attempts");
-
-                                app(NotificationService::class)->notifyContainerFailed(
-                                    $deployment->service,
-                                    'Container failed to restart after '.self::MAX_RESTART_ATTEMPTS.' attempts'
-                                );
-                                $notified++;
-                                $failed++;
-                            } else {
-                                $this->line("  <fg=yellow>⚠ Restart attempt {$deployment->restart_attempts}</> for deployment {$deployment->id}");
-                            }
+                            $this->line("  <fg=yellow>⚠ Restart attempt {$deployment->restart_attempts}</> for deployment {$deployment->id}");
                         }
                     }
                 } finally {

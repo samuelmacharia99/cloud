@@ -132,7 +132,7 @@
                     @forelse ($domains as $domain)
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                             <td class="px-6 py-4">
-                                <p class="font-medium text-slate-900 dark:text-white">{{ $domain->name }}</p>
+                                <p class="font-medium text-slate-900 dark:text-white">{{ $domain->name }}{{ $domain->extension ?? '' }}</p>
                             </td>
                             <td class="px-6 py-4 text-sm">
                                 <div class="flex items-center gap-2">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\DomainRenewalOrder;
 use App\Models\Payment;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
@@ -75,7 +76,17 @@ class PaymentWebhookController extends Controller
             return;
         }
 
-        $this->provisionCustomerServices($payment);
+        // Customer-owned invoices should go through full settlement for status, paid_date,
+        // order sync, notifications, and post-payment actions.
+        try {
+            app(InvoiceSettlementService::class)->settleFromPayment($payment);
+        } catch (\Throwable $e) {
+            Log::error('Invoice settlement failed from M-Pesa callback', [
+                'payment_id' => $payment->id,
+                'invoice_id' => $payment->invoice_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         if ($user->reseller_id !== null) {
             $this->processResellerCustomerDomainOrders($invoice);

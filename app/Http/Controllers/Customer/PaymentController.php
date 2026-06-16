@@ -834,6 +834,18 @@ class PaymentController extends Controller
         }
 
         if ($payment->status->value === 'completed') {
+            if ($invoice->status->value !== 'paid') {
+                try {
+                    $this->processPaymentCompletion($payment, $invoice);
+                } catch (\Throwable $e) {
+                    Log::error('Failed to settle completed M-Pesa payment during polling', [
+                        'payment_id' => $payment->id,
+                        'invoice_id' => $invoice->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             return response()->json(['status' => 'completed', 'success' => true]);
         }
 

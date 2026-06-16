@@ -1,30 +1,24 @@
-@component('mail::message')
-    # Container Auto-Restarted
+<h2 style="margin:0 0 12px 0;">Container Auto-Restarted</h2>
 
-    Your container service **{{ $service->name }}** experienced a temporary failure but was automatically restarted by our monitoring system.
+<p>Your container service <strong>{{ $service->name }}</strong> experienced a temporary failure but was automatically restarted by our monitoring system.</p>
 
-    **Service Details:**
-    - Service Name: {{ $service->name }}
-    - Service ID: {{ $service->id }}
-    - Restart Attempts: {{ $attemptCount }}
-    - Status: Recovered ✓
+<p><strong>Service Details:</strong></p>
+<ul>
+    <li>Service Name: {{ $service->name }}</li>
+    <li>Service ID: {{ $service->id }}</li>
+    <li>Restart Attempts: {{ $attemptCount }}</li>
+    <li>Status: Recovered</li>
+</ul>
 
-    Your service is now running normally. No action is required from your side.
+<p>Your service is now running normally. No action is required from your side.</p>
 
-    **What Happened:**
-    Our automated monitoring system detected that your container had stopped. After {{ $attemptCount }} attempt(s), the system successfully restarted your service and it is now operational.
+<p><strong>What happened:</strong> our monitoring detected the container had stopped, then recovered it after {{ $attemptCount }} attempt(s).</p>
 
-    **If This Continues:**
-    If you continue to receive these notifications frequently, please:
-    1. Check your application logs for errors
-    2. Review your docker-compose configuration
-    3. Ensure your application has enough resources
-    4. Contact support if you need assistance
-
-    @component('mail::button', ['url' => url('/customer/services/' . $service->id)])
+<p>
+    <a href="{{ url('/customer/services/' . $service->id) }}"
+       style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
         View Service
-    @endcomponent
+    </a>
+</p>
 
-    Thanks,<br>
-    {{ $siteName ?? email_company_name() }}
-@endcomponent
+<p>Thanks,<br>{{ $siteName ?? email_company_name() }}</p>

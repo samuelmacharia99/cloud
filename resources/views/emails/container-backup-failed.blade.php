@@ -1,22 +1,23 @@
-@component('mail::message')
-    # ALERT: Container Backup Failed
+<h2 style="margin:0 0 12px 0;">ALERT: Container Backup Failed</h2>
 
-    A scheduled backup for service **{{ $service->name }}** has failed.
+<p>A scheduled backup for service <strong>{{ $service->name }}</strong> has failed.</p>
 
-    **Affected Service:**
-    - Service ID: {{ $service->id }}
-    - Service Name: {{ $service->name }}
-    - Customer: {{ $service->user->name }}
+<p><strong>Affected Service:</strong></p>
+<ul>
+    <li>Service ID: {{ $service->id }}</li>
+    <li>Service Name: {{ $service->name }}</li>
+    <li>Customer: {{ $service->user->name }}</li>
+</ul>
 
-    **Error Details:**
-    {{ $error }}
+<p><strong>Error Details:</strong><br>{{ $error }}</p>
 
-    Please investigate this issue and ensure backups are taken manually if necessary. Contact the customer if their data may be at risk.
+<p>Please investigate this issue and ensure backups are taken manually if necessary. Contact the customer if their data may be at risk.</p>
 
-    @component('mail::button', ['url' => url('/admin/services/' . $service->id)])
+<p>
+    <a href="{{ url('/admin/services/' . $service->id) }}"
+       style="display:inline-block;padding:10px 16px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
         View Service
-    @endcomponent
+    </a>
+</p>
 
-    Thanks,<br>
-    {{ $siteName ?? email_company_name() }}
-@endcomponent
+<p>Thanks,<br>{{ $siteName ?? email_company_name() }}</p>

@@ -5,6 +5,7 @@ namespace App\Services\Telegram;
 use App\Enums\TelegramMonitorCategory;
 use App\Models\Setting;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class TelegramMonitorService
@@ -57,10 +58,17 @@ class TelegramMonitorService
         try {
             return $this->bot->sendMessage($credentials['token'], $credentials['chat_id'], $message);
         } catch (\Throwable $e) {
-            Log::error('Telegram monitor send failed', [
-                'category' => $category->value,
-                'error' => $e->getMessage(),
-            ]);
+            $fingerprint = sha1($category->value.'|'.$e->getMessage());
+            $cacheKey = 'telegram.monitor.send_failed.'.$fingerprint;
+
+            // Avoid error-log storms (and recursive error monitoring) when Telegram API times out.
+            if (! Cache::has($cacheKey)) {
+                Log::warning('Telegram monitor send failed', [
+                    'category' => $category->value,
+                    'error' => $e->getMessage(),
+                ]);
+                Cache::put($cacheKey, true, now()->addMinutes(10));
+            }
 
             return false;
         }

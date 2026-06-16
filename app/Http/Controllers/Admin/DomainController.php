@@ -20,7 +20,26 @@ class DomainController extends Controller
 
         // Search by domain name
         if ($request->filled('search')) {
-            $query->where('name', 'like', "%{$request->search}%");
+            $search = trim((string) $request->search);
+
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%");
+
+                // Support searching by full domain (e.g. "example.co.ke")
+                // while data is stored as separate name + extension columns.
+                if (str_contains($search, '.')) {
+                    $parts = explode('.', ltrim($search, '.'), 2);
+                    $sld = $parts[0] ?? '';
+                    $tld = $parts[1] ?? '';
+
+                    if ($sld !== '' && $tld !== '') {
+                        $q->orWhere(function ($domainQ) use ($sld, $tld) {
+                            $domainQ->where('name', 'like', "%{$sld}%")
+                                ->where('extension', 'like', '%.'.$tld.'%');
+                        });
+                    }
+                }
+            });
         }
 
         // Filter by extension
