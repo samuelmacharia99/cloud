@@ -21,10 +21,18 @@ class ApplicationSchedule
             return;
         }
 
+        $this->touchHeartbeat();
         $this->registerDatabaseJobs($schedule);
         $this->registerHeartbeat($schedule);
 
         $schedule->timezone(Setting::getValue('cron_timezone', 'UTC'));
+    }
+
+    private function touchHeartbeat(): void
+    {
+        $now = now()->toIso8601String();
+        Cache::put('scheduler.last_heartbeat', $now, now()->addMinutes(5));
+        Setting::setValue('scheduler_last_heartbeat_at', $now);
     }
 
     private function registerDatabaseJobs(Schedule $schedule): void
@@ -68,9 +76,7 @@ class ApplicationSchedule
     private function registerHeartbeat(Schedule $schedule): void
     {
         $heartbeat = $schedule->call(function () {
-            $now = now()->toIso8601String();
-            Cache::put('scheduler.last_heartbeat', $now, now()->addMinutes(5));
-            Setting::setValue('scheduler_last_heartbeat_at', $now);
+            $this->touchHeartbeat();
         })
             ->everyMinute()
             ->name('Scheduler Heartbeat')
