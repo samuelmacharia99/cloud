@@ -13,9 +13,11 @@ use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SkipVerificationIfImpersonating;
 use App\Http\Middleware\ThrottleRegistration;
 use App\Http\Middleware\VerifyCsrfToken;
+use App\Console\Scheduling\ApplicationSchedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -74,4 +76,8 @@ return Application::configure(basePath: dirname(__DIR__))
                     .'Increase nginx client_max_body_size and PHP post_max_size — see deploy/nginx/upload-limits.conf.',
             ], 413);
         });
-    })->create();
+    })
+    ->withSchedule(function (Schedule $schedule) {
+        app(ApplicationSchedule::class)->configure($schedule);
+    })
+    ->create();
