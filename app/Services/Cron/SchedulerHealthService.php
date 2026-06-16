@@ -17,7 +17,9 @@ class SchedulerHealthService
     public function status(): array
     {
         $schedulerEnabled = (bool) config('scheduler.enabled');
-        $heartbeatRaw = Cache::get('scheduler.last_heartbeat');
+        $cacheStore = (string) config('cache.default');
+        $heartbeatRaw = Cache::get('scheduler.last_heartbeat')
+            ?: Setting::getValue('scheduler_last_heartbeat_at');
         $heartbeatAt = $heartbeatRaw ? Carbon::parse($heartbeatRaw) : null;
         $heartbeatFresh = $heartbeatAt && $heartbeatAt->greaterThan(now()->subMinutes(3));
 
@@ -43,6 +45,10 @@ class SchedulerHealthService
             $issues[] = 'No scheduler heartbeat in the last 3 minutes — OS cron or systemd timer may not be running schedule:run.';
         }
 
+        if ($schedulerEnabled && $cacheStore === 'array') {
+            $issues[] = 'Cache store is set to array (non-persistent). Use file/redis/database in production.';
+        }
+
         if ($enabledJobs === 0) {
             $issues[] = 'No cron jobs are enabled in the database.';
         }
@@ -57,6 +63,7 @@ class SchedulerHealthService
             'scheduler_enabled' => $schedulerEnabled,
             'heartbeat_at' => $heartbeatAt?->toIso8601String(),
             'heartbeat_fresh' => $heartbeatFresh,
+            'cache_store' => $cacheStore,
             'enabled_jobs' => $enabledJobs,
             'stale_next_run_count' => $staleNextRun,
             'recent_runs_24h' => $recentRuns,

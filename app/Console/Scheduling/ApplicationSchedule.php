@@ -68,7 +68,9 @@ class ApplicationSchedule
     private function registerHeartbeat(Schedule $schedule): void
     {
         $heartbeat = $schedule->call(function () {
-            Cache::put('scheduler.last_heartbeat', now()->toIso8601String(), now()->addMinutes(5));
+            $now = now()->toIso8601String();
+            Cache::put('scheduler.last_heartbeat', $now, now()->addMinutes(5));
+            Setting::setValue('scheduler_last_heartbeat_at', $now);
         })
             ->everyMinute()
             ->name('Scheduler Heartbeat')
