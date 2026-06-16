@@ -546,7 +546,7 @@ class DomainPushService
                 'retry_count' => $order->retry_count + 1,
             ]);
 
-            if ($order->wallet_transaction_id) {
+            if ($order->wallet_transaction_id && $order->reseller) {
                 $transaction = $order->walletTransaction;
                 $this->walletService->refund(
                     $order->reseller,

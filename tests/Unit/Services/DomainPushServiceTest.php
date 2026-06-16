@@ -134,6 +134,39 @@ class DomainPushServiceTest extends TestCase
         $this->assertNotNull($order->admin_invoice_id);
     }
 
+    public function test_platform_order_failure_does_not_crash_when_reseller_is_null(): void
+    {
+        $customer = User::factory()->create(['reseller_id' => null, 'phone' => '254700000001']);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'failtest',
+            'extension' => '.com',
+            'status' => 'pending',
+        ]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => 'failtest',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1500,
+            'retail_amount' => 1500,
+            'status' => 'pushed',
+        ]);
+
+        app(DomainPushService::class)->failOrder(
+            $order,
+            'You have not signed the latest version of the contract for registering this domain'
+        );
+
+        $order->refresh();
+        $this->assertSame('failed', $order->status);
+        $this->assertStringContainsString('contract', $order->failure_reason);
+    }
+
     public function test_customer_paid_domain_queues_when_wallet_is_low(): void
     {
         $reseller = User::factory()->create(['is_reseller' => true]);

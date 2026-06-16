@@ -181,11 +181,39 @@ class WalletNotificationService
 
     public function sendDomainCompletedNotification(ResellerDomainOrder $order): void
     {
+        $order->loadMissing('reseller', 'customer');
+        $domain = $order->fullDomainName();
+
+        if ($order->isPlatformOrder()) {
+            $customer = $order->customer;
+            $company = $customer
+                ? $this->brandingResolver->forCustomer($customer)['company_name']
+                : config('app.name');
+
+            if ($customer?->phone) {
+                try {
+                    $this->smsService->send(
+                        $customer->phone,
+                        "{$company}: Domain {$domain} has been registered successfully!"
+                    );
+                } catch (\Exception $e) {
+                    \Log::error("Failed to send completed domain SMS to customer {$customer->id}: {$e->getMessage()}");
+                }
+            }
+
+            $this->notificationService->notifyAdminResellerDomainOrder($order, 'completed');
+
+            return;
+        }
+
         $reseller = $order->reseller;
         $customer = $order->customer;
-        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
 
-        $domain = $order->fullDomainName();
+        if (! $reseller) {
+            return;
+        }
+
+        $company = $this->brandingResolver->forReseller($reseller)['company_name'];
         $resellerMessage = "Domain {$domain} has been registered successfully!";
         $customerMessage = "{$company}: Domain {$domain} has been registered successfully!";
 
@@ -195,7 +223,7 @@ class WalletNotificationService
             \Log::error("Failed to send completed domain SMS to reseller {$reseller->id}: {$e->getMessage()}");
         }
 
-        if ($customer->phone) {
+        if ($customer?->phone) {
             try {
                 app('talksasa-sms-service')->sendSms($reseller, $customer->phone, $customerMessage);
             } catch (\Exception $e) {
@@ -217,9 +245,39 @@ class WalletNotificationService
 
     public function sendDomainFailedNotification(ResellerDomainOrder $order): void
     {
-        $reseller = $order->reseller;
+        $order->loadMissing('reseller', 'customer');
         $domain = $order->fullDomainName();
-        $message = "Domain {$domain} registration failed: {$order->failure_reason}";
+        $reason = $order->failure_reason ?? 'Registration failed';
+
+        if ($order->isPlatformOrder()) {
+            app(TelegramMonitorBridge::class)->systemAlert('Platform domain registration failed', [
+                'Domain' => $domain,
+                'Customer' => $order->customer?->name ?? '—',
+                'Reason' => $reason,
+            ]);
+
+            $customer = $order->customer;
+            if ($customer?->phone) {
+                try {
+                    $this->smsService->send(
+                        $customer->phone,
+                        "Domain {$domain} registration failed: {$reason}"
+                    );
+                } catch (\Exception $e) {
+                    \Log::error("Failed to send failed domain SMS to customer {$customer->id}: {$e->getMessage()}");
+                }
+            }
+
+            return;
+        }
+
+        $reseller = $order->reseller;
+
+        if (! $reseller) {
+            return;
+        }
+
+        $message = "Domain {$domain} registration failed: {$reason}";
 
         try {
             $this->smsService->send($reseller->phone, $message);

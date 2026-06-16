@@ -396,6 +396,6 @@ class RegistrarFulfillmentService
     {
         $registrar = $this->registrarManager->forExtension($extension);
 
-        return $registrar?->driver === RegistrarDriver::Openprovider && $registrar->is_active;
+        return $registrar?->driver === RegistrarDriver::Openprovider && ($registrar?->is_active ?? false);
     }
 }
