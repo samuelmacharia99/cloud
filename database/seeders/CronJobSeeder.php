@@ -224,7 +224,7 @@ class CronJobSeeder extends Seeder
                 'name' => 'Wallet Low Balance Alerts',
                 'description' => 'Send SMS/email alerts to resellers with low wallet balance.',
                 'command' => 'cron:wallet-low-balance-alerts',
-                'schedule' => '0 * * * *',
+                'schedule' => '0 8 * * *',
                 'enabled' => true,
             ],
             [
@@ -253,6 +253,20 @@ class CronJobSeeder extends Seeder
                 'description' => 'Scans Laravel logs and sends new errors to Telegram.',
                 'command' => 'telegram:monitor-logs',
                 'schedule' => '* * * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Telegram Daily Ops Report',
+                'description' => 'Sends daily 8:00 AM Telegram snapshot of running nodes, services, containers, tickets, and payments.',
+                'command' => 'cron:telegram-daily-ops-report',
+                'schedule' => '0 8 * * *',
+                'enabled' => true,
+            ],
+            [
+                'name' => 'Telegram Weekly Sales Report',
+                'description' => 'Sends Sunday weekly sales summary and next 7-day forecast for service and domain renewal collections.',
+                'command' => 'cron:telegram-weekly-sales-report',
+                'schedule' => '15 8 * * 0',
                 'enabled' => true,
             ],
         ];

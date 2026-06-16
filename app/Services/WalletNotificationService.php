@@ -35,10 +35,12 @@ class WalletNotificationService
 
         $message = "Your {$company} wallet balance is low: {$wallet->getFormattedBalance()}. Top up now: {$walletUrl}";
 
-        try {
-            $this->smsService->send($reseller->phone, $message);
-        } catch (\Exception $e) {
-            \Log::error("Failed to send low balance SMS to reseller {$reseller->id}: {$e->getMessage()}");
+        if (! empty($reseller->phone)) {
+            try {
+                $this->smsService->send($reseller->phone, $message);
+            } catch (\Exception $e) {
+                \Log::error("Failed to send low balance SMS to reseller {$reseller->id}: {$e->getMessage()}");
+            }
         }
 
         if ($reseller->email && $this->preferences->isEmailEnabledForUser($reseller, $event)) {

@@ -60,7 +60,9 @@ class ResellerWallet extends Model
             return true;
         }
 
-        return $this->last_low_balance_alert_at->diffInHours(now()) >= 24;
+        // Daily cron checks can run every day, but reminder should repeat every 4 days
+        // while balance remains below threshold.
+        return $this->last_low_balance_alert_at->diffInHours(now()) >= 96;
     }
 
     public function getFormattedBalance(): string
