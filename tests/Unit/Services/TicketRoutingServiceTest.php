@@ -41,4 +41,15 @@ class TicketRoutingServiceTest extends TestCase
         $this->assertNull($attrs['reseller_id']);
         $this->assertSame(TicketHandledBy::Platform->value, $attrs['handled_by']);
     }
+
+    public function test_attributes_for_admin_creator_on_reseller_customer(): void
+    {
+        $customer = new User(['reseller_id' => 42, 'is_reseller' => false]);
+        $service = app(TicketRoutingService::class);
+
+        $attrs = $service->attributesForAdminCreator($customer);
+
+        $this->assertSame(42, $attrs['reseller_id']);
+        $this->assertSame(TicketHandledBy::Platform->value, $attrs['handled_by']);
+    }
 }

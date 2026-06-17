@@ -14,6 +14,19 @@ class TicketRoutingService
     ) {}
 
     /**
+     * Routing when platform admin creates a ticket on behalf of a customer.
+     *
+     * @return array{reseller_id: ?int, handled_by: string}
+     */
+    public function attributesForAdminCreator(User $customer): array
+    {
+        return [
+            'reseller_id' => $customer->reseller_id,
+            'handled_by' => TicketHandledBy::Platform->value,
+        ];
+    }
+
+    /**
      * @return array{reseller_id: ?int, handled_by: string}
      */
     public function attributesForCreator(User $creator): array
@@ -40,13 +53,13 @@ class TicketRoutingService
 
     public function isVisibleToAdmin(Ticket $ticket): bool
     {
-        return $ticket->handled_by === TicketHandledBy::Platform->value;
+        return $ticket->isHandledByPlatform();
     }
 
     public function isResellerCustomerTicket(Ticket $ticket): bool
     {
         return $ticket->reseller_id !== null
-            && $ticket->handled_by === TicketHandledBy::Reseller->value;
+            && $ticket->isHandledByReseller();
     }
 
     public function escalateToPlatform(Ticket $ticket, User $reseller, ?string $note = null): void
@@ -55,7 +68,7 @@ class TicketRoutingService
             throw new \InvalidArgumentException('This ticket does not belong to your customer.');
         }
 
-        if ($ticket->handled_by === TicketHandledBy::Platform->value) {
+        if ($ticket->isHandledByPlatform()) {
             return;
         }
 

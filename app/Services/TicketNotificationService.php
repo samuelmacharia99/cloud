@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\NotificationEvent;
-use App\Enums\TicketHandledBy;
 use App\Mail\GenericNotificationMail;
 use App\Mail\TicketCreatedMail;
 use App\Mail\TicketEscalatedCustomerMail;
@@ -32,7 +31,7 @@ class TicketNotificationService
 
         $this->notifyCustomerTicketCreated($ticket);
 
-        if ($ticket->handled_by === TicketHandledBy::Platform->value) {
+        if ($ticket->isHandledByPlatform()) {
             $this->notifyPlatformAdminsTicketCreated($ticket);
 
             return;
@@ -58,7 +57,7 @@ class TicketNotificationService
             return;
         }
 
-        if ($ticket->handled_by === TicketHandledBy::Reseller->value) {
+        if ($ticket->isHandledByReseller()) {
             $this->notifyResellerCustomerReplied($ticket, $reply);
 
             return;

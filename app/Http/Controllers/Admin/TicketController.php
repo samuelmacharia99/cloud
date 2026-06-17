@@ -101,7 +101,7 @@ class TicketController extends Controller
         ], TicketAttachmentService::validationRules()));
 
         $owner = User::findOrFail($validated['user_id']);
-        $routing = app(TicketRoutingService::class)->attributesForCreator($owner);
+        $routing = app(TicketRoutingService::class)->attributesForAdminCreator($owner);
 
         $ticket = Ticket::create([
             'user_id' => $validated['user_id'],

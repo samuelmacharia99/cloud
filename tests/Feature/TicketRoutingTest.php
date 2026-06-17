@@ -42,6 +42,49 @@ class TicketRoutingTest extends TestCase
             'priority' => 'low',
         ]);
 
+        $ticket = Ticket::findOrFail($ticket->id);
+
+        $this->actingAs($admin)->get(route('tickets.show', $ticket))->assertOk();
+    }
+
+    public function test_admin_can_view_platform_ticket_after_enum_cast_from_database(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $customer = User::factory()->create();
+
+        $ticketId = Ticket::create([
+            'user_id' => $customer->id,
+            'handled_by' => TicketHandledBy::Platform->value,
+            'title' => 'Cast regression',
+            'description' => 'Help',
+            'status' => 'open',
+            'priority' => 'low',
+        ])->id;
+
+        $ticket = Ticket::findOrFail($ticketId);
+        $this->assertInstanceOf(TicketHandledBy::class, $ticket->handled_by);
+
+        $this->actingAs($admin)->get(route('tickets.show', $ticket))->assertOk();
+    }
+
+    public function test_admin_created_ticket_for_reseller_customer_is_platform_handled(): void
+    {
+        $admin = User::factory()->create(['is_admin' => true]);
+        $reseller = User::factory()->create(['is_reseller' => true]);
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($admin)->post(route('tickets.store'), [
+            'user_id' => $customer->id,
+            'title' => 'Admin opened ticket',
+            'description' => 'Follow up required',
+            'priority' => 'medium',
+        ])->assertRedirect();
+
+        $ticket = Ticket::first();
+        $this->assertNotNull($ticket);
+        $this->assertSame(TicketHandledBy::Platform, $ticket->fresh()->handled_by);
+        $this->assertSame($reseller->id, $ticket->reseller_id);
+
         $this->actingAs($admin)->get(route('tickets.show', $ticket))->assertOk();
     }
 
