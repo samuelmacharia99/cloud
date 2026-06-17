@@ -256,13 +256,23 @@ class MpesaService implements PaymentGatewayInterface
 
             $resultCode = $data['ResultCode'] ?? null;
             $isSuccessful = $resultCode === '0';
+            $resultDesc = (string) ($data['ResultDesc'] ?? 'No message');
 
             if ($isSuccessful) {
                 return [
                     'success' => true,
                     'status' => 'completed',
                     'response_code' => $resultCode,
-                    'message' => $data['ResultDesc'] ?? 'Payment completed',
+                    'message' => $resultDesc ?: 'Payment completed',
+                ];
+            }
+
+            if ($this->isProcessingResult($resultCode, $resultDesc)) {
+                return [
+                    'success' => false,
+                    'status' => 'pending',
+                    'response_code' => $resultCode,
+                    'message' => $resultDesc ?: 'Transaction still processing',
                 ];
             }
 
@@ -270,7 +280,7 @@ class MpesaService implements PaymentGatewayInterface
                 'success' => false,
                 'status' => 'failed',
                 'response_code' => $resultCode,
-                'message' => $data['ResultDesc'] ?? 'No message',
+                'message' => $resultDesc,
             ];
         } catch (\Exception $e) {
             Log::error('M-Pesa verify failed', [
@@ -1012,6 +1022,22 @@ class MpesaService implements PaymentGatewayInterface
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function isProcessingResult(mixed $resultCode, string $resultDesc): bool
+    {
+        $code = (string) ($resultCode ?? '');
+        $desc = strtolower(trim($resultDesc));
+
+        if ($desc === '') {
+            return false;
+        }
+
+        if (str_contains($desc, 'processing')) {
+            return true;
+        }
+
+        return in_array($code, ['1', '1001', '1019'], true);
     }
 
     /**

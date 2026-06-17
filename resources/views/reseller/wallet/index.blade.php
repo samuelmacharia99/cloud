@@ -9,10 +9,15 @@
     invoiceId: null,
     checkoutId: null,
     checking: false,
+    statusMessage: '',
     async startStatusCheck() {
+        if (!this.invoiceId) return;
         this.checking = true;
+        this.loading = false;
+        this.statusMessage = 'Waiting for payment confirmation...';
         const invoiceId = this.invoiceId;
         const self = this;
+        const startedAt = Date.now();
 
         const interval = setInterval(async () => {
             try {
@@ -21,12 +26,22 @@
 
                 if (data.status === 'completed') {
                     clearInterval(interval);
+                    self.checking = false;
                     alert('Payment successful! Your wallet has been credited.');
                     setTimeout(() => window.location.reload(), 500);
                 } else if (data.status === 'failed') {
                     clearInterval(interval);
+                    self.checking = false;
                     alert('Payment failed: ' + data.message);
                     setTimeout(() => window.location.reload(), 500);
+                } else {
+                    self.statusMessage = data.message || 'Transaction still processing on M-Pesa.';
+                }
+
+                if (Date.now() - startedAt > 180000) {
+                    clearInterval(interval);
+                    self.checking = false;
+                    self.statusMessage = 'Still processing. You can click Verify Payment again in a moment.';
                 }
             } catch (error) {
                 console.error('Error checking payment status:', error);
@@ -89,6 +104,7 @@
                     if (data.success) {
                         invoiceId = data.invoice_id;
                         checkoutId = data.checkout_request_id;
+                        statusMessage = data.message || 'Check your phone for M-Pesa prompt.';
                         startStatusCheck();
                     } else {
                         alert('Error: ' + data.message);
@@ -157,17 +173,17 @@
             </form>
 
             <!-- Payment Confirmation (shown after STK push) -->
-            <div x-show="checkoutId && !checking" class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl" style="display: none;">
+            <div x-show="checkoutId" class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl" style="display: none;">
                 <div class="flex items-start gap-3 mb-3">
                     <svg class="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                         <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
                     </svg>
                     <div>
                         <h4 class="text-sm font-semibold text-blue-900 dark:text-blue-200">M-Pesa Payment Initiated</h4>
-                        <p class="text-sm text-blue-800 dark:text-blue-300 mt-1">Check your phone for the M-Pesa prompt. Do not refresh or close this page.</p>
+                        <p class="text-sm text-blue-800 dark:text-blue-300 mt-1" x-text="statusMessage || 'Check your phone for the M-Pesa prompt. Do not refresh or close this page.'"></p>
                     </div>
                 </div>
-                <button type="button" @click="startStatusCheck()" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition">
+                <button type="button" @click="startStatusCheck()" :disabled="checking" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg text-sm transition">
                     Verify Payment
                 </button>
             </div>

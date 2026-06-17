@@ -4,12 +4,12 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\PaymentStatus;
-use App\Http\Requests\InitiateWalletTopupRequest;
+use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
-use App\Http\Controllers\Controller;
 use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
 
@@ -49,7 +49,7 @@ class WalletController extends Controller
             // Create stub invoice for wallet top-up
             $topupInvoice = Invoice::create([
                 'user_id' => $reseller->id,
-                'invoice_number' => 'TOPUP-' . strtoupper(uniqid()),
+                'invoice_number' => 'TOPUP-'.strtoupper(uniqid()),
                 'status' => 'unpaid',
                 'due_date' => now()->addDays(7),
                 'subtotal' => $validated['amount'],
@@ -70,7 +70,7 @@ class WalletController extends Controller
             // Initiate payment based on method
             if ($validated['payment_method'] === 'mpesa') {
                 // Wallet top-up is paid to the platform, so always use platform M-Pesa credentials.
-                $mpesa = new MpesaService();
+                $mpesa = new MpesaService;
                 $result = $mpesa->initiateTopup(
                     $reseller,
                     $validated['amount'],
@@ -82,8 +82,9 @@ class WalletController extends Controller
                 $result = $gateway->initiate($topupInvoice, $customerData);
             }
 
-            if (!$result['success']) {
+            if (! $result['success']) {
                 $topupInvoice->delete();
+
                 return response()->json([
                     'success' => false,
                     'message' => $result['message'] ?? 'Payment initiation failed',
@@ -99,18 +100,21 @@ class WalletController extends Controller
             // M-Pesa: return checkout request ID for STK push
             if ($validated['payment_method'] === 'mpesa') {
                 $response['checkout_request_id'] = $result['checkout_request_id'];
+
                 return response()->json($response);
             }
 
             // Stripe: return checkout URL
             if ($validated['payment_method'] === 'stripe') {
                 $response['checkout_url'] = $result['checkout_url'];
+
                 return response()->json($response);
             }
 
             // PayPal: return approval URL
             if ($validated['payment_method'] === 'paypal') {
                 $response['approval_url'] = $result['approval_url'];
+
                 return response()->json($response);
             }
 
@@ -134,7 +138,7 @@ class WalletController extends Controller
 
         $payment = $invoice->payments()->where('payment_purpose', 'wallet_topup')->first();
 
-        if (!$payment) {
+        if (! $payment) {
             return response()->json(['status' => 'pending', 'message' => 'Payment not found']);
         }
 
@@ -143,12 +147,17 @@ class WalletController extends Controller
         }
 
         if ($payment->status === PaymentStatus::Failed) {
-            return response()->json(['status' => 'failed', 'message' => 'Payment failed']);
+            $notes = json_decode((string) $payment->notes, true) ?: [];
+
+            return response()->json([
+                'status' => 'failed',
+                'message' => $notes['result_desc'] ?? 'Payment failed',
+            ]);
         }
 
         // Check payment status via M-Pesa
         // Wallet top-up verification should match the same platform M-Pesa account used at initiation.
-        $mpesa = new MpesaService();
+        $mpesa = new MpesaService;
         $result = $mpesa->verify($payment->transaction_reference);
 
         // If M-Pesa says payment succeeded, update our records and credit the wallet
@@ -161,6 +170,21 @@ class WalletController extends Controller
 
             // Credit the wallet
             app('wallet-service')->processTopupPayment($payment);
+        }
+
+        if ($result['status'] === 'failed' && $payment->status !== PaymentStatus::Failed) {
+            $payment->update([
+                'status' => PaymentStatus::Failed->value,
+                'notes' => json_encode([
+                    'result_desc' => $result['message'] ?? 'Payment failed',
+                    'result_code' => $result['response_code'] ?? null,
+                ]),
+            ]);
+
+            app(NotificationService::class)->notifyPaymentFailed(
+                $payment->fresh(['invoice.user']),
+                $result['message'] ?? 'Payment failed.',
+            );
         }
 
         return response()->json([
@@ -202,6 +226,6 @@ class WalletController extends Controller
             'toDate' => $filters['to_date'],
         ]);
 
-        return $pdf->download("wallet-statement-{$reseller->id}-" . now()->format('Y-m-d') . '.pdf');
+        return $pdf->download("wallet-statement-{$reseller->id}-".now()->format('Y-m-d').'.pdf');
     }
 }
