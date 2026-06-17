@@ -137,48 +137,118 @@
     @php
         $transferDomain = $order->domain;
         $authCode = $transferDomain?->epp_code ?: $transferDomain?->transfer_authorization_code;
+        $canEditTransfer = $order->canAdminEditTransferDetails();
     @endphp
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-blue-200 dark:border-blue-800 p-6" x-data="{ copied: false }">
-        <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Transfer Details</h3>
-        @if($transferDomain)
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div class="md:col-span-2">
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">EPP / auth code</p>
-                    @if(filled($authCode))
-                        <div class="flex flex-wrap items-center gap-2">
-                            <code class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-mono text-slate-900 dark:text-white break-all">{{ $authCode }}</code>
-                            <button type="button"
-                                @click="navigator.clipboard.writeText(@js((string) $authCode)); copied = true; setTimeout(() => copied = false, 2000)"
-                                class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                <span x-show="!copied">Copy</span>
-                                <span x-show="copied" x-cloak>Copied</span>
-                            </button>
-                        </div>
-                    @else
-                        <p class="text-sm text-amber-700 dark:text-amber-300">No EPP code on file for this domain record.</p>
-                    @endif
-                </div>
-                <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Transfer status</p>
-                    <p class="font-semibold text-slate-900 dark:text-white capitalize">{{ $transferDomain->transfer_status ?? 'pending' }}</p>
-                </div>
-                <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Current registrar</p>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ $transferDomain->old_registrar ?? '—' }}</p>
-                </div>
-                @if($transferDomain->old_registrar_url)
-                <div class="md:col-span-2">
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Registrar website</p>
-                    <a href="{{ $transferDomain->old_registrar_url }}" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 dark:text-blue-400 hover:underline break-all">{{ $transferDomain->old_registrar_url }}</a>
-                </div>
-                @endif
-                @if($transferDomain->transfer_notes)
-                <div class="md:col-span-2">
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Notes</p>
-                    <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $transferDomain->transfer_notes }}</p>
-                </div>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-blue-200 dark:border-blue-800 p-6" x-data="{ copied: false, editing: @js($canEditTransfer && $errors->hasAny(['epp_code', 'old_registrar', 'old_registrar_url', 'transfer_notes'])) }">
+        <div class="flex items-start justify-between gap-4 mb-4">
+            <div>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Transfer Details</h3>
+                @if($canEditTransfer)
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Correct the EPP code or registrar info before pushing to the registrar.</p>
                 @endif
             </div>
+            @if($canEditTransfer)
+                <button type="button"
+                    @click="editing = !editing"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition shrink-0">
+                    <span x-show="!editing">Edit</span>
+                    <span x-show="editing" x-cloak>Cancel</span>
+                </button>
+            @endif
+        </div>
+        @if($transferDomain)
+            <div x-show="!editing">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-1">EPP / auth code</p>
+                        @if(filled($authCode))
+                            <div class="flex flex-wrap items-center gap-2">
+                                <code class="px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-mono text-slate-900 dark:text-white break-all">{{ $authCode }}</code>
+                                <button type="button"
+                                    @click="navigator.clipboard.writeText(@js((string) $authCode)); copied = true; setTimeout(() => copied = false, 2000)"
+                                    class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    <span x-show="!copied">Copy</span>
+                                    <span x-show="copied" x-cloak>Copied</span>
+                                </button>
+                            </div>
+                        @else
+                            <p class="text-sm text-amber-700 dark:text-amber-300">No EPP code on file for this domain record.</p>
+                        @endif
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Transfer status</p>
+                        <p class="font-semibold text-slate-900 dark:text-white capitalize">{{ $transferDomain->transfer_status ?? 'pending' }}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Current registrar</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">{{ $transferDomain->old_registrar ?? '—' }}</p>
+                    </div>
+                    @if($transferDomain->old_registrar_url)
+                    <div class="md:col-span-2">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Registrar website</p>
+                        <a href="{{ $transferDomain->old_registrar_url }}" target="_blank" rel="noopener noreferrer" class="font-medium text-blue-600 dark:text-blue-400 hover:underline break-all">{{ $transferDomain->old_registrar_url }}</a>
+                    </div>
+                    @endif
+                    @if($transferDomain->transfer_notes)
+                    <div class="md:col-span-2">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Notes</p>
+                        <p class="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{{ $transferDomain->transfer_notes }}</p>
+                    </div>
+                    @endif
+                </div>
+            </div>
+
+            @if($canEditTransfer)
+            <form x-show="editing" x-cloak method="POST" action="{{ route('admin.domain-orders.transfer-details.update', $order) }}" class="space-y-4">
+                @csrf
+                @method('PATCH')
+                <input type="hidden" name="stay_on_detail" value="1">
+                <div>
+                    <label for="epp_code" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">EPP / auth code</label>
+                    <input type="text" id="epp_code" name="epp_code" value="{{ old('epp_code', $transferDomain->epp_code ?: $transferDomain->transfer_authorization_code) }}" required
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm font-mono">
+                    @error('epp_code')
+                        <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="old_registrar" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current registrar</label>
+                        <input type="text" id="old_registrar" name="old_registrar" value="{{ old('old_registrar', $transferDomain->old_registrar) }}" required
+                            placeholder="e.g. GoDaddy, Namecheap"
+                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        @error('old_registrar')
+                            <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+                    <div>
+                        <label for="old_registrar_url" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Registrar website</label>
+                        <input type="url" id="old_registrar_url" name="old_registrar_url" value="{{ old('old_registrar_url', $transferDomain->old_registrar_url) }}"
+                            placeholder="https://example.com"
+                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        @error('old_registrar_url')
+                            <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+                <div>
+                    <label for="transfer_notes" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Notes</label>
+                    <textarea id="transfer_notes" name="transfer_notes" rows="3"
+                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">{{ old('transfer_notes', $transferDomain->transfer_notes) }}</textarea>
+                    @error('transfer_notes')
+                        <p class="text-xs text-red-600 dark:text-red-400 mt-1">{{ $message }}</p>
+                    @enderror
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">
+                        Save transfer details
+                    </button>
+                    <button type="button" @click="editing = false" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white text-sm font-medium rounded-lg transition">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+            @endif
         @else
             <p class="text-sm text-amber-700 dark:text-amber-300">No domain record is linked to this transfer order.</p>
         @endif

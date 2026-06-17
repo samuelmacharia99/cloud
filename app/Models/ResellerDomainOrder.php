@@ -234,6 +234,29 @@ class ResellerDomainOrder extends Model
         return in_array($this->status, ['queued', 'cancelled', 'failed', 'expired'], true);
     }
 
+    public function canAdminEditTransferDetails(): bool
+    {
+        if (! $this->isTransfer()) {
+            return false;
+        }
+
+        if (! in_array($this->status, ['queued', 'pushed', 'failed'], true)) {
+            return false;
+        }
+
+        $domain = $this->relationLoaded('domain') ? $this->domain : $this->domain()->first();
+
+        if (! $domain) {
+            return false;
+        }
+
+        if ($domain->status === 'active' && $domain->registrar_external_id) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function isSelfOrder(): bool
     {
         if ($this->isPlatformOrder()) {

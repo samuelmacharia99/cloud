@@ -322,6 +322,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/domain-orders/{order}/fail', [DomainOrderController::class, 'fail'])->name('admin.domain-orders.fail');
         Route::post('admin/domain-orders/{order}/push', [DomainOrderController::class, 'push'])->name('admin.domain-orders.push');
         Route::post('admin/domain-orders/{order}/push-registrar', [DomainOrderController::class, 'pushToRegistrar'])->name('admin.domain-orders.push-registrar');
+        Route::patch('admin/domain-orders/{order}/transfer-details', [DomainOrderController::class, 'updateTransferDetails'])->name('admin.domain-orders.transfer-details.update');
         Route::post('admin/domain-orders/{order}/cancel', [DomainOrderController::class, 'cancel'])->name('admin.domain-orders.cancel');
         Route::delete('admin/domain-orders/{order}', [DomainOrderController::class, 'destroy'])->name('admin.domain-orders.destroy');
 

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Admin;
 
+use App\Enums\ResellerDomainOrderType;
 use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
@@ -251,5 +252,83 @@ class AdminDomainOrderActionsTest extends TestCase
             ->assertSessionHas('success');
 
         $this->assertDatabaseMissing('reseller_domain_orders', ['id' => $order->id]);
+    }
+
+    private function createTransferOrder(User $reseller, string $status): ResellerDomainOrder
+    {
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'transferfix',
+            'extension' => '.com',
+            'type' => 'transfer',
+            'status' => 'pending',
+            'transfer_status' => 'pending',
+            'epp_code' => 'WRONG-CODE-123',
+            'old_registrar' => 'GoDaddy',
+        ]);
+
+        return ResellerDomainOrder::create([
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'domain_id' => $domain->id,
+            'domain_name' => 'transferfix',
+            'extension' => '.com',
+            'order_type' => ResellerDomainOrderType::Transfer,
+            'years' => 1,
+            'wholesale_amount' => 500,
+            'retail_amount' => 200,
+            'status' => $status,
+            'push_mode' => 'auto',
+            'queued_at' => now(),
+            'pushed_at' => $status === 'pushed' ? now() : null,
+            'expires_at' => now()->addDays(10),
+        ]);
+    }
+
+    public function test_admin_can_update_transfer_details_on_pushed_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createTransferOrder($reseller, 'pushed');
+
+        $this->actingAs($admin)
+            ->patch(route('admin.domain-orders.transfer-details.update', $order), [
+                'stay_on_detail' => '1',
+                'epp_code' => 'CORRECT-CODE-999',
+                'old_registrar' => 'Namecheap',
+                'old_registrar_url' => 'https://www.namecheap.com',
+                'transfer_notes' => 'Customer supplied wrong EPP code; corrected by admin.',
+            ])
+            ->assertRedirect(route('admin.domain-orders.show', $order))
+            ->assertSessionHas('success');
+
+        $order->domain->refresh();
+
+        $this->assertSame('CORRECT-CODE-999', $order->domain->epp_code);
+        $this->assertNull($order->domain->transfer_authorization_code);
+        $this->assertSame('Namecheap', $order->domain->old_registrar);
+        $this->assertSame('https://www.namecheap.com', $order->domain->old_registrar_url);
+        $this->assertSame('Customer supplied wrong EPP code; corrected by admin.', $order->domain->transfer_notes);
+    }
+
+    public function test_admin_cannot_update_transfer_details_on_completed_order(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $reseller = $this->createReseller();
+        $order = $this->createTransferOrder($reseller, 'completed');
+        $order->update(['completed_at' => now()]);
+
+        $this->actingAs($admin)
+            ->patch(route('admin.domain-orders.transfer-details.update', $order), [
+                'epp_code' => 'CORRECT-CODE-999',
+                'old_registrar' => 'Namecheap',
+            ])
+            ->assertRedirect(route('admin.domain-orders.show', $order))
+            ->assertSessionHas('error');
+
+        $this->assertSame('WRONG-CODE-123', $order->domain->fresh()->epp_code);
     }
 }

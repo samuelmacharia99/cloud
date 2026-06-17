@@ -170,6 +170,33 @@ class DomainOrderController extends Controller
         }
     }
 
+    public function updateTransferDetails(Request $request, ResellerDomainOrder $order)
+    {
+        if (! $order->canAdminEditTransferDetails()) {
+            return $this->redirectBack($request)
+                ->with('error', 'Transfer details cannot be edited for this order.');
+        }
+
+        $validated = $request->validate([
+            'epp_code' => 'required|string|min:5|max:255',
+            'old_registrar' => 'required|string|min:2|max:255',
+            'old_registrar_url' => 'nullable|url|max:255',
+            'transfer_notes' => 'nullable|string|max:2000',
+        ]);
+
+        $domain = $order->domain;
+        $domain->update([
+            'epp_code' => $validated['epp_code'],
+            'transfer_authorization_code' => null,
+            'old_registrar' => $validated['old_registrar'],
+            'old_registrar_url' => $validated['old_registrar_url'] ?? null,
+            'transfer_notes' => $validated['transfer_notes'] ?? $domain->transfer_notes,
+        ]);
+
+        return $this->redirectBack($request)
+            ->with('success', "Transfer details for {$order->fullDomainName()} have been updated.");
+    }
+
     public function destroy(Request $request, ResellerDomainOrder $order)
     {
         if (! $order->canAdminDelete()) {
