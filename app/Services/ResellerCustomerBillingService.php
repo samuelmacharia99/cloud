@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ResellerCustomerBillingService
 {
@@ -79,9 +80,19 @@ class ResellerCustomerBillingService
         return $this->recordPayment($reseller, $invoice, [
             'amount' => $remaining,
             'payment_method' => 'manual',
-            'transaction_reference' => 'Marked paid by reseller',
+            'transaction_reference' => $this->resellerMarkPaidReference($reseller, $invoice),
             'notes' => 'Marked as paid from reseller portal',
         ]);
+    }
+
+    private function resellerMarkPaidReference(User $reseller, Invoice $invoice): string
+    {
+        return sprintf(
+            'RSL-%d-INV-%d-%s',
+            $reseller->id,
+            $invoice->id,
+            Str::upper(Str::random(8))
+        );
     }
 
     public function cancelInvoice(User $reseller, Invoice $invoice): Invoice

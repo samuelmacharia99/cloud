@@ -32,11 +32,24 @@ class PaymentWebhookController extends Controller
             $gateway = PaymentGatewayFactory::make('mpesa');
             $result = $gateway->handleCallback($request->all());
 
-            if ($result['success'] && isset($result['payment_id'])) {
+            if (isset($result['wallet_topup']) || isset($result['credit_topup'])) {
+                return response('', 200);
+            }
+
+            if (isset($result['payment_id'])) {
                 $payment = Payment::with('invoice.user')->find($result['payment_id']);
 
-                if ($payment && $payment->invoice) {
-                    $this->handleCompletedInvoicePayment($payment);
+                if ($payment?->invoice) {
+                    $shouldSettle = ($result['success'] ?? false)
+                        && empty($result['already_processed']);
+
+                    if (! $shouldSettle && $payment->isCompleted() && ! $payment->invoice->isPaid()) {
+                        $shouldSettle = true;
+                    }
+
+                    if ($shouldSettle) {
+                        $this->handleCompletedInvoicePayment($payment);
+                    }
                 }
             }
 

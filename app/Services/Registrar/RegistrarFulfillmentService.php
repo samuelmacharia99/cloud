@@ -69,7 +69,7 @@ class RegistrarFulfillmentService
                 : ['success' => false, 'message' => ''];
         }
 
-        if ($domain->registrar_external_id && in_array($domain->status, ['provisioning', 'active'], true)) {
+        if ($domain->registrar_external_id && in_array($domain->status, ['pending', 'active'], true)) {
             if ($manual) {
                 return ['success' => false, 'message' => 'This domain already has an active registrar submission.'];
             }
@@ -260,20 +260,29 @@ class RegistrarFulfillmentService
                 DomainTransferService::completeTransfer($domain, $registrar->name);
             }
         } elseif ($status === 'REQ') {
-            $updates['status'] = $domain->isTransfer() ? $domain->status : 'provisioning';
+            $updates['status'] = $domain->isTransfer() ? $domain->status : 'pending';
             if ($domain->isTransfer()) {
                 $updates['transfer_status'] = 'in_progress';
             }
         } elseif ($status === 'FAI') {
             if ($domain->isTransfer()) {
                 DomainTransferService::failTransfer($domain, 'Registrar reported transfer failure.');
-            } else {
-                $updates['status'] = 'failed';
+
+                return false;
             }
+
+            $updates['status'] = 'pending';
         }
 
         if ($updates !== []) {
             $domain->update($updates);
+        }
+
+        if ($status === 'FAI' && ! $domain->isTransfer()) {
+            app(DomainPushService::class)->failOrdersForDomain(
+                $domain->fresh(),
+                'Registrar reported registration failure.',
+            );
         }
 
         return $status === 'ACT';
@@ -285,7 +294,13 @@ class RegistrarFulfillmentService
     private function applyOperationResult(Domain $domain, Registrar $registrar, array $result, ResellerDomainOrder $order): void
     {
         if (! ($result['success'] ?? false)) {
-            app(DomainPushService::class)->failOrder($order, $result['message'] ?? 'Registrar rejected the request.');
+            $message = $result['message'] ?? 'Registrar rejected the request.';
+
+            if ($order->isTransfer()) {
+                DomainTransferService::failTransfer($domain, $message);
+            } else {
+                app(DomainPushService::class)->failOrder($order, $message);
+            }
 
             return;
         }
@@ -307,7 +322,7 @@ class RegistrarFulfillmentService
         if ($order->isTransfer()) {
             DomainTransferService::markInProgress($domain->fresh());
         } else {
-            $domain->update(['status' => 'provisioning']);
+            $domain->update(['status' => 'pending']);
             $this->activateLinkedServices($order);
         }
     }

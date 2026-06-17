@@ -2,7 +2,6 @@
 
 namespace App\Services\PaymentGateway;
 
-use App\Enums\InvoiceStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -10,6 +9,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\CustomerCreditTopupService;
+use App\Services\NotificationService;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -322,6 +322,7 @@ class MpesaService implements PaymentGatewayInterface
                         'success' => true,
                         'message' => 'Payment already processed',
                         'payment_id' => $payment->id,
+                        'already_processed' => true,
                     ];
                 }
 
@@ -344,6 +345,7 @@ class MpesaService implements PaymentGatewayInterface
                             'success' => true,
                             'message' => 'Payment already processed',
                             'payment_id' => $lockedPayment->id,
+                            'already_processed' => true,
                         ];
                     }
 
@@ -382,9 +384,16 @@ class MpesaService implements PaymentGatewayInterface
                             ]),
                         ]);
 
+                        $this->notifyPaymentFailed(
+                            $lockedPayment,
+                            'Payment amount does not match invoice total (expected '
+                            .(int) ceil((float) $lockedPayment->amount).', received '.(int) $mpesaAmount.').',
+                        );
+
                         return [
                             'success' => false,
                             'message' => 'Payment amount does not match invoice total',
+                            'payment_id' => $lockedPayment->id,
                         ];
                     }
 
@@ -411,17 +420,6 @@ class MpesaService implements PaymentGatewayInterface
                         return ['success' => true, 'payment_id' => $lockedPayment->id, 'credit_topup' => true];
                     }
 
-                    if ($lockedPayment->invoice) {
-                        $lockedPayment->invoice->update(['status' => InvoiceStatus::Paid->value]);
-
-                        if ($lockedPayment->invoice->order) {
-                            $lockedPayment->invoice->order->update([
-                                'status' => 'paid',
-                                'payment_status' => 'paid',
-                            ]);
-                        }
-                    }
-
                     Log::info('M-Pesa payment completed', [
                         'payment_id' => $lockedPayment->id,
                         'invoice_id' => $lockedPayment->invoice_id,
@@ -435,25 +433,48 @@ class MpesaService implements PaymentGatewayInterface
                 });
 
                 return $result;
-            } else {
-                $payment->update([
-                    'status' => PaymentStatus::Failed->value,
-                    'notes' => json_encode([
-                        'result_code' => $resultCode,
-                        'result_desc' => $stkCallback['ResultDesc'] ?? 'Unknown error',
-                    ]),
-                ]);
+            }
 
-                Log::info('M-Pesa payment failed', [
-                    'payment_id' => $payment->id,
-                    'result_desc' => $stkCallback['ResultDesc'] ?? 'Unknown error',
-                ]);
-
+            if ($payment->isCompleted()) {
                 return [
                     'success' => false,
-                    'message' => 'Payment failed: '.($stkCallback['ResultDesc'] ?? 'Unknown error'),
+                    'message' => 'Payment already completed',
+                    'payment_id' => $payment->id,
+                    'already_processed' => true,
                 ];
             }
+
+            if ($payment->isFailed()) {
+                return [
+                    'success' => false,
+                    'message' => 'Payment already marked as failed',
+                    'payment_id' => $payment->id,
+                    'already_processed' => true,
+                ];
+            }
+
+            $failureReason = $stkCallback['ResultDesc'] ?? 'Unknown error';
+
+            $payment->update([
+                'status' => PaymentStatus::Failed->value,
+                'notes' => json_encode([
+                    'result_code' => $resultCode,
+                    'result_desc' => $failureReason,
+                ]),
+            ]);
+
+            $this->notifyPaymentFailed($payment, 'Payment failed: '.$failureReason);
+
+            Log::info('M-Pesa payment failed', [
+                'payment_id' => $payment->id,
+                'result_desc' => $failureReason,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Payment failed: '.$failureReason,
+                'payment_id' => $payment->id,
+            ];
         } catch (\Exception $e) {
             Log::error('M-Pesa callback processing failed', [
                 'error' => $e->getMessage(),
@@ -976,6 +997,21 @@ class MpesaService implements PaymentGatewayInterface
         $enabled = Setting::getValue('mpesa_enabled');
 
         return in_array($enabled, ['1', 'true', true], true) && $hasCredentials;
+    }
+
+    private function notifyPaymentFailed(Payment $payment, string $reason): void
+    {
+        try {
+            app(NotificationService::class)->notifyPaymentFailed(
+                $payment->fresh(['invoice.user']),
+                $reason,
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to send M-Pesa payment failure notification', [
+                'payment_id' => $payment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

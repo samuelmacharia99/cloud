@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerCustomerBillingService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class ResellerCustomerBillingTest extends TestCase
@@ -91,6 +92,47 @@ class ResellerCustomerBillingTest extends TestCase
         $invoice->refresh();
         $this->assertEquals('paid', $invoice->status->value ?? $invoice->status);
         $this->assertEquals(0, $invoice->getAmountRemaining());
+    }
+
+    public function test_mark_as_paid_uses_unique_transaction_reference_per_invoice(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $invoiceA = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'total' => 170,
+            'subtotal' => 170,
+            'tax' => 0,
+        ]);
+
+        $invoiceB = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'total' => 190,
+            'subtotal' => 190,
+            'tax' => 0,
+        ]);
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-invoices.mark-paid', $invoiceA))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->actingAs($reseller)
+            ->post(route('reseller.customer-invoices.mark-paid', $invoiceB))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $paymentA = Payment::where('invoice_id', $invoiceA->id)->first();
+        $paymentB = Payment::where('invoice_id', $invoiceB->id)->first();
+
+        $this->assertNotNull($paymentA);
+        $this->assertNotNull($paymentB);
+        $this->assertNotSame($paymentA->transaction_reference, $paymentB->transaction_reference);
+        $this->assertStringStartsWith('RSL-'.$reseller->id.'-INV-'.$invoiceA->id.'-', $paymentA->transaction_reference ?? '');
+        $this->assertStringStartsWith('RSL-'.$reseller->id.'-INV-'.$invoiceB->id.'-', $paymentB->transaction_reference ?? '');
     }
 
     public function test_outstanding_balance_uses_amount_remaining_not_invoice_total(): void
@@ -449,12 +491,12 @@ class ResellerCustomerBillingTest extends TestCase
 
     public function test_reseller_da_only_catalog_shared_hosting_order_stores_directadmin_context(): void
     {
-        \Illuminate\Support\Facades\Http::fake(function ($request) {
+        Http::fake(function ($request) {
             if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
-                return \Illuminate\Support\Facades\Http::response(json_encode(['list' => ['Gold']]), 200);
+                return Http::response(json_encode(['list' => ['Gold']]), 200);
             }
 
-            return \Illuminate\Support\Facades\Http::response(json_encode(['disk' => '5000M', 'bandwidth' => '50000M']), 200);
+            return Http::response(json_encode(['disk' => '5000M', 'bandwidth' => '50000M']), 200);
         });
 
         $reseller = $this->reseller();

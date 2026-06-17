@@ -168,11 +168,18 @@ class DomainTransferService
     public static function failTransfer(Domain $domain, string $reason): bool
     {
         try {
-            $domain->update([
+            $updates = [
                 'transfer_status' => 'failed',
-                'status' => 'failed',
                 'transfer_notes' => "Transfer failed: {$reason}",
-            ]);
+            ];
+
+            if ($domain->status !== 'active') {
+                $updates['status'] = 'pending';
+            }
+
+            $domain->update($updates);
+
+            app(DomainPushService::class)->failOrdersForDomain($domain, $reason);
 
             Log::error('Domain transfer failed', [
                 'domain_id' => $domain->id,

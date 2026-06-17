@@ -33,7 +33,7 @@ class SyncRegistrarDomainStatusCommand extends BaseCronCommand
 
         $domains = Domain::query()
             ->where(function ($query) {
-                $query->whereIn('status', ['provisioning', 'pending'])
+                $query->where('status', 'pending')
                     ->orWhere(function ($sub) {
                         $sub->where('type', 'transfer')
                             ->whereIn('transfer_status', ['initiated', 'in_progress', 'pending']);

@@ -536,6 +536,14 @@ class DomainPushService
         });
     }
 
+    public function failOrdersForDomain(Domain $domain, string $reason): void
+    {
+        ResellerDomainOrder::query()
+            ->where('domain_id', $domain->id)
+            ->whereIn('status', ['queued', 'pushed'])
+            ->each(fn (ResellerDomainOrder $order) => $this->failOrder($order, $reason));
+    }
+
     public function failOrder(ResellerDomainOrder $order, string $reason): void
     {
         $this->db->transaction(function () use ($order, $reason) {

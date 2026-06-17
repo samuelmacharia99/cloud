@@ -3,12 +3,15 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\MpesaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Mockery;
 use Tests\TestCase;
 
 class MpesaServiceTest extends TestCase
@@ -102,5 +105,95 @@ class MpesaServiceTest extends TestCase
         $this->assertSame('failed', $result['status']);
         $this->assertSame('1032', $result['response_code']);
     }
-}
 
+    public function test_handle_callback_completes_payment_without_marking_invoice_paid(): void
+    {
+        $user = User::factory()->create();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'unpaid',
+            'total' => 1500,
+        ]);
+
+        $payment = Payment::create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 1500,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'transaction_reference' => 'ws_CO_success_1',
+            'status' => 'pending',
+        ]);
+
+        $result = app(MpesaService::class)->handleCallback([
+            'Body' => [
+                'stkCallback' => [
+                    'CheckoutRequestID' => 'ws_CO_success_1',
+                    'ResultCode' => 0,
+                    'CallbackMetadata' => [
+                        'Item' => [
+                            ['Name' => 'Amount', 'Value' => 1500],
+                            ['Name' => 'MpesaReceiptNumber', 'Value' => 'ABC123'],
+                            ['Name' => 'TransactionDate', 'Value' => 20260617100000],
+                            ['Name' => 'PhoneNumber', 'Value' => 254712345678],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame($payment->id, $result['payment_id']);
+
+        $payment->refresh();
+        $invoice->refresh();
+
+        $this->assertTrue($payment->isCompleted());
+        $this->assertSame('unpaid', $invoice->status->value ?? $invoice->status);
+    }
+
+    public function test_handle_callback_failure_sends_payment_failed_notification(): void
+    {
+        $user = User::factory()->create();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'unpaid',
+            'total' => 500,
+        ]);
+
+        Payment::create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 500,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'transaction_reference' => 'ws_CO_failed_1',
+            'status' => 'pending',
+        ]);
+
+        $notifications = Mockery::mock(NotificationService::class);
+        $notifications->shouldReceive('notifyPaymentFailed')
+            ->once()
+            ->withArgs(function ($payment, $reason) {
+                return $payment->transaction_reference === 'ws_CO_failed_1'
+                    && str_contains($reason, 'Request cancelled by user');
+            });
+        $this->app->instance(NotificationService::class, $notifications);
+
+        $result = app(MpesaService::class)->handleCallback([
+            'Body' => [
+                'stkCallback' => [
+                    'CheckoutRequestID' => 'ws_CO_failed_1',
+                    'ResultCode' => 1032,
+                    'ResultDesc' => 'Request cancelled by user',
+                ],
+            ],
+        ]);
+
+        $this->assertFalse($result['success']);
+        $this->assertDatabaseHas('payments', [
+            'transaction_reference' => 'ws_CO_failed_1',
+            'status' => 'failed',
+        ]);
+    }
+}
