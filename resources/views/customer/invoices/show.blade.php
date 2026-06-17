@@ -162,12 +162,14 @@
                     @if(($appliedCredits ?? 0) > 0)
                         <p class="text-sm text-emerald-700 dark:text-emerald-300 mb-3">Credits applied: <x-invoice-money :invoice="$invoice" :amount="$appliedCredits" /></p>
                     @endif
-                    <a href="{{ route('customer.payment.select-method', $invoice) }}" class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h10m4 0a1 1 0 11-2 0 1 1 0 012 0z"/>
-                        </svg>
-                        Pay Now — <x-invoice-money :invoice="$invoice" :amount="$amountRemaining ?? $invoice->total" />
-                    </a>
+                    <x-invoice-payment-modal
+                        :invoice="$invoice"
+                        context="customer"
+                        :fetch-url="route('customer.payment.select-method', $invoice)"
+                        :submit-url="route('customer.payment.initiate', $invoice)"
+                        :amount-due="$amountRemaining ?? $invoice->getAmountRemaining()"
+                        button-class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
+                    />
                 @endif
 
                 <!-- Download PDF Button -->

@@ -94,6 +94,15 @@ class PaymentController extends Controller
                 ->with('error', 'No payment methods available at the moment. Please contact support.');
         }
 
+        if (request()->wantsJson()) {
+            return response()->json([
+                'gateways' => $availableGateways,
+                'amount_due' => $invoice->getAmountRemaining(),
+                'credit_balance' => $creditBalance,
+                'applied_credits' => $invoice->getAppliedCredits(),
+            ]);
+        }
+
         return view('customer.payment.select-method', [
             'invoice' => $invoice->fresh(),
             'availableGateways' => $availableGateways,
