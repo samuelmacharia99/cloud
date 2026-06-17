@@ -3,6 +3,7 @@
 use App\Helpers\CronHelper;
 use App\Helpers\CurrencyHelper;
 use App\Models\Setting;
+use App\Models\TicketReply;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\View;
@@ -114,6 +115,25 @@ function email_support_email(): string
 
     return $branding['support_email']
         ?? Setting::getValue('site_email', Setting::getValue('company_email', 'support@talksasa.cloud'));
+}
+
+function email_is_white_label(): bool
+{
+    return (bool) (email_branding()['is_white_label'] ?? false);
+}
+
+function email_support_team_label(): string
+{
+    return email_company_name().' Support Team';
+}
+
+function email_reply_author_name(TicketReply $reply): string
+{
+    if ($reply->is_staff_reply) {
+        return email_support_team_label();
+    }
+
+    return $reply->user?->name ?? 'Customer';
 }
 
 /**

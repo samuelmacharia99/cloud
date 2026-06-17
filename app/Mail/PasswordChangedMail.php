@@ -14,14 +14,12 @@ class PasswordChangedMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
-    public function __construct(private User $user)
-    {
-    }
+    public function __construct(private User $user) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Password Changed Successfully — Talksasa Cloud',
+            subject: 'Password Changed Successfully — '.email_company_name(),
         );
     }
 

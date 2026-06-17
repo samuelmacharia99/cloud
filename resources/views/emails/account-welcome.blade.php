@@ -1,14 +1,11 @@
 @extends('emails._layout')
 
 @section('content')
-@php
-    $portalLabel = $accountType === 'reseller' ? 'reseller portal' : 'customer portal';
-@endphp
 <h1>Welcome to {{ email_company_name() }}</h1>
 
 <p>Hello {{ $user->name }},</p>
 
-<p>Your {{ $portalLabel }} account has been created. Use the login details below to sign in.</p>
+<p>Your account has been created. Use the login details below to sign in.</p>
 
 <h2>Login Details</h2>
 <table cellpadding="0" cellspacing="0" style="width:100%;margin:16px 0;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">

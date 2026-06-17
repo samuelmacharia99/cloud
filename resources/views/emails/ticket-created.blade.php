@@ -40,6 +40,5 @@
 
 <p>Thank you for contacting us!</p>
 
-<p>Best regards,<br>
-{{ email_company_name() }} Support Team</p>
+@include('emails.partials.signature', ['supportLine' => email_support_team_label()])
 @endsection

@@ -10,7 +10,7 @@
 <h2>Ticket: {{ $ticket->title }}</h2>
 <p><strong>Ticket Status:</strong> {{ ucfirst(str_replace('_', ' ', $ticket->status)) }}</p>
 
-<h2>Reply from {{ $reply->user->name }}</h2>
+<h2>Reply from {{ email_reply_author_name($reply) }}</h2>
 <p style="white-space: pre-wrap; word-wrap: break-word;">{{ $reply->message }}</p>
 
 <p style="color: #666; font-size: 12px; margin-top: 20px;">
@@ -21,6 +21,5 @@
 
 <p><a href="{{ route('customer.tickets.show', $ticket) }}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 4px; margin-top: 10px;">View Full Ticket</a></p>
 
-<p>Thank you!<br>
-{{ email_company_name() }} Support Team</p>
+@include('emails.partials.signature', ['supportLine' => email_support_team_label()])
 @endsection

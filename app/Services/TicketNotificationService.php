@@ -75,12 +75,14 @@ class TicketNotificationService
         }
 
         $reseller = $this->routing->owningReseller($ticket);
-        $resellerName = $reseller?->name ?? 'Reseller';
+        $resellerName = $reseller
+            ? $this->brandingResolver->forReseller($reseller)['company_name']
+            : 'Unknown provider';
         $subject = 'Ticket #'.$ticket->id.' escalated from '.$resellerName;
 
         $body = "Ticket #{$ticket->id} was escalated to platform support.\n\n"
             ."Customer: {$ticket->user->name}\n"
-            ."Reseller: {$resellerName}\n"
+            ."Provider: {$resellerName}\n"
             ."Title: {$ticket->title}\n"
             .'Priority: '.ucfirst($ticket->priority)."\n";
 
@@ -105,7 +107,7 @@ class TicketNotificationService
             .Str::limit($ticket->title, 50);
         $this->notifications->sendAdminSmsAlert(NotificationEvent::TicketEscalated, $sms);
 
-        $this->notifyCustomerEscalated($ticket, $resellerName);
+        $this->notifyCustomerEscalated($ticket);
     }
 
     private function notifyCustomerTicketCreated(Ticket $ticket): void
@@ -338,7 +340,7 @@ class TicketNotificationService
         }
     }
 
-    private function notifyCustomerEscalated(Ticket $ticket, string $resellerName): void
+    private function notifyCustomerEscalated(Ticket $ticket): void
     {
         if (! $this->preferences->isGloballyEnabled(NotificationEvent::TicketCreated)) {
             return;
@@ -352,7 +354,7 @@ class TicketNotificationService
             $subject = 'Your ticket #'.$ticket->id.' has been escalated';
             $this->emailDelivery->sendCustomerMailable(
                 $ticket->user,
-                new TicketEscalatedCustomerMail($ticket, $resellerName),
+                new TicketEscalatedCustomerMail($ticket),
                 $subject,
                 NotificationEvent::TicketCreated,
             );

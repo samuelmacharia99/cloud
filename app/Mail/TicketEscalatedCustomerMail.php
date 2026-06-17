@@ -15,13 +15,12 @@ class TicketEscalatedCustomerMail extends Mailable
 
     public function __construct(
         public Ticket $ticket,
-        public string $resellerName,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Support Ticket #'.$this->ticket->id.' escalated to platform team',
+            subject: 'Support ticket #'.$this->ticket->id.' escalated for priority review',
         );
     }
 
