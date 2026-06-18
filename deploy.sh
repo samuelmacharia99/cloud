@@ -71,14 +71,14 @@ log ".env verified ✓"
 # Step 2: Backup current state
 log "Step 2/10: Creating backup..."
 BACKUP_NAME="backup_${TIMESTAMP}"
-mkdir -p "$BACKUP_DIR/$BACKUP_NAME"
+mkdir -p "$BACKUP_DIR/$BACKUP_NAME" || warning "Could not create backup directory: $BACKUP_DIR/$BACKUP_NAME"
 
-# Backup vendor, storage, and key files (not .env, that stays)
-if [ -d "$APP_PATH/vendor" ]; then
-    cp -r "$APP_PATH/vendor" "$BACKUP_DIR/$BACKUP_NAME/" 2>/dev/null || warning "Could not backup vendor"
-fi
+# Backup lock file only; vendor is restored by composer install on deploy.
 if [ -f "$APP_PATH/composer.lock" ]; then
-    cp "$APP_PATH/composer.lock" "$BACKUP_DIR/$BACKUP_NAME/" 2>/dev/null
+    cp "$APP_PATH/composer.lock" "$BACKUP_DIR/$BACKUP_NAME/" 2>/dev/null || warning "Could not backup composer.lock"
+fi
+if [ -f "$APP_PATH/package-lock.json" ]; then
+    cp "$APP_PATH/package-lock.json" "$BACKUP_DIR/$BACKUP_NAME/" 2>/dev/null || warning "Could not backup package-lock.json"
 fi
 log "Backup created at $BACKUP_DIR/$BACKUP_NAME ✓"
 
