@@ -2,24 +2,71 @@
 
 @section('title', 'Create Account')
 
+@php
+    $passwordMinLength = config('security.password.min_length', 8);
+@endphp
+
 @section('content')
-<div x-data="{ showPassword: false }" class="space-y-7">
+<div
+    x-data="{
+        showPassword: false,
+        showConfirmPassword: false,
+        generatingPassword: false,
+        async generatePassword() {
+            this.generatingPassword = true;
+            try {
+                const res = await fetch('{{ route('register.generate-password') }}?length=16', {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                if (!res.ok) throw new Error('Failed');
+                const data = await res.json();
+                if (!data.password) throw new Error('Empty');
+                document.getElementById('password').value = data.password;
+                document.getElementById('password_confirmation').value = data.password;
+                this.showPassword = true;
+                this.showConfirmPassword = true;
+            } catch {
+                alert('Could not generate a password. Please try again or enter one manually.');
+            } finally {
+                this.generatingPassword = false;
+            }
+        }
+    }"
+    x-init="@if ($errors->any()) $nextTick(() => document.querySelector('.auth-field-error, .auth-input-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) @endif"
+    class="space-y-7"
+>
     <!-- Header -->
     <div class="space-y-3 mb-2">
         <h1 class="text-4xl font-bold tracking-tight">Create your account</h1>
         <p class="text-base text-slate-600 dark:text-slate-400 font-medium">Start managing your infrastructure in minutes</p>
     </div>
 
+    @if ($errors->any())
+        <div class="auth-field-error rounded-lg p-4 text-sm" role="alert">
+            <p class="font-semibold mb-2">We couldn't create your account yet:</p>
+            <ul class="list-disc list-inside space-y-1">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     <!-- Registration Form -->
     <form method="POST" action="{{ route('register') }}" class="space-y-5">
         @csrf
 
-        <input type="hidden" name="registration_token" value="{{ $registrationToken ?? '' }}">
+        <input type="hidden" name="registration_token" value="{{ $registrationToken ?? old('registration_token', '') }}">
 
-        {{-- Honeypot: leave empty; bots often fill hidden fields --}}
-        <div class="absolute opacity-0 pointer-events-none h-0 overflow-hidden" aria-hidden="true" tabindex="-1">
-            <label for="contact_website">Website</label>
-            <input type="text" id="contact_website" name="{{ config('registration.honeypot_field', 'contact_website') }}" value="" autocomplete="off" tabindex="-1">
+        {{-- Honeypot: leave empty; bots and autofill often fill hidden fields --}}
+        <div style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+            <input
+                type="text"
+                name="{{ config('registration.honeypot_field', 'contact_website') }}"
+                value=""
+                tabindex="-1"
+                autocomplete="off"
+            >
         </div>
 
         <!-- Full Name -->
@@ -38,8 +85,9 @@
                 placeholder="Jane Doe"
                 class="auth-input"
             />
+            <p class="text-xs text-slate-500 dark:text-slate-400">Use your first and last name.</p>
             @error('name')
-                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+                <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
             @enderror
         </div>
 
@@ -68,7 +116,7 @@
                 class="auth-input"
             />
             @error('company')
-                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+                <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
             @enderror
         </div>
 
@@ -88,15 +136,28 @@
                 class="auth-input"
             />
             @error('email')
-                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+                <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
             @enderror
         </div>
 
         <!-- Password -->
         <div class="space-y-2.5">
-            <label for="password" class="block text-sm font-semibold text-slate-900 dark:text-white">
-                Password
-            </label>
+            <div class="flex items-center justify-between gap-3">
+                <label for="password" class="block text-sm font-semibold text-slate-900 dark:text-white">
+                    Password
+                </label>
+                <button
+                    type="button"
+                    @click="generatePassword()"
+                    :disabled="generatingPassword"
+                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 disabled:opacity-50 transition"
+                >
+                    <svg class="w-4 h-4" :class="{ 'animate-spin': generatingPassword }" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <span x-text="generatingPassword ? 'Generating…' : 'Generate password'"></span>
+                </button>
+            </div>
             <div class="relative" style="overflow: hidden; height: 2.75rem;">
                 <input
                     :type="showPassword ? 'text' : 'password'"
@@ -124,8 +185,11 @@
                     </svg>
                 </button>
             </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+                At least {{ $passwordMinLength }} characters with uppercase, lowercase, numbers, and symbols.
+            </p>
             @error('password')
-                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+                <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
             @enderror
         </div>
 
@@ -134,17 +198,35 @@
             <label for="password_confirmation" class="block text-sm font-semibold text-slate-900 dark:text-white">
                 Confirm password
             </label>
-            <input
-                type="password"
-                id="password_confirmation"
-                name="password_confirmation"
-                required
-                autocomplete="new-password"
-                placeholder="••••••••"
-                class="auth-input"
-            />
+            <div class="relative" style="overflow: hidden; height: 2.75rem;">
+                <input
+                    :type="showConfirmPassword ? 'text' : 'password'"
+                    id="password_confirmation"
+                    name="password_confirmation"
+                    required
+                    autocomplete="new-password"
+                    placeholder="••••••••"
+                    class="auth-input pr-11"
+                    style="padding-right: 2.75rem !important;"
+                />
+                <button
+                    type="button"
+                    @click="showConfirmPassword = !showConfirmPassword"
+                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                    aria-label="Toggle confirm password visibility"
+                >
+                    <svg x-show="!showConfirmPassword" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                    </svg>
+                    <svg x-show="showConfirmPassword" x-cloak class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-4.803m5.596-3.856a3.375 3.375 0 11-4.753 4.753m5.596-3.856a3.375 3.375 0 01-4.753 4.753M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 9.172M15.828 15.828m-7.071-7.071L15.828 15.828M9.172 15.828L15.828 9.172"></path>
+                    </svg>
+                </button>
+            </div>
             @error('password_confirmation')
-                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+                <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
             @enderror
         </div>
 
@@ -154,7 +236,9 @@
                 id="agree"
                 type="checkbox"
                 name="agree"
+                value="1"
                 required
+                @checked(old('agree'))
                 class="w-4 h-4 mt-1.5 rounded-md border-slate-300 dark:border-slate-600 text-purple-600 dark:text-purple-500 focus:ring-0 focus:border-purple-500 transition cursor-pointer flex-shrink-0"
             >
             <label for="agree" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed cursor-pointer">
@@ -162,10 +246,10 @@
             </label>
         </div>
         @error('agree')
-            <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+            <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
         @enderror
         @error('registration_token')
-            <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+            <p class="mt-1.5 text-xs font-medium auth-input-error">{{ $message }}</p>
         @enderror
 
         <!-- Sign Up Button -->
@@ -200,7 +284,7 @@
         <!-- GitHub -->
         <button type="button" class="auth-btn-secondary inline-flex items-center justify-center gap-2">
             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v 3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+                <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
             </svg>
             <span class="hidden sm:inline text-xs font-semibold">GitHub</span>
         </button>

@@ -5,8 +5,8 @@ namespace App\Http\Requests\Auth;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\RegistrationGuardService;
+use App\Services\SecurityService;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rules;
 use Illuminate\Validation\Validator;
 
 class RegisterUserRequest extends FormRequest
@@ -23,7 +23,7 @@ class RegisterUserRequest extends FormRequest
             'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'company' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
-            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'password' => ['required', 'confirmed', SecurityService::getPasswordRule()],
             'agree' => ['required', 'accepted'],
             'registration_token' => ['required', 'string'],
         ];

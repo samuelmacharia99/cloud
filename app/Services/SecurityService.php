@@ -36,7 +36,7 @@ class SecurityService
     public static function isLoginRateLimited(string $email): bool
     {
         $config = config('security.rate_limit');
-        $key = 'login_attempts:' . $email;
+        $key = 'login_attempts:'.$email;
         $limit = $config['login_attempts'] ?? 5;
         $window = $config['login_window'] ?? 15;
 
@@ -49,7 +49,7 @@ class SecurityService
     public static function recordFailedLoginAttempt(string $email): void
     {
         $config = config('security.rate_limit');
-        $key = 'login_attempts:' . $email;
+        $key = 'login_attempts:'.$email;
         $window = $config['login_window'] ?? 15;
 
         RateLimiter::hit($key, $window * 60);
@@ -60,7 +60,7 @@ class SecurityService
      */
     public static function clearLoginAttempts(string $email): void
     {
-        $key = 'login_attempts:' . $email;
+        $key = 'login_attempts:'.$email;
         RateLimiter::clear($key);
     }
 
@@ -70,7 +70,7 @@ class SecurityService
     public static function getRemainingLoginAttempts(string $email): int
     {
         $config = config('security.rate_limit');
-        $key = 'login_attempts:' . $email;
+        $key = 'login_attempts:'.$email;
         $limit = $config['login_attempts'] ?? 5;
 
         return max(0, $limit - RateLimiter::attempts($key));
@@ -82,7 +82,7 @@ class SecurityService
     public static function isEmailVerificationRateLimited(string $email): bool
     {
         $config = config('security.rate_limit');
-        $key = 'email_verification:' . $email;
+        $key = 'email_verification:'.$email;
         $limit = $config['email_verification'] ?? 5;
 
         return RateLimiter::tooManyAttempts($key, $limit);
@@ -93,7 +93,7 @@ class SecurityService
      */
     public static function recordEmailVerificationAttempt(string $email): void
     {
-        $key = 'email_verification:' . $email;
+        $key = 'email_verification:'.$email;
         RateLimiter::hit($key, 3600);
     }
 
@@ -103,7 +103,7 @@ class SecurityService
     public static function isPasswordResetRateLimited(string $email): bool
     {
         $config = config('security.rate_limit');
-        $key = 'password_reset:' . $email;
+        $key = 'password_reset:'.$email;
         $limit = $config['password_reset'] ?? 3;
 
         return RateLimiter::tooManyAttempts($key, $limit);
@@ -114,7 +114,7 @@ class SecurityService
      */
     public static function recordPasswordResetAttempt(string $email): void
     {
-        $key = 'password_reset:' . $email;
+        $key = 'password_reset:'.$email;
         RateLimiter::hit($key, 3600);
     }
 
@@ -162,6 +162,7 @@ class SecurityService
     public static function isIpBlacklisted(string $ip): bool
     {
         $blacklist = config('security.ip_filtering.blacklist', []);
+
         return in_array($ip, $blacklist);
     }
 
@@ -170,7 +171,7 @@ class SecurityService
      */
     public static function isAccessAllowed(string $ip): bool
     {
-        if (!config('security.ip_filtering.enabled', false)) {
+        if (! config('security.ip_filtering.enabled', false)) {
             return true;
         }
 
@@ -190,6 +191,34 @@ class SecurityService
     }
 
     /**
+     * Generate a strong password that satisfies the configured policy.
+     */
+    public static function generateSecurePassword(int $length = 16): string
+    {
+        $config = config('security.password');
+        $length = max((int) ($config['min_length'] ?? 8), min(32, $length));
+
+        $sets = [
+            'lower' => 'abcdefghjkmnpqrstuvwxyz',
+            'upper' => 'ABCDEFGHJKMNPQRSTUVWXYZ',
+            'digit' => '23456789',
+            'symbol' => '!@#$%^&*-_=+',
+        ];
+
+        $password = '';
+        foreach ($sets as $chars) {
+            $password .= $chars[random_int(0, strlen($chars) - 1)];
+        }
+
+        $all = implode('', $sets);
+        for ($i = strlen($password); $i < $length; $i++) {
+            $password .= $all[random_int(0, strlen($all) - 1)];
+        }
+
+        return str_shuffle($password);
+    }
+
+    /**
      * Check password strength.
      */
     public static function getPasswordStrength(string $password): int
@@ -197,14 +226,26 @@ class SecurityService
         $strength = 0;
 
         // Length check
-        if (strlen($password) >= 8) $strength++;
-        if (strlen($password) >= 12) $strength++;
+        if (strlen($password) >= 8) {
+            $strength++;
+        }
+        if (strlen($password) >= 12) {
+            $strength++;
+        }
 
         // Character variety
-        if (preg_match('/[a-z]/', $password)) $strength++;
-        if (preg_match('/[A-Z]/', $password)) $strength++;
-        if (preg_match('/[0-9]/', $password)) $strength++;
-        if (preg_match('/[^a-zA-Z0-9]/', $password)) $strength++;
+        if (preg_match('/[a-z]/', $password)) {
+            $strength++;
+        }
+        if (preg_match('/[A-Z]/', $password)) {
+            $strength++;
+        }
+        if (preg_match('/[0-9]/', $password)) {
+            $strength++;
+        }
+        if (preg_match('/[^a-zA-Z0-9]/', $password)) {
+            $strength++;
+        }
 
         return min($strength, 5); // Return 0-5
     }

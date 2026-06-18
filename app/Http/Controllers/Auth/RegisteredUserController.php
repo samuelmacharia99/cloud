@@ -7,8 +7,10 @@ use App\Http\Requests\Auth\RegisterUserRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
 use App\Services\RegistrationGuardService;
+use App\Services\SecurityService;
 use App\Services\Telegram\TelegramMonitorBridge;
 use App\Services\UserCurrencyService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +27,15 @@ class RegisteredUserController extends Controller
 
         return view('auth.register-premium', [
             'registrationToken' => $guard->makeFormToken(),
+        ]);
+    }
+
+    public function generatePassword(Request $request): JsonResponse
+    {
+        $length = (int) $request->input('length', 16);
+
+        return response()->json([
+            'password' => SecurityService::generateSecurePassword($length),
         ]);
     }
 

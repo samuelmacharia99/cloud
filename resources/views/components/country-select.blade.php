@@ -57,6 +57,9 @@
     </select>
 
     @error($name)
-        <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+        <p @class([
+            'mt-1 text-sm auth-input-error' => $variant === 'auth',
+            'mt-1 text-sm text-red-600 dark:text-red-400' => $variant !== 'auth',
+        ])>{{ $message }}</p>
     @enderror
 </div>

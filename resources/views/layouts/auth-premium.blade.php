@@ -128,6 +128,32 @@
             color: inherit !important;
         }
 
+        .auth-field-error,
+        .auth-field-error *,
+        .auth-input-error {
+            color: #dc2626 !important;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .auth-field-error,
+            .auth-field-error *,
+            .auth-input-error {
+                color: #f87171 !important;
+            }
+        }
+
+        .auth-field-error {
+            background: #fef2f2 !important;
+            border: 1px solid #fecaca !important;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .auth-field-error {
+                background: rgba(127, 29, 29, 0.25) !important;
+                border-color: rgba(127, 29, 29, 0.6) !important;
+            }
+        }
+
         /* FOOTER */
         .auth-footer {
             flex: 0 0 auto !important;

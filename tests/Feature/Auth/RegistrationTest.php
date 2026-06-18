@@ -72,4 +72,13 @@ class RegistrationTest extends TestCase
             'registration_token',
         ]);
     }
+
+    public function test_registration_password_generator_is_available_to_guests(): void
+    {
+        $response = $this->getJson('/register/generate-password?length=16');
+
+        $response->assertOk();
+        $response->assertJsonStructure(['password']);
+        $this->assertGreaterThanOrEqual(16, strlen($response->json('password')));
+    }
 }

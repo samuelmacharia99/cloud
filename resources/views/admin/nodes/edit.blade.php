@@ -239,33 +239,26 @@
                 </label>
             </div>
 
+            @if($node->type === 'container_host')
+            <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Domain Nameservers</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                    Used for domain orders linked to container services on this node. You can also manage these under
+                    <a href="{{ route('admin.settings.index', ['tab' => 'provisioning']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Settings → Provisioning</a>.
+                </p>
+                @include('admin.nodes.partials.nameserver-fields', ['node' => $node])
+            </div>
+            @endif
+
             <!-- DirectAdmin API Credentials (DirectAdmin nodes only) -->
             @if($node->type === 'directadmin')
             <div class="border-t border-slate-200 dark:border-slate-800 pt-6">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Domain Nameservers</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">Used when customers register domains through hosting packages on this node.</p>
 
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                    <div>
-                        <label for="nameserver_1" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">NS1 <span class="text-red-500">*</span></label>
-                        <input type="text" id="nameserver_1" name="nameserver_1" value="{{ old('nameserver_1', $node->nameserver_1) }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('nameserver_1') border-red-500 @enderror" required>
-                        @error('nameserver_1')<p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label for="nameserver_2" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">NS2</label>
-                        <input type="text" id="nameserver_2" name="nameserver_2" value="{{ old('nameserver_2', $node->nameserver_2) }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                    </div>
-                    <div>
-                        <label for="nameserver_3" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">NS3 <span class="text-slate-400 font-normal">(optional)</span></label>
-                        <input type="text" id="nameserver_3" name="nameserver_3" value="{{ old('nameserver_3', $node->nameserver_3) }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                    </div>
-                    <div>
-                        <label for="nameserver_4" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">NS4 <span class="text-slate-400 font-normal">(optional)</span></label>
-                        <input type="text" id="nameserver_4" name="nameserver_4" value="{{ old('nameserver_4', $node->nameserver_4) }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
-                    </div>
-                </div>
+                @include('admin.nodes.partials.nameserver-fields', ['node' => $node, 'required' => true])
 
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">DirectAdmin Server Monitoring</h2>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6 mt-8">DirectAdmin Server Monitoring</h2>
 
                 <!-- Monitoring Overview -->
                 <div class="mb-6 space-y-4">

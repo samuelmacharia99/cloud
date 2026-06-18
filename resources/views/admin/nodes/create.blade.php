@@ -316,6 +316,16 @@
                     </div>
                 </div>
 
+                <!-- Domain Nameservers -->
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Domain Nameservers</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                        Used for domain orders linked to container services on this node. You can also manage these under
+                        <a href="{{ route('admin.settings.index', ['tab' => 'provisioning']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Settings → Provisioning</a>.
+                    </p>
+                    @include('admin.nodes.partials.nameserver-fields')
+                </div>
+
             @else
                 <!-- Fallback: No type selected -->
                 <div class="p-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">

@@ -130,12 +130,19 @@ class NodeController extends Controller
                 'cpu_cores' => 'required|integer|min:1',
                 'ram_gb' => 'required|integer|min:1',
                 'storage_gb' => 'required|integer|min:1',
+                'nameserver_1' => 'nullable|string|max:255',
+                'nameserver_2' => 'nullable|string|max:255',
+                'nameserver_3' => 'nullable|string|max:255',
+                'nameserver_4' => 'nullable|string|max:255',
                 'region' => 'nullable|string|max:50',
                 'datacenter' => 'nullable|string|max:255',
                 'description' => 'nullable|string',
                 'is_active' => 'nullable|boolean',
             ]);
             $validated['status'] = 'offline';
+            foreach (['nameserver_1', 'nameserver_2', 'nameserver_3', 'nameserver_4'] as $field) {
+                $validated[$field] = ! empty($validated[$field]) ? trim((string) $validated[$field]) : null;
+            }
         } else {
             // Fallback: generic node type (existing behavior)
             $validated = $request->validate([
@@ -254,6 +261,11 @@ class NodeController extends Controller
                 'nameserver_4' => 'nullable|string|max:255',
             ]);
             $validated['nameserver_1'] = trim((string) $request->input('nameserver_1'));
+            $validated['nameserver_2'] = $request->filled('nameserver_2') ? trim((string) $request->input('nameserver_2')) : null;
+            $validated['nameserver_3'] = $request->filled('nameserver_3') ? trim((string) $request->input('nameserver_3')) : null;
+            $validated['nameserver_4'] = $request->filled('nameserver_4') ? trim((string) $request->input('nameserver_4')) : null;
+        } elseif (($validated['type'] ?? $node->type) === 'container_host') {
+            $validated['nameserver_1'] = $request->filled('nameserver_1') ? trim((string) $request->input('nameserver_1')) : null;
             $validated['nameserver_2'] = $request->filled('nameserver_2') ? trim((string) $request->input('nameserver_2')) : null;
             $validated['nameserver_3'] = $request->filled('nameserver_3') ? trim((string) $request->input('nameserver_3')) : null;
             $validated['nameserver_4'] = $request->filled('nameserver_4') ? trim((string) $request->input('nameserver_4')) : null;

@@ -1384,7 +1384,7 @@
                     </div>
                 </form>
 
-                @include('admin.settings.partials.directadmin-nameservers-card')
+                @include('admin.settings.partials.node-nameservers-card')
             </div>
 
             <!-- Tab: Branding -->

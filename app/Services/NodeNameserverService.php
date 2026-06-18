@@ -76,27 +76,29 @@ class NodeNameserverService
     }
 
     /**
-     * Default nameservers for standalone domain orders (first active DirectAdmin node).
+     * Default nameservers for standalone domain orders (first active node with NS configured).
      *
      * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
      */
     public function platformDefaults(): array
     {
-        $node = Node::query()
-            ->where('type', 'directadmin')
-            ->where('is_active', true)
-            ->whereNotNull('nameserver_1')
-            ->where('nameserver_1', '!=', '')
-            ->orderBy('name')
-            ->first();
+        foreach (['directadmin', 'container_host'] as $type) {
+            $node = Node::query()
+                ->where('type', $type)
+                ->where('is_active', true)
+                ->whereNotNull('nameserver_1')
+                ->where('nameserver_1', '!=', '')
+                ->orderBy('name')
+                ->first();
 
-        if ($node) {
-            return $this->normalize(
-                $node->nameserver_1,
-                $node->nameserver_2,
-                $node->nameserver_3,
-                $node->nameserver_4,
-            );
+            if ($node) {
+                return $this->normalize(
+                    $node->nameserver_1,
+                    $node->nameserver_2,
+                    $node->nameserver_3,
+                    $node->nameserver_4,
+                );
+            }
         }
 
         return $this->normalize(
