@@ -88,9 +88,15 @@ class RegistrarFulfillmentService
             return ['success' => false, 'message' => ''];
         }
 
-        $nameServers = OpenproviderClient::nameServerRecords(
-            $this->nameserverService->forDomain($domain)
-        );
+        $resolvedNameservers = $this->nameserverService->forDomain($domain);
+        $nameServers = OpenproviderClient::nameServerRecords($resolvedNameservers);
+
+        if (count($nameServers) < 2) {
+            throw new \RuntimeException(
+                'At least two unique nameservers are required. Configure distinct NS1 and NS2 on the linked hosting node '
+                .'(Admin → Settings → Provisioning) or platform fallback nameservers.'
+            );
+        }
 
         try {
             if ($order->isTransfer()) {
@@ -167,9 +173,17 @@ class RegistrarFulfillmentService
             return;
         }
 
-        $nameServers = OpenproviderClient::nameServerRecords(
-            $this->nameserverService->forDomain($domain)
-        );
+        $resolvedNameservers = $this->nameserverService->forDomain($domain);
+        $nameServers = OpenproviderClient::nameServerRecords($resolvedNameservers);
+
+        if (count($nameServers) < 2) {
+            Log::warning('Standalone transfer missing required unique nameservers', [
+                'domain_id' => $domain->id,
+                'nameservers' => $resolvedNameservers,
+            ]);
+
+            return;
+        }
 
         try {
             $result = $driver->transferDomain($registrar, $domain, $authCode, $nameServers);

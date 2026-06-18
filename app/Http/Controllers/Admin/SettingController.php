@@ -308,6 +308,19 @@ class SettingController extends Controller
                 continue;
             }
 
+            $nameservers = array_values(array_filter([
+                trim($data['nameserver_1']),
+                ! empty($data['nameserver_2']) ? trim($data['nameserver_2']) : null,
+                ! empty($data['nameserver_3']) ? trim($data['nameserver_3']) : null,
+                ! empty($data['nameserver_4']) ? trim($data['nameserver_4']) : null,
+            ]));
+
+            if (count($nameservers) !== count(array_unique(array_map('strtolower', $nameservers)))) {
+                return back()
+                    ->withInput()
+                    ->withErrors(['nodes' => 'Each nameserver must be unique. NS1 and NS2 cannot be the same hostname.']);
+            }
+
             $node->update([
                 'nameserver_1' => trim($data['nameserver_1']),
                 'nameserver_2' => ! empty($data['nameserver_2']) ? trim($data['nameserver_2']) : null,

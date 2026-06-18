@@ -307,11 +307,6 @@ class ResellerNameserverService
      */
     private function normalizeNs(string $ns1, ?string $ns2, ?string $ns3, ?string $ns4): array
     {
-        return [
-            'ns1' => trim($ns1),
-            'ns2' => $ns2 ? trim($ns2) : null,
-            'ns3' => $ns3 ? trim($ns3) : null,
-            'ns4' => $ns4 ? trim($ns4) : null,
-        ];
+        return $this->nodeNameserver->normalize($ns1, $ns2, $ns3, $ns4);
     }
 }

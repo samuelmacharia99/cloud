@@ -192,18 +192,40 @@ class OpenproviderClient
     }
 
     /**
-     * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
+     * @param  array{ns1?: string, ns2?: ?string, ns3?: ?string, ns4?: ?string}|list<mixed>  $nameservers
+     * @return list<array{name: string}>
      */
     public static function nameServerRecords(array $nameservers): array
     {
-        $records = [];
+        $values = [];
 
-        foreach ($nameservers as $ns) {
-            $name = is_array($ns) ? ($ns['name'] ?? $ns['ns1'] ?? '') : (string) $ns;
-            $name = trim($name);
-            if ($name !== '') {
-                $records[] = ['name' => $name];
+        if (isset($nameservers['ns1']) || isset($nameservers['ns2']) || isset($nameservers['ns3']) || isset($nameservers['ns4'])) {
+            foreach (['ns1', 'ns2', 'ns3', 'ns4'] as $key) {
+                $name = trim((string) ($nameservers[$key] ?? ''));
+                if ($name !== '') {
+                    $values[] = $name;
+                }
             }
+        } else {
+            foreach ($nameservers as $ns) {
+                $name = is_array($ns) ? trim((string) ($ns['name'] ?? $ns['ns1'] ?? '')) : trim((string) $ns);
+                if ($name !== '') {
+                    $values[] = $name;
+                }
+            }
+        }
+
+        $records = [];
+        $seen = [];
+
+        foreach ($values as $name) {
+            $key = strtolower($name);
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $records[] = ['name' => $name];
         }
 
         return $records;

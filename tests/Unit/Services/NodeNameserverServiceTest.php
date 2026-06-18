@@ -2,8 +2,11 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\Domain;
 use App\Models\Node;
+use App\Models\Service;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\NodeNameserverService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -71,5 +74,52 @@ class NodeNameserverServiceTest extends TestCase
 
         $this->assertSame('ns1.platform.example', $defaults['ns1']);
         $this->assertSame('ns2.platform.example', $defaults['ns2']);
+    }
+
+    public function test_normalize_removes_duplicate_nameservers(): void
+    {
+        $normalized = app(NodeNameserverService::class)->normalize(
+            'ns1.example.com',
+            'ns1.example.com',
+            'ns2.example.com',
+            'NS2.EXAMPLE.COM',
+        );
+
+        $this->assertSame('ns1.example.com', $normalized['ns1']);
+        $this->assertSame('ns2.example.com', $normalized['ns2']);
+        $this->assertNull($normalized['ns3']);
+        $this->assertNull($normalized['ns4']);
+    }
+
+    public function test_for_domain_prefers_linked_container_node_over_stale_domain_columns(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'container_host',
+            'nameserver_1' => 'ns1.live.example',
+            'nameserver_2' => 'ns2.live.example',
+        ]);
+
+        $user = User::factory()->create();
+
+        $domain = Domain::create([
+            'user_id' => $user->id,
+            'name' => 'talolys',
+            'extension' => '.com',
+            'status' => 'pending',
+            'nameserver_1' => 'ns1.stale.example',
+            'nameserver_2' => 'ns1.stale.example',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $user->id,
+            'node_id' => $node->id,
+            'name' => 'talolys.com',
+            'service_meta' => ['domain_id' => $domain->id],
+        ]);
+
+        $resolved = app(NodeNameserverService::class)->forDomain($domain);
+
+        $this->assertSame('ns1.live.example', $resolved['ns1']);
+        $this->assertSame('ns2.live.example', $resolved['ns2']);
     }
 }

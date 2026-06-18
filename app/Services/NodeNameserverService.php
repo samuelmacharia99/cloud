@@ -43,12 +43,22 @@ class NodeNameserverService
     }
 
     /**
-     * Resolve nameservers for a domain: linked hosting node → domain NS columns → platform defaults.
+     * Resolve nameservers for registrar submission.
+     * Linked hosting node (live config) → domain NS columns → platform defaults.
      *
      * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
      */
     public function forDomain(Domain $domain): array
     {
+        $service = $this->findLinkedHostingService($domain);
+
+        if ($service?->node_id) {
+            $fromNode = $this->forNodeId($service->node_id);
+            if ($fromNode['ns1'] !== '') {
+                return $fromNode;
+            }
+        }
+
         if ($domain->nameserver_1) {
             return $this->normalize(
                 $domain->nameserver_1,
@@ -58,7 +68,32 @@ class NodeNameserverService
             );
         }
 
-        $service = Service::query()
+        return $this->platformDefaults();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function uniqueList(array $nameservers): array
+    {
+        $normalized = $this->normalize(
+            $nameservers['ns1'] ?? '',
+            $nameservers['ns2'] ?? null,
+            $nameservers['ns3'] ?? null,
+            $nameservers['ns4'] ?? null,
+        );
+
+        return array_values(array_filter([
+            $normalized['ns1'] ?: null,
+            $normalized['ns2'],
+            $normalized['ns3'],
+            $normalized['ns4'],
+        ]));
+    }
+
+    private function findLinkedHostingService(Domain $domain): ?Service
+    {
+        return Service::query()
             ->where('user_id', $domain->user_id)
             ->where(function ($query) use ($domain) {
                 $query->whereJsonContains('service_meta->domain_id', $domain->id)
@@ -67,12 +102,6 @@ class NodeNameserverService
             ->whereNotNull('node_id')
             ->orderByDesc('id')
             ->first();
-
-        if ($service?->node_id) {
-            return $this->forNodeId($service->node_id);
-        }
-
-        return $this->platformDefaults();
     }
 
     /**
@@ -133,13 +162,31 @@ class NodeNameserverService
     /**
      * @return array{ns1: string, ns2: ?string, ns3: ?string, ns4: ?string}
      */
-    protected function normalize(?string $ns1, ?string $ns2, ?string $ns3, ?string $ns4): array
+    public function normalize(?string $ns1, ?string $ns2, ?string $ns3, ?string $ns4): array
     {
+        $packed = [];
+        $seen = [];
+
+        foreach ([$ns1, $ns2, $ns3, $ns4] as $value) {
+            $value = trim((string) ($value ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $lower = strtolower($value);
+            if (isset($seen[$lower])) {
+                continue;
+            }
+
+            $seen[$lower] = true;
+            $packed[] = $value;
+        }
+
         return [
-            'ns1' => trim((string) $ns1),
-            'ns2' => $ns2 ? trim($ns2) : null,
-            'ns3' => $ns3 ? trim($ns3) : null,
-            'ns4' => $ns4 ? trim($ns4) : null,
+            'ns1' => $packed[0] ?? '',
+            'ns2' => $packed[1] ?? null,
+            'ns3' => $packed[2] ?? null,
+            'ns4' => $packed[3] ?? null,
         ];
     }
 }
