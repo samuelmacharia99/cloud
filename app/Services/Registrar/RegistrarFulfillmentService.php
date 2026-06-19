@@ -92,9 +92,11 @@ class RegistrarFulfillmentService
         $nameServers = OpenproviderClient::nameServerRecords($resolvedNameservers);
 
         if (count($nameServers) < 2) {
+            $resolved = $this->nameserverService->forDomain($domain);
             throw new \RuntimeException(
-                'At least two unique nameservers are required. Configure distinct NS1 and NS2 on the linked hosting node '
-                .'(Admin → Settings → Provisioning) or platform fallback nameservers.'
+                'At least two unique nameservers are required. Set distinct NS1 and NS2 on the linked container node '
+                .'(Admin → Settings → Provisioning), ensure platform fallback NS2 is configured, then retry. '
+                .'Resolved: '.implode(', ', $this->nameserverService->uniqueList($resolved)).'.'
             );
         }
 

@@ -2,8 +2,10 @@
 
 namespace Tests\Unit\Services;
 
+use App\Models\ContainerDeployment;
 use App\Models\Domain;
 use App\Models\Node;
+use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
@@ -113,13 +115,69 @@ class NodeNameserverServiceTest extends TestCase
         Service::factory()->create([
             'user_id' => $user->id,
             'node_id' => $node->id,
-            'name' => 'talolys.com',
-            'service_meta' => ['domain_id' => $domain->id],
+            'name' => 'Node.js Starter',
+            'service_meta' => ['primary_domain' => 'talolys.com'],
         ]);
 
         $resolved = app(NodeNameserverService::class)->forDomain($domain);
 
         $this->assertSame('ns1.live.example', $resolved['ns1']);
         $this->assertSame('ns2.live.example', $resolved['ns2']);
+    }
+
+    public function test_for_domain_uses_container_deployment_node_when_service_node_not_set(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'container_host',
+            'nameserver_1' => 'ns1.deploy.example',
+            'nameserver_2' => 'ns2.deploy.example',
+        ]);
+
+        $user = User::factory()->create();
+        $product = Product::factory()->create(['type' => 'container_hosting']);
+
+        $domain = Domain::create([
+            'user_id' => $user->id,
+            'name' => 'app',
+            'extension' => '.com',
+            'status' => 'pending',
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'node_id' => null,
+            'service_meta' => ['primary_domain' => 'app.com'],
+        ]);
+
+        ContainerDeployment::create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'container_name' => 'talksasa-test-container',
+            'assigned_port' => 30001,
+            'status' => 'running',
+        ]);
+
+        $resolved = app(NodeNameserverService::class)->forDomain($domain);
+
+        $this->assertSame('ns1.deploy.example', $resolved['ns1']);
+        $this->assertSame('ns2.deploy.example', $resolved['ns2']);
+    }
+
+    public function test_ensure_minimum_nameservers_fills_ns2_from_platform_settings(): void
+    {
+        Setting::updateOrCreate(['key' => 'domain_ns2'], ['value' => 'ns2.platform.example']);
+
+        $node = Node::factory()->create([
+            'type' => 'container_host',
+            'nameserver_1' => 'ns1.only.example',
+            'nameserver_2' => null,
+        ]);
+
+        $resolved = app(NodeNameserverService::class)->forNode($node);
+
+        $this->assertSame('ns1.only.example', $resolved['ns1']);
+        $this->assertSame('ns2.platform.example', $resolved['ns2']);
+        $this->assertGreaterThanOrEqual(2, count(app(NodeNameserverService::class)->uniqueList($resolved)));
     }
 }
