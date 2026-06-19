@@ -136,7 +136,7 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
-    public function test_create_hosting_account_passes_reseller_when_provided(): void
+    public function test_create_hosting_account_impersonates_reseller_when_provided(): void
     {
         Http::fake([
             '*' => Http::response('error=0&text=Created', 200),
@@ -154,9 +154,12 @@ class DirectAdminServiceTest extends TestCase
         $this->assertTrue($result['success']);
 
         Http::assertSent(function ($request) {
+            $expectedAuth = 'Basic '.base64_encode('admin|reseller_acme:secret');
+
             return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
                 && $request['action'] === 'create'
-                && $request['reseller'] === 'reseller_acme';
+                && ! isset($request['reseller'])
+                && ($request->header('Authorization')[0] ?? '') === $expectedAuth;
         });
     }
 

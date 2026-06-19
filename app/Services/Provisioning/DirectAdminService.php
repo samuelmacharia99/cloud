@@ -253,11 +253,10 @@ class DirectAdminService
                 'package' => $package,
             ];
 
-            if (filled($ownerResellerUsername)) {
-                $payload['reseller'] = $ownerResellerUsername;
-            }
-
-            $response = $this->httpClient()
+            // DirectAdmin assigns new users to the authenticated account owner.
+            // Admin must impersonate the target reseller (admin|reseller) — a payload
+            // "reseller" field is not supported on CMD_API_ACCOUNT_USER.
+            $response = $this->httpClient($ownerResellerUsername)
                 ->asForm()
                 ->post($endpoint, $payload);
 
@@ -282,6 +281,7 @@ class DirectAdminService
                 'service_id' => $service->id,
                 'domain' => $domain,
                 'package' => $package,
+                'owner_reseller' => $ownerResellerUsername,
             ]);
 
             return [

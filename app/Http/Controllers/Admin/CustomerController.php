@@ -826,14 +826,27 @@ class CustomerController extends Controller
                 return ['success' => false, 'message' => 'no DirectAdmin package resolved for this service'];
             }
 
-            app(DirectAdminSetupService::class)->ensurePackageLimitsOnServer($da, $service);
+            $meta = $service->service_meta ?? [];
+            $ownerReseller = $meta['directadmin_reseller'] ?? null;
+            if (! $ownerReseller && $service->reseller_id) {
+                $ownerReseller = User::query()
+                    ->whereKey($service->reseller_id)
+                    ->value('directadmin_username');
+            }
+
+            app(DirectAdminSetupService::class)->ensurePackageLimitsOnServer(
+                $da,
+                $service,
+                filled($ownerReseller) ? (string) $ownerReseller : null,
+            );
 
             $result = $da->createHostingAccount(
                 $service,
                 $validated['direct_admin_username'],
                 $validated['direct_admin_password'],
                 strtolower($validated['direct_admin_domain']),
-                $packageName
+                $packageName,
+                filled($ownerReseller) ? (string) $ownerReseller : null,
             );
 
             if ($result['success']) {
@@ -841,9 +854,10 @@ class CustomerController extends Controller
                     'status' => 'active',
                     'external_reference' => $validated['direct_admin_username'],
                     'credentials' => json_encode($result['credentials']),
-                    'service_meta' => array_merge($service->service_meta ?? [], [
+                    'service_meta' => array_merge($meta, [
                         'domain' => strtolower($validated['direct_admin_domain']),
                         'provisioned_at' => now()->toIso8601String(),
+                        'directadmin_reseller' => filled($ownerReseller) ? (string) $ownerReseller : ($meta['directadmin_reseller'] ?? null),
                     ]),
                 ]);
             }
