@@ -415,6 +415,7 @@
                                 <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Subdomains</th>
                                 <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Last Sync</th>
                                 <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Status</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
@@ -459,6 +460,14 @@
                                             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">Inactive</span>
                                         @endif
                                     </td>
+                                    <td class="py-3 px-3 text-right">
+                                        <form method="POST" action="{{ route('admin.direct-admin-packages.push-limits', $package) }}" class="inline">
+                                            @csrf
+                                            <button type="submit" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg" title="Push local catalog limits to DirectAdmin">
+                                                Push limits
+                                            </button>
+                                        </form>
+                                    </td>
                                 </tr>
                             @endforeach
                         </tbody>
@@ -466,10 +475,11 @@
                 </div>
 
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-4">
-                    Note: the local package cache currently stores one row per package key globally. If you've synced multiple DA servers,
-                    this list reflects whichever server synced most recently. Use
+                    <span class="font-medium">Sync Now</span> pulls limits from DirectAdmin into this catalog.
+                    <span class="font-medium">Push limits</span> writes the local catalog back to DirectAdmin (also runs automatically before new account provisioning).
+                    Use
                     <a href="{{ route('admin.shared-hosting.package-consistency') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Compare across DA nodes</a>
-                    for the live picture.
+                    to spot drift between servers.
                 </p>
             @endif
         </div>

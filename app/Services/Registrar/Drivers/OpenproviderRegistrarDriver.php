@@ -221,14 +221,18 @@ class OpenproviderRegistrarDriver implements RegistrarOperationsInterface
     private function mapOperationResult(array $data, string $defaultMessage): array
     {
         $status = strtoupper((string) ($data['status'] ?? 'REQ'));
+        $success = in_array($status, ['ACT', 'REQ'], true);
+        $message = $success
+            ? $defaultMessage
+            : OpenproviderClient::formatOperationFailure($data, $defaultMessage);
 
         return [
-            'success' => in_array($status, ['ACT', 'REQ'], true),
+            'success' => $success,
             'status' => $status,
             'external_id' => isset($data['id']) ? (int) $data['id'] : null,
             'auth_code' => isset($data['auth_code']) ? (string) $data['auth_code'] : null,
             'expiration_date' => $data['expiration_date'] ?? null,
-            'message' => $defaultMessage,
+            'message' => $message,
         ];
     }
 

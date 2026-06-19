@@ -231,12 +231,19 @@ class DirectAdminServiceTest extends TestCase
 
             return Http::response(json_encode([
                 'quota' => '2048M',
+                'uquota' => 'OFF',
                 'bandwidth' => '10240M',
+                'ubandwidth' => 'OFF',
                 'ftp' => '5',
+                'uftp' => 'OFF',
                 'mysql' => '3',
-                'domainptr' => '1',
-                'subdomains' => '10',
-                'email' => '25',
+                'umysql' => 'OFF',
+                'vdomains' => '3',
+                'uvdomains' => 'OFF',
+                'nsubdomains' => '10',
+                'unsubdomains' => 'OFF',
+                'nemails' => '25',
+                'unemails' => 'OFF',
             ]), 200);
         });
 
@@ -245,6 +252,32 @@ class DirectAdminServiceTest extends TestCase
         $this->assertCount(1, $packages);
         $this->assertSame(2.0, $packages[0]['disk_quota']);
         $this->assertSame(10.0, $packages[0]['bandwidth_quota']);
+        $this->assertSame(3, $packages[0]['num_domains']);
+        $this->assertSame(25, $packages[0]['num_email_accounts']);
+        $this->assertSame(10, $packages[0]['num_subdomains']);
+    }
+
+    public function test_get_packages_honors_unlimited_flags(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_USER') && ! isset($request['package'])) {
+                return Http::response(json_encode(['list' => ['UnlimitedPlan']]), 200);
+            }
+
+            return Http::response(json_encode([
+                'uquota' => 'ON',
+                'ubandwidth' => 'ON',
+                'uvdomains' => 'ON',
+                'unemails' => 'ON',
+            ]), 200);
+        });
+
+        $packages = (new DirectAdminService($this->createDirectAdminNode()))->getPackages();
+
+        $this->assertSame(-1.0, $packages[0]['disk_quota']);
+        $this->assertSame(-1.0, $packages[0]['bandwidth_quota']);
+        $this->assertSame(-1, $packages[0]['num_domains']);
+        $this->assertSame(-1, $packages[0]['num_email_accounts']);
     }
 
     public function test_empty_api_body_is_treated_as_failure_for_create(): void

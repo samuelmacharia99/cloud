@@ -16,6 +16,7 @@ use App\Services\DomainTransferService;
 use App\Services\NodeNameserverService;
 use App\Services\Registrar\Drivers\OpenproviderRegistrarDriver;
 use App\Services\Registrar\Openprovider\OpenproviderClient;
+use App\Services\Registrar\Openprovider\OpenproviderException;
 use Illuminate\Support\Facades\Log;
 
 class RegistrarFulfillmentService
@@ -142,11 +143,18 @@ class RegistrarFulfillmentService
                     .($status === 'REQ' ? 'It will complete automatically when the registry activates the domain.' : ''),
             ];
         } catch (\Throwable $e) {
-            Log::error('Registrar fulfillment failed', [
+            $context = [
                 'order_id' => $order->id,
                 'domain' => $domain->name.$domain->extension,
                 'error' => $e->getMessage(),
-            ]);
+            ];
+
+            if ($e instanceof OpenproviderException) {
+                $context['api_code'] = $e->apiCode;
+                $context['response'] = $e->response;
+            }
+
+            Log::error('Registrar fulfillment failed', $context);
 
             app(DomainPushService::class)->failOrder($order->fresh(), $e->getMessage());
 

@@ -292,21 +292,124 @@ class OpenproviderClient
 
         $code = (int) ($payload['code'] ?? -1);
         if ($code !== 0) {
-            $message = trim((string) ($payload['desc'] ?? ''));
-            if ($message === '' && isset($payload['data']['error'])) {
-                $message = (string) $payload['data']['error'];
-            }
-            if ($message === '' && isset($payload['data']['description'])) {
-                $message = (string) $payload['data']['description'];
-            }
-
             throw new OpenproviderException(
-                $message !== '' ? $message : "Openprovider API error (code {$code})",
+                self::formatApiError($code, (string) ($payload['desc'] ?? ''), $payload['data'] ?? null),
                 $code,
                 $payload,
             );
         }
 
         return $payload;
+    }
+
+    /**
+     * Build a user-facing error message from an Openprovider API error payload.
+     */
+    public static function formatApiError(int $code, string $desc, mixed $data = null): string
+    {
+        $desc = trim($desc);
+        $detail = self::extractDataDetail($data);
+
+        if ($detail !== null) {
+            if ($desc === '' || self::isGenericErrorDescription($desc, $code)) {
+                return $detail;
+            }
+
+            if (! str_contains(strtolower($desc), strtolower($detail))) {
+                return "{$desc} Registry: {$detail}";
+            }
+        }
+
+        if ($desc !== '') {
+            return $desc;
+        }
+
+        return "Openprovider API error (code {$code})";
+    }
+
+    /**
+     * Extract failure reason from a successful API payload with status FAI.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function formatOperationFailure(array $data, string $fallback = 'Registrar rejected the request.'): string
+    {
+        $detail = self::extractDataDetail($data);
+
+        if ($detail !== null) {
+            return $detail;
+        }
+
+        $reason = trim((string) ($data['reason'] ?? ''));
+
+        return $reason !== '' ? $reason : $fallback;
+    }
+
+    public static function isGenericErrorDescription(string $desc, int $code): bool
+    {
+        if ($code === 399) {
+            return true;
+        }
+
+        $normalized = strtolower($desc);
+
+        return str_contains($normalized, 'an error has occurred')
+            || str_contains($normalized, 'refer to the registry message')
+            || str_contains($normalized, 'please check the error description');
+    }
+
+    /**
+     * @return non-empty-string|null
+     */
+    public static function extractDataDetail(mixed $data): ?string
+    {
+        if (! is_array($data)) {
+            return is_string($data) && trim($data) !== '' ? trim($data) : null;
+        }
+
+        foreach ([
+            'registry_message',
+            'registryMessage',
+            'reason',
+            'error',
+            'description',
+            'desc',
+            'message',
+            'msg',
+        ] as $key) {
+            $value = trim((string) ($data[$key] ?? ''));
+
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        if (isset($data['results']) && is_array($data['results'])) {
+            foreach ($data['results'] as $row) {
+                if (! is_array($row)) {
+                    continue;
+                }
+
+                $nested = self::extractDataDetail($row);
+
+                if ($nested !== null) {
+                    return $nested;
+                }
+            }
+        }
+
+        foreach ($data as $value) {
+            if (! is_array($value)) {
+                continue;
+            }
+
+            $nested = self::extractDataDetail($value);
+
+            if ($nested !== null) {
+                return $nested;
+            }
+        }
+
+        return null;
     }
 }

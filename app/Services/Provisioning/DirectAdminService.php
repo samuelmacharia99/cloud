@@ -1096,7 +1096,10 @@ class DirectAdminService
     }
 
     /**
-     * Parse DirectAdmin package data into standardized format
+     * Parse DirectAdmin package data into standardized format.
+     *
+     * DirectAdmin CMD_API_PACKAGES_USER returns fields like quota, bandwidth,
+     * vdomains, nemails, nsubdomains, ftp, mysql (not domainptr/email aliases).
      */
     private function parsePackageData(string $packageName, array $data): array
     {
@@ -1104,15 +1107,84 @@ class DirectAdminService
             'name' => $packageName,
             'package_key' => Str::slug($packageName),
             'description' => $data['description'] ?? null,
-            'disk_quota' => $this->convertToGb($data['disk'] ?? $data['quota'] ?? '0'),
-            'bandwidth_quota' => $this->convertToGb($data['bandwidth'] ?? '0'),
-            'num_domains' => (int) ($data['domainptr'] ?? 1),
-            'num_ftp' => (int) ($data['ftp'] ?? 1),
-            'num_email_accounts' => (int) ($data['email'] ?? 0),
-            'num_databases' => (int) ($data['mysql'] ?? 0),
-            'num_subdomains' => $this->parseSubdomains($data['subdomains'] ?? '0'),
+            'disk_quota' => $this->parseQuotaGb($data, 'quota', 'uquota', 'disk'),
+            'bandwidth_quota' => $this->parseQuotaGb($data, 'bandwidth', 'ubandwidth'),
+            'num_domains' => $this->parseQuantity($data, 'vdomains', 'uvdomains', 'domainptr'),
+            'num_ftp' => $this->parseQuantity($data, 'ftp', 'uftp'),
+            'num_email_accounts' => $this->parseQuantity($data, 'nemails', 'unemails', 'email'),
+            'num_databases' => $this->parseQuantity($data, 'mysql', 'umysql'),
+            'num_subdomains' => $this->parseSubdomainsQuantity($data),
             'features' => $this->extractFeatures($data),
         ];
+    }
+
+    /**
+     * @param  string  ...$fallbackFields  Alternate DirectAdmin field names
+     */
+    private function parseQuantity(array $data, string $quantityField, string $unlimitedField, string ...$fallbackFields): int
+    {
+        if ($this->isDirectAdminUnlimited($data[$unlimitedField] ?? null)) {
+            return -1;
+        }
+
+        foreach ([$quantityField, ...$fallbackFields] as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $value = strtolower(trim((string) $data[$field]));
+
+            if (in_array($value, ['unlimited', '-1'], true)) {
+                return -1;
+            }
+
+            if ($value !== '') {
+                return (int) $value;
+            }
+        }
+
+        return 0;
+    }
+
+    private function parseQuotaGb(array $data, string $quantityField, string $unlimitedField, string ...$fallbackFields): float
+    {
+        if ($this->isDirectAdminUnlimited($data[$unlimitedField] ?? null)) {
+            return -1.00;
+        }
+
+        foreach ([$quantityField, ...$fallbackFields] as $field) {
+            if (! array_key_exists($field, $data) || $data[$field] === '' || $data[$field] === null) {
+                continue;
+            }
+
+            return $this->convertToGb((string) $data[$field]);
+        }
+
+        return 0.00;
+    }
+
+    private function parseSubdomainsQuantity(array $data): int
+    {
+        if ($this->isDirectAdminUnlimited($data['unsubdomains'] ?? null)) {
+            return -1;
+        }
+
+        if (array_key_exists('nsubdomains', $data)) {
+            return $this->parseQuantity($data, 'nsubdomains', 'unsubdomains');
+        }
+
+        return $this->parseSubdomains((string) ($data['subdomains'] ?? '0'));
+    }
+
+    private function isDirectAdminUnlimited(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        $normalized = strtoupper(trim((string) $value));
+
+        return in_array($normalized, ['ON', 'YES', 'UNLIMITED', '-1'], true);
     }
 
     /**
@@ -1182,7 +1254,7 @@ class DirectAdminService
         Log::info('Starting DirectAdmin package sync', ['node_id' => $this->node?->id, 'node_name' => $this->node?->name]);
 
         $packages = $this->getPackages();
-        $result = ['synced' => 0, 'updated' => 0, 'failed' => 0, 'errors' => []];
+        $result = ['synced' => 0, 'updated' => 0, 'failed' => 0, 'deactivated' => 0, 'errors' => []];
 
         if (empty($packages)) {
             $result['errors'][] = 'No packages retrieved from DirectAdmin server (no packages defined on server)';
@@ -1199,36 +1271,39 @@ class DirectAdminService
 
         // Use transaction to ensure data integrity
         return \DB::transaction(function () use ($packages, $result) {
+            $syncedKeys = [];
+
             foreach ($packages as $packageData) {
                 try {
+                    $syncedKeys[] = $packageData['package_key'];
+
                     // Query by BOTH node_id AND package_key to avoid overwriting packages from other nodes
                     $existing = DirectAdminPackage::where('node_id', $this->node?->id)
                         ->where('package_key', $packageData['package_key'])
                         ->first();
 
+                    $attributes = array_merge($packageData, [
+                        'node_id' => $this->node?->id,
+                        'is_active' => true,
+                    ]);
+
                     if ($existing) {
-                        // Update existing package for this node
-                        $updated = $existing->update(array_merge($packageData, ['node_id' => $this->node?->id]));
-                        if ($updated) {
-                            $result['updated']++;
-                            Log::debug('Updated DirectAdmin package', [
-                                'node_id' => $this->node?->id,
-                                'package_key' => $packageData['package_key'],
-                                'package_name' => $packageData['name'],
-                            ]);
+                        $existing->fill($attributes);
+
+                        if ($existing->isDirty()) {
+                            $existing->save();
                         } else {
-                            $result['failed']++;
-                            $result['errors'][] = "Failed to update {$packageData['package_key']}: Update returned false";
+                            $existing->touch();
                         }
+
+                        $result['updated']++;
+                        Log::debug('Updated DirectAdmin package', [
+                            'node_id' => $this->node?->id,
+                            'package_key' => $packageData['package_key'],
+                            'package_name' => $packageData['name'],
+                        ]);
                     } else {
-                        // Create new package for this node
-                        $created = DirectAdminPackage::create(array_merge(
-                            $packageData,
-                            [
-                                'is_active' => true,
-                                'node_id' => $this->node?->id,
-                            ]
-                        ));
+                        $created = DirectAdminPackage::create($attributes);
 
                         if ($created && $created->id) {
                             $result['synced']++;
@@ -1256,11 +1331,20 @@ class DirectAdminService
                 }
             }
 
+            $deactivated = DirectAdminPackage::query()
+                ->where('node_id', $this->node?->id)
+                ->where('is_active', true)
+                ->whereNotIn('package_key', $syncedKeys)
+                ->update(['is_active' => false]);
+
+            $result['deactivated'] = $deactivated;
+
             Log::info('DirectAdmin package sync completed', [
                 'node_id' => $this->node?->id,
                 'node_name' => $this->node?->name,
                 'synced' => $result['synced'],
                 'updated' => $result['updated'],
+                'deactivated' => $deactivated,
                 'failed' => $result['failed'],
                 'errors' => $result['errors'],
             ]);

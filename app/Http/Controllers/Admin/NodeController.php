@@ -715,6 +715,10 @@ class NodeController extends Controller
 
             $message = "Synced: {$result['synced']}, Updated: {$result['updated']}";
 
+            if (($result['deactivated'] ?? 0) > 0) {
+                $message .= ", Deactivated: {$result['deactivated']}";
+            }
+
             if ($result['failed'] > 0) {
                 $message .= ", Failed: {$result['failed']}";
 
