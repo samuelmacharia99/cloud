@@ -13,6 +13,7 @@
 @section('content')
 <div class="space-y-6" x-data="{
     editDetailsModal: false,
+    suspendModal: false,
     testConnectionModal: false,
     testConnectionLoading: false,
     testConnectionResult: null,
@@ -68,6 +69,21 @@
                         {{ ucfirst($service->status->value) }}
                     </span>
                 </div>
+
+                @if ($service->status->value === 'suspended')
+                    <div class="mt-4 p-4 rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 max-w-2xl">
+                        <p class="text-sm font-semibold text-orange-950 dark:text-orange-100">Service suspended</p>
+                        <p class="text-sm text-orange-900 dark:text-orange-200 mt-1">
+                            <span class="font-medium">Reason:</span>
+                            {{ $enforcementInsight['suspension_message'] ?? 'Reason not recorded' }}
+                        </p>
+                        @if ($service->suspend_date)
+                            <p class="text-xs text-orange-800 dark:text-orange-300 mt-2">
+                                Suspended on {{ $service->suspend_date->format('M d, Y g:i A') }}
+                            </p>
+                        @endif
+                    </div>
+                @endif
             </div>
 
             <!-- Action buttons -->
@@ -82,12 +98,9 @@
                 @endif
 
                 @if ($service->status->value === 'active')
-                    <form method="POST" action="{{ route('admin.services.suspend', $service) }}" class="inline">
-                        @csrf
-                        <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
-                            Suspend
-                        </button>
-                    </form>
+                    <button type="button" @click="suspendModal = true" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
+                        Suspend
+                    </button>
                 @endif
 
                 @if ($service->status->value === 'suspended')
@@ -138,6 +151,14 @@
                         <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Platform Status</p>
                         <p class="text-sm text-slate-900 dark:text-white mt-1">{{ ucfirst($service->status->value) }}</p>
                     </div>
+                    @if ($service->status->value === 'suspended')
+                        <div class="col-span-2">
+                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Suspension Reason</p>
+                            <p class="text-sm text-slate-900 dark:text-white mt-1">
+                                {{ $enforcementInsight['suspension_message'] ?? 'Reason not recorded' }}
+                            </p>
+                        </div>
+                    @endif
                     @if ($service->supportsLiveStatusProbe())
                         <div>
                             <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Live Infrastructure</p>
@@ -390,6 +411,10 @@
 
         <!-- Sidebar -->
         <div class="space-y-6">
+            @if ($service->isSharedHosting() || !empty($enforcementInsight['alerts']) || !empty($enforcementInsight['disk']))
+                <x-service-enforcement-panel :insight="$enforcementInsight" />
+            @endif
+
             <!-- Customer Info -->
             <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                 <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Customer</h3>
@@ -494,6 +519,37 @@
                     Close
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Suspend Service Modal -->
+    <div x-show="suspendModal" x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="suspendModal = false">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white">Suspend service</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Provide a reason so admins and support can see why this service was suspended.</p>
+            </div>
+            <form method="POST" action="{{ route('admin.services.suspend', $service) }}">
+                @csrf
+                <div class="p-6">
+                    <label for="suspension_reason" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Suspension reason</label>
+                    <textarea id="suspension_reason" name="suspension_reason" rows="4" required
+                              class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                              placeholder="e.g. Unpaid invoice, policy violation, customer request">{{ old('suspension_reason') }}</textarea>
+                </div>
+                <div class="p-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                    <button type="button" @click="suspendModal = false"
+                            class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition">
+                        Suspend service
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

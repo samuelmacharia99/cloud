@@ -66,7 +66,7 @@ class ProvisioningService
     /**
      * Suspend a service
      */
-    public function suspend(Service $service): void
+    public function suspend(Service $service, ?string $reason = null, ?string $note = null): void
     {
         try {
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
@@ -98,10 +98,23 @@ class ProvisioningService
 
             // Only update status if suspension was successful
             if ($suspended && $service->status !== ServiceStatus::Suspended) {
-                $service->update([
+                $updates = [
                     'status' => ServiceStatus::Suspended,
                     'suspend_date' => now(),
-                ]);
+                ];
+
+                if ($reason !== null || $note !== null) {
+                    $meta = $service->service_meta ?? [];
+                    if ($reason !== null) {
+                        $meta[ResellerEnforcementService::META_SUSPENSION_REASON] = $reason;
+                    }
+                    if ($note !== null) {
+                        $meta[ResellerEnforcementService::META_SUSPENSION_NOTE] = $note;
+                    }
+                    $updates['service_meta'] = $meta;
+                }
+
+                $service->update($updates);
             }
 
             // Send service suspended notification
@@ -142,9 +155,16 @@ class ProvisioningService
 
             // Update status if not already updated by driver
             if ($service->status !== ServiceStatus::Active) {
+                $meta = $service->service_meta ?? [];
+                unset(
+                    $meta[ResellerEnforcementService::META_SUSPENSION_REASON],
+                    $meta[ResellerEnforcementService::META_SUSPENSION_NOTE],
+                );
+
                 $service->update([
                     'status' => ServiceStatus::Active,
                     'suspend_date' => null,
+                    'service_meta' => $meta ?: null,
                 ]);
             }
 

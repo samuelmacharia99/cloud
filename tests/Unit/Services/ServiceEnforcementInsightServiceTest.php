@@ -31,8 +31,26 @@ class ServiceEnforcementInsightServiceTest extends TestCase
         $insight = app(ServiceEnforcementInsightService::class)->forService($service);
 
         $this->assertSame('Disk quota exceeded', $insight['suspension_label']);
+        $this->assertSame('Disk quota exceeded', $insight['suspension_message']);
         $this->assertTrue($insight['is_suspended']);
         $this->assertNotEmpty($insight['alerts']);
+    }
+
+    public function test_prefers_suspension_note_over_reason_label(): void
+    {
+        $product = Product::factory()->create();
+        $service = Service::factory()->create([
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'service_meta' => [
+                ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_MANUAL,
+                ResellerEnforcementService::META_SUSPENSION_NOTE => 'Customer requested temporary hold',
+            ],
+        ]);
+
+        $insight = app(ServiceEnforcementInsightService::class)->forService($service);
+
+        $this->assertSame('Customer requested temporary hold', $insight['suspension_message']);
     }
 
     public function test_collects_customer_service_alerts(): void

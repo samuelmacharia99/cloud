@@ -29,7 +29,11 @@ class ResellerEnforcementService
 
     public const REASON_RESELLER_USER_OVER = 'reseller_user_overquota';
 
+    public const REASON_MANUAL = 'manual';
+
     public const META_SUSPENSION_REASON = 'suspension_reason';
+
+    public const META_SUSPENSION_NOTE = 'suspension_note';
 
     public function __construct(
         private ResellerScopeService $scope,
@@ -523,7 +527,7 @@ class ResellerEnforcementService
     protected function clearEnforcementMeta(Service $service): void
     {
         $meta = $service->service_meta ?? [];
-        unset($meta[self::META_SUSPENSION_REASON]);
+        unset($meta[self::META_SUSPENSION_REASON], $meta[self::META_SUSPENSION_NOTE]);
         $service->update(['service_meta' => $meta ?: null]);
     }
 

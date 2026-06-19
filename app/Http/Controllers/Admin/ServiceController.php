@@ -14,10 +14,13 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\EmailDeliveryService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerEnforcementService;
+use App\Services\ServiceEnforcementInsightService;
 use App\Services\ServiceStatusSyncService;
 use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
@@ -193,8 +196,9 @@ class ServiceController extends Controller
             ->get(['id', 'name', 'monthly_price', 'yearly_price', 'provisioning_driver_key']);
 
         $currencyCode = Setting::getValue('currency', 'KES');
+        $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
 
-        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode', 'liveStatus'));
+        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode', 'liveStatus', 'enforcementInsight'));
     }
 
     public function provision(Service $service)
@@ -249,11 +253,21 @@ class ServiceController extends Controller
         }
     }
 
-    public function suspend(Service $service)
+    public function suspend(Request $request, Service $service)
     {
+        $validated = $request->validate([
+            'suspension_reason' => 'nullable|string|max:500',
+        ]);
+
         try {
             $provisioningService = app(ProvisioningService::class);
-            $provisioningService->suspend($service);
+            $provisioningService->suspend(
+                $service,
+                ResellerEnforcementService::REASON_MANUAL,
+                filled($validated['suspension_reason'] ?? null)
+                    ? $validated['suspension_reason']
+                    : 'Suspended by administrator',
+            );
 
             return back()->with('success', 'Service suspended successfully.');
         } catch (\Exception $e) {
@@ -324,13 +338,33 @@ class ServiceController extends Controller
             'password' => 'nullable|string|max:255',
             'primary_domain' => 'nullable|string|max:253|regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i',
             'notes' => 'nullable|string|max:2000',
+            'return_to' => 'nullable|in:customer',
         ]);
+
+        $returnToCustomer = ($validated['return_to'] ?? null) === 'customer';
+        unset($validated['return_to']);
+
+        $targetProduct = null;
+        $applyHostingPackageChange = false;
 
         // When product changes, sync the provisioning driver key from the new product
         if (! empty($validated['product_id']) && (int) $validated['product_id'] !== $service->product_id) {
-            $newProduct = Product::find($validated['product_id']);
-            if ($newProduct && $newProduct->type === $service->product->type) {
-                $validated['provisioning_driver_key'] = $newProduct->provisioning_driver_key;
+            $targetProduct = Product::with('directAdminPackage')->find($validated['product_id']);
+            if ($targetProduct && $targetProduct->type === $service->product->type) {
+                $validated['provisioning_driver_key'] = $targetProduct->provisioning_driver_key;
+
+                $hasHostingAccount = $service->external_reference
+                    || filled($service->service_meta['username'] ?? null);
+
+                if ($service->isSharedHosting() && $hasHostingAccount && $targetProduct->directAdminPackage) {
+                    $applyHostingPackageChange = true;
+                    unset($validated['product_id']);
+                } elseif ($targetProduct->directAdminPackage) {
+                    $meta = is_array($service->service_meta) ? $service->service_meta : ($service->service_meta ?? []);
+                    $meta['package'] = $targetProduct->directAdminPackage->package_key;
+                    $meta['package_name'] = $targetProduct->directAdminPackage->name;
+                    $validated['service_meta'] = $meta;
+                }
             } else {
                 unset($validated['product_id']); // prevent cross-type reassignment
             }
@@ -407,7 +441,39 @@ class ServiceController extends Controller
         unset($validated['username'], $validated['password'], $validated['primary_domain']);
         $service->update($validated);
 
-        return back()->with('success', 'Service updated successfully.');
+        if ($applyHostingPackageChange && $targetProduct) {
+            try {
+                app(CustomerHostingUpgradeService::class)->applyUpgrade($service->fresh(), $targetProduct);
+            } catch (\Throwable $e) {
+                Log::warning('Service updated but hosting package change failed', [
+                    'service_id' => $service->id,
+                    'target_product_id' => $targetProduct->id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                $message = 'Service details saved, but the hosting package could not be applied on the server: '.$e->getMessage();
+
+                if ($returnToCustomer) {
+                    return redirect()
+                        ->route('admin.customers.show', ['customer' => $service->user_id, 'tab' => 'services'])
+                        ->with('error', $message);
+                }
+
+                return back()->with('error', $message);
+            }
+        }
+
+        $successMessage = $applyHostingPackageChange
+            ? 'Service updated and hosting package changed successfully.'
+            : 'Service updated successfully.';
+
+        if ($returnToCustomer) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $service->user_id, 'tab' => 'services'])
+                ->with('success', $successMessage);
+        }
+
+        return back()->with('success', $successMessage);
     }
 
     public function destroy(Service $service)

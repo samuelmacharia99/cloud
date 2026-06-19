@@ -11,7 +11,11 @@
             @endif
         </div>
 
-        @if (!empty($insight['suspension_label']))
+        @if (!empty($insight['suspension_message']))
+            <p class="text-sm text-slate-600 dark:text-slate-400">
+                <span class="font-medium text-slate-900 dark:text-white">Reason:</span> {{ $insight['suspension_message'] }}
+            </p>
+        @elseif (!empty($insight['suspension_label']))
             <p class="text-sm text-slate-600 dark:text-slate-400">
                 <span class="font-medium text-slate-900 dark:text-white">Reason:</span> {{ $insight['suspension_label'] }}
             </p>

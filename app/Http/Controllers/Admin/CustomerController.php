@@ -189,6 +189,21 @@ class CustomerController extends Controller
             ];
         })->values()->toArray();
 
+        $servicesForJs = $customer->services->map(function ($service) {
+            return [
+                'id' => $service->id,
+                'name' => $service->name,
+                'product_id' => $service->product_id,
+                'product_name' => $service->product?->name,
+                'product_type' => $service->product?->type,
+                'billing_cycle' => $service->billing_cycle ?? 'monthly',
+                'custom_price' => $service->custom_price,
+                'next_due_date' => $service->next_due_date?->format('Y-m-d') ?? '',
+                'commenced_at' => $service->commenced_at?->format('Y-m-d') ?? '',
+                'status' => $service->status->value,
+            ];
+        })->values()->toArray();
+
         // Get active DirectAdmin nodes for server selection in Add Service modal
         $daNodes = Node::where('type', 'directadmin')
             ->where('is_active', true)
@@ -213,6 +228,7 @@ class CustomerController extends Controller
             'customer',
             'products',
             'productsForJs',
+            'servicesForJs',
             'daNodes',
             'customerCredits',
             'creditAvailableBalance',

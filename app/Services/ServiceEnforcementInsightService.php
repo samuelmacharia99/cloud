@@ -22,6 +22,8 @@ class ServiceEnforcementInsightService
      * @return array{
      *     suspension_reason: ?string,
      *     suspension_label: ?string,
+     *     suspension_note: ?string,
+     *     suspension_message: ?string,
      *     is_suspended: bool,
      *     billing_overdue: bool,
      *     disk: ?array{used_mb: float, limit_mb: ?float, percent: ?float, over_quota: bool},
@@ -38,6 +40,7 @@ class ServiceEnforcementInsightService
         $service->loadMissing(['invoice', 'invoiceItems.invoice', 'node', 'product.directAdminPackage']);
 
         $reason = $service->service_meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null;
+        $note = $service->service_meta[ResellerEnforcementService::META_SUSPENSION_NOTE] ?? null;
         $alerts = [];
         $warningThreshold = $this->packageUsage->warningThresholdPercent();
 
@@ -87,11 +90,11 @@ class ServiceEnforcementInsightService
             }
         }
 
-        if ($service->status === ServiceStatus::Suspended && $reason) {
+        if ($service->status === ServiceStatus::Suspended && ($reason || $note)) {
             $alerts[] = [
                 'type' => 'suspension',
                 'level' => 'danger',
-                'message' => 'Suspended: '.$this->reasonLabel($reason),
+                'message' => 'Suspended: '.$this->suspensionMessage($reason, $note),
             ];
         }
 
@@ -100,6 +103,8 @@ class ServiceEnforcementInsightService
         return [
             'suspension_reason' => $reason,
             'suspension_label' => $reason ? $this->reasonLabel($reason) : null,
+            'suspension_note' => $note,
+            'suspension_message' => $this->suspensionMessage($reason, $note),
             'is_suspended' => $service->status === ServiceStatus::Suspended,
             'billing_overdue' => $billingOverdue,
             'disk' => $disk,
@@ -153,8 +158,22 @@ class ServiceEnforcementInsightService
             ResellerEnforcementService::REASON_PACKAGE_LIMIT => 'Exceeded package service slot limit',
             ResellerEnforcementService::REASON_RESELLER_DISK_POOL_OVER => 'Reseller disk pool exceeded',
             ResellerEnforcementService::REASON_RESELLER_USER_OVER => 'Reseller user limit exceeded',
+            ResellerEnforcementService::REASON_MANUAL => 'Manual suspension',
             default => ucfirst(str_replace('_', ' ', $reason)),
         };
+    }
+
+    public function suspensionMessage(?string $reason, ?string $note = null): ?string
+    {
+        if ($note) {
+            return $note;
+        }
+
+        if ($reason) {
+            return $this->reasonLabel($reason);
+        }
+
+        return null;
     }
 
     /**

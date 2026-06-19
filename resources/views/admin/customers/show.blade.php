@@ -258,6 +258,11 @@
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $service->next_due_date ? $service->next_due_date->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-right">
                                         <div class="flex items-center justify-end gap-4">
+                                            <button type="button"
+                                                @click="openEditService({{ $service->id }})"
+                                                class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-sm font-medium transition-colors">
+                                                Edit
+                                            </button>
                                             <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                             @if (!in_array($service->status->value, ['cancelled', 'terminated']))
                                             <button type="button"
@@ -1140,6 +1145,96 @@
         </div>
     </div>
 
+    <!-- Edit Service Modal -->
+    <div
+        x-show="editServiceModal"
+        x-cloak
+        class="fixed inset-0 z-50 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-service-modal-title"
+        @keydown.escape.window="editServiceModal = false"
+    >
+        <div class="fixed inset-0 bg-black/50" @click="editServiceModal = false"></div>
+        <div class="flex min-h-full items-end sm:items-center justify-center p-4">
+            <div
+                x-show="editServiceModal"
+                x-transition
+                class="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+                @click.stop
+            >
+                <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800">
+                    <div>
+                        <h2 id="edit-service-modal-title" class="text-xl font-bold text-slate-900 dark:text-white">Edit service</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="editServiceName"></p>
+                    </div>
+                    <button type="button" @click="editServiceModal = false" class="shrink-0 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                <form :action="'/admin/services/' + editServiceId" method="POST" class="p-6 space-y-5 overflow-y-auto flex-1 min-h-0">
+                    @csrf
+                    @method('PATCH')
+                    <input type="hidden" name="return_to" value="customer">
+
+                    <div>
+                        <label for="edit_product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Package / product</label>
+                        <select id="edit_product_id" name="product_id" x-model="editProductId" required
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <template x-for="product in editServiceProducts()" :key="product.id">
+                                <option :value="String(product.id)" x-text="productLabel(product)"></option>
+                            </template>
+                        </select>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">For shared hosting, the DirectAdmin package is updated on the server when you save.</p>
+                    </div>
+
+                    <div>
+                        <label for="edit_billing_cycle" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Billing cycle</label>
+                        <select id="edit_billing_cycle" name="billing_cycle" x-model="editBillingCycle" required
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semi-annual">Semi-annual</option>
+                            <option value="annual">Annual</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="edit_custom_price" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Custom price ({{ $customerCurrencyCode }})</label>
+                        <input type="number" id="edit_custom_price" name="custom_price" step="0.01" min="0" x-model="editCustomPrice"
+                               class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Leave empty to use product price">
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="edit_commenced_at" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Commenced</label>
+                            <input type="date" id="edit_commenced_at" name="commenced_at" x-model="editCommencedAt"
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                        <div>
+                            <label for="edit_next_due_date" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Next due date</label>
+                            <input type="date" id="edit_next_due_date" name="next_due_date" x-model="editNextDueDate" required
+                                   class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 pt-2">
+                        <button type="button" @click="editServiceModal = false"
+                                class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                            Save changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Cancel Service Confirmation Modal -->
     <div x-show="cancelServiceModal"
          x-transition:enter="transition ease-out duration-200"
@@ -1202,6 +1297,16 @@ function initCustomerData() {
     return {
         tab: @js(request('tab', 'overview')),
         addServiceModal: false,
+        editServiceModal: false,
+        editServiceId: null,
+        editServiceName: '',
+        editProductId: '',
+        editBillingCycle: 'monthly',
+        editCustomPrice: '',
+        editCommencedAt: '',
+        editNextDueDate: '',
+        editProductType: '',
+        services: @json($servicesForJs),
         addDomainModal: false,
         createInvoiceModal: false,
         cancelServiceModal: false,
@@ -1260,6 +1365,33 @@ function initCustomerData() {
         getProductsByType() {
             if (!this.selectedProductType) return [];
             return this.products.filter(p => p.type === this.selectedProductType);
+        },
+
+        openEditService(serviceId) {
+            const service = this.services.find(s => s.id === serviceId);
+            if (!service) return;
+
+            this.editServiceId = service.id;
+            this.editServiceName = service.name;
+            this.editProductId = String(service.product_id);
+            this.editProductType = service.product_type || '';
+            this.editBillingCycle = service.billing_cycle || 'monthly';
+            this.editCustomPrice = service.custom_price ?? '';
+            this.editCommencedAt = service.commenced_at || '';
+            this.editNextDueDate = service.next_due_date || '';
+            this.editServiceModal = true;
+        },
+
+        editServiceProducts() {
+            if (!this.editProductType) return this.products;
+            return this.products.filter(p => p.type === this.editProductType);
+        },
+
+        productLabel(product) {
+            const price = product.monthly_price
+                ? ` — ${this.customerCurrencySymbol} ${Number(product.monthly_price).toLocaleString()}/mo`
+                : '';
+            return `${product.name}${price}`;
         },
 
         onProductTypeChange() {
