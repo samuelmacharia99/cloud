@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands;
 
-use App\Models\User;
 use App\Services\ResellerEnforcementService;
 use Illuminate\Support\Facades\Log;
 
@@ -10,31 +9,27 @@ class EnforceResellerPackageLimitsCommand extends BaseCronCommand
 {
     protected $signature = 'cron:enforce-reseller-package-limits';
 
-    protected $description = 'Suspends excess active services when resellers exceed package service slot limits';
+    protected $description = 'Suspends resellers and services that exceed package specs (service slots, disk pool, user limits)';
 
     protected function handleCron(): string
     {
         $enforcement = app(ResellerEnforcementService::class);
 
-        if (! $enforcement->isExcessEnforcementEnabled()) {
-            return 'Reseller package limit enforcement skipped: reseller_suspend_excess_services is disabled.';
+        if (! $enforcement->isExcessEnforcementEnabled()
+            && ! $enforcement->isDiskPoolSuspensionEnabled()
+            && ! $enforcement->isUserLimitSuspensionEnabled()) {
+            return 'Reseller package limit enforcement skipped: all reseller auto-suspend settings are disabled.';
         }
 
-        $resellers = User::query()
-            ->where('is_reseller', true)
-            ->whereNotNull('reseller_package_id')
-            ->get();
+        try {
+            $result = $enforcement->enforceAllPackageLimits();
+        } catch (\Throwable $e) {
+            Log::error('Reseller package limit enforcement failed: '.$e->getMessage());
 
-        $total = 0;
-
-        foreach ($resellers as $reseller) {
-            try {
-                $total += $enforcement->enforcePackageLimitsForReseller($reseller);
-            } catch (\Throwable $e) {
-                Log::error("Reseller package limit enforcement failed for {$reseller->id}: {$e->getMessage()}");
-            }
+            throw $e;
         }
 
-        return "Suspended {$total} excess service(s) across reseller accounts.";
+        return "Suspended {$result['suspended']} reseller account(s) for package spec violations, "
+            ."restored {$result['restored']}, suspended {$result['serviceSlots']} excess service slot(s).";
     }
 }

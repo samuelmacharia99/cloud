@@ -148,8 +148,11 @@ class ServiceEnforcementInsightService
         return match ($reason) {
             ResellerEnforcementService::REASON_INVOICE_OVERDUE => 'Unpaid or overdue invoice',
             ResellerEnforcementService::REASON_DISK_OVERQUOTA => 'Disk quota exceeded',
+            ResellerEnforcementService::REASON_PACKAGE_OVERQUOTA => 'Hosting package limit exceeded',
             ResellerEnforcementService::REASON_RESELLER_OVERDUE => 'Reseller package billing lapsed',
             ResellerEnforcementService::REASON_PACKAGE_LIMIT => 'Exceeded package service slot limit',
+            ResellerEnforcementService::REASON_RESELLER_DISK_POOL_OVER => 'Reseller disk pool exceeded',
+            ResellerEnforcementService::REASON_RESELLER_USER_OVER => 'Reseller user limit exceeded',
             default => ucfirst(str_replace('_', ' ', $reason)),
         };
     }

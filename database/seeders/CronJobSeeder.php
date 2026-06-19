@@ -54,7 +54,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Enforce Disk Quotas',
-                'description' => 'Suspends DirectAdmin accounts over disk quota and restores them when usage drops (includes reseller customers).',
+                'description' => 'Suspends shared hosting over package limits (disk, bandwidth, databases) and restores when usage drops.',
                 'command' => 'cron:enforce-disk-quotas',
                 'schedule' => '0 */6 * * *',
                 'enabled' => true,
@@ -187,7 +187,7 @@ class CronJobSeeder extends Seeder
             ],
             [
                 'name' => 'Enforce Reseller Package Limits',
-                'description' => 'Suspends excess active services when resellers exceed package service slot limits on DirectAdmin.',
+                'description' => 'Suspends resellers and services that exceed package specs (service slots, disk pool, user limits).',
                 'command' => 'cron:enforce-reseller-package-limits',
                 'schedule' => '0 6 * * *',
                 'enabled' => true,

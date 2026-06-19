@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\NotificationService;
 use App\Services\ResellerDiskUsageService;
+use App\Services\ResellerEnforcementService;
 
 class CollectResellerDiskUsageCommand extends BaseCronCommand
 {
@@ -21,7 +22,10 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
     {
         $count = 0;
         $warned = 0;
+        $suspended = 0;
+        $restored = 0;
         $notifications = app(NotificationService::class);
+        $enforcement = app(ResellerEnforcementService::class);
 
         foreach ($this->diskUsage->resellersWithPackages() as $reseller) {
             try {
@@ -29,7 +33,11 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
                 $this->diskUsage->recordDailySnapshot($reseller);
                 $count++;
 
-                if ($this->diskUsage->isOverPool($reseller, $usage)) {
+                if ($enforcement->enforceDiskPoolLimit($reseller)) {
+                    $suspended++;
+                } elseif ($enforcement->restoreDiskPoolLimit($reseller)) {
+                    $restored++;
+                } elseif ($this->diskUsage->isOverPool($reseller, $usage)) {
                     $settings = $reseller->settings ?? [];
                     $lastWarned = $settings['disk_pool_warning_sent_at'] ?? null;
                     $shouldWarn = ! $lastWarned || now()->parse($lastWarned)->lt(now()->subDays(7));
@@ -50,6 +58,6 @@ class CollectResellerDiskUsageCommand extends BaseCronCommand
             }
         }
 
-        return "Recorded disk usage snapshots for {$count} reseller(s); sent {$warned} disk pool warning(s).";
+        return "Recorded disk usage snapshots for {$count} reseller(s); suspended {$suspended}, restored {$restored}, sent {$warned} disk pool warning(s).";
     }
 }

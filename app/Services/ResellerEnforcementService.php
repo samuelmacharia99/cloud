@@ -23,6 +23,12 @@ class ResellerEnforcementService
 
     public const REASON_DISK_OVERQUOTA = 'disk_overquota';
 
+    public const REASON_PACKAGE_OVERQUOTA = 'package_overquota';
+
+    public const REASON_RESELLER_DISK_POOL_OVER = 'reseller_disk_pool_overquota';
+
+    public const REASON_RESELLER_USER_OVER = 'reseller_user_overquota';
+
     public const META_SUSPENSION_REASON = 'suspension_reason';
 
     public function __construct(
@@ -57,6 +63,16 @@ class ResellerEnforcementService
     public function isProvisionLimitEnforcementEnabled(): bool
     {
         return in_array(Setting::getValue('reseller_enforce_limits_on_provision', 'true'), ['1', 'true', true], true);
+    }
+
+    public function isDiskPoolSuspensionEnabled(): bool
+    {
+        return in_array(Setting::getValue('reseller_suspend_on_disk_pool_overquota', 'true'), ['1', 'true', true], true);
+    }
+
+    public function isUserLimitSuspensionEnabled(): bool
+    {
+        return in_array(Setting::getValue('reseller_suspend_on_user_overquota', 'true'), ['1', 'true', true], true);
     }
 
     public function resolveResellerForService(Service $service): ?User
@@ -192,7 +208,10 @@ class ResellerEnforcementService
             'reason' => $reason,
         ]);
 
-        app(NotificationService::class)->notifyResellerSuspended($reseller->fresh(), $reason);
+        app(NotificationService::class)->notifyResellerSuspended(
+            $reseller->fresh(),
+            $this->suspensionReasonLabel($reason),
+        );
 
         if (! $this->resellerDirectAdmin->suspendResellerAccount($reseller)) {
             Log::warning('DirectAdmin reseller suspend skipped or failed', [
@@ -311,6 +330,121 @@ class ResellerEnforcementService
         return $count;
     }
 
+    /**
+     * @return array{suspended: int, restored: int, service_slots: int}
+     */
+    public function enforceAllPackageLimits(): array
+    {
+        $suspended = 0;
+        $restored = 0;
+        $serviceSlots = 0;
+
+        $resellers = User::query()
+            ->where('is_reseller', true)
+            ->whereNotNull('reseller_package_id')
+            ->with('resellerPackage')
+            ->get();
+
+        foreach ($resellers as $reseller) {
+            try {
+                $serviceSlots += $this->enforcePackageLimitsForReseller($reseller);
+
+                if ($this->enforceDiskPoolLimit($reseller)) {
+                    $suspended++;
+                } elseif ($this->restoreDiskPoolLimit($reseller)) {
+                    $restored++;
+                }
+
+                if ($this->enforceUserLimit($reseller)) {
+                    $suspended++;
+                } elseif ($this->restoreUserLimit($reseller)) {
+                    $restored++;
+                }
+            } catch (\Throwable $e) {
+                Log::error('Reseller package enforcement failed', [
+                    'reseller_id' => $reseller->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return compact('suspended', 'restored', 'serviceSlots');
+    }
+
+    public function enforceDiskPoolLimit(User $reseller): bool
+    {
+        if (! $this->isDiskPoolSuspensionEnabled() || ! $reseller->hasResellerPackage() || $reseller->isResellerSuspended()) {
+            return false;
+        }
+
+        $diskUsage = app(ResellerDiskUsageService::class);
+        if (! $diskUsage->isOverPool($reseller)) {
+            return false;
+        }
+
+        $this->suspendReseller($reseller, self::REASON_RESELLER_DISK_POOL_OVER);
+
+        return true;
+    }
+
+    public function restoreDiskPoolLimit(User $reseller): bool
+    {
+        if (! $reseller->isResellerSuspended()
+            || $reseller->reseller_suspension_reason !== self::REASON_RESELLER_DISK_POOL_OVER) {
+            return false;
+        }
+
+        $diskUsage = app(ResellerDiskUsageService::class);
+        if ($diskUsage->isOverPool($reseller) || ! $this->resellerBillingIsCurrent($reseller)) {
+            return false;
+        }
+
+        $this->unsuspendReseller($reseller);
+
+        return true;
+    }
+
+    public function enforceUserLimit(User $reseller): bool
+    {
+        if (! $this->isUserLimitSuspensionEnabled() || ! $reseller->hasResellerPackage() || $reseller->isResellerSuspended()) {
+            return false;
+        }
+
+        $maxUsers = (int) $reseller->resellerPackage->max_users;
+        if ($maxUsers <= 0) {
+            return false;
+        }
+
+        if ($reseller->getResellerUserCountForLimits() <= $maxUsers) {
+            return false;
+        }
+
+        $this->suspendReseller($reseller, self::REASON_RESELLER_USER_OVER);
+
+        return true;
+    }
+
+    public function restoreUserLimit(User $reseller): bool
+    {
+        if (! $reseller->isResellerSuspended()
+            || $reseller->reseller_suspension_reason !== self::REASON_RESELLER_USER_OVER) {
+            return false;
+        }
+
+        $maxUsers = (int) ($reseller->resellerPackage?->max_users ?? 0);
+        if ($maxUsers <= 0 || $reseller->getResellerUserCountForLimits() > $maxUsers) {
+            return false;
+        }
+
+        if (! $this->resellerBillingIsCurrent($reseller)) {
+            return false;
+        }
+
+        $this->unsuspendReseller($reseller);
+
+        return true;
+    }
+
     public function suspendManagedServices(User $reseller, string $reason): int
     {
         $services = $this->scope->managedServicesQuery($reseller)
@@ -378,7 +512,12 @@ class ResellerEnforcementService
     {
         $reason = $service->service_meta[self::META_SUSPENSION_REASON] ?? null;
 
-        return in_array($reason, [self::REASON_RESELLER_OVERDUE, self::REASON_PACKAGE_LIMIT], true);
+        return in_array($reason, [
+            self::REASON_RESELLER_OVERDUE,
+            self::REASON_PACKAGE_LIMIT,
+            self::REASON_RESELLER_DISK_POOL_OVER,
+            self::REASON_RESELLER_USER_OVER,
+        ], true);
     }
 
     protected function clearEnforcementMeta(Service $service): void
@@ -386,5 +525,15 @@ class ResellerEnforcementService
         $meta = $service->service_meta ?? [];
         unset($meta[self::META_SUSPENSION_REASON]);
         $service->update(['service_meta' => $meta ?: null]);
+    }
+
+    public function suspensionReasonLabel(string $reason): string
+    {
+        return match ($reason) {
+            self::REASON_RESELLER_DISK_POOL_OVER => 'Total managed disk usage exceeded your package pool',
+            self::REASON_RESELLER_USER_OVER => 'Hosted user count exceeded your package limit',
+            self::REASON_PACKAGE_LIMIT => 'Active service count exceeded your package slot limit',
+            default => 'Reseller package subscription is unpaid or overdue',
+        };
     }
 }

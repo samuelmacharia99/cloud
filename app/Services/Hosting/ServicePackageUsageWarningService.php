@@ -88,7 +88,12 @@ class ServicePackageUsageWarningService
             }
         }
 
-        return compact('checked', 'notified', 'skipped', 'at_risk');
+        return [
+            'checked' => $checked,
+            'notified' => $notified,
+            'skipped' => $skipped,
+            'at_risk' => $atRisk,
+        ];
     }
 
     private function shouldNotify(Service $service): bool

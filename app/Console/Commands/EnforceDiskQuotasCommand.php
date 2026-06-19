@@ -2,25 +2,25 @@
 
 namespace App\Console\Commands;
 
-use App\Services\ServiceDiskQuotaEnforcementService;
+use App\Services\Hosting\ServicePackageLimitEnforcementService;
 
 class EnforceDiskQuotasCommand extends BaseCronCommand
 {
     protected $signature = 'cron:enforce-disk-quotas';
 
-    protected $description = 'Suspends DirectAdmin hosting accounts that exceed disk quota and restores them when usage drops';
+    protected $description = 'Suspends shared hosting accounts over package limits (disk, bandwidth, databases) and restores them when usage drops';
 
     protected function handleCron(): string
     {
-        $enforcement = app(ServiceDiskQuotaEnforcementService::class);
+        $enforcement = app(ServicePackageLimitEnforcementService::class);
 
         if (! $enforcement->isEnabled()) {
-            return 'Disk quota enforcement skipped: suspend_on_disk_overquota is disabled.';
+            return 'Package limit enforcement skipped: suspend_on_package_overquota is disabled.';
         }
 
         $result = $enforcement->enforce();
 
-        $message = "Suspended {$result['suspended']} service(s) for disk overquota";
+        $message = "Suspended {$result['suspended']} service(s) for package limit exceeded";
         if ($result['restored'] > 0) {
             $message .= ", restored {$result['restored']}";
         }
@@ -28,6 +28,6 @@ class EnforceDiskQuotasCommand extends BaseCronCommand
             $message .= " ({$result['skipped']} skipped)";
         }
 
-        return $message.' (includes reseller-managed customers).';
+        return $message.' (includes reseller-managed customers; disk, bandwidth, and database limits).';
     }
 }

@@ -71,8 +71,12 @@ class SettingSeeder extends Seeder
             ['key' => 'reseller_suspend_excess_services', 'value' => 'true', 'description' => 'Suspend services beyond reseller package service slot limit'],
             ['key' => 'reseller_disk_overage_rate', 'value' => '50', 'description' => 'Default KES per GB/month charged to resellers over their disk pool'],
             ['key' => 'reseller_enforce_limits_on_provision', 'value' => 'true', 'description' => 'Block provisioning when reseller is at limit or suspended'],
-            ['key' => 'suspend_on_disk_overquota', 'value' => 'true', 'description' => 'Suspend DirectAdmin hosting when disk quota is exceeded'],
+            ['key' => 'reseller_suspend_on_disk_pool_overquota', 'value' => 'true', 'description' => 'Automatically suspend resellers when total managed disk usage exceeds package pool'],
+            ['key' => 'reseller_suspend_on_user_overquota', 'value' => 'true', 'description' => 'Automatically suspend resellers when hosted user count exceeds package max_users'],
+            ['key' => 'suspend_on_disk_overquota', 'value' => 'true', 'description' => 'Suspend DirectAdmin hosting when disk quota is exceeded (legacy toggle; see suspend_on_package_overquota)'],
+            ['key' => 'suspend_on_package_overquota', 'value' => 'true', 'description' => 'Automatically suspend shared hosting when disk, bandwidth, or database limits are exceeded'],
             ['key' => 'disk_overquota_threshold_percent', 'value' => '100', 'description' => 'Disk usage percentage of quota before auto-suspension (100 = at limit)'],
+            ['key' => 'package_overquota_threshold_percent', 'value' => '100', 'description' => 'Shared hosting usage percentage before auto-suspension for disk, bandwidth, and databases'],
             ['key' => 'hosting_package_usage_warning_percent', 'value' => '90', 'description' => 'Shared hosting usage percentage that triggers upgrade warnings (storage, bandwidth, databases)'],
             ['key' => 'hosting_package_usage_clear_percent', 'value' => '85', 'description' => 'Usage percentage below which upgrade warnings reset after an upgrade or usage drop'],
 

@@ -4,33 +4,34 @@ namespace App\Services;
 
 use App\Enums\ServiceStatus;
 use App\Models\Service;
-use App\Models\Setting;
+use App\Services\Hosting\ServicePackageLimitEnforcementService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Monitors DirectAdmin shared hosting disk usage and suspends accounts that exceed quota.
+ * Monitors DirectAdmin shared hosting usage and suspends accounts that exceed package limits.
  *
- * Applies to direct customers and reseller-managed customers. Disk limits come from the
- * DirectAdmin package assigned at provision time (catalog package binding).
+ * Disk-specific helpers remain here for legacy callers; full package enforcement is delegated
+ * to ServicePackageLimitEnforcementService (disk, bandwidth, databases).
  */
 class ServiceDiskQuotaEnforcementService
 {
     public function __construct(
         private ServiceOverdueEnforcementService $overdueEnforcement,
         private ProvisioningService $provisioning,
+        private ServicePackageLimitEnforcementService $packageLimits,
     ) {}
 
     public function isEnabled(): bool
     {
-        return in_array(Setting::getValue('suspend_on_disk_overquota', 'true'), ['1', 'true', true], true);
+        return $this->packageLimits->isEnabled();
     }
 
     public function thresholdPercent(): int
     {
-        return max(1, min(200, (int) Setting::getValue('disk_overquota_threshold_percent', 100)));
+        return $this->packageLimits->thresholdPercent();
     }
 
     /**
@@ -97,9 +98,13 @@ class ServiceDiskQuotaEnforcementService
             return false;
         }
 
-        $thresholdMb = $limitMb * ($this->thresholdPercent() / 100);
-
-        return $usedMb >= $thresholdMb;
+        return $this->packageLimits->isMetricOverLimit([
+            'used' => $usedMb,
+            'limit' => $limitMb,
+            'percent' => round(($usedMb / $limitMb) * 100, 1),
+            'unlimited' => false,
+            'unit' => 'MB',
+        ], $this->thresholdPercent());
     }
 
     /**
@@ -107,61 +112,7 @@ class ServiceDiskQuotaEnforcementService
      */
     public function enforce(): array
     {
-        if (! $this->isEnabled()) {
-            return ['suspended' => 0, 'restored' => 0, 'skipped' => 0];
-        }
-
-        $suspended = 0;
-        $restored = 0;
-        $skipped = 0;
-
-        foreach ($this->activeDirectAdminServicesQuery()->cursor() as $service) {
-            try {
-                $usage = $this->resolveDiskUsage($service);
-                if ($usage === null) {
-                    $skipped++;
-
-                    continue;
-                }
-
-                if (! $usage['over_quota']) {
-                    continue;
-                }
-
-                $this->suspendForDiskOverquota($service, $usage);
-                $suspended++;
-            } catch (\Throwable $e) {
-                $skipped++;
-                Log::error('Disk quota enforcement failed for active service', [
-                    'service_id' => $service->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        foreach ($this->diskSuspendedServicesQuery()->cursor() as $service) {
-            try {
-                if ($this->overdueEnforcement->shouldSuspendForOverdueInvoice($service)) {
-                    continue;
-                }
-
-                $usage = $this->resolveDiskUsage($service);
-                if ($usage === null || $usage['over_quota']) {
-                    continue;
-                }
-
-                $this->restoreFromDiskOverquota($service);
-                $restored++;
-            } catch (\Throwable $e) {
-                $skipped++;
-                Log::error('Disk quota restore failed for suspended service', [
-                    'service_id' => $service->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        return compact('suspended', 'restored', 'skipped');
+        return $this->packageLimits->enforce();
     }
 
     /**
