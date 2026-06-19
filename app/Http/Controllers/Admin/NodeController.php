@@ -7,9 +7,11 @@ use App\Models\DirectAdminPackage;
 use App\Models\Node;
 use App\Models\NodeMonitoring;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class NodeController extends Controller
 {
@@ -174,7 +176,7 @@ class NodeController extends Controller
             ->with('success', 'Node created successfully.');
     }
 
-    public function show(Node $node)
+    public function show(Request $request, Node $node)
     {
         $node->load('services.product', 'services.user', 'latestMonitoring');
 
@@ -183,6 +185,10 @@ class NodeController extends Controller
         // when there's something to compare against.
         $packages = collect();
         $directAdminPeerCount = 0;
+        $resellerPackages = [];
+        $resellerPackagesError = null;
+        $nodeResellers = collect();
+
         if ($node->type === 'directadmin') {
             $packages = $node->directAdminPackages()
                 ->orderBy('disk_quota')
@@ -191,6 +197,12 @@ class NodeController extends Controller
             $directAdminPeerCount = Node::where('type', 'directadmin')
                 ->where('id', '!=', $node->id)
                 ->count();
+
+            $nodeResellers = $this->directAdminResellersForNode($node);
+            [$resellerPackages, $resellerPackagesError] = $this->fetchDirectAdminResellerPackages(
+                $node,
+                $request->boolean('refresh_reseller_packages'),
+            );
         }
 
         // Calculate utilization percentages
@@ -204,8 +216,75 @@ class NodeController extends Controller
             'ramPercentage',
             'storagePercentage',
             'packages',
-            'directAdminPeerCount'
+            'directAdminPeerCount',
+            'resellerPackages',
+            'resellerPackagesError',
+            'nodeResellers',
         ));
+    }
+
+    /**
+     * @return array{0: list<array<string, mixed>>, 1: ?string}
+     */
+    private function fetchDirectAdminResellerPackages(Node $node, bool $refresh = false): array
+    {
+        $cacheKey = "directadmin:node:{$node->id}:reseller-packages";
+
+        if ($refresh) {
+            Cache::forget($cacheKey);
+        }
+
+        $service = new DirectAdminService($node);
+
+        if (! $service->isConfigured()) {
+            return [[], 'DirectAdmin API is not configured for this node.'];
+        }
+
+        try {
+            $packages = Cache::remember($cacheKey, now()->addMinutes(5), fn () => $service->getAdminResellerPackages());
+
+            return [$packages, null];
+        } catch (\Throwable $e) {
+            return [[], 'Could not fetch reseller packages: '.$e->getMessage()];
+        }
+    }
+
+    /**
+     * Resellers assigned to this node or with hosting services on it.
+     */
+    private function directAdminResellersForNode(Node $node)
+    {
+        $assignedIds = User::query()
+            ->where('is_reseller', true)
+            ->where('reseller_node_id', $node->id)
+            ->pluck('id');
+
+        $serviceResellerIds = Service::query()
+            ->where('node_id', $node->id)
+            ->whereNotNull('reseller_id')
+            ->distinct()
+            ->pluck('reseller_id');
+
+        $ids = $assignedIds->merge($serviceResellerIds)->unique()->filter();
+
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return User::query()
+            ->whereIn('id', $ids)
+            ->with('resellerPackage')
+            ->withCount([
+                'managedServices as node_services_count' => fn ($query) => $query->where('node_id', $node->id),
+            ])
+            ->orderBy('name')
+            ->get()
+            ->each(function (User $reseller) use ($assignedIds) {
+                $reseller->setAttribute(
+                    'node_binding',
+                    $assignedIds->contains($reseller->id) ? 'assigned' : 'services_only',
+                );
+            });
     }
 
     public function edit(Node $node)

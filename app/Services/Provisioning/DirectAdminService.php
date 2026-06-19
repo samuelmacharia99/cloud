@@ -923,6 +923,165 @@ class DirectAdminService
     }
 
     /**
+     * Fetch admin-level reseller packages from DirectAdmin (CMD_API_PACKAGES_RESELLER).
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function getAdminResellerPackages(): array
+    {
+        if (! $this->isConfigured()) {
+            Log::warning('DirectAdmin not configured', ['node_id' => $this->node?->id]);
+
+            return [];
+        }
+
+        try {
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_RESELLER', [
+                    'json' => 'yes',
+                ])
+                ->throw();
+
+            if (! $response->ok()) {
+                return [];
+            }
+
+            $body = $response->body();
+
+            if (empty($body) || stripos($body, '<!DOCTYPE') !== false || stripos($body, '<html') !== false) {
+                Log::warning('DirectAdmin reseller package list unavailable', [
+                    'node_id' => $this->node?->id,
+                    'body_preview' => substr($body, 0, 300),
+                ]);
+
+                return [];
+            }
+
+            $packageNames = $this->parsePackageNameList($body, $response->json());
+            $packages = [];
+
+            foreach ($packageNames as $packageName) {
+                $details = $this->getResellerPackageDetails($packageName);
+                if ($details) {
+                    $packages[] = $details;
+                }
+            }
+
+            Log::info('Fetched DirectAdmin admin reseller packages', [
+                'node_id' => $this->node?->id,
+                'package_count' => count($packages),
+            ]);
+
+            return $packages;
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch DirectAdmin admin reseller packages', [
+                'node_id' => $this->node?->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function getResellerPackageDetails(string $packageName): ?array
+    {
+        try {
+            $response = $this->httpClient()
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_PACKAGES_RESELLER', [
+                    'package' => $packageName,
+                    'json' => 'yes',
+                ])
+                ->throw();
+
+            if (! $response->ok()) {
+                return null;
+            }
+
+            $packageData = $response->json();
+            if (! is_array($packageData)) {
+                return null;
+            }
+
+            return $this->parseResellerPackageData($packageName, $packageData);
+        } catch (\Exception $e) {
+            Log::warning('Failed to fetch DirectAdmin reseller package details', [
+                'node_id' => $this->node?->id,
+                'package_name' => $packageName,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function parseResellerPackageData(string $packageName, array $data): array
+    {
+        return [
+            'name' => $packageName,
+            'package_key' => Str::slug($packageName),
+            'disk_quota' => $this->parseResellerQuotaGb($data['quota'] ?? null),
+            'bandwidth_quota' => $this->parseResellerQuotaGb($data['bandwidth'] ?? null),
+            'num_domains' => $this->parseResellerQuantity($data['vdomains'] ?? null),
+            'num_ftp' => $this->parseResellerQuantity($data['ftp'] ?? null),
+            'num_email_accounts' => $this->parseResellerQuantity($data['nemails'] ?? null),
+            'num_databases' => $this->parseResellerQuantity($data['mysql'] ?? null),
+            'num_subdomains' => $this->parseResellerQuantity($data['nsubdomains'] ?? null),
+            'num_ips' => $this->parseResellerQuantity($data['ips'] ?? null),
+            'features' => [
+                'ssl' => $this->isDirectAdminFeatureOn($data['ssl'] ?? null),
+                'ssh' => $this->isDirectAdminFeatureOn($data['ssh'] ?? null),
+                'dnscontrol' => $this->isDirectAdminFeatureOn($data['dnscontrol'] ?? null),
+                'serverip' => $this->isDirectAdminFeatureOn($data['serverip'] ?? null),
+            ],
+        ];
+    }
+
+    private function parseResellerQuotaGb(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.00;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+
+        if (in_array($normalized, ['unlimited', '-1'], true)) {
+            return -1.00;
+        }
+
+        if (is_numeric($normalized)) {
+            return round(((float) $normalized) / 1024, 2);
+        }
+
+        return $this->convertToGb((string) $value);
+    }
+
+    private function parseResellerQuantity(mixed $value): int
+    {
+        if ($value === null || $value === '') {
+            return 0;
+        }
+
+        $normalized = strtolower(trim((string) $value));
+
+        if (in_array($normalized, ['unlimited', '-1'], true)) {
+            return -1;
+        }
+
+        return (int) $value;
+    }
+
+    private function isDirectAdminFeatureOn(mixed $value): bool
+    {
+        return in_array(strtoupper(trim((string) ($value ?? ''))), ['ON', 'YES', '1'], true);
+    }
+
+    /**
      * Fetch all packages from DirectAdmin server
      * DirectAdmin returns form-encoded list of package names: list[]=Package1&list[]=Package2
      *

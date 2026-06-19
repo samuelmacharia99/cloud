@@ -280,6 +280,41 @@ class DirectAdminServiceTest extends TestCase
         $this->assertSame(-1, $packages[0]['num_email_accounts']);
     }
 
+    public function test_get_admin_reseller_packages_reads_reseller_package_fields(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_PACKAGES_RESELLER') && ! isset($request['package'])) {
+                return Http::response(json_encode(['list' => ['ResellerGold']]), 200);
+            }
+
+            return Http::response(json_encode([
+                'quota' => '10240',
+                'bandwidth' => '51200',
+                'vdomains' => '50',
+                'ips' => '5',
+                'nemails' => 'unlimited',
+                'mysql' => '20',
+                'nsubdomains' => '100',
+                'ssl' => 'ON',
+                'ssh' => 'OFF',
+                'dnscontrol' => 'ON',
+                'serverip' => 'ON',
+            ]), 200);
+        });
+
+        $packages = (new DirectAdminService($this->createDirectAdminNode()))->getAdminResellerPackages();
+
+        $this->assertCount(1, $packages);
+        $this->assertSame('ResellerGold', $packages[0]['name']);
+        $this->assertSame(10.0, $packages[0]['disk_quota']);
+        $this->assertSame(50.0, $packages[0]['bandwidth_quota']);
+        $this->assertSame(50, $packages[0]['num_domains']);
+        $this->assertSame(5, $packages[0]['num_ips']);
+        $this->assertSame(-1, $packages[0]['num_email_accounts']);
+        $this->assertTrue($packages[0]['features']['ssl']);
+        $this->assertFalse($packages[0]['features']['ssh']);
+    }
+
     public function test_empty_api_body_is_treated_as_failure_for_create(): void
     {
         Http::fake([

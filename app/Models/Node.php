@@ -88,6 +88,12 @@ class Node extends Model
         return $this->hasMany(DirectAdminPackage::class);
     }
 
+    public function assignedResellers()
+    {
+        return $this->hasMany(User::class, 'reseller_node_id')
+            ->where('is_reseller', true);
+    }
+
     // Helper Methods
     public function isMonitored(): bool
     {

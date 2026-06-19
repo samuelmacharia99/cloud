@@ -131,16 +131,50 @@
 
     <!-- Monitoring Dashboard (for container hosts and database servers) -->
     @if($node->isMonitored())
-        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">24h Monitoring</h2>
-                @if($node->latestMonitoring && $node->latestMonitoring->getAlert())
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
-                        ⚠️ {{ $node->latestMonitoring->getAlert() }}
-                    </span>
-                @endif
-            </div>
+        @php
+            $monitoringAlert = $node->latestMonitoring?->getAlert();
+            $monitoringExpandedDefault = filled($monitoringAlert) ? 'true' : 'false';
+        @endphp
+        <div
+            x-data="{ expanded: {{ $monitoringExpandedDefault }} }"
+            class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+        >
+            <button
+                type="button"
+                @click="expanded = !expanded"
+                class="w-full p-8 text-left flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+            >
+                <div class="min-w-0">
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <h2 class="text-lg font-semibold text-slate-900 dark:text-white">24h Monitoring</h2>
+                        @if($monitoringAlert)
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">
+                                ⚠️ {{ $monitoringAlert }}
+                            </span>
+                        @endif
+                    </div>
+                    @if($node->latestMonitoring)
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Uptime <strong class="text-slate-900 dark:text-white">{{ $node->latestMonitoring->uptime_percentage }}%</strong>
+                            · RAM <strong class="text-slate-900 dark:text-white">{{ $node->latestMonitoring->getRamUsagePercentage() }}%</strong>
+                            · Storage <strong class="text-slate-900 dark:text-white">{{ $node->latestMonitoring->getStorageUsagePercentage() }}%</strong>
+                            @if($node->latestMonitoring->recorded_at)
+                                · Updated {{ $node->latestMonitoring->recorded_at->diffForHumans() }}
+                            @endif
+                        </p>
+                    @else
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">No monitoring data received yet — waiting for first heartbeat.</p>
+                    @endif
+                </div>
+                <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 shrink-0">
+                    <span x-text="expanded ? 'Collapse' : 'Expand'"></span>
+                    <svg class="w-5 h-5 transition-transform" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </div>
+            </button>
 
+            <div x-show="expanded" x-cloak class="px-8 pb-8 border-t border-slate-200 dark:border-slate-800 pt-6">
             @if($node->latestMonitoring)
                 <!-- Real-time Gauges -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -326,6 +360,7 @@
                     <p class="text-sm mt-1">Waiting for first heartbeat from node...</p>
                 </div>
             @endif
+            </div>
         </div>
     @endif
 
@@ -351,9 +386,9 @@
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
             <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
                 <div>
-                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Packages</h2>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin User Packages</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        Hosting plans synced from this server's DirectAdmin API
+                        End-user hosting plans synced from this server
                         @if($packages->isNotEmpty())
                             &middot; {{ $packages->count() }} {{ \Illuminate\Support\Str::plural('package', $packages->count()) }}
                         @endif
@@ -481,6 +516,173 @@
                     <a href="{{ route('admin.shared-hosting.package-consistency') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Compare across DA nodes</a>
                     to spot drift between servers.
                 </p>
+            @endif
+        </div>
+
+        {{-- Admin reseller packages (live from DirectAdmin) --}}
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Reseller Packages</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Reseller account limits defined on this server
+                        @if(!empty($resellerPackages))
+                            &middot; {{ count($resellerPackages) }} {{ \Illuminate\Support\Str::plural('package', count($resellerPackages)) }}
+                        @endif
+                        &middot; Live from API (cached 5 min)
+                    </p>
+                </div>
+                <a href="{{ route('admin.nodes.show', ['node' => $node, 'refresh_reseller_packages' => 1]) }}"
+                   class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Refresh
+                </a>
+            </div>
+
+            @if($resellerPackagesError)
+                <div class="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-800 dark:text-amber-200">
+                    {{ $resellerPackagesError }}
+                </div>
+            @elseif(empty($resellerPackages))
+                <div class="text-center py-10 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                    <p class="text-slate-700 dark:text-slate-300 font-medium">No reseller packages found on this server.</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Create reseller packages in the DirectAdmin admin panel, then click Refresh.</p>
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 dark:border-slate-800">
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">Package</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Disk</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Bandwidth</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Domains</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">IPs</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Email</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">DBs</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Features</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                            @foreach($resellerPackages as $package)
+                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <td class="py-3 px-3">
+                                        <p class="font-medium text-slate-900 dark:text-white">{{ $package['name'] }}</p>
+                                        <code class="text-xs text-slate-500 dark:text-slate-400 font-mono">{{ $package['package_key'] }}</code>
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['disk_quota'] ?? 0) < 0 ? '∞' : (rtrim(rtrim(number_format((float) ($package['disk_quota'] ?? 0), 2), '0'), '.') . ' GB') }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['bandwidth_quota'] ?? 0) < 0 ? '∞' : (rtrim(rtrim(number_format((float) ($package['bandwidth_quota'] ?? 0), 2), '0'), '.') . ' GB') }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['num_domains'] ?? 0) < 0 ? '∞' : ($package['num_domains'] ?? 0) }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['num_ips'] ?? 0) < 0 ? '∞' : ($package['num_ips'] ?? 0) }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['num_email_accounts'] ?? 0) < 0 ? '∞' : ($package['num_email_accounts'] ?? 0) }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ ($package['num_databases'] ?? 0) < 0 ? '∞' : ($package['num_databases'] ?? 0) }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-600 dark:text-slate-400 text-xs">
+                                        @php $features = $package['features'] ?? []; @endphp
+                                        @if(!empty($features['ssl'])) SSL @endif
+                                        @if(!empty($features['ssh'])) SSH @endif
+                                        @if(!empty($features['dnscontrol'])) DNS @endif
+                                        @if(!empty($features['serverip'])) Server IP @endif
+                                        @if(empty(array_filter($features ?? []))) — @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @endif
+        </div>
+
+        {{-- Platform resellers linked to this node --}}
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 mb-6">
+            <div class="flex items-center justify-between flex-wrap gap-3 mb-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Resellers on This Node</h2>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Platform resellers assigned to this server or with hosting here
+                        @if($nodeResellers->isNotEmpty())
+                            &middot; {{ $nodeResellers->count() }} {{ \Illuminate\Support\Str::plural('reseller', $nodeResellers->count()) }}
+                        @endif
+                    </p>
+                </div>
+                <a href="{{ route('admin.resellers.index') }}"
+                   class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
+                    All resellers
+                </a>
+            </div>
+
+            @if($nodeResellers->isEmpty())
+                <div class="text-center py-10 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                    <p class="text-slate-700 dark:text-slate-300 font-medium">No resellers linked to this node yet.</p>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Assign a DirectAdmin node on each reseller's admin profile under <span class="font-medium">DirectAdmin username &amp; node</span>.</p>
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 dark:border-slate-800">
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">Reseller</th>
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">DirectAdmin</th>
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">Platform package</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Services here</th>
+                                <th class="text-left py-3 px-3 font-semibold text-slate-900 dark:text-white">Binding</th>
+                                <th class="text-right py-3 px-3 font-semibold text-slate-900 dark:text-white">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                            @foreach($nodeResellers as $reseller)
+                                <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <td class="py-3 px-3">
+                                        <a href="{{ route('admin.resellers.show', $reseller) }}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                                            {{ $reseller->name }}
+                                        </a>
+                                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ $reseller->email }}</p>
+                                    </td>
+                                    <td class="py-3 px-3">
+                                        @if($reseller->directadmin_username)
+                                            <code class="text-xs font-mono text-slate-800 dark:text-slate-200">{{ $reseller->directadmin_username }}</code>
+                                        @else
+                                            <span class="text-slate-400">Not set</span>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-3 text-slate-700 dark:text-slate-300">
+                                        {{ $reseller->resellerPackage?->name ?? '—' }}
+                                    </td>
+                                    <td class="py-3 px-3 text-right text-slate-700 dark:text-slate-300">
+                                        {{ $reseller->node_services_count ?? 0 }}
+                                    </td>
+                                    <td class="py-3 px-3">
+                                        @if(($reseller->node_binding ?? '') === 'assigned')
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">Assigned</span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">Via services</span>
+                                        @endif
+                                    </td>
+                                    <td class="py-3 px-3 text-right">
+                                        @if($reseller->reseller_suspended_at)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300">Suspended</span>
+                                        @else
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">Active</span>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
             @endif
         </div>
     @endif

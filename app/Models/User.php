@@ -128,6 +128,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(User::class, 'reseller_id');
     }
 
+    public function managedServices()
+    {
+        return $this->hasMany(Service::class, 'reseller_id');
+    }
+
     public function resellerProducts()
     {
         return $this->hasMany(ResellerProduct::class, 'reseller_id');
