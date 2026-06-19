@@ -20,6 +20,13 @@
         </a>
     </div>
 
+    @if(!empty($attachDomain))
+        <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-900 dark:text-blue-100">
+            <p class="font-semibold">Linked domain: {{ $attachDomain['fqdn'] }}</p>
+            <p class="mt-1 text-blue-800 dark:text-blue-200">This plan will use the domain already in your cart. One invoice at checkout.</p>
+        </div>
+    @endif
+
     <!-- Techstack Summary -->
     <div class="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800 dark:to-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-6">
         <h3 class="font-semibold text-slate-900 dark:text-white mb-4">Your Selection</h3>

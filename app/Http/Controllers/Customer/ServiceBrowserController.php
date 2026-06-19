@@ -30,6 +30,7 @@ class ServiceBrowserController extends Controller
             'languages' => $languages,
             'databases' => $databases,
             'cartCount' => $cartCount,
+            'attachDomain' => app(\App\Services\Checkout\SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
     }
 
@@ -179,6 +180,7 @@ class ServiceBrowserController extends Controller
             'cartCount' => $cartCount,
             'currency' => $currency,
             'currencyCode' => $currencyCode,
+            'attachDomain' => app(\App\Services\Checkout\SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
     }
 

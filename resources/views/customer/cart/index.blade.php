@@ -20,6 +20,25 @@
         <div class="lg:col-span-2 space-y-6">
             <!-- Cart Items -->
             @if($itemCount > 0)
+                @if($showHostingAttachPrompt ?? false)
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-5">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h3 class="font-semibold text-slate-900 dark:text-white">Add a hosting plan?</h3>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Optional — attach shared or container hosting to your domain. Domain and hosting stay on <strong>one invoice</strong> when you check out together.</p>
+                            </div>
+                            <div class="flex flex-col sm:flex-row gap-2 shrink-0">
+                                <a href="{{ route('customer.cart.attach-hosting') }}" class="inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
+                                    Yes, add hosting
+                                </a>
+                                <a href="{{ route('customer.checkout.show') }}" class="inline-flex items-center justify-center px-5 py-2.5 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-medium text-sm hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                    No, domain only
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                @endif
+
                 @if($hasSharedHosting ?? false)
                     <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-900 dark:text-blue-100">
                         Domain setup (register, transfer, or use existing) is configured on the checkout page after you proceed.

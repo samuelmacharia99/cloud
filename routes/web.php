@@ -547,6 +547,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/cart/clear', [App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
         Route::post('/cart/check-domain', [App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
         Route::post('/cart/{key}/nameservers', [App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
+        Route::get('/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
 
         // Checkout
         Route::get('/checkout', [CheckoutController::class, 'show'])->name('customer.checkout.show');

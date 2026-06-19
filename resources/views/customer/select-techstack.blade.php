@@ -20,6 +20,13 @@
         </a>
     </div>
 
+    @if(!empty($attachDomain))
+        <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-4 text-sm text-blue-900 dark:text-blue-100">
+            <p class="font-semibold">Hosting for {{ $attachDomain['fqdn'] }}</p>
+            <p class="mt-1 text-blue-800 dark:text-blue-200">Select a stack and plan below. Your domain stays in the cart — checkout once for domain + hosting.</p>
+        </div>
+    @endif
+
     <!-- Language Selection Grid -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         @foreach($languages as $language)

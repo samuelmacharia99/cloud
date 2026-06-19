@@ -1,9 +1,21 @@
 @foreach($sharedHostingItems as $item)
-    @php $key = $item['key']; @endphp
+    @php
+        $key = $item['key'];
+        $linkedDomain = $linkedHostingDomains[$key] ?? null;
+    @endphp
     <div class="border-t border-slate-200 dark:border-slate-700 pt-6 first:border-t-0 first:pt-0"
-        x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }}, {{ Js::from($domainExtensions->pluck('extension')->values()) }})"
+        x-data="sharedHostingDomainConfig('{{ $key }}', {{ Js::from($defaultNameservers) }}, {{ Js::from($domainExtensions->pluck('extension')->values()) }}, {{ Js::from($linkedDomain) }})"
         @checkout-domain-removed.window="if ($event.detail.cartKey === cartKey) { setAddedToCart(false); }">
         <h3 class="font-semibold text-slate-900 dark:text-white mb-2">{{ $item['name'] }}</h3>
+
+        @if($linkedDomain)
+            <input type="hidden" name="hosting_domain_mode[{{ $key }}]" value="from_cart">
+            <div class="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 mb-4">
+                <p class="font-medium text-emerald-900 dark:text-emerald-100">Using domain from your cart</p>
+                <p class="text-sm text-emerald-800 dark:text-emerald-200 mt-1 font-mono">{{ $linkedDomain['fqdn'] }} ({{ $linkedDomain['years'] }} year{{ $linkedDomain['years'] > 1 ? 's' : '' }})</p>
+                <p class="text-xs text-emerald-700 dark:text-emerald-300 mt-2">Domain registration is already included as a cart line item — no duplicate charge.</p>
+            </div>
+        @else
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Choose how you want to connect a domain to this hosting plan.</p>
 
         <input type="hidden" name="hosting_domain_mode[{{ $key }}]" x-model="mode">
@@ -178,6 +190,8 @@
             <p class="text-xs text-amber-700 dark:text-amber-300">Transfer pricing is added to your invoice total.</p>
         </div>
 
+        @endif
+
         @error("hosting_domain_mode.{$key}")
             <p class="text-red-600 dark:text-red-400 text-sm mt-2">{{ $message }}</p>
         @enderror
@@ -188,10 +202,11 @@
 @endforeach
 
 <script>
-function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions) {
+function sharedHostingDomainConfig(cartKey, defaultNs, allowedExtensions, linkedDomain) {
     return {
         cartKey,
-        mode: 'register',
+        mode: linkedDomain ? 'from_cart' : 'register',
+        linkedDomain: linkedDomain || null,
         domain: '',
         extension: '',
         years: '1',

@@ -77,7 +77,7 @@
                 @if (!empty($sharedHostingItems))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared Hosting Domain</h2>
-                        @include('customer.checkout.partials.shared-hosting-domain')
+                        @include('customer.checkout.partials.shared-hosting-domain', ['linkedHostingDomains' => $linkedHostingDomains ?? []])
                     </div>
                 @endif
 

@@ -26,6 +26,8 @@ use Illuminate\Validation\Rule;
 
 class SharedHostingCheckoutService
 {
+    public const HOSTING_ATTACH_DOMAIN_SESSION_KEY = 'hosting_attach_domain';
+
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
         private DirectAdminDomainValidator $domainValidator,
@@ -88,6 +90,7 @@ class SharedHostingCheckoutService
         }
 
         $this->normalizeHostingDomainInputs($request, $sharedItems);
+        $this->applyLinkedCartDomainModes($request, $cart, $sharedItems);
 
         $rules = [];
         $messages = [
@@ -98,6 +101,13 @@ class SharedHostingCheckoutService
 
         foreach ($sharedItems as $item) {
             $key = $item['key'];
+
+            if ($this->hasLinkedDomainInCart($cart, $key)) {
+                $rules["hosting_domain_mode.{$key}"] = ['required', Rule::in([SharedHostingDomainMode::FromCart->value])];
+
+                continue;
+            }
+
             $rules["hosting_domain_mode.{$key}"] = ['required', Rule::enum(SharedHostingDomainMode::class)];
 
             $mode = $request->input("hosting_domain_mode.{$key}");
@@ -135,6 +145,10 @@ class SharedHostingCheckoutService
         $total = 0.0;
 
         foreach ($this->sharedHostingCartItems($cart) as $item) {
+            if ($this->hasLinkedDomainInCart($cart, $item['key'])) {
+                continue;
+            }
+
             $addon = $this->resolveDomainAddon($request, $item['key']);
             if ($addon) {
                 $total += $addon['amount'];
@@ -142,6 +156,112 @@ class SharedHostingCheckoutService
         }
 
         return $total;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function linkedDomainDetails(array $cart, string $hostingCartKey): ?array
+    {
+        $linkedKey = $cart[$hostingCartKey]['linked_domain_cart_key'] ?? null;
+        if (! is_string($linkedKey) || $linkedKey === '') {
+            return null;
+        }
+
+        $domainItem = $cart[$linkedKey] ?? null;
+        if (! is_array($domainItem) || ($domainItem['type'] ?? null) !== 'domain') {
+            return null;
+        }
+
+        $extension = (string) ($domainItem['extension'] ?? '');
+        $extension = str_starts_with($extension, '.') ? $extension : '.'.$extension;
+
+        return [
+            'cart_key' => $linkedKey,
+            'domain' => (string) ($domainItem['domain'] ?? ''),
+            'extension' => $extension,
+            'years' => (int) ($domainItem['years'] ?? 1),
+            'fqdn' => strtolower((string) ($domainItem['domain'] ?? '')).$extension,
+        ];
+    }
+
+    public function hasLinkedDomainInCart(array $cart, string $hostingCartKey): bool
+    {
+        return $this->linkedDomainDetails($cart, $hostingCartKey) !== null;
+    }
+
+    /**
+     * Process domain cart lines before hosting so linked domain IDs exist.
+     *
+     * @param  array<int, array<string, mixed>>  $cartItems
+     * @return array<int, array<string, mixed>>
+     */
+    public function sortCartItemsDomainsFirst(array $cartItems): array
+    {
+        $typePriority = [
+            'domain' => 0,
+            'shared_hosting' => 1,
+            'product' => 2,
+            'reseller_product' => 2,
+        ];
+
+        usort($cartItems, function (array $a, array $b) use ($typePriority): int {
+            $priorityA = $typePriority[$a['type'] ?? ''] ?? 99;
+            $priorityB = $typePriority[$b['type'] ?? ''] ?? 99;
+
+            return $priorityA <=> $priorityB;
+        });
+
+        return $cartItems;
+    }
+
+    /**
+     * @param  array<string, mixed>  $domainItem
+     */
+    public function rememberAttachDomain(array $domainItem, string $cartKey): void
+    {
+        $extension = (string) ($domainItem['extension'] ?? '');
+        $extension = str_starts_with($extension, '.') ? $extension : '.'.$extension;
+
+        session([
+            self::HOSTING_ATTACH_DOMAIN_SESSION_KEY => [
+                'cart_key' => $cartKey,
+                'domain' => (string) ($domainItem['domain'] ?? ''),
+                'extension' => $extension,
+                'years' => (int) ($domainItem['years'] ?? 1),
+                'fqdn' => strtolower((string) ($domainItem['domain'] ?? '')).$extension,
+            ],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function attachDomainFromSession(): ?array
+    {
+        $attach = session(self::HOSTING_ATTACH_DOMAIN_SESSION_KEY);
+
+        return is_array($attach) ? $attach : null;
+    }
+
+    public function clearAttachDomainSession(): void
+    {
+        session()->forget(self::HOSTING_ATTACH_DOMAIN_SESSION_KEY);
+    }
+
+    /**
+     * @param  array<string, mixed>  $hostingItem
+     * @return array<string, mixed>
+     */
+    public function applyAttachDomainToHostingItem(array $hostingItem): array
+    {
+        $attach = $this->attachDomainFromSession();
+        if ($attach && isset($attach['cart_key'])) {
+            $hostingItem['linked_domain_cart_key'] = $attach['cart_key'];
+            $this->clearAttachDomainSession();
+        }
+
+        return $hostingItem;
     }
 
     /**
@@ -220,23 +340,37 @@ class SharedHostingCheckoutService
         Invoice $invoice,
         Order $order,
         ?ResellerProduct $resellerProduct = null,
+        array $cart = [],
+        array $domainsCreatedByCartKey = [],
     ): array {
-        $mode = SharedHostingDomainMode::from((string) $request->input("hosting_domain_mode.{$cartKey}"));
+        $linkedDomain = $this->linkedDomainDetails($cart, $cartKey);
+        $mode = $linkedDomain
+            ? SharedHostingDomainMode::FromCart
+            : SharedHostingDomainMode::from((string) $request->input("hosting_domain_mode.{$cartKey}"));
         $invoiceItems = [];
 
-        $fqdn = match ($mode) {
-            SharedHostingDomainMode::Register => $this->fqdnFromParts(
-                (string) $request->input("hosting_domain_name.{$cartKey}"),
-                (string) $request->input("hosting_domain_extension.{$cartKey}")
-            ),
-            SharedHostingDomainMode::Existing => $this->domainValidator->assertValid(
-                (string) $request->input("hosting_domain_fqdn.{$cartKey}")
-            ),
-            SharedHostingDomainMode::Transfer => $this->fqdnFromParts(
-                (string) $request->input("hosting_domain_name.{$cartKey}"),
-                (string) $request->input("hosting_domain_extension.{$cartKey}")
-            ),
-        };
+        if ($mode === SharedHostingDomainMode::FromCart) {
+            if (! $linkedDomain) {
+                throw new \RuntimeException('The hosting plan is not linked to a domain in your cart.');
+            }
+
+            $fqdn = $this->domainValidator->assertValid($linkedDomain['fqdn']);
+        } else {
+            $fqdn = match ($mode) {
+                SharedHostingDomainMode::Register => $this->fqdnFromParts(
+                    (string) $request->input("hosting_domain_name.{$cartKey}"),
+                    (string) $request->input("hosting_domain_extension.{$cartKey}")
+                ),
+                SharedHostingDomainMode::Existing => $this->domainValidator->assertValid(
+                    (string) $request->input("hosting_domain_fqdn.{$cartKey}")
+                ),
+                SharedHostingDomainMode::Transfer => $this->fqdnFromParts(
+                    (string) $request->input("hosting_domain_name.{$cartKey}"),
+                    (string) $request->input("hosting_domain_extension.{$cartKey}")
+                ),
+                default => throw new \RuntimeException('Unsupported hosting domain mode.'),
+            };
+        }
 
         if ($reseller = $this->resolveResellerForDirectAdminOrder($user, $resellerProduct, $product)) {
             $setup = app(ResellerHostingSetupService::class)->buildProvisioningContext(
@@ -258,7 +392,14 @@ class SharedHostingCheckoutService
         $nameservers = $this->nameserverService->forNodeId($nodeId);
         $domainNameservers = $this->nameserverService->toDomainColumns($nameservers);
 
-        if ($mode === SharedHostingDomainMode::Register) {
+        if ($mode === SharedHostingDomainMode::FromCart) {
+            $serviceMeta['linked_domain_cart_key'] = $linkedDomain['cart_key'];
+            $serviceMeta['domain_registration_years'] = $linkedDomain['years'];
+
+            if (isset($domainsCreatedByCartKey[$linkedDomain['cart_key']])) {
+                $serviceMeta['domain_id'] = $domainsCreatedByCartKey[$linkedDomain['cart_key']];
+            }
+        } elseif ($mode === SharedHostingDomainMode::Register) {
             $years = (int) $request->input("hosting_domain_years.{$cartKey}", 1);
             $parts = $this->domainValidator->splitFqdn($fqdn);
             $extension = DomainExtension::where('extension', $parts['extension'])->firstOrFail();
@@ -448,6 +589,26 @@ class SharedHostingCheckoutService
         $extension = str_starts_with($extension, '.') ? $extension : '.'.$extension;
 
         return $this->domainValidator->assertValid($name.$extension);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $sharedItems
+     */
+    private function applyLinkedCartDomainModes(Request $request, array $cart, array $sharedItems): void
+    {
+        $merge = [];
+
+        foreach ($sharedItems as $item) {
+            $key = $item['key'];
+
+            if ($this->hasLinkedDomainInCart($cart, $key)) {
+                $merge["hosting_domain_mode.{$key}"] = SharedHostingDomainMode::FromCart->value;
+            }
+        }
+
+        if ($merge !== []) {
+            $request->merge($merge);
+        }
     }
 
     /**

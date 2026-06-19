@@ -7,6 +7,7 @@ enum SharedHostingDomainMode: string
     case Register = 'register';
     case Existing = 'existing';
     case Transfer = 'transfer';
+    case FromCart = 'from_cart';
 
     public function label(): string
     {
@@ -14,6 +15,7 @@ enum SharedHostingDomainMode: string
             self::Register => 'Register a new domain',
             self::Existing => 'Use an existing domain (update nameservers)',
             self::Transfer => 'Transfer domain to us',
+            self::FromCart => 'Use domain from your cart',
         };
     }
 }

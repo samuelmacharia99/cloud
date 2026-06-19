@@ -151,9 +151,18 @@ class CheckoutController extends Controller
         $nameserverService = app(ResellerNameserverService::class);
         $defaultNameservers = $nameserverService->defaultsForCustomer($user);
 
+        $hostingCheckout = app(\App\Services\Checkout\SharedHostingCheckoutService::class);
+        $linkedHostingDomains = [];
+        foreach ($sharedHostingItems as $item) {
+            if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
+                $linkedHostingDomains[$item['key']] = $details;
+            }
+        }
+
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
             'sharedHostingItems' => $sharedHostingItems,
+            'linkedHostingDomains' => $linkedHostingDomains,
             'domainExtensions' => $domainExtensions,
             'defaultNameservers' => $defaultNameservers,
             'subtotal' => $taxBreakdown['subtotal'],
@@ -252,7 +261,11 @@ class CheckoutController extends Controller
                     throw new \Exception('No valid items in cart');
                 }
 
-                $domainAddonTotal = app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart);
+                $hostingCheckout = app(\App\Services\Checkout\SharedHostingCheckoutService::class);
+                $cartItems = $hostingCheckout->sortCartItemsDomainsFirst($cartItems);
+                $domainsCreatedByCartKey = [];
+
+                $domainAddonTotal = $hostingCheckout->estimateDomainAddonTotal($request, $cart);
 
                 $subtotal += $domainAddonTotal;
                 $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
@@ -346,6 +359,8 @@ class CheckoutController extends Controller
                                 $invoice,
                                 $order,
                                 $resellerProduct,
+                                $cart,
+                                $domainsCreatedByCartKey,
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];
@@ -423,6 +438,8 @@ class CheckoutController extends Controller
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
                         ]);
+
+                        $domainsCreatedByCartKey[$item['key']] = $domain->id;
 
                         // Get or create domain product
                         $domainProduct = Product::where('type', 'domain')->firstOrCreate(
@@ -924,8 +941,12 @@ class CheckoutController extends Controller
                     throw new \Exception('No valid items in cart');
                 }
 
+                $hostingCheckout = app(SharedHostingCheckoutService::class);
+                $cartItems = $hostingCheckout->sortCartItemsDomainsFirst($cartItems);
+                $domainsCreatedByCartKey = [];
+
                 $domainAddonTotal = $request
-                    ? app(SharedHostingCheckoutService::class)->estimateDomainAddonTotal($request, $cart)
+                    ? $hostingCheckout->estimateDomainAddonTotal($request, $cart)
                     : 0.0;
 
                 $subtotal += $domainAddonTotal;
@@ -1018,6 +1039,8 @@ class CheckoutController extends Controller
                                 $invoice,
                                 $order,
                                 $resellerProduct,
+                                $cart,
+                                $domainsCreatedByCartKey,
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];
@@ -1089,6 +1112,8 @@ class CheckoutController extends Controller
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
                         ]);
+
+                        $domainsCreatedByCartKey[$item['key']] = $domain->id;
 
                         // Get or create domain product
                         $domainProduct = Product::where('type', 'domain')->firstOrCreate(

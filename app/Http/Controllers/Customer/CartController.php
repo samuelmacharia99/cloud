@@ -34,6 +34,7 @@ class CartController extends Controller
         $cartItems = [];
         $subtotal = 0;
         $hasSharedHosting = false;
+        $hasDomainItems = false;
 
         foreach ($cart as $key => $item) {
             $item['key'] = $key;
@@ -72,6 +73,7 @@ class CartController extends Controller
                     continue;
                 }
             } elseif ($item['type'] === 'domain') {
+                $hasDomainItems = true;
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
                 if ($extension) {
                     $price = $catalogService->domainRegistrationPrice($user, $extension, (int) $item['years']);
@@ -110,7 +112,38 @@ class CartController extends Controller
             'defaultNameservers' => $defaultNameservers,
             'defaultNameserverLabel' => $defaultNameserverLabel,
             'hasSharedHosting' => $hasSharedHosting,
+            'showHostingAttachPrompt' => $hasDomainItems && ! $hasSharedHosting,
         ]);
+    }
+
+    /**
+     * Start deploy-service flow to attach a hosting plan to a domain already in cart.
+     */
+    public function attachHosting(Request $request)
+    {
+        $cart = session(self::CART_SESSION_KEY, []);
+        $domainItems = collect($cart)
+            ->filter(fn ($item) => is_array($item) && ($item['type'] ?? null) === 'domain');
+
+        if ($domainItems->isEmpty()) {
+            return redirect()
+                ->route('customer.cart.index')
+                ->with('error', 'Add a domain to your cart before attaching a hosting plan.');
+        }
+
+        $cartKey = $request->input('cart_key');
+        $domainItem = $cartKey && isset($cart[$cartKey]) && ($cart[$cartKey]['type'] ?? null) === 'domain'
+            ? $cart[$cartKey]
+            : $domainItems->first();
+
+        $resolvedKey = $cartKey && isset($cart[$cartKey]) ? $cartKey : $domainItems->keys()->first();
+
+        app(\App\Services\Checkout\SharedHostingCheckoutService::class)
+            ->rememberAttachDomain($domainItem, (string) $resolvedKey);
+
+        return redirect()
+            ->route('customer.select-techstack')
+            ->with('success', 'Choose a hosting plan for '.strtolower($domainItem['domain'].$domainItem['extension']).'. Domain and hosting will be on one invoice.');
     }
 
     /**
@@ -257,6 +290,8 @@ class CartController extends Controller
         // Generate unique key
         $key = uniqid();
         $item['added_at'] = now()->toIso8601String();
+        $item = app(\App\Services\Checkout\SharedHostingCheckoutService::class)
+            ->applyAttachDomainToHostingItem($item);
 
         // Add to session cart
         $cart = session(self::CART_SESSION_KEY, []);
@@ -274,7 +309,11 @@ class CartController extends Controller
             return response()->json($response);
         }
 
-        return redirect()->route('customer.cart.index')->with('success', $response['message']);
+        $message = isset($item['linked_domain_cart_key'])
+            ? 'Hosting plan added. Domain and hosting are in your cart — you will receive one invoice at checkout.'
+            : $response['message'];
+
+        return redirect()->route('customer.cart.index')->with('success', $message);
     }
 
     /**
@@ -295,6 +334,7 @@ class CartController extends Controller
     public function clear()
     {
         session([self::CART_SESSION_KEY => []]);
+        app(\App\Services\Checkout\SharedHostingCheckoutService::class)->clearAttachDomainSession();
 
         return back()->with('success', 'Cart cleared');
     }
