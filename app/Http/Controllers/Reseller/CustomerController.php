@@ -34,9 +34,10 @@ class CustomerController extends Controller
 
         // Get package limits for display
         $resellerPackage = auth()->user()->resellerPackage;
-        $customerCount = auth()->user()->getManagedCustomersCount();
+        $customerCount = auth()->user()->getResellerUserCountForLimits();
+        $hostedUserCountSource = auth()->user()->getResellerUserCountBreakdown()['source'];
 
-        return view('reseller.customers.index', compact('customers', 'resellerPackage', 'customerCount'));
+        return view('reseller.customers.index', compact('customers', 'resellerPackage', 'customerCount', 'hostedUserCountSource'));
     }
 
     public function create()

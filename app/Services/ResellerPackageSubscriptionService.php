@@ -12,6 +12,10 @@ class ResellerPackageSubscriptionService
 {
     public const PACKAGE_META_PREFIX = '[package:';
 
+    public const FROM_PACKAGE_META_PREFIX = '[from_package:';
+
+    public const UPGRADE_META = '[upgrade:1]';
+
     public const ACTIVATED_META = '[activated:1]';
 
     public function packageIdFromInvoice(Invoice $invoice): ?int
@@ -28,18 +32,99 @@ class ResellerPackageSubscriptionService
         return str_contains($invoice->notes ?? '', 'Renewal');
     }
 
+    public function isUpgradeInvoice(Invoice $invoice): bool
+    {
+        return str_contains($invoice->notes ?? '', self::UPGRADE_META);
+    }
+
+    public function isPackageUpgrade(User $user, ResellerPackage $package): bool
+    {
+        $current = $user->resellerPackage;
+
+        if (! $current || ! $user->reseller_package_id || $current->id === $package->id) {
+            return false;
+        }
+
+        if ($current->billing_cycle !== $package->billing_cycle) {
+            return false;
+        }
+
+        return (float) $package->price > (float) $current->price;
+    }
+
+    /**
+     * Prorated amount to move to a higher tier for the remainder of the current billing period.
+     *
+     * @return array{
+     *     amount: float,
+     *     price_diff: float,
+     *     days_remaining: int,
+     *     cycle_days: int,
+     *     expires_at: ?Carbon
+     * }
+     */
+    public function upgradeQuote(User $user, ResellerPackage $targetPackage): array
+    {
+        $current = $user->resellerPackage;
+
+        if (! $current) {
+            throw new \InvalidArgumentException('No active reseller package to upgrade from.');
+        }
+
+        if ($current->billing_cycle !== $targetPackage->billing_cycle) {
+            throw new \InvalidArgumentException('Upgrade must stay on the same billing cycle (monthly or annual).');
+        }
+
+        $priceDiff = max(0, (float) $targetPackage->price - (float) $current->price);
+        $cycleDays = $this->cycleDaysFor($targetPackage);
+        $expiresAt = $user->package_expires_at?->copy();
+
+        if ($expiresAt && $expiresAt->isFuture()) {
+            $daysRemaining = max(1, (int) now()->startOfDay()->diffInDays($expiresAt->startOfDay(), false));
+            $amount = round($priceDiff * ($daysRemaining / $cycleDays), 2);
+        } else {
+            $daysRemaining = $cycleDays;
+            $amount = round($priceDiff, 2);
+        }
+
+        return [
+            'amount' => max(0, $amount),
+            'price_diff' => $priceDiff,
+            'days_remaining' => $daysRemaining,
+            'cycle_days' => $cycleDays,
+            'expires_at' => $expiresAt,
+        ];
+    }
+
     public function createSubscriptionInvoice(User $user, ResellerPackage $package, bool $renewal = false): Invoice
     {
-        $label = $renewal
-            ? "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})"
-            : "Reseller Package: {$package->name} ({$package->billing_cycle})";
-
-        $amounts = $this->calculateAmounts((float) $package->price);
+        $isUpgrade = ! $renewal && $this->isPackageUpgrade($user, $package);
         $schedule = app(InvoiceGenerationScheduleService::class);
 
-        $dueDate = $renewal && $user->package_expires_at
-            ? $schedule->resellerPackageRenewalDueDate($user)
-            : now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
+        if ($isUpgrade) {
+            $quote = $this->upgradeQuote($user, $package);
+            $current = $user->resellerPackage;
+            $label = sprintf(
+                'Reseller Package Upgrade: %s → %s (prorated, %d of %d days remaining)',
+                $current->name,
+                $package->name,
+                $quote['days_remaining'],
+                $quote['cycle_days'],
+            );
+            $amounts = $this->calculateAmounts($quote['amount']);
+            $dueDate = now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
+            $notes = trim($label.' '.self::UPGRADE_META.' '.self::FROM_PACKAGE_META_PREFIX.$current->id.'] '.self::PACKAGE_META_PREFIX.$package->id.']');
+        } else {
+            $label = $renewal
+                ? "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})"
+                : "Reseller Package: {$package->name} ({$package->billing_cycle})";
+
+            $amounts = $this->calculateAmounts((float) $package->price);
+            $dueDate = $renewal && $user->package_expires_at
+                ? $schedule->resellerPackageRenewalDueDate($user)
+                : now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
+            $notes = $label.' '.self::PACKAGE_META_PREFIX.$package->id.']';
+        }
 
         $invoice = Invoice::create([
             'user_id' => $user->id,
@@ -50,10 +135,12 @@ class ResellerPackageSubscriptionService
             'subtotal' => $amounts['subtotal'],
             'tax' => $amounts['tax'],
             'total' => $amounts['total'],
-            'notes' => $label.' '.self::PACKAGE_META_PREFIX.$package->id.']',
+            'notes' => $notes,
         ]);
 
-        app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, $renewal);
+        if ($renewal) {
+            app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
+        }
 
         app(ResellerSubscriptionAutoPayService::class)->attempt($invoice);
 
@@ -114,6 +201,8 @@ class ResellerPackageSubscriptionService
 
         if ($this->isRenewalInvoice($invoice)) {
             $this->extendSubscription($user, $package);
+        } elseif ($this->isUpgradeInvoice($invoice)) {
+            $this->applyUpgrade($user, $package);
         } else {
             $this->activateSubscription($user, $package);
         }
@@ -123,6 +212,21 @@ class ResellerPackageSubscriptionService
         ]);
 
         app(ResellerEnforcementService::class)->handleSubscriptionPaid($user->fresh());
+    }
+
+    public function applyUpgrade(User $user, ResellerPackage $package): void
+    {
+        $updates = [
+            'reseller_package_id' => $package->id,
+        ];
+
+        // Keep the existing renewal date when upgrading mid-cycle (already paid through that date).
+        if (! $user->package_expires_at || $user->package_expires_at->isPast()) {
+            $updates['package_subscribed_at'] = $user->package_subscribed_at ?? now();
+            $updates['package_expires_at'] = $this->calculateExpiryFrom(now(), $package);
+        }
+
+        $user->update($updates);
     }
 
     public function activateSubscription(User $user, ResellerPackage $package): void
@@ -153,5 +257,10 @@ class ResellerPackageSubscriptionService
         return $package->billing_cycle === 'annually'
             ? $date->copy()->addYear()
             : $date->copy()->addMonth();
+    }
+
+    private function cycleDaysFor(ResellerPackage $package): int
+    {
+        return $package->billing_cycle === 'annually' ? 365 : 30;
     }
 }

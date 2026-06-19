@@ -140,6 +140,18 @@ class ResellerDiskUsageService
 
     private function sumDirectAdminDiskGb(User $reseller): float
     {
+        $directAdmin = app(ResellerDirectAdminService::class);
+        $accountTotalMb = $directAdmin->fetchTotalHostedDiskMb($reseller);
+
+        if ($accountTotalMb !== null) {
+            return $accountTotalMb / 1024;
+        }
+
+        return $this->sumPlatformDirectAdminDiskGb($reseller);
+    }
+
+    private function sumPlatformDirectAdminDiskGb(User $reseller): float
+    {
         $totalMb = 0.0;
 
         $services = $this->scope->managedServicesQuery($reseller)

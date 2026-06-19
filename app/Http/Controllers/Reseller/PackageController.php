@@ -30,8 +30,18 @@ class PackageController extends Controller
             ->get();
 
         $currentServices = $user->getManagedActiveServicesCount();
-        $currentCustomers = $user->getManagedCustomersCount();
+        $currentCustomers = $user->getResellerUserCountForLimits();
+        $hostedUserCountSource = $user->getResellerUserCountBreakdown()['source'];
         $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
+
+        $upgradeQuotes = [];
+        if ($user->resellerPackage) {
+            foreach ($packages as $pkg) {
+                if ($this->subscriptions->isPackageUpgrade($user, $pkg)) {
+                    $upgradeQuotes[$pkg->id] = $this->subscriptions->upgradeQuote($user, $pkg);
+                }
+            }
+        }
 
         return view('reseller.packages.index', compact(
             'user',
@@ -39,7 +49,9 @@ class PackageController extends Controller
             'billingCycle',
             'currentServices',
             'currentCustomers',
+            'hostedUserCountSource',
             'pendingInvoice',
+            'upgradeQuotes',
         ));
     }
 

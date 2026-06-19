@@ -24,11 +24,15 @@ class ServiceUpgradeController extends Controller
             $insight['primary_metric'] ?? null,
         );
 
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+
         return view('customer.services.upgrade', [
             'service' => $service->load('product.directAdminPackage'),
             'upgradeOptions' => $options,
             'packageUsageInsight' => $insight,
             'recommendedUpgrade' => $recommendedUpgrade,
+            'billingCycle' => $billingCycle,
+            'upgrades' => $upgrades,
         ]);
     }
 

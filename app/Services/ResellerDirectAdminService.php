@@ -139,6 +139,40 @@ class ResellerDirectAdminService
         return $da->countUsersOwnedByReseller($reseller->directadmin_username);
     }
 
+    /**
+     * Total disk used (MB) by all end-user accounts on the reseller's DirectAdmin account.
+     * Includes hosting accounts created directly in DirectAdmin, not only via this platform.
+     */
+    public function fetchTotalHostedDiskMb(User $reseller): ?float
+    {
+        if (! filled($reseller->directadmin_username)) {
+            return null;
+        }
+
+        $da = $this->directAdmin($reseller);
+
+        if (! $da) {
+            return null;
+        }
+
+        return $da->sumDiskUsageMbForResellerUsers($reseller->directadmin_username);
+    }
+
+    public function fetchTotalHostedDiskMbOnNode(User $reseller, Node $node): ?float
+    {
+        if (! filled($reseller->directadmin_username) || $node->type !== 'directadmin') {
+            return null;
+        }
+
+        $da = new DirectAdminService($node);
+
+        if (! $da->isConfigured()) {
+            return null;
+        }
+
+        return $da->sumDiskUsageMbForResellerUsers($reseller->directadmin_username);
+    }
+
     public function suspendResellerAccount(User $reseller): bool
     {
         if (! $this->hasDirectAdminBinding($reseller)) {

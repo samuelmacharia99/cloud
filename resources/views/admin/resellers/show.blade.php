@@ -896,6 +896,12 @@
                     <div class="space-y-6">
                         <p class="text-sm text-slate-600 dark:text-slate-400">
                             Current plan: <span class="font-semibold text-slate-900 dark:text-white">{{ $user->resellerPackage?->name ?? 'None' }}</span>
+                            @if ($user->package_expires_at)
+                                · Renews {{ $user->package_expires_at->format('M d, Y') }}
+                            @endif
+                        </p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                            Upgrades are prorated for the remainder of the current billing period. The renewal date does not change.
                         </p>
 
                         <div>
@@ -912,6 +918,12 @@
                                                     <span class="font-medium text-slate-900 dark:text-white">
                                                         Ksh {{ number_format($package->price, 0) }}
                                                     </span>
+                                                    @if ($quote = $upgradeQuotes[$package->id] ?? null)
+                                                        <span class="font-medium text-blue-700 dark:text-blue-300">
+                                                            Prorated upgrade: Ksh {{ number_format($quote['amount'], 0) }}
+                                                            ({{ $quote['days_remaining'] }} days left)
+                                                        </span>
+                                                    @endif
                                                     <span class="text-slate-600 dark:text-slate-400">
                                                         {{ ucfirst($package->billing_cycle) }}
                                                     </span>

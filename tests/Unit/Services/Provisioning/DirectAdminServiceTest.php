@@ -136,6 +136,41 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_sum_disk_usage_for_reseller_users_totals_all_hosted_accounts(): void
+    {
+        Http::fake(function ($request) {
+            if (str_contains($request->url(), 'CMD_API_SHOW_USERS')) {
+                return Http::response(json_encode([
+                    'error' => '0',
+                    'list' => ['site_a', 'site_b'],
+                ]), 200);
+            }
+
+            if (str_contains($request->url(), 'CMD_API_SHOW_USER_CONFIG') && ($request['user'] ?? null) === 'site_a') {
+                return Http::response('error=0&quota=1024', 200);
+            }
+
+            if (str_contains($request->url(), 'CMD_API_USER_STATS') && ($request['user'] ?? null) === 'site_a') {
+                return Http::response('error=0&quota_used=512', 200);
+            }
+
+            if (str_contains($request->url(), 'CMD_API_SHOW_USER_CONFIG') && ($request['user'] ?? null) === 'site_b') {
+                return Http::response('error=0&quota=2048', 200);
+            }
+
+            if (str_contains($request->url(), 'CMD_API_USER_STATS') && ($request['user'] ?? null) === 'site_b') {
+                return Http::response('error=0&quota_used=256', 200);
+            }
+
+            return Http::response('error=1&text=unexpected', 200);
+        });
+
+        $totalMb = (new DirectAdminService($this->createDirectAdminNode()))
+            ->sumDiskUsageMbForResellerUsers('reseller1');
+
+        $this->assertSame(768.0, $totalMb);
+    }
+
     public function test_create_hosting_account_impersonates_reseller_when_provided(): void
     {
         Http::fake([

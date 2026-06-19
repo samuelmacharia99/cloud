@@ -65,6 +65,7 @@ class ResellerAnalyticsService
         $diskPoolGb = $diskUsage->diskPoolGb($reseller);
         $diskUsageSnapshot = $diskUsage->collectCurrentUsage($reseller);
         $diskPoolPercent = $diskUsage->poolUsagePercent($reseller, $diskUsageSnapshot);
+        $userCountBreakdown = $reseller->getResellerUserCountBreakdown();
         $ledgerMargin30d = $this->margins->ledgerTotals(
             $reseller,
             now()->subDays(30)->toDateString(),
@@ -88,7 +89,10 @@ class ResellerAnalyticsService
             'recentInvoices' => $managedInvoices->sortByDesc('created_at')->take(5)->values(),
             'monthlyRevenue' => $monthlyRevenue,
             'invoiceStatus' => $invoiceStatus,
-            'customerCount' => $managedCustomers->count(),
+            'customerCount' => $userCountBreakdown['count'],
+            'hostedUserCountSource' => $userCountBreakdown['source'],
+            'portalCustomerCount' => $managedCustomers->count(),
+            'directAdminDiskIncludesAllUsers' => $reseller->resellerUserCountUsesDirectAdmin(),
             'billingHealth' => $billingHealth,
             'actionQueue' => $actionQueue,
             'marginSummary' => $marginSummary,

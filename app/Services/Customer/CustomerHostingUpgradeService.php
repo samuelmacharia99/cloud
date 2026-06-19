@@ -44,10 +44,10 @@ class CustomerHostingUpgradeService
             return collect();
         }
 
+        $cycle = $service->billing_cycle ?? 'monthly';
+        $currentPrice = $this->effectiveCyclePrice($customer, $service->product, $cycle);
+        $currentOrder = (int) ($service->product->order ?? 0);
         $currentPackage = $service->product->directAdminPackage;
-        if (! $currentPackage) {
-            return collect();
-        }
 
         $query = Product::query()
             ->where('is_active', true)
@@ -59,8 +59,22 @@ class CustomerHostingUpgradeService
 
         $this->catalog->scopePlatformProducts($query, $customer);
 
-        return $query->get()->filter(function (Product $product) use ($currentPackage) {
-            return $this->isHigherTier($currentPackage, $product->directAdminPackage);
+        return $query->get()->filter(function (Product $product) use ($customer, $currentPackage, $currentPrice, $currentOrder, $cycle) {
+            $targetPrice = $this->effectiveCyclePrice($customer, $product, $cycle);
+            $targetOrder = (int) ($product->order ?? 0);
+
+            $isHigherPrice = $targetPrice > $currentPrice;
+            $isSamePriceHigherOrder = $targetPrice === $currentPrice && $targetOrder > $currentOrder;
+
+            if (! $isHigherPrice && ! $isSamePriceHigherOrder) {
+                return false;
+            }
+
+            if ($currentPackage && $product->directAdminPackage) {
+                return $this->isViableResourceUpgrade($currentPackage, $product->directAdminPackage);
+            }
+
+            return true;
         })->values();
     }
 
@@ -225,6 +239,54 @@ class CustomerHostingUpgradeService
         );
     }
 
+    public function displayPriceForCycle(User $customer, Product $product, string $cycle): float
+    {
+        return $this->effectiveCyclePrice($customer, $product, $cycle);
+    }
+
+    private function isViableResourceUpgrade(DirectAdminPackage $current, DirectAdminPackage $candidate): bool
+    {
+        return $this->quotaIsNotReduced($current->disk_quota, $candidate->disk_quota)
+            && $this->quotaIsNotReduced($current->bandwidth_quota, $candidate->bandwidth_quota, treatUnlimitedAs: true)
+            && (int) $candidate->num_databases >= (int) $current->num_databases;
+    }
+
+    /**
+     * When the current plan has unlimited quota, do not block upgrades based on that metric.
+     */
+    private function quotaIsNotReduced(mixed $current, mixed $candidate, bool $treatUnlimitedAs = false): bool
+    {
+        if ($treatUnlimitedAs && ($current === null || (float) $current < 0)) {
+            return true;
+        }
+
+        return (float) $candidate >= (float) $current;
+    }
+
+    private function cyclePrice(Product $product, string $cycle): float
+    {
+        return match ($cycle) {
+            'annual' => (float) ($product->yearly_price ?: $product->monthly_price * 12),
+            default => (float) $product->monthly_price,
+        };
+    }
+
+    private function effectiveCyclePrice(User $customer, Product $product, string $cycle): float
+    {
+        if ($this->catalog->isResellerCustomer($customer)) {
+            $listing = $this->catalog->findListingForProduct($customer, $product->id);
+
+            if ($listing) {
+                return match ($cycle) {
+                    'annual' => (float) ($listing->yearly_price ?: $listing->monthly_price * 12),
+                    default => (float) $listing->monthly_price,
+                };
+            }
+        }
+
+        return $this->cyclePrice($product, $cycle);
+    }
+
     private function isHigherTier(DirectAdminPackage $current, ?DirectAdminPackage $candidate): bool
     {
         if (! $candidate) {
@@ -239,12 +301,15 @@ class CustomerHostingUpgradeService
         $candidateBandwidth = $this->normalizedBandwidthQuota($candidate->bandwidth_quota);
         $candidateDatabases = (int) $candidate->num_databases;
 
+        $currentHasUnlimitedBandwidth = $current->bandwidth_quota === null || (float) $current->bandwidth_quota < 0;
+
         $notLower = $candidateDisk >= $currentDisk
-            && $candidateBandwidth >= $currentBandwidth
+            && ($currentHasUnlimitedBandwidth || $candidateBandwidth >= $currentBandwidth)
             && $candidateDatabases >= $currentDatabases;
 
         $strictlyHigher = $candidateDisk > $currentDisk
-            || $candidateBandwidth > $currentBandwidth
+            || (! $currentHasUnlimitedBandwidth && $candidateBandwidth > $currentBandwidth)
+            || ($current->bandwidth_quota !== null && (float) $current->bandwidth_quota >= 0 && ($candidate->bandwidth_quota === null || (float) $candidate->bandwidth_quota < 0))
             || $candidateDatabases > $currentDatabases;
 
         return $notLower && $strictlyHigher;
@@ -262,14 +327,9 @@ class CustomerHostingUpgradeService
     private function proratedUpgradePrice(Service $service, Product $targetProduct): float
     {
         $cycle = $service->billing_cycle ?? 'monthly';
-        $current = match ($cycle) {
-            'annual' => (float) ($service->product->yearly_price ?: $service->product->monthly_price * 12),
-            default => (float) $service->product->monthly_price,
-        };
-        $target = match ($cycle) {
-            'annual' => (float) ($targetProduct->yearly_price ?: $targetProduct->monthly_price * 12),
-            default => (float) $targetProduct->monthly_price,
-        };
+        $customer = $service->user;
+        $current = $this->effectiveCyclePrice($customer, $service->product, $cycle);
+        $target = $this->effectiveCyclePrice($customer, $targetProduct, $cycle);
 
         $diff = max(0, $target - $current);
 

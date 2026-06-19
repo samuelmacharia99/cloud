@@ -22,7 +22,7 @@
     @if ($resellerPackage)
     <div class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 rounded-xl border border-purple-200 dark:border-purple-800 p-6">
         <div class="flex items-center justify-between mb-4">
-            <h3 class="font-semibold text-slate-900 dark:text-white">Your Customer Quota</h3>
+            <h3 class="font-semibold text-slate-900 dark:text-white">{{ ($hostedUserCountSource ?? 'portal') === 'directadmin' ? 'Hosted User Quota (DirectAdmin)' : 'Your Customer Quota' }}</h3>
             <span class="text-sm text-purple-700 dark:text-purple-300 font-medium">{{ $customerCount }} / {{ $resellerPackage->max_users }}</span>
         </div>
         @php
@@ -34,7 +34,13 @@
         <div class="w-full h-3 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
             <div class="{{ $customerColor }} h-3 rounded-full transition-all" style="width: {{ $customerPct }}%"></div>
         </div>
-        <p class="text-xs text-purple-700 dark:text-purple-300 mt-2">You can create {{ $resellerPackage->max_users - $customerCount }} more customer(s)</p>
+        <p class="text-xs text-purple-700 dark:text-purple-300 mt-2">
+            @if(($hostedUserCountSource ?? 'portal') === 'directadmin')
+                {{ max(0, $resellerPackage->max_users - $customerCount) }} more hosted user slot(s) on DirectAdmin (includes accounts created outside this portal)
+            @else
+                You can create {{ max(0, $resellerPackage->max_users - $customerCount) }} more customer(s)
+            @endif
+        </p>
     </div>
     @endif
 

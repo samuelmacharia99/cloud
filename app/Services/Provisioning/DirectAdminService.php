@@ -629,6 +629,29 @@ class DirectAdminService
     }
 
     /**
+     * Sum disk used (MB) across every end-user account owned by a DirectAdmin reseller.
+     * Includes users created outside this platform.
+     */
+    public function sumDiskUsageMbForResellerUsers(string $resellerUsername): ?float
+    {
+        $users = $this->listUsersOwnedByReseller($resellerUsername);
+        if ($users === null) {
+            return null;
+        }
+
+        $totalMb = 0.0;
+
+        foreach ($users as $username) {
+            $usage = $this->getAccountDiskUsage($username);
+            if ($usage !== null) {
+                $totalMb += $usage['used_mb'];
+            }
+        }
+
+        return $totalMb;
+    }
+
+    /**
      * Count end-user accounts created under a DirectAdmin reseller account.
      */
     public function countUsersOwnedByReseller(string $resellerUsername): ?int

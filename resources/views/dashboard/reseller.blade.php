@@ -172,7 +172,7 @@
                     </div>
                     <div class="mt-3">
                         <div class="flex justify-between text-xs text-slate-600 mb-1">
-                            <span>Customers</span>
+                            <span>{{ ($hostedUserCountSource ?? 'portal') === 'directadmin' ? 'Hosted users (DirectAdmin)' : 'Customers' }}</span>
                             <span>{{ $customerCount }} / {{ $resellerPackage->max_users }}</span>
                         </div>
                     </div>
@@ -186,7 +186,7 @@
                             <div class="w-full h-2 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
                                 <div class="h-2 rounded-full {{ $diskPct >= 90 ? 'bg-amber-500' : 'bg-emerald-500' }}" style="width: {{ $diskPct }}%"></div>
                             </div>
-                            <p class="text-[11px] text-slate-500 mt-1">DA {{ number_format($diskDirectAdminGb ?? 0, 1) }} GB · Containers {{ number_format($diskContainerGb ?? 0, 1) }} GB</p>
+                            <p class="text-[11px] text-slate-500 mt-1">DA {{ number_format($diskDirectAdminGb ?? 0, 1) }} GB{{ ($directAdminDiskIncludesAllUsers ?? false) ? ' (all panel users)' : '' }} · Containers {{ number_format($diskContainerGb ?? 0, 1) }} GB</p>
                         </div>
                     @endif
                 @else

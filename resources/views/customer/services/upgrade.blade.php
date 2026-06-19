@@ -52,7 +52,11 @@
                             @endif
                         </div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            KES {{ number_format($product->monthly_price, 0) }}/mo
+                            @php
+                                $cycle = $billingCycle ?? ($service->billing_cycle ?? 'monthly');
+                                $displayPrice = $upgrades->displayPriceForCycle(auth()->user(), $product, $cycle);
+                            @endphp
+                            KES {{ number_format($displayPrice, 0) }}/{{ $cycle === 'annual' ? 'yr' : 'mo' }}
                             @if($package)
                                 · {{ rtrim(rtrim(number_format($package->disk_quota, 2), '0'), '.') }} GB storage
                                 · {{ $package->bandwidth_quota && $package->bandwidth_quota >= 0 ? rtrim(rtrim(number_format($package->bandwidth_quota, 2), '0'), '.').' GB bandwidth' : 'Unlimited bandwidth' }}

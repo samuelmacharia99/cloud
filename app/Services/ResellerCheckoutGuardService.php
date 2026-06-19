@@ -39,6 +39,12 @@ class ResellerCheckoutGuardService
             );
         }
 
+        if ($reseller->isAtUserLimit()) {
+            throw new \InvalidArgumentException(
+                'Your provider has reached their hosted user limit. Contact them to upgrade before ordering more hosting.'
+            );
+        }
+
         if ($this->diskUsage->isOverPool($reseller)) {
             throw new \InvalidArgumentException(
                 'Your provider has exceeded their disk pool allocation. New hosting orders are temporarily unavailable.'

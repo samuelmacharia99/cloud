@@ -109,6 +109,16 @@ class ResellerController extends Controller
         $wallet = $walletService->getOrCreate($user);
         $walletTransactions = $wallet->transactions()->with('performer')->latest()->limit(25)->get();
 
+        $subscriptionService = app(ResellerPackageSubscriptionService::class);
+        $upgradeQuotes = [];
+        if ($user->resellerPackage) {
+            foreach ($packages as $pkg) {
+                if ($subscriptionService->isPackageUpgrade($user, $pkg)) {
+                    $upgradeQuotes[$pkg->id] = $subscriptionService->upgradeQuote($user, $pkg);
+                }
+            }
+        }
+
         return view('admin.resellers.show', compact(
             'user',
             'services',
@@ -124,6 +134,7 @@ class ResellerController extends Controller
             'directAdminNodes',
             'wallet',
             'walletTransactions',
+            'upgradeQuotes',
         ));
     }
 

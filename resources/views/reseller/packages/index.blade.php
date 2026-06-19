@@ -96,10 +96,10 @@
                         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Active services managed by your account</p>
                     </div>
 
-                    <!-- Customers -->
+                    <!-- Hosted users -->
                     <div>
                         <div class="flex justify-between items-center mb-2">
-                            <span class="font-medium text-slate-900 dark:text-white">Customers</span>
+                            <span class="font-medium text-slate-900 dark:text-white">{{ ($hostedUserCountSource ?? 'portal') === 'directadmin' ? 'Hosted users (DirectAdmin)' : 'Customers' }}</span>
                             <span class="text-sm text-slate-600 dark:text-slate-400">{{ $currentCustomers }} / {{ $user->resellerPackage->max_users }}</span>
                         </div>
                         @php
@@ -111,7 +111,13 @@
                         <div class="w-full h-3 bg-slate-300 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div class="{{ $customerColor }} h-3 rounded-full transition-all" style="width: {{ $customerPct }}%"></div>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Distinct customers under your reseller account</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            @if(($hostedUserCountSource ?? 'portal') === 'directadmin')
+                                Includes all end-user accounts on your DirectAdmin reseller (platform + panel-created)
+                            @else
+                                Distinct customers under your reseller account
+                            @endif
+                        </p>
                     </div>
                 </div>
 
@@ -121,6 +127,12 @@
                         <span class="font-medium">Subscribed since</span>
                         {{ $user->package_subscribed_at?->format('M d, Y') ?? 'Unknown' }}
                     </p>
+                    @if ($user->package_expires_at)
+                        <p class="text-sm text-slate-600 dark:text-slate-300 mt-1">
+                            <span class="font-medium">Renews</span>
+                            {{ $user->package_expires_at->format('M d, Y') }}
+                        </p>
+                    @endif
                 </div>
             </div>
         </div>
@@ -159,6 +171,12 @@
                         KSH {{ number_format($package->price, 0) }}
                         <span class="text-lg text-slate-600 dark:text-slate-400 font-normal">/{{ $billingCycle === 'monthly' ? 'mo' : 'yr' }}</span>
                     </p>
+                    @if ($quote = $upgradeQuotes[$package->id] ?? null)
+                        <p class="text-base font-semibold text-purple-700 dark:text-purple-300 mt-2">
+                            Upgrade today: KSH {{ number_format($quote['amount'], 0) }}
+                            <span class="text-sm font-normal text-slate-600 dark:text-slate-400">(prorated, {{ $quote['days_remaining'] }} days left)</span>
+                        </p>
+                    @endif
                 </div>
 
                 <!-- Features -->
@@ -196,7 +214,14 @@
                         Cannot Downgrade
                     </button>
                 @else
-                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="You will be charged KSH {{ number_format($package->price, 0) }} for this plan. Continue?" data-confirm-title="Confirm subscription">
+                    @php
+                        $quote = $upgradeQuotes[$package->id] ?? null;
+                        $chargeAmount = $quote ? $quote['amount'] : $package->price;
+                        $confirmMessage = $quote
+                            ? 'You will be charged KSH '.number_format($chargeAmount, 0).' (prorated upgrade for '.$quote['days_remaining'].' days remaining). Your renewal date stays the same. Continue?'
+                            : 'You will be charged KSH '.number_format($chargeAmount, 0).' for this plan. Continue?';
+                    @endphp
+                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="{{ $confirmMessage }}" data-confirm-title="{{ $quote ? 'Confirm upgrade' : 'Confirm subscription' }}">
                         @csrf
                         <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
                             {{ $user->resellerPackage ? 'Upgrade & pay' : 'Subscribe & pay' }}

@@ -250,14 +250,27 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function getResellerUserCountForLimits(): int
     {
+        return $this->getResellerUserCountBreakdown()['count'];
+    }
+
+    /**
+     * @return array{count: int, source: 'directadmin'|'portal'}
+     */
+    public function getResellerUserCountBreakdown(): array
+    {
         if ($this->is_reseller && filled($this->directadmin_username)) {
             $daCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($this);
             if ($daCount !== null) {
-                return $daCount;
+                return ['count' => $daCount, 'source' => 'directadmin'];
             }
         }
 
-        return $this->getManagedCustomersCount();
+        return ['count' => $this->getManagedCustomersCount(), 'source' => 'portal'];
+    }
+
+    public function resellerUserCountUsesDirectAdmin(): bool
+    {
+        return $this->getResellerUserCountBreakdown()['source'] === 'directadmin';
     }
 
     /**

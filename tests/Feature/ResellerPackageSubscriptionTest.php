@@ -158,4 +158,62 @@ class ResellerPackageSubscriptionTest extends TestCase
             'status' => 'unpaid',
         ]);
     }
+
+    public function test_upgrade_invoice_charges_prorated_difference_not_full_package_price(): void
+    {
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(15)->startOfDay()]);
+        $reseller->refresh();
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $pro);
+
+        $expectedSubtotal = round((10600 - 5300) * (15 / 30), 2);
+        $this->assertStringContainsString(ResellerPackageSubscriptionService::UPGRADE_META, $invoice->notes ?? '');
+        $this->assertSame($expectedSubtotal, (float) $invoice->subtotal);
+        $this->assertLessThan((float) $pro->price, (float) $invoice->subtotal);
+    }
+
+    public function test_paid_upgrade_invoice_keeps_package_expiry_date(): void
+    {
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $expiry = now()->addDays(180)->startOfDay();
+        $reseller->update(['package_expires_at' => $expiry]);
+        $reseller->refresh();
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $pro);
+        $invoice->update(['status' => 'paid', 'paid_date' => now()]);
+
+        $service->activateFromPaidInvoice($invoice->fresh());
+        $reseller->refresh();
+
+        $this->assertSame($pro->id, $reseller->reseller_package_id);
+        $this->assertSame($expiry->toDateString(), $reseller->package_expires_at->toDateString());
+    }
+
+    public function test_annual_upgrade_invoice_uses_365_day_cycle_for_proration(): void
+    {
+        $starter = $this->createPackage(['name' => 'Starter Annual', 'price' => 50000, 'billing_cycle' => 'annually']);
+        $pro = $this->createPackage(['name' => 'Pro Annual', 'price' => 100000, 'billing_cycle' => 'annually']);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(182)->startOfDay()]);
+        $reseller->refresh();
+
+        $invoice = $service->createSubscriptionInvoice($reseller, $pro);
+
+        $expectedSubtotal = round((100000 - 50000) * (182 / 365), 2);
+        $this->assertSame($expectedSubtotal, (float) $invoice->subtotal);
+    }
 }
