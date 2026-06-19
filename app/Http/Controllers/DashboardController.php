@@ -11,6 +11,8 @@ use App\Models\Setting;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Services\CreditService;
+use App\Services\Customer\CustomerHostingUpgradeService;
+use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\ResellerAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -192,6 +194,20 @@ class DashboardController extends Controller
 
     private function customerDashboard($user)
     {
+        $usageService = app(ServicePackageUsageService::class);
+        $upgradeService = app(CustomerHostingUpgradeService::class);
+
+        $packageUsageWarnings = collect($usageService->upgradeWarningsForUser($user))
+            ->map(function (array $warning) use ($upgradeService, $user) {
+                $warning['recommended_upgrade'] = $upgradeService->recommendedUpgrade(
+                    $warning['service'],
+                    $user,
+                    $warning['primary_metric'] ?? null,
+                );
+
+                return $warning;
+            });
+
         return view('dashboard.customer', [
             'activeServices' => $user->services()->where('status', 'active')->with('product')->get(),
             'suspendedServices' => $user->services()->where('status', 'suspended')->with('product')->get(),
@@ -211,6 +227,7 @@ class DashboardController extends Controller
                 ->orderBy('expires_at')
                 ->get(),
             'creditBalance' => CreditService::getAvailableBalance($user),
+            'packageUsageWarnings' => $packageUsageWarnings,
         ]);
     }
 }

@@ -78,8 +78,11 @@
         </div>
     </div>
 
-    @if ($suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)
+    @if (($packageUsageWarnings ?? collect())->isNotEmpty() || $suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)
     <div class="space-y-3">
+        @foreach ($packageUsageWarnings ?? [] as $warning)
+            <x-hosting-upgrade-banner :warning="$warning" />
+        @endforeach
         @if ($suspendedServices->count() > 0)
             <div class="ui-card p-4 border-orange-200 dark:border-orange-800 bg-orange-50/80 dark:bg-orange-950/30 flex flex-wrap items-center justify-between gap-3">
                 <p class="text-sm text-orange-900 dark:text-orange-200"><strong>{{ $suspendedServices->count() }}</strong> service(s) suspended — pay outstanding invoices to restore access.</p>

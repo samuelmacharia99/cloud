@@ -184,7 +184,7 @@ class NodeController extends Controller
         $nodeServices = $node->servicesOnNodeQuery()
             ->with(['product', 'user', 'containerDeployment'])
             ->orderByDesc('id')
-            ->paginate(15)
+            ->paginate(10)
             ->withQueryString();
 
         // For DirectAdmin nodes, load the locally-cached package list and a

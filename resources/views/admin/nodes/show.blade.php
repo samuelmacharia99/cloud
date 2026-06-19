@@ -778,71 +778,104 @@
     </div>
 
     <!-- Services Running on Node -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
-        <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Services Running ({{ $nodeServices->total() }})</h2>
-
-        @if($nodeServices->count() > 0)
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="border-b border-slate-200 dark:border-slate-800">
-                            <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Service ID</th>
-                            <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Product</th>
-                            <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Customer</th>
-                            <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Status</th>
-                            <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Next Due</th>
-                            <th class="text-right py-3 font-semibold text-slate-900 dark:text-white">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach($nodeServices as $service)
-                            <tr class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="py-4 font-medium text-slate-900 dark:text-white">#{{ $service->id }}</td>
-                                <td class="py-4">
-                                    <p class="font-medium text-slate-900 dark:text-white">{{ $service->product->name }}</p>
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
-                                </td>
-                                <td class="py-4">
-                                    <x-admin.customer-link :user="$service->user" class="text-slate-900 dark:text-white" />
-                                    <p class="text-xs text-slate-600 dark:text-slate-400">{{ $service->user->email }}</p>
-                                </td>
-                                <td class="py-4">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                                        @if($service->status->value === 'active')
-                                            bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
-                                        @elseif($service->status->value === 'pending')
-                                            bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
-                                        @elseif($service->status->value === 'provisioning')
-                                            bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
-                                        @elseif($service->status->value === 'suspended')
-                                            bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
-                                        @elseif($service->status->value === 'terminated')
-                                            bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
-                                        @endif
-                                    ">
-                                        {{ ucfirst($service->status->value) }}
-                                    </span>
-                                </td>
-                                <td class="py-4 text-slate-600 dark:text-slate-400">
-                                    {{ $service->next_due_date?->format('M d, Y') ?? '-' }}
-                                </td>
-                                <td class="py-4 text-right">
-                                    <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">View</a>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
+    @php
+        $servicesExpandedDefault = request()->has('page') ? 'true' : 'false';
+    @endphp
+    <div
+        x-data="{ expanded: {{ $servicesExpandedDefault }} }"
+        class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+    >
+        <button
+            type="button"
+            @click="expanded = !expanded"
+            class="w-full p-8 text-left flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+        >
+            <div class="min-w-0">
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Services Running ({{ $nodeServices->total() }})</h2>
+                @if($nodeServices->total() > 0)
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                        Showing <strong class="text-slate-900 dark:text-white">{{ $nodeServices->firstItem() }}–{{ $nodeServices->lastItem() }}</strong>
+                        of <strong class="text-slate-900 dark:text-white">{{ $nodeServices->total() }}</strong>
+                        @if($nodeServices->hasPages())
+                            · Page {{ $nodeServices->currentPage() }} of {{ $nodeServices->lastPage() }}
+                        @endif
+                    </p>
+                @else
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">No services running on this node.</p>
+                @endif
             </div>
+            <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 shrink-0">
+                <span x-text="expanded ? 'Collapse' : 'Expand'"></span>
+                <svg class="w-5 h-5 transition-transform" :class="expanded ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+            </div>
+        </button>
 
-            @if($nodeServices->hasPages())
-                <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
-                    {{ $nodeServices->links() }}
+        <div x-show="expanded" x-cloak class="px-8 pb-8 border-t border-slate-200 dark:border-slate-800 pt-6">
+            @if($nodeServices->count() > 0)
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 dark:border-slate-800">
+                                <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Service ID</th>
+                                <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Product</th>
+                                <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Customer</th>
+                                <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Status</th>
+                                <th class="text-left py-3 font-semibold text-slate-900 dark:text-white">Next Due</th>
+                                <th class="text-right py-3 font-semibold text-slate-900 dark:text-white">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach($nodeServices as $service)
+                                <tr class="border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                    <td class="py-4 font-medium text-slate-900 dark:text-white">#{{ $service->id }}</td>
+                                    <td class="py-4">
+                                        <p class="font-medium text-slate-900 dark:text-white">{{ $service->product->name }}</p>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ ucfirst(str_replace('_', ' ', $service->product->type)) }}</p>
+                                    </td>
+                                    <td class="py-4">
+                                        <x-admin.customer-link :user="$service->user" class="text-slate-900 dark:text-white" />
+                                        <p class="text-xs text-slate-600 dark:text-slate-400">{{ $service->user->email }}</p>
+                                    </td>
+                                    <td class="py-4">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                                            @if($service->status->value === 'active')
+                                                bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300
+                                            @elseif($service->status->value === 'pending')
+                                                bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300
+                                            @elseif($service->status->value === 'provisioning')
+                                                bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300
+                                            @elseif($service->status->value === 'suspended')
+                                                bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
+                                            @elseif($service->status->value === 'terminated')
+                                                bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300
+                                            @endif
+                                        ">
+                                            {{ ucfirst($service->status->value) }}
+                                        </span>
+                                    </td>
+                                    <td class="py-4 text-slate-600 dark:text-slate-400">
+                                        {{ $service->next_due_date?->format('M d, Y') ?? '-' }}
+                                    </td>
+                                    <td class="py-4 text-right">
+                                        <a href="{{ route('admin.services.show', $service) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition">View</a>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
+
+                @if($nodeServices->hasPages())
+                    <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-800">
+                        {{ $nodeServices->links() }}
+                    </div>
+                @endif
+            @else
+                <p class="text-slate-600 dark:text-slate-400 text-center py-6">No services running on this node.</p>
             @endif
-        @else
-            <p class="text-slate-600 dark:text-slate-400 text-center py-6">No services running on this node.</p>
-        @endif
+        </div>
     </div>
 
     <!-- Node Metadata -->

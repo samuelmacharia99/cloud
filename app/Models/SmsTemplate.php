@@ -106,6 +106,22 @@ class SmsTemplate extends Model
                 'available_variables' => ['customer_name', 'service_name', 'site_name'],
             ],
             [
+                'event_key' => 'hosting_package_usage_warning',
+                'name' => 'Hosting Package Usage Warning',
+                'body' => 'Hi {customer_name}, {service_name} is at {percent}% of your {metrics} limit. Upgrade your plan to avoid interruption. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent when shared hosting storage, bandwidth, or database usage reaches the warning threshold',
+                'available_variables' => ['customer_name', 'service_name', 'percent', 'metrics', 'upgrade_url', 'site_name'],
+            ],
+            [
+                'event_key' => 'hosting_upgrade_completed',
+                'name' => 'Hosting Upgrade Completed',
+                'body' => 'Hi {customer_name}, {service_name} was upgraded from {old_plan} to {new_plan}. Your new limits are active. -{site_name}',
+                'recipient_type' => 'customer',
+                'description' => 'Sent after a paid hosting plan upgrade is applied',
+                'available_variables' => ['customer_name', 'service_name', 'old_plan', 'new_plan', 'site_name'],
+            ],
+            [
                 'event_key' => 'service_terminated',
                 'name' => 'Service Terminated',
                 'body' => 'Your {service_name} service has been terminated. For details, contact support. -{site_name}',

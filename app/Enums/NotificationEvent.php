@@ -45,6 +45,8 @@ enum NotificationEvent: string
     case DomainTransferCompleted = 'domain_transfer_completed';
     case DomainTransferFailed = 'domain_transfer_failed';
     case ResellerSslProvisionFailed = 'reseller_ssl_provision_failed';
+    case HostingPackageUsageWarning = 'hosting_package_usage_warning';
+    case HostingUpgradeCompleted = 'hosting_upgrade_completed';
 
     public function settingKey(): string
     {
@@ -89,6 +91,8 @@ enum NotificationEvent: string
             self::DomainTransferCompleted => 'notify_domain_transfer',
             self::DomainTransferFailed => 'notify_domain_transfer',
             self::ResellerSslProvisionFailed => 'notify_reseller_ssl_provision_failed',
+            self::HostingPackageUsageWarning => 'notify_hosting_package_usage_warning',
+            self::HostingUpgradeCompleted => 'notify_hosting_upgrade_completed',
         };
     }
 

@@ -7,7 +7,10 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\Customer\CustomerServiceCancellationService;
+use App\Services\Hosting\ServicePackageUsageService;
+use App\Services\ServiceEnforcementInsightService;
 use App\Services\TaxService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,9 +45,31 @@ class ServiceController extends Controller
             return redirect()->route('customer.services.container.show', $service);
         }
 
-        $service->load(['product', 'invoice', 'node']);
+        $service->load(['product.directAdminPackage', 'invoice', 'node']);
 
-        return view('customer.services.show', compact('service'));
+        $packageUsageInsight = null;
+        $recommendedUpgrade = null;
+
+        if ($service->isSharedHosting()) {
+            $usageService = app(ServicePackageUsageService::class);
+
+            if ($usageService->snapshotFromMeta($service) === null) {
+                $liveUsage = $usageService->fetchLiveUsage($service);
+                if ($liveUsage !== null) {
+                    $usageService->persistSnapshot($service, $liveUsage);
+                    $service->refresh();
+                }
+            }
+
+            $packageUsageInsight = app(ServiceEnforcementInsightService::class)->forService($service);
+            $recommendedUpgrade = app(CustomerHostingUpgradeService::class)->recommendedUpgrade(
+                $service,
+                auth()->user(),
+                $packageUsageInsight['primary_metric'] ?? null,
+            );
+        }
+
+        return view('customer.services.show', compact('service', 'packageUsageInsight', 'recommendedUpgrade'));
     }
 
     public function cancel(Request $request, Service $service, CustomerServiceCancellationService $cancellation)

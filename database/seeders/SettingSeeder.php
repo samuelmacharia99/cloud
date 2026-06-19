@@ -73,6 +73,8 @@ class SettingSeeder extends Seeder
             ['key' => 'reseller_enforce_limits_on_provision', 'value' => 'true', 'description' => 'Block provisioning when reseller is at limit or suspended'],
             ['key' => 'suspend_on_disk_overquota', 'value' => 'true', 'description' => 'Suspend DirectAdmin hosting when disk quota is exceeded'],
             ['key' => 'disk_overquota_threshold_percent', 'value' => '100', 'description' => 'Disk usage percentage of quota before auto-suspension (100 = at limit)'],
+            ['key' => 'hosting_package_usage_warning_percent', 'value' => '90', 'description' => 'Shared hosting usage percentage that triggers upgrade warnings (storage, bandwidth, databases)'],
+            ['key' => 'hosting_package_usage_clear_percent', 'value' => '85', 'description' => 'Usage percentage below which upgrade warnings reset after an upgrade or usage drop'],
 
             // Cron settings
             ['key' => 'cron_timezone', 'value' => 'Africa/Nairobi', 'description' => 'Timezone for cron job scheduling'],
@@ -109,6 +111,8 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_service_terminated', 'value' => 'true', 'description' => 'Notify when service is terminated'],
             ['key' => 'notify_domain_expiry', 'value' => 'true', 'description' => 'Notify on domain expiry warnings'],
             ['key' => 'notify_service_unsuspended', 'value' => 'true', 'description' => 'Notify when service is restored'],
+            ['key' => 'notify_hosting_package_usage_warning', 'value' => 'true', 'description' => 'Notify customers when hosting usage reaches the upgrade warning threshold'],
+            ['key' => 'notify_hosting_upgrade_completed', 'value' => 'true', 'description' => 'Notify customers when a paid hosting upgrade is applied'],
             ['key' => 'notify_container_backup', 'value' => 'true', 'description' => 'Notify on container backup completion'],
             ['key' => 'notify_container_backup_failure', 'value' => 'true', 'description' => 'Notify admins on container backup failure'],
             ['key' => 'notify_container_failure', 'value' => 'true', 'description' => 'Notify on container failure'],

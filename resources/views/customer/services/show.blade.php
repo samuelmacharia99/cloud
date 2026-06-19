@@ -4,6 +4,26 @@
 
 @section('content')
 <div class="space-y-6">
+    @if (!empty($packageUsageInsight['needs_upgrade']))
+        @php
+            $metricsAtRisk = collect([
+                'disk' => $packageUsageInsight['disk'] ?? null,
+                'bandwidth' => $packageUsageInsight['bandwidth'] ?? null,
+                'database' => $packageUsageInsight['database'] ?? null,
+            ])->filter(function ($metric) {
+                return is_array($metric)
+                    && !($metric['unlimited'] ?? false)
+                    && ($metric['percent'] ?? 0) >= 90;
+            })->all();
+        @endphp
+        <x-hosting-upgrade-banner :warning="[
+            'service' => $service,
+            'service_name' => $service->name,
+            'metrics_at_risk' => $metricsAtRisk,
+            'recommended_upgrade' => $recommendedUpgrade,
+        ]" />
+    @endif
+
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8" x-data="{ tab: 'overview' }">
         <div class="flex items-start justify-between mb-6">
@@ -75,6 +95,9 @@
         <div class="mt-6">
             <!-- Overview Tab -->
             <div x-show="tab === 'overview'" class="space-y-6">
+                @if ($service->isSharedHosting() && !empty($packageUsageInsight))
+                    <x-service-enforcement-panel :insight="$packageUsageInsight" :show-upgrade-cta="true" />
+                @endif
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Service Info -->
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">

@@ -60,6 +60,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Check Hosting Package Usage',
+                'description' => 'Monitors shared hosting storage, bandwidth, and database usage; notifies customers at 90% to upgrade.',
+                'command' => 'cron:check-hosting-package-usage',
+                'schedule' => '30 */6 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Terminate Services',
                 'description' => 'Terminates services whose invoice has remained unpaid for the configured number of months.',
                 'command' => 'cron:terminate-services',

@@ -2,12 +2,15 @@
 
 namespace App\Services\Customer;
 
+use App\Models\DirectAdminPackage;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Hosting\ServicePackageUsageService;
+use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
@@ -21,6 +24,7 @@ class CustomerHostingUpgradeService
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
         private ResellerCustomerCatalogService $catalog,
+        private NotificationService $notifications,
     ) {}
 
     /**
@@ -40,19 +44,38 @@ class CustomerHostingUpgradeService
             return collect();
         }
 
-        $currentDisk = (float) ($service->product->directAdminPackage?->disk_quota ?? 0);
+        $currentPackage = $service->product->directAdminPackage;
+        if (! $currentPackage) {
+            return collect();
+        }
 
         $query = Product::query()
             ->where('is_active', true)
             ->where('type', 'shared_hosting')
             ->where('id', '!=', $service->product_id)
-            ->whereHas('directAdminPackage', fn ($q) => $q->where('disk_quota', '>', $currentDisk))
+            ->whereHas('directAdminPackage')
             ->with('directAdminPackage')
             ->orderBy('monthly_price');
 
         $this->catalog->scopePlatformProducts($query, $customer);
 
-        return $query->get();
+        return $query->get()->filter(function (Product $product) use ($currentPackage) {
+            return $this->isHigherTier($currentPackage, $product->directAdminPackage);
+        })->values();
+    }
+
+    public function recommendedUpgrade(Service $service, User $customer, ?string $limitingMetric = null): ?Product
+    {
+        $options = $this->upgradeOptions($service, $customer);
+        if ($options->isEmpty()) {
+            return null;
+        }
+
+        return match ($limitingMetric) {
+            'database' => $options->sortBy(fn (Product $product) => $product->directAdminPackage?->num_databases ?? 0)->first(),
+            'bandwidth' => $options->sortBy(fn (Product $product) => $product->directAdminPackage?->bandwidth_quota ?? 0)->first(),
+            default => $options->sortBy(fn (Product $product) => $product->directAdminPackage?->disk_quota ?? 0)->first(),
+        };
     }
 
     public function createUpgradeInvoice(Service $service, User $customer, Product $targetProduct): Invoice
@@ -78,7 +101,7 @@ class CustomerHostingUpgradeService
         $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
         $prefix = Setting::getValue('invoice_prefix', 'INV');
 
-        return DB::transaction(function () use ($service, $customer, $targetProduct, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown) {
+        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown) {
             $year = now()->format('Y');
             $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
             $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
@@ -111,6 +134,10 @@ class CustomerHostingUpgradeService
 
             return $invoice;
         });
+
+        $this->notifications->notifyInvoiceGenerated($invoice->fresh(['user', 'items']));
+
+        return $invoice;
     }
 
     public function applyPaidUpgradesForInvoice(Invoice $invoice): void
@@ -146,7 +173,7 @@ class CustomerHostingUpgradeService
 
     public function applyUpgrade(Service $service, Product $targetProduct): void
     {
-        $service->loadMissing('node', 'reseller', 'product.directAdminPackage');
+        $service->loadMissing('node', 'reseller', 'product.directAdminPackage', 'user');
 
         if (! $service->node || $service->node->type !== 'directadmin') {
             throw new \RuntimeException('Service is not on a DirectAdmin node.');
@@ -156,6 +183,11 @@ class CustomerHostingUpgradeService
 
         if (! $package) {
             throw new \RuntimeException('Target product has no DirectAdmin package.');
+        }
+
+        $previousProduct = $service->product;
+        if (! $previousProduct) {
+            throw new \RuntimeException('Current product not found on service.');
         }
 
         $meta = $service->service_meta ?? [];
@@ -176,6 +208,8 @@ class CustomerHostingUpgradeService
             throw new \RuntimeException($result['message']);
         }
 
+        unset($meta[ServicePackageUsageService::META_KEY]);
+
         $service->update([
             'product_id' => $targetProduct->id,
             'service_meta' => array_merge($meta, [
@@ -183,6 +217,46 @@ class CustomerHostingUpgradeService
                 'package_name' => $package->name,
             ]),
         ]);
+
+        $this->notifications->notifyHostingUpgradeCompleted(
+            $service->fresh(['user', 'product']),
+            $previousProduct,
+            $targetProduct,
+        );
+    }
+
+    private function isHigherTier(DirectAdminPackage $current, ?DirectAdminPackage $candidate): bool
+    {
+        if (! $candidate) {
+            return false;
+        }
+
+        $currentDisk = (float) $current->disk_quota;
+        $currentBandwidth = $this->normalizedBandwidthQuota($current->bandwidth_quota);
+        $currentDatabases = (int) $current->num_databases;
+
+        $candidateDisk = (float) $candidate->disk_quota;
+        $candidateBandwidth = $this->normalizedBandwidthQuota($candidate->bandwidth_quota);
+        $candidateDatabases = (int) $candidate->num_databases;
+
+        $notLower = $candidateDisk >= $currentDisk
+            && $candidateBandwidth >= $currentBandwidth
+            && $candidateDatabases >= $currentDatabases;
+
+        $strictlyHigher = $candidateDisk > $currentDisk
+            || $candidateBandwidth > $currentBandwidth
+            || $candidateDatabases > $currentDatabases;
+
+        return $notLower && $strictlyHigher;
+    }
+
+    private function normalizedBandwidthQuota(mixed $quota): float
+    {
+        if ($quota === null || (float) $quota < 0) {
+            return PHP_FLOAT_MAX;
+        }
+
+        return (float) $quota;
     }
 
     private function proratedUpgradePrice(Service $service, Product $targetProduct): float

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Customer\CustomerHostingUpgradeService;
+use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\Request;
 
 class ServiceUpgradeController extends Controller
@@ -16,10 +17,18 @@ class ServiceUpgradeController extends Controller
         $this->authorize('view', $service);
 
         $options = $upgrades->upgradeOptions($service, auth()->user());
+        $insight = app(ServiceEnforcementInsightService::class)->forService($service->load('product.directAdminPackage'));
+        $recommendedUpgrade = $upgrades->recommendedUpgrade(
+            $service,
+            auth()->user(),
+            $insight['primary_metric'] ?? null,
+        );
 
         return view('customer.services.upgrade', [
             'service' => $service->load('product.directAdminPackage'),
             'upgradeOptions' => $options,
+            'packageUsageInsight' => $insight,
+            'recommendedUpgrade' => $recommendedUpgrade,
         ]);
     }
 

@@ -13,6 +13,8 @@ use App\Mail\ContainerFailedMail;
 use App\Mail\DomainExpiryMail;
 use App\Mail\DomainTransferInitiatedMail;
 use App\Mail\GenericNotificationMail;
+use App\Mail\HostingPackageUsageWarningMail;
+use App\Mail\HostingUpgradeCompletedMail;
 use App\Mail\InvoiceGeneratedMail;
 use App\Mail\InvoiceOverdueMail;
 use App\Mail\InvoiceReminderMail;
@@ -34,6 +36,7 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\ResellerDomainOrder;
 use App\Models\Service;
 use App\Models\SmsTemplate;
@@ -1249,6 +1252,101 @@ class NotificationService
                 'site_name' => $company,
             ], "SSL provisioning failed for {$domain}. {$reason}");
             $this->smsService->send($reseller->phone, $message);
+        }
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $metricsAtRisk
+     */
+    public function notifyHostingPackageUsageWarning(Service $service, array $metricsAtRisk, ?Product $recommendedUpgrade = null): void
+    {
+        $service->loadMissing('user', 'product');
+        if (! $service->user) {
+            return;
+        }
+
+        $event = NotificationEvent::HostingPackageUsageWarning;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $upgradeUrl = route('customer.services.upgrade', $service);
+        $peakPercent = (int) round(collect($metricsAtRisk)->max(fn ($metric) => $metric['percent'] ?? 0));
+        $metricNames = collect($metricsAtRisk)->keys()->map(fn ($key) => match ($key) {
+            'bandwidth' => 'bandwidth',
+            'database' => 'database',
+            default => 'storage',
+        })->implode(', ');
+
+        if ($this->emailDelivery->mailConfiguredFor($service->user)) {
+            $subject = "Action needed: {$service->name} is at {$peakPercent}% capacity";
+            $this->sendCustomerEmail(
+                $service->user,
+                new HostingPackageUsageWarningMail($service, $metricsAtRisk, $recommendedUpgrade),
+                $subject,
+                $event,
+            );
+        }
+
+        if ($service->user->phone) {
+            try {
+                $planHint = $recommendedUpgrade ? " Upgrade to {$recommendedUpgrade->name}." : '';
+                $message = $this->renderTemplate('hosting_package_usage_warning', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'percent' => (string) $peakPercent,
+                    'metrics' => $metricNames,
+                    'upgrade_url' => $upgradeUrl,
+                    'site_name' => $this->siteNameFor($service->user),
+                ], "{$service->name} is at {$peakPercent}% of your {$metricNames} limit. Upgrade your plan to avoid interruption.{$planHint} -{$this->siteNameFor($service->user)}");
+                $this->sendCustomerSms($service->user, $message, $event);
+            } catch (\Exception $e) {
+                Log::error('Failed to send hosting package usage warning SMS', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    public function notifyHostingUpgradeCompleted(Service $service, Product $previousProduct, Product $newProduct): void
+    {
+        $service->loadMissing('user');
+        if (! $service->user) {
+            return;
+        }
+
+        $event = NotificationEvent::HostingUpgradeCompleted;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        if ($this->emailDelivery->mailConfiguredFor($service->user)) {
+            $subject = "Plan upgraded: {$service->name}";
+            $this->sendCustomerEmail(
+                $service->user,
+                new HostingUpgradeCompletedMail($service, $previousProduct, $newProduct),
+                $subject,
+                $event,
+            );
+        }
+
+        if ($service->user->phone) {
+            try {
+                $message = $this->renderTemplate('hosting_upgrade_completed', [
+                    'customer_name' => $service->user->name,
+                    'service_name' => $service->name,
+                    'old_plan' => $previousProduct->name,
+                    'new_plan' => $newProduct->name,
+                    'site_name' => $this->siteNameFor($service->user),
+                ], "{$service->name} upgraded from {$previousProduct->name} to {$newProduct->name}. Your new limits are active. -{$this->siteNameFor($service->user)}");
+                $this->sendCustomerSms($service->user, $message, $event);
+            } catch (\Exception $e) {
+                Log::error('Failed to send hosting upgrade completed SMS', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
     }
 }
