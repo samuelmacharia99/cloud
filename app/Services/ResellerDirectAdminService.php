@@ -124,6 +124,21 @@ class ResellerDirectAdminService
         return $da->countUsersOwnedByReseller($reseller->directadmin_username);
     }
 
+    public function fetchHostedUserCountOnNode(User $reseller, Node $node): ?int
+    {
+        if (! filled($reseller->directadmin_username) || $node->type !== 'directadmin') {
+            return null;
+        }
+
+        $da = new DirectAdminService($node);
+
+        if (! $da->isConfigured()) {
+            return null;
+        }
+
+        return $da->countUsersOwnedByReseller($reseller->directadmin_username);
+    }
+
     public function suspendResellerAccount(User $reseller): bool
     {
         if (! $this->hasDirectAdminBinding($reseller)) {

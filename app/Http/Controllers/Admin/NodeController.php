@@ -9,6 +9,7 @@ use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\ResellerDirectAdminService;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -178,7 +179,13 @@ class NodeController extends Controller
 
     public function show(Request $request, Node $node)
     {
-        $node->load('services.product', 'services.user', 'latestMonitoring');
+        $node->load('latestMonitoring');
+
+        $nodeServices = $node->servicesOnNodeQuery()
+            ->with(['product', 'user', 'containerDeployment'])
+            ->orderByDesc('id')
+            ->paginate(15)
+            ->withQueryString();
 
         // For DirectAdmin nodes, load the locally-cached package list and a
         // count of sibling DA nodes so the consistency link shows itself only
@@ -198,7 +205,10 @@ class NodeController extends Controller
                 ->where('id', '!=', $node->id)
                 ->count();
 
-            $nodeResellers = $this->directAdminResellersForNode($node);
+            $nodeResellers = $this->directAdminResellersForNode(
+                $node,
+                $request->boolean('refresh_reseller_packages') || $request->boolean('refresh_resellers'),
+            );
             [$resellerPackages, $resellerPackagesError] = $this->fetchDirectAdminResellerPackages(
                 $node,
                 $request->boolean('refresh_reseller_packages'),
@@ -212,6 +222,7 @@ class NodeController extends Controller
 
         return view('admin.nodes.show', compact(
             'node',
+            'nodeServices',
             'cpuPercentage',
             'ramPercentage',
             'storagePercentage',
@@ -252,7 +263,7 @@ class NodeController extends Controller
     /**
      * Resellers assigned to this node or with hosting services on it.
      */
-    private function directAdminResellersForNode(Node $node)
+    private function directAdminResellersForNode(Node $node, bool $refreshCounts = false)
     {
         $assignedIds = User::query()
             ->where('is_reseller', true)
@@ -271,6 +282,8 @@ class NodeController extends Controller
             return collect();
         }
 
+        $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+
         return User::query()
             ->whereIn('id', $ids)
             ->with('resellerPackage')
@@ -279,12 +292,40 @@ class NodeController extends Controller
             ])
             ->orderBy('name')
             ->get()
-            ->each(function (User $reseller) use ($assignedIds) {
+            ->each(function (User $reseller) use ($assignedIds, $node, $refreshCounts, $resellerDirectAdmin) {
                 $reseller->setAttribute(
                     'node_binding',
                     $assignedIds->contains($reseller->id) ? 'assigned' : 'services_only',
                 );
+
+                $reseller->setAttribute(
+                    'da_hosted_users_count',
+                    $this->cachedDirectAdminHostedUserCount($node, $reseller, $resellerDirectAdmin, $refreshCounts),
+                );
             });
+    }
+
+    private function cachedDirectAdminHostedUserCount(
+        Node $node,
+        User $reseller,
+        ResellerDirectAdminService $resellerDirectAdmin,
+        bool $refresh = false,
+    ): ?int {
+        if (! filled($reseller->directadmin_username)) {
+            return null;
+        }
+
+        $cacheKey = "directadmin:node:{$node->id}:reseller:{$reseller->id}:hosted-users";
+
+        if ($refresh) {
+            Cache::forget($cacheKey);
+        }
+
+        return Cache::remember(
+            $cacheKey,
+            now()->addMinutes(5),
+            fn () => $resellerDirectAdmin->fetchHostedUserCountOnNode($reseller, $node),
+        );
     }
 
     public function edit(Node $node)
@@ -358,8 +399,7 @@ class NodeController extends Controller
 
     public function delete(Node $node)
     {
-        // Check if node has active services
-        if ($node->services()->count() > 0) {
+        if ($node->servicesOnNodeQuery()->exists()) {
             return back()->with('error', 'Cannot delete node with active services. Remove all services first.');
         }
 

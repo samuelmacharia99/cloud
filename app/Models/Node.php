@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\NodeNameserverService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -66,6 +67,20 @@ class Node extends Model
     public function services()
     {
         return $this->hasMany(Service::class, 'node_id');
+    }
+
+    /**
+     * Services hosted on this node via direct assignment or current container deployment.
+     */
+    public function servicesOnNodeQuery(): Builder
+    {
+        return Service::query()
+            ->where(function ($query) {
+                $query->where('node_id', $this->id)
+                    ->orWhereHas('containerDeployment', function ($q) {
+                        $q->where('node_id', $this->id);
+                    });
+            });
     }
 
     public function containerDeployments()
