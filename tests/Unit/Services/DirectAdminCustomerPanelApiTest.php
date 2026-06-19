@@ -43,13 +43,17 @@ class DirectAdminCustomerPanelApiTest extends TestCase
                 'package' => 'Bronze',
                 'quota' => '1024',
                 'bandwidth' => 'unlimited',
+                'mysql' => '5',
             ]), 200),
             '*/CMD_API_USER_STATS*' => Http::response(json_encode([
                 'error' => '0',
                 'quota_used' => '256',
                 'bandwidth_used' => '128',
                 'email' => '2',
-                'mysql' => '1',
+            ]), 200),
+            '*/CMD_API_DATABASES*' => Http::response(json_encode([
+                'error' => '0',
+                'list0' => 'user_db',
             ]), 200),
         ]);
 
@@ -68,6 +72,28 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame('Bronze', $result['data']['package']);
         $this->assertSame(256.0, $result['data']['disk']['used_mb']);
         $this->assertNull($result['data']['bandwidth']['limit_mb']);
+        $this->assertSame(1, $result['data']['counts']['database']);
+        $this->assertSame(5, $result['data']['counts']['database_limit']);
+    }
+
+    public function test_database_used_count_does_not_fallback_to_package_limit_when_stats_omit_mysql(): void
+    {
+        Http::fake([
+            '*/CMD_API_DATABASES*' => Http::response(json_encode([
+                'error' => '0',
+            ]), 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'hostname' => 'da.example.com',
+            'api_url' => 'https://da.example.com:2222',
+            'da_login_key' => 'secret',
+        ]);
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+
+        $this->assertSame(0, $api->resolveDatabaseUsedCount('siteuser', []));
     }
 
     public function test_list_email_accounts_handles_indexed_list_keys(): void

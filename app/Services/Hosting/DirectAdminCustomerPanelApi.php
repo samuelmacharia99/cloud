@@ -85,12 +85,30 @@ class DirectAdminCustomerPanelApi
 
         $data = $config['data'];
         $usage = $stats['success'] ? $stats['data'] : [];
+        $databaseUsed = $this->resolveDatabaseUsedCount($username, $usage);
 
         return [
             'success' => true,
             'message' => 'OK',
-            'data' => $this->normalizeDashboard($username, $data, $usage, $domain),
+            'data' => $this->normalizeDashboard($username, $data, $usage, $domain, $databaseUsed),
         ];
+    }
+
+    /**
+     * Actual database count from DirectAdmin — never treat package limit (config mysql) as usage.
+     */
+    public function resolveDatabaseUsedCount(string $username, array $usage = []): int
+    {
+        $listed = $this->listDatabases($username);
+        if ($listed['success']) {
+            return count($listed['data']);
+        }
+
+        if (array_key_exists('mysql', $usage)) {
+            return max(0, (int) $usage['mysql']);
+        }
+
+        return 0;
     }
 
     /**
@@ -622,12 +640,15 @@ class DirectAdminCustomerPanelApi
      * @param  array<string, mixed>  $usage
      * @return array<string, mixed>
      */
-    private function normalizeDashboard(string $username, array $config, array $usage, ?string $domain): array
+    private function normalizeDashboard(string $username, array $config, array $usage, ?string $domain, ?int $databaseUsedCount = null): array
     {
         $diskQuota = $config['quota'] ?? $config['disk'] ?? $usage['quota'] ?? null;
         $diskUsed = $usage['quota_used'] ?? $config['quota_used'] ?? $usage['disk'] ?? null;
         $bwQuota = $config['bandwidth'] ?? $usage['bandwidth'] ?? null;
         $bwUsed = $usage['bandwidth_used'] ?? $config['bandwidth_used'] ?? null;
+
+        $databaseUsed = $databaseUsedCount ?? (array_key_exists('mysql', $usage) ? (int) $usage['mysql'] : 0);
+        $databaseLimit = (int) ($config['mysql_limit'] ?? $config['mysql'] ?? 0);
 
         return [
             'username' => $username,
@@ -647,8 +668,8 @@ class DirectAdminCustomerPanelApi
                 'email_limit' => (int) ($config['email_limit'] ?? $config['email'] ?? 0),
                 'ftp' => (int) ($usage['ftp'] ?? $config['ftp'] ?? 0),
                 'ftp_limit' => (int) ($config['ftp_limit'] ?? $config['ftp'] ?? 0),
-                'database' => (int) ($usage['mysql'] ?? $config['mysql'] ?? 0),
-                'database_limit' => (int) ($config['mysql_limit'] ?? $config['mysql'] ?? 0),
+                'database' => $databaseUsed,
+                'database_limit' => $databaseLimit,
                 'subdomain' => (int) ($usage['subdomains'] ?? $config['subdomains'] ?? 0),
             ],
             'nameservers' => array_values(array_filter([
