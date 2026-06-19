@@ -156,7 +156,7 @@ class ResellerCustomerOrderService
 
             $provisioning = app(InvoiceProvisioningService::class);
 
-            if (! $provisioning->shouldAutoProvision()) {
+            if (! $provisioning->shouldAutoProvisionService($service)) {
                 return [
                     'service' => $service->fresh(),
                     'provisioned' => false,

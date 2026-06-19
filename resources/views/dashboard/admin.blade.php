@@ -67,7 +67,7 @@
         <a href="{{ route('admin.payments.index') }}" class="block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-6 hover:border-violet-300 dark:hover:border-violet-700 transition-all shadow-card hover:shadow-card-hover">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Total Revenue</p>
+                    <p class="text-sm font-medium text-slate-600 dark:text-slate-400">Platform Revenue</p>
                     <p class="text-3xl font-bold text-slate-900 dark:text-white mt-2">KSH {{ number_format($totalRevenue, 2) }}</p>
                 </div>
                 <div class="w-12 h-12 rounded-xl bg-violet-100 dark:bg-violet-950 flex items-center justify-center">
@@ -76,7 +76,7 @@
                     </svg>
                 </div>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">All time · view payments</p>
+            <p class="text-xs text-slate-500 dark:text-slate-500 mt-4">Direct customers &amp; resellers · view payments</p>
         </a>
     </div>
 
@@ -157,8 +157,8 @@
         <!-- Revenue Trend Chart -->
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Revenue Trend</h2>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 30 days</p>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Platform Revenue Trend</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Last 30 days · excludes reseller customer retail</p>
             </div>
             <div class="p-6">
                 <canvas id="revenueChart"></canvas>
@@ -432,7 +432,7 @@
             data: {
                 labels: last30Days,
                 datasets: [{
-                    label: 'Daily Revenue',
+                    label: 'Platform revenue',
                     data: revenueData,
                     borderColor: '#8b5cf6',
                     backgroundColor: 'rgba(139, 92, 246, 0.1)',

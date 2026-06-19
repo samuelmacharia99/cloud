@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
+use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -27,6 +28,7 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
         Setting::setValue('notify_admin_new_order', 'true');
         Setting::setValue('notify_admin_manual_payment', 'true');
         Setting::setValue('notify_admin_reseller_domain_push', 'true');
+        Setting::setValue('notify_service_provision_failed', 'true');
     }
 
     private function createAdminWithPhones(): User
@@ -204,5 +206,47 @@ class NotificationServiceAdminOrderAlertTest extends TestCase
         $this->app->instance(SmsService::class, $sms);
 
         app(NotificationService::class)->notifyAdminResellerDomainOrder($order, 'placed', 'awaiting payment');
+    }
+
+    public function test_notify_service_provision_failed_skips_admin_sms_for_reseller_customer(): void
+    {
+        $this->createAdminWithPhones();
+        $reseller = User::factory()->reseller()->create(['name' => 'Beta Reseller']);
+        $customer = User::factory()->customer()->create([
+            'name' => 'Reseller Client',
+            'reseller_id' => $reseller->id,
+        ]);
+
+        $service = Service::factory()->for($customer)->create([
+            'status' => 'failed',
+            'name' => 'Reseller Hosting',
+        ]);
+
+        $sms = Mockery::mock(SmsService::class);
+        $sms->shouldReceive('isConfigured')->andReturn(true);
+        $sms->shouldReceive('send')->never();
+        $this->app->instance(SmsService::class, $sms);
+
+        app(NotificationService::class)->notifyServiceProvisionFailed($service, 'DirectAdmin API timeout');
+    }
+
+    public function test_notify_service_provision_failed_sends_admin_sms_for_platform_customer(): void
+    {
+        $this->createAdminWithPhones();
+        $customer = User::factory()->customer()->create(['name' => 'Direct Client']);
+
+        $service = Service::factory()->for($customer)->create([
+            'status' => 'failed',
+            'name' => 'Platform Hosting',
+        ]);
+
+        $sms = Mockery::mock(SmsService::class);
+        $sms->shouldReceive('isConfigured')->andReturn(true);
+        $sms->shouldReceive('send')
+            ->once()
+            ->with(['254712345678'], Mockery::on(fn (string $message) => str_contains($message, 'Platform Hosting')));
+        $this->app->instance(SmsService::class, $sms);
+
+        app(NotificationService::class)->notifyServiceProvisionFailed($service, 'DirectAdmin API timeout');
     }
 }

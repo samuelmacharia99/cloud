@@ -28,7 +28,7 @@
                 @foreach ($products as $product)
                     <option value="{{ $product->id }}" @selected(old('reseller_product_id') == $product->id)>
                         {{ $product->name }}
-                        @if($product->adminProduct) (provisions) @else (invoice only) @endif
+                        @if($product->isOrderable()) (auto-provisions) @else (invoice only) @endif
                     </option>
                 @endforeach
             </select>

@@ -1300,8 +1300,17 @@
                                 <input type="hidden" name="settings[auto_provision]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[auto_provision]" value="1" @checked(($settings['auto_provision'] ?? '0') == '1')" class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Auto-provision on payment</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Auto-provision on payment (platform direct customers)</span>
                                 </label>
+                            </div>
+
+                            <div>
+                                <input type="hidden" name="settings[reseller_auto_provision_hosting]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[reseller_auto_provision_hosting]" value="1" @checked(in_array($settings['reseller_auto_provision_hosting'] ?? 'true', ['1', 'true'], true)) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Auto-provision shared and container hosting for reseller customers</span>
+                                </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Runs when a reseller customer invoice is paid or when a reseller provisions hosting without billing. Works even if platform auto-provision above is off.</p>
                             </div>
 
                             <div>

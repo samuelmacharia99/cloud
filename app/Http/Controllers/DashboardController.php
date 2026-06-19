@@ -65,6 +65,7 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('total', 'status');
         $paymentStatusSums = Payment::query()
+            ->platformRevenue()
             ->select('status', DB::raw('SUM(amount) as total'))
             ->whereIn('status', ['completed', 'pending'])
             ->groupBy('status')
@@ -112,6 +113,7 @@ class DashboardController extends Controller
         $revenueData = [];
         $thirtyDayStart = now()->subDays(29)->startOfDay();
         $dailyRevenue = Payment::query()
+            ->platformRevenue()
             ->selectRaw('DATE(created_at) as day, SUM(amount) as total')
             ->where('status', 'completed')
             ->where('created_at', '>=', $thirtyDayStart)

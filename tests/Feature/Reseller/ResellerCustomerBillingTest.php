@@ -366,6 +366,7 @@ class ResellerCustomerBillingTest extends TestCase
         $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
 
         Setting::setValue('auto_provision', 'false');
+        Setting::setValue('reseller_auto_provision_hosting', 'false');
         Setting::setValue('provisioning_mode', 'automatic');
 
         $template = ContainerTemplate::factory()->create();
@@ -469,6 +470,7 @@ class ResellerCustomerBillingTest extends TestCase
         ]);
 
         Setting::setValue('auto_provision', 'false');
+        Setting::setValue('reseller_auto_provision_hosting', 'false');
 
         $this->actingAs($reseller)
             ->post(route('reseller.customer-orders.hosting.store'), [
@@ -531,6 +533,7 @@ class ResellerCustomerBillingTest extends TestCase
         ]);
 
         Setting::setValue('auto_provision', 'false');
+        Setting::setValue('reseller_auto_provision_hosting', 'false');
 
         $this->actingAs($reseller)
             ->post(route('reseller.customer-orders.hosting.store'), [

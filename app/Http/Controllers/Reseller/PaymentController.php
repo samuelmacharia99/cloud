@@ -3,22 +3,20 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Enums\PaymentStatus;
-use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Payment;
-use App\Models\Service;
 use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\OnlinePaymentFailureService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
@@ -482,26 +480,13 @@ class PaymentController extends Controller
 
         $this->processDomainRenewals($invoice);
 
-        foreach ($invoice->items as $item) {
-            if (! $item->service_id) {
-                continue;
-            }
-
-            $service = Service::find($item->service_id);
-            if (! $service || $service->status->value !== 'pending') {
-                continue;
-            }
-
-            $service->update(['status' => ServiceStatus::Provisioning]);
-
-            try {
-                Artisan::call('service:provision', ['service_id' => $service->id]);
-            } catch (\Throwable $e) {
-                Log::error('Reseller service provisioning failed after payment', [
-                    'service_id' => $service->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
+        try {
+            app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
+        } catch (\Throwable $e) {
+            Log::error('Hosting auto-provision failed after reseller invoice paid', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

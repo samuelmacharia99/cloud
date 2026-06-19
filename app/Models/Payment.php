@@ -6,6 +6,7 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\CreditService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -133,5 +134,25 @@ class Payment extends Model
         $userId = $user instanceof User ? $user->id : $user;
 
         return $query->where('user_id', $userId);
+    }
+
+    /**
+     * Payments that count as platform (admin) revenue — excludes reseller-managed customer retail.
+     */
+    public function scopePlatformRevenue(Builder $query): Builder
+    {
+        return $query->where(function (Builder $outer) {
+            $outer->where('payment_purpose', 'wallet_topup')
+                ->orWhereHas('invoice', function (Builder $invoice) {
+                    $invoice->where(function (Builder $inner) {
+                        $inner->where('type', 'reseller_subscription')
+                            ->orWhereHas('user', function (Builder $user) {
+                                $user->whereNull('reseller_id')
+                                    ->where('is_reseller', false)
+                                    ->where('is_admin', false);
+                            });
+                    });
+                });
+        });
     }
 }

@@ -35,7 +35,7 @@
             <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $managedCustomers }}</p>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">
-            <p class="text-sm text-slate-500 mb-1">Revenue (period)</p>
+            <p class="text-sm text-slate-500 mb-1">Platform revenue (period)</p>
             <p class="text-2xl font-bold text-slate-900 dark:text-white">KES {{ number_format($revenueInPeriod, 2) }}</p>
         </div>
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5">

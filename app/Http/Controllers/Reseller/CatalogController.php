@@ -14,7 +14,7 @@ use Illuminate\Validation\ValidationException;
 class CatalogController extends Controller
 {
     /** @var list<string> */
-    private const ADMIN_CATALOG_TYPES = ['vps', 'dedicated_server', 'container_hosting'];
+    private const ADMIN_CATALOG_TYPES = ['shared_hosting', 'container_hosting', 'vps', 'dedicated_server'];
 
     public function __construct(
         private ResellerDirectAdminService $resellerDirectAdmin,
@@ -208,6 +208,28 @@ class CatalogController extends Controller
                 $validated['container_template_id'] = $product->container_template_id;
                 $validated['resource_limits'] = null;
                 $validated['database_template_id'] = null;
+            }
+
+            if ($product->type === 'shared_hosting') {
+                if ($product->provisioning_driver_key !== 'directadmin' || ! $product->direct_admin_package_id) {
+                    throw ValidationException::withMessages([
+                        'product_id' => 'This shared hosting plan is not configured for DirectAdmin provisioning.',
+                    ]);
+                }
+
+                if ($this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
+                    $resellerNode = $this->resellerDirectAdmin->resolveNode($reseller);
+                    $product->loadMissing('directAdminPackage');
+
+                    if ($resellerNode && $product->directAdminPackage
+                        && (int) $product->directAdminPackage->node_id !== (int) $resellerNode->id) {
+                        throw ValidationException::withMessages([
+                            'product_id' => 'This shared hosting plan uses a different DirectAdmin server than your reseller account.',
+                        ]);
+                    }
+                }
+
+                $validated['direct_admin_package_name'] = null;
             }
         } else {
             $validated['container_template_id'] = null;

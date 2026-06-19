@@ -860,19 +860,9 @@ class NotificationService
             $adminBody,
         );
 
-        if ($this->smsService->isConfigured()) {
-            foreach (User::where('is_admin', true)->whereNotNull('notification_phones')->get() as $admin) {
-                if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
-                    try {
-                        $this->smsService->send(
-                            $admin->notification_phones,
-                            'Provision failed: '.$service->name.' for '.$service->user->name.'. '.Str::limit($reason, 80),
-                        );
-                    } catch (\Exception $e) {
-                        Log::error('Failed to send provision failure SMS to admin', ['error' => $e->getMessage()]);
-                    }
-                }
-            }
+        if ($this->shouldNotifyAdminBySmsForCustomer($service->user)) {
+            $adminSmsMessage = 'Provision failed: '.$service->name.' for '.$service->user->name.'. '.Str::limit($reason, 80);
+            $this->sendAdminSmsAlert($event, $adminSmsMessage);
         }
     }
 

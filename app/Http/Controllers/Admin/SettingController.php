@@ -60,7 +60,7 @@ class SettingController extends Controller
             'manual_enabled',
         ],
         'provisioning' => [
-            'provisioning_mode', 'auto_provision', 'suspend_on_overdue', 'terminate_after_unpaid_months',
+            'provisioning_mode', 'auto_provision', 'reseller_auto_provision_hosting', 'suspend_on_overdue', 'terminate_after_unpaid_months',
             'domain_ns1', 'domain_ns2', 'domain_ns3', 'domain_ns4',
             'reseller_suspend_on_overdue', 'reseller_cascade_suspend_on_overdue',
             'reseller_suspend_excess_services', 'reseller_enforce_limits_on_provision',

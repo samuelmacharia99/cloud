@@ -55,6 +55,7 @@ class AdminReportsController extends Controller
         $resellerCount = User::where('is_reseller', true)->count();
 
         $revenueInPeriod = (float) Payment::query()
+            ->platformRevenue()
             ->where('status', 'completed')
             ->whereDate('created_at', '>=', $from)
             ->whereDate('created_at', '<=', $to)

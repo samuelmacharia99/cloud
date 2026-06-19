@@ -33,7 +33,8 @@ class CustomerOrderController extends Controller
             ->where('is_active', true)
             ->with('adminProduct')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (ResellerProduct $product) => $product->isOrderable());
 
         $selectedCustomer = $request->filled('customer')
             ? $customers->firstWhere('id', (int) $request->customer)
