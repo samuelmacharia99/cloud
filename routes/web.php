@@ -346,6 +346,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         Route::get('reseller/services', [ManagedServiceController::class, 'index'])->name('reseller.services.index');
         Route::get('reseller/services/{service}', [ManagedServiceController::class, 'show'])->name('reseller.services.show');
+        Route::patch('reseller/services/{service}', [ManagedServiceController::class, 'update'])->name('reseller.services.update');
         Route::post('reseller/services/{service}/suspend', [ManagedServiceController::class, 'suspend'])->name('reseller.services.suspend');
         Route::post('reseller/services/{service}/unsuspend', [ManagedServiceController::class, 'unsuspend'])->name('reseller.services.unsuspend');
         Route::post('reseller/services/{service}/terminate', [ManagedServiceController::class, 'terminate'])->name('reseller.services.terminate');

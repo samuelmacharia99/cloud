@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
+use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\ResellerCustomerWelcomeService;
@@ -114,7 +115,68 @@ class CustomerController extends Controller
         $enforcementAlerts = app(ServiceEnforcementInsightService::class)
             ->alertsForCustomerServices($customer->services);
 
-        return view('reseller.customers.show', compact('customer', 'enforcementAlerts'));
+        $catalogProducts = ResellerProduct::query()
+            ->where('reseller_id', auth()->id())
+            ->where('is_active', true)
+            ->with('adminProduct')
+            ->orderBy('name')
+            ->get();
+
+        $catalogProductsForJs = $catalogProducts->map(function (ResellerProduct $listing) {
+            return [
+                'id' => $listing->id,
+                'name' => $listing->name,
+                'type' => $listing->type ?? $listing->adminProduct?->type,
+                'monthly_price' => $listing->monthly_price,
+                'yearly_price' => $listing->yearly_price,
+                'uses_direct_admin_package' => $listing->usesDirectAdminPackage(),
+                'direct_admin_package_name' => $listing->direct_admin_package_name,
+            ];
+        })->values()->toArray();
+
+        $catalogByProductId = $catalogProducts
+            ->filter(fn (ResellerProduct $item) => $item->product_id !== null)
+            ->keyBy('product_id');
+
+        $servicesForJs = $customer->services->map(function ($service) use ($catalogProducts, $catalogByProductId) {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $resellerProductId = $meta['reseller_product_id'] ?? null;
+
+            if (! $resellerProductId && $service->product_id) {
+                $resellerProductId = $catalogByProductId->get($service->product_id)?->id;
+            }
+
+            if (! $resellerProductId && ! empty($meta['package_name'])) {
+                $resellerProductId = $catalogProducts
+                    ->first(fn (ResellerProduct $item) => $item->direct_admin_package_name === $meta['package_name'])
+                    ?->id;
+            }
+
+            $driver = $service->provisioning_driver_key ?? $service->product?->provisioning_driver_key;
+
+            return [
+                'id' => $service->id,
+                'name' => $service->name,
+                'reseller_product_id' => $resellerProductId,
+                'product_type' => $service->product?->type,
+                'billing_cycle' => $service->billing_cycle ?? 'monthly',
+                'custom_price' => $service->custom_price,
+                'next_due_date' => $service->next_due_date?->format('Y-m-d') ?? '',
+                'commenced_at' => $service->commenced_at?->format('Y-m-d') ?? '',
+                'status' => $service->status->value,
+                'is_directadmin' => $driver === 'directadmin',
+                'username' => $meta['username'] ?? $service->external_reference ?? '',
+                'domain' => $meta['domain'] ?? '',
+                'has_hosting_account' => filled($service->external_reference) || filled($meta['username'] ?? null),
+            ];
+        })->values()->toArray();
+
+        return view('reseller.customers.show', compact(
+            'customer',
+            'enforcementAlerts',
+            'catalogProductsForJs',
+            'servicesForJs',
+        ));
     }
 
     public function edit(User $customer)

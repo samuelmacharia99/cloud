@@ -6,6 +6,7 @@ use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerScopeService;
 use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\RedirectResponse;
@@ -123,6 +124,53 @@ class ManagedServiceController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Termination failed: '.$e->getMessage());
         }
+    }
+
+    public function update(Request $request, Service $service, ResellerManagedServiceUpdateService $updater): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        $validated = $request->validate([
+            'reseller_product_id' => 'required|exists:reseller_products,id',
+            'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
+            'custom_price' => 'nullable|numeric|min:0',
+            'next_due_date' => 'required|date',
+            'commenced_at' => 'nullable|date',
+            'username' => 'nullable|string|max:255',
+            'password' => 'nullable|string|max:255',
+            'primary_domain' => 'nullable|string|max:253|regex:/^[a-z0-9.-]+\.[a-z]{2,}$/i',
+            'return_to' => 'nullable|in:customer',
+        ]);
+
+        $returnToCustomer = ($validated['return_to'] ?? null) === 'customer';
+        unset($validated['return_to']);
+
+        $reseller = auth()->user();
+
+        try {
+            $result = $updater->update($reseller, $service, $validated);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->with('error', 'Failed to update service: '.$e->getMessage())->withInput();
+        }
+
+        if ($returnToCustomer && $service->user_id) {
+            $flashKey = $result['warning_message'] ? 'warning' : 'success';
+            $flashMessage = $result['warning_message'] ?? $result['success_message'];
+
+            return redirect()
+                ->route('reseller.customers.show', $service->user_id)
+                ->with($flashKey, $flashMessage);
+        }
+
+        if ($result['warning_message']) {
+            return back()->with('warning', $result['warning_message']);
+        }
+
+        return back()->with('success', $result['success_message']);
     }
 
     private function ensureManaged(Service $service): void
