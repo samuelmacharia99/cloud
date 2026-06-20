@@ -68,7 +68,7 @@
     </div>
 
     <!-- Hidden form for static-site skip -->
-    <form id="skip-db-form" method="POST" action="{{ route('customer.confirm-techstack') }}" class="hidden">
+    <form id="skip-db-form" method="POST" action="{{ route('customer.confirm-techstack.store') }}" class="hidden">
         @csrf
         <input type="hidden" id="skip-db-form-language" name="language_id" value="">
         <input type="hidden" name="database_id" value="">
@@ -248,7 +248,7 @@ function techstackSelector() {
         modalStep: 'database',
         deploymentPlatform: 'container',
         loading: false,
-        confirmTechstackUrl: '{{ route("customer.confirm-techstack") }}',
+        confirmTechstackUrl: '{{ route("customer.confirm-techstack.store") }}',
 
         get requiresHostingChoice() {
             return ['laravel', 'wordpress'].includes(this.selectedLanguage.slug);

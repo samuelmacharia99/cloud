@@ -124,10 +124,14 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->post(route('customer.confirm-techstack'), [
+            ->post(route('customer.confirm-techstack.store'), [
                 'language_id' => $language->id,
                 'database_id' => $database->id,
             ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $this->actingAs($customer)
+            ->get(route('customer.confirm-techstack'))
             ->assertOk()
             ->assertSee('Droplet1')
             ->assertDontSee('Node Basic');
@@ -173,10 +177,14 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->post(route('customer.confirm-techstack'), [
+            ->post(route('customer.confirm-techstack.store'), [
                 'language_id' => $language->id,
                 'database_id' => $database->id,
             ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $this->actingAs($customer)
+            ->get(route('customer.confirm-techstack'))
             ->assertOk()
             ->assertSee('PHP Container Plan');
     }
@@ -229,10 +237,14 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->post(route('customer.confirm-techstack'), [
+            ->post(route('customer.confirm-techstack.store'), [
                 'language_id' => $language->id,
                 'database_id' => $database->id,
             ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $this->actingAs($customer)
+            ->get(route('customer.confirm-techstack'))
             ->assertOk()
             ->assertSee('Reseller Starter')
             ->assertDontSee('KES 999');
@@ -285,10 +297,14 @@ class ResellerCustomerCatalogAccessTest extends TestCase
         ]);
 
         $this->actingAs($customer)
-            ->post(route('customer.confirm-techstack'), [
+            ->post(route('customer.confirm-techstack.store'), [
                 'language_id' => $language->id,
                 'database_id' => $database->id,
             ])
+            ->assertRedirect(route('customer.confirm-techstack'));
+
+        $this->actingAs($customer)
+            ->get(route('customer.confirm-techstack'))
             ->assertOk()
             ->assertSee('Bronze DA');
 

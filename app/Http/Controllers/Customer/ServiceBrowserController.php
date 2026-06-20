@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
+use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class ServiceBrowserController extends Controller
 {
@@ -30,7 +32,7 @@ class ServiceBrowserController extends Controller
             'languages' => $languages,
             'databases' => $databases,
             'cartCount' => $cartCount,
-            'attachDomain' => app(\App\Services\Checkout\SharedHostingCheckoutService::class)->attachDomainFromSession(),
+            'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
     }
 
@@ -81,67 +83,49 @@ class ServiceBrowserController extends Controller
     }
 
     /**
-     * Confirm techstack and show all available products
+     * Confirm techstack and show all available products (POST → redirect for safe refresh).
      */
     public function confirmTechstack(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'language_id' => 'required|exists:container_templates,id',
             'database_id' => 'nullable|exists:database_templates,id',
             'deployment_platform' => 'nullable|in:shared,container',
         ]);
 
-        $language = ContainerTemplate::findOrFail($request->language_id);
-        $database = $request->database_id ? DatabaseTemplate::findOrFail($request->database_id) : null;
+        $language = ContainerTemplate::findOrFail($validated['language_id']);
+        $database = ! empty($validated['database_id'])
+            ? DatabaseTemplate::findOrFail($validated['database_id'])
+            : null;
 
-        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && ! $request->deployment_platform) {
+        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && empty($validated['deployment_platform'])) {
             return back()->with('error', 'Please choose shared or container hosting.');
         }
 
         if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && $database) {
-            $expectedHosting = $request->deployment_platform === 'shared' ? 'directadmin' : 'container';
+            $expectedHosting = $validated['deployment_platform'] === 'shared' ? 'directadmin' : 'container';
             if ($database->hosting_type !== $expectedHosting) {
                 return back()->with('error', 'Selected database does not match the chosen hosting platform.');
             }
         }
 
-        // Validate combination
         if (! TechStackRoutingService::isValidCombination($language, $database)) {
             return back()->with('error', 'Invalid techstack combination selected');
         }
 
-        // Determine hosting type
         $routing = TechStackRoutingService::determineHostingType(
             $language,
             $database,
-            $request->deployment_platform
+            $validated['deployment_platform'] ?? null
         );
 
         $user = $request->user();
-
-        if ($this->catalogService->isResellerCustomer($user)) {
-            $products = $this->catalogService->resolveTechstackProductsForResellerCustomer(
-                $user,
-                $language,
-                $database,
-                $routing,
-            );
-        } else {
-            $productsQuery = Product::where('is_active', true);
-
-            if ($routing['hosting_type'] === 'directadmin') {
-                $productsQuery->where('type', 'shared_hosting');
-            } else {
-                $productsQuery->where('type', 'container_hosting')
-                    ->where('container_template_id', $language->id);
-            }
-
-            $products = $this->catalogService->mapProductsForTechstackDisplay(
-                $user,
-                $productsQuery->orderBy('order')->get(),
-                $database?->id,
-            );
-        }
+        $products = $this->resolveTechstackProducts(
+            $user,
+            $language,
+            $database,
+            $routing,
+        );
 
         if ($products->isEmpty()) {
             $message = $this->catalogService->isResellerCustomer($user)
@@ -151,25 +135,75 @@ class ServiceBrowserController extends Controller
             return back()->with('error', $message);
         }
 
-        // Store selection in session temporarily
         $techstackData = [
             'language_id' => $language->id,
             'language_name' => $language->name,
             'hosting_type' => $routing['hosting_type'],
         ];
-        if ($request->deployment_platform) {
-            $techstackData['deployment_platform'] = $request->deployment_platform;
+
+        if (! empty($validated['deployment_platform'])) {
+            $techstackData['deployment_platform'] = $validated['deployment_platform'];
         }
+
         if ($database) {
             $techstackData['database_id'] = $database->id;
             $techstackData['database_name'] = $database->name;
         }
+
         session(['selected_techstack' => $techstackData]);
 
-        $cartCount = count(session('cart', []));
+        return redirect()->route('customer.confirm-techstack');
+    }
+
+    /**
+     * Show confirmed techstack packages (GET — safe to refresh).
+     */
+    public function showConfirmTechstack(Request $request)
+    {
+        $techstack = session('selected_techstack');
+
+        if (! is_array($techstack) || empty($techstack['language_id'])) {
+            return redirect()->route('customer.select-techstack')
+                ->with('error', 'Please select your tech stack first.');
+        }
+
+        $language = ContainerTemplate::find($techstack['language_id']);
+
+        if (! $language) {
+            session()->forget('selected_techstack');
+
+            return redirect()->route('customer.select-techstack')
+                ->with('error', 'Your tech stack selection expired. Please choose again.');
+        }
+
+        $database = ! empty($techstack['database_id'])
+            ? DatabaseTemplate::find($techstack['database_id'])
+            : null;
+
+        $routing = TechStackRoutingService::determineHostingType(
+            $language,
+            $database,
+            $techstack['deployment_platform'] ?? null
+        );
+
+        $user = $request->user();
+        $products = $this->resolveTechstackProducts(
+            $user,
+            $language,
+            $database,
+            $routing,
+        );
+
+        if ($products->isEmpty()) {
+            session()->forget('selected_techstack');
+
+            return redirect()->route('customer.select-techstack')
+                ->with('error', $this->catalogService->isResellerCustomer($user)
+                    ? $this->catalogService->techstackEmptyMessage($user, $language, $routing)
+                    : 'No hosting plans are available for this tech stack.');
+        }
 
         $currency = app(UserCurrencyService::class)->model($user);
-        $currencyCode = $currency->code;
 
         return view('customer.confirm-techstack', [
             'language' => $language,
@@ -177,11 +211,45 @@ class ServiceBrowserController extends Controller
             'routing' => $routing,
             'products' => $products,
             'isResellerCustomer' => $this->catalogService->isResellerCustomer($user),
-            'cartCount' => $cartCount,
+            'cartCount' => count(session('cart', [])),
             'currency' => $currency,
-            'currencyCode' => $currencyCode,
-            'attachDomain' => app(\App\Services\Checkout\SharedHostingCheckoutService::class)->attachDomainFromSession(),
+            'currencyCode' => $currency->code,
+            'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
+    }
+
+    /**
+     * @return Collection<int, mixed>
+     */
+    private function resolveTechstackProducts(
+        $user,
+        ContainerTemplate $language,
+        ?DatabaseTemplate $database,
+        array $routing,
+    ) {
+        if ($this->catalogService->isResellerCustomer($user)) {
+            return $this->catalogService->resolveTechstackProductsForResellerCustomer(
+                $user,
+                $language,
+                $database,
+                $routing,
+            );
+        }
+
+        $productsQuery = Product::where('is_active', true);
+
+        if ($routing['hosting_type'] === 'directadmin') {
+            $productsQuery->where('type', 'shared_hosting');
+        } else {
+            $productsQuery->where('type', 'container_hosting')
+                ->where('container_template_id', $language->id);
+        }
+
+        return $this->catalogService->mapProductsForTechstackDisplay(
+            $user,
+            $productsQuery->orderBy('order')->get(),
+            $database?->id,
+        );
     }
 
     /**
