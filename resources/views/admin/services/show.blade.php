@@ -370,6 +370,61 @@
                 $hostingCredentials = $service->getHostingCredentials();
             @endphp
             @if ($service->isSharedHosting() && $hostingCredentials)
+                @php
+                    $directAdminAccount = $service->service_meta['directadmin_account'] ?? null;
+                @endphp
+                @if (is_array($directAdminAccount))
+                    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Account</h2>
+                            @if (!empty($directAdminAccount['checked_at']))
+                                <span class="text-xs text-slate-500 dark:text-slate-400">Synced {{ \Carbon\Carbon::parse($directAdminAccount['checked_at'])->diffForHumans() }}</span>
+                            @endif
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @if (!empty($directAdminAccount['application_stack']) || !empty($service->service_meta['application_stack']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Application stack</p>
+                                    <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $directAdminAccount['application_stack'] ?? $service->service_meta['application_stack'] }}</p>
+                                </div>
+                            @endif
+                            @if (!empty($directAdminAccount['database_template']) || !empty($service->service_meta['database_template_name']))
+                                <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Database type</p>
+                                    <p class="text-sm text-slate-900 dark:text-white mt-1">{{ $directAdminAccount['database_template'] ?? $service->service_meta['database_template_name'] }}</p>
+                                </div>
+                            @endif
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">MySQL databases</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">
+                                    {{ (int) ($directAdminAccount['counts']['database'] ?? 0) }}
+                                    @if (!empty($directAdminAccount['counts']['database_limit']) && (int) $directAdminAccount['counts']['database_limit'] > 0)
+                                        / {{ (int) $directAdminAccount['counts']['database_limit'] }}
+                                    @endif
+                                </p>
+                                @if (!empty($directAdminAccount['databases']))
+                                    <ul class="mt-2 space-y-1">
+                                        @foreach ($directAdminAccount['databases'] as $databaseName)
+                                            <li class="text-xs font-mono text-slate-600 dark:text-slate-300">{{ $databaseName }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                            </div>
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Email accounts</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ (int) ($directAdminAccount['counts']['email'] ?? 0) }}</p>
+                            </div>
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Disk used (live)</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ number_format((float) ($directAdminAccount['disk_used_mb'] ?? 0), 1) }} MB</p>
+                            </div>
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Bandwidth used (live)</p>
+                                <p class="text-sm text-slate-900 dark:text-white mt-1">{{ number_format((float) ($directAdminAccount['bandwidth_used_mb'] ?? 0), 1) }} MB</p>
+                            </div>
+                        </div>
+                    </div>
+                @endif
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                     <div class="flex items-center justify-between mb-4">
                         <h2 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin Credentials</h2>
@@ -411,7 +466,7 @@
 
         <!-- Sidebar -->
         <div class="space-y-6">
-            @if ($service->isSharedHosting() || !empty($enforcementInsight['alerts']) || !empty($enforcementInsight['disk']))
+            @if ($service->isSharedHosting() || !empty($enforcementInsight['alerts']) || !empty($enforcementInsight['disk']) || !empty($enforcementInsight['database']))
                 <x-service-enforcement-panel :insight="$enforcementInsight" />
             @endif
 

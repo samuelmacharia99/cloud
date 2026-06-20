@@ -28,6 +28,7 @@ use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerNameserverService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
+use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
@@ -151,7 +152,7 @@ class CheckoutController extends Controller
         $nameserverService = app(ResellerNameserverService::class);
         $defaultNameservers = $nameserverService->defaultsForCustomer($user);
 
-        $hostingCheckout = app(\App\Services\Checkout\SharedHostingCheckoutService::class);
+        $hostingCheckout = app(SharedHostingCheckoutService::class);
         $linkedHostingDomains = [];
         foreach ($sharedHostingItems as $item) {
             if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
@@ -261,7 +262,7 @@ class CheckoutController extends Controller
                     throw new \Exception('No valid items in cart');
                 }
 
-                $hostingCheckout = app(\App\Services\Checkout\SharedHostingCheckoutService::class);
+                $hostingCheckout = app(SharedHostingCheckoutService::class);
                 $cartItems = $hostingCheckout->sortCartItemsDomainsFirst($cartItems);
                 $domainsCreatedByCartKey = [];
 
@@ -364,6 +365,7 @@ class CheckoutController extends Controller
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];
+                            $serviceMeta = TechStackRoutingService::applySessionSelectionToServiceMeta($serviceMeta);
                             app(SharedHostingCheckoutService::class)->persistExtraInvoiceItems(
                                 $invoice,
                                 $order,
@@ -1044,6 +1046,7 @@ class CheckoutController extends Controller
                             );
                             $serviceMeta = array_merge($serviceMeta, $hostingContext['service_meta']);
                             $nodeId = $hostingContext['node_id'];
+                            $serviceMeta = TechStackRoutingService::applySessionSelectionToServiceMeta($serviceMeta);
                             app(SharedHostingCheckoutService::class)->persistExtraInvoiceItems(
                                 $invoice,
                                 $order,

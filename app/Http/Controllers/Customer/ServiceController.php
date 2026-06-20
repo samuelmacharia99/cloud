@@ -56,7 +56,7 @@ class ServiceController extends Controller
             if ($usageService->snapshotFromMeta($service) === null) {
                 $liveUsage = $usageService->fetchLiveUsage($service);
                 if ($liveUsage !== null) {
-                    $usageService->persistSnapshot($service, $liveUsage);
+                    $usageService->persistSnapshot($service, $liveUsage, $usageService->lastDashboard());
                     $service->refresh();
                 }
             }

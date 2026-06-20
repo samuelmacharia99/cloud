@@ -74,6 +74,7 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertNull($result['data']['bandwidth']['limit_mb']);
         $this->assertSame(1, $result['data']['counts']['database']);
         $this->assertSame(5, $result['data']['counts']['database_limit']);
+        $this->assertSame(['user_db'], $result['data']['databases']);
     }
 
     public function test_database_used_count_does_not_fallback_to_package_limit_when_stats_omit_mysql(): void

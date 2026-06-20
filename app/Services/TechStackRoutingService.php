@@ -163,4 +163,40 @@ class TechStackRoutingService
             ->active()
             ->get();
     }
+
+    /**
+     * Persist selected tech stack from checkout session onto service metadata.
+     *
+     * @param  array<string, mixed>  $serviceMeta
+     * @return array<string, mixed>
+     */
+    public static function applySessionSelectionToServiceMeta(array $serviceMeta): array
+    {
+        $techstack = session('selected_techstack', []);
+        if (! is_array($techstack) || $techstack === []) {
+            return $serviceMeta;
+        }
+
+        if (! empty($techstack['language_id'])) {
+            $serviceMeta['container_template_id'] = (int) $techstack['language_id'];
+        }
+
+        if (! empty($techstack['language_name'])) {
+            $serviceMeta['application_stack'] = (string) $techstack['language_name'];
+        }
+
+        if (! empty($techstack['database_id'])) {
+            $serviceMeta['database_id'] = (int) $techstack['database_id'];
+        }
+
+        if (! empty($techstack['database_name'])) {
+            $serviceMeta['database_template_name'] = (string) $techstack['database_name'];
+        }
+
+        if (! empty($techstack['deployment_platform'])) {
+            $serviceMeta['deployment_platform'] = (string) $techstack['deployment_platform'];
+        }
+
+        return $serviceMeta;
+    }
 }

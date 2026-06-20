@@ -27,23 +27,31 @@
             'database' => 'Databases',
         ] as $metricKey => $metricLabel)
             @php $metric = $insight[$metricKey] ?? null; @endphp
-            @if (!empty($metric) && !($metric['unlimited'] ?? false))
+            @if (!empty($metric))
+                @if ($metricKey === 'database' || !($metric['unlimited'] ?? false))
                 <div>
                     <div class="flex items-center justify-between text-sm mb-2">
                         <span class="text-slate-600 dark:text-slate-400">{{ $metricLabel }}</span>
                         <span class="font-medium text-slate-900 dark:text-white">
                             @if ($metricKey === 'database')
-                                {{ $metric['used'] }} / {{ $metric['limit'] }} ({{ $metric['percent'] }}%)
+                                @if (($metric['unlimited'] ?? false) || empty($metric['limit']))
+                                    {{ $metric['used'] }} in use
+                                @else
+                                    {{ $metric['used'] }} / {{ $metric['limit'] }} ({{ $metric['percent'] }}%)
+                                @endif
                             @else
                                 {{ number_format($metric['used_mb'] ?? $metric['used'], 0) }} MB / {{ number_format($metric['limit_mb'] ?? $metric['limit'], 0) }} MB ({{ $metric['percent'] }}%)
                             @endif
                         </span>
                     </div>
+                    @if (!($metric['unlimited'] ?? false) && ($metric['percent'] ?? null) !== null)
                     <div class="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                         <div class="h-full rounded-full {{ ($metric['percent'] ?? 0) >= 100 ? 'bg-red-500' : (($metric['percent'] ?? 0) >= 90 ? 'bg-amber-500' : 'bg-emerald-500') }}"
                             style="width: {{ min(100, $metric['percent'] ?? 0) }}%"></div>
                     </div>
+                    @endif
                 </div>
+                @endif
             @endif
         @endforeach
 

@@ -71,7 +71,7 @@ class DirectAdminCustomerPanelApi
      */
     public function getDashboard(string $username, ?string $domain = null): array
     {
-        $config = $this->directAdmin->executeUserApiCall($username, 'CMD_API_SHOW_USER_CONFIG', [
+        $config = $this->directAdmin->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', [
             'user' => $username,
         ]);
 
@@ -79,18 +79,28 @@ class DirectAdminCustomerPanelApi
             return $config;
         }
 
-        $stats = $this->directAdmin->executeUserApiCall($username, 'CMD_API_USER_STATS', [
+        $stats = $this->directAdmin->executeAdminApiCall('CMD_API_USER_STATS', [
             'user' => $username,
         ]);
 
         $data = $config['data'];
         $usage = $stats['success'] ? $stats['data'] : [];
-        $databaseUsed = $this->resolveDatabaseUsedCount($username, $usage);
+        $databaseList = $this->listDatabases($username);
+        $databaseUsed = $databaseList['success']
+            ? count($databaseList['data'])
+            : $this->resolveDatabaseUsedCount($username, $usage);
 
         return [
             'success' => true,
             'message' => 'OK',
-            'data' => $this->normalizeDashboard($username, $data, $usage, $domain, $databaseUsed),
+            'data' => $this->normalizeDashboard(
+                $username,
+                $data,
+                $usage,
+                $domain,
+                $databaseUsed,
+                $databaseList['success'] ? array_column($databaseList['data'], 'name') : [],
+            ),
         ];
     }
 
@@ -106,6 +116,10 @@ class DirectAdminCustomerPanelApi
 
         if (array_key_exists('mysql', $usage)) {
             return max(0, (int) $usage['mysql']);
+        }
+
+        if (array_key_exists('mysql_used', $usage)) {
+            return max(0, (int) $usage['mysql_used']);
         }
 
         return 0;
@@ -638,17 +652,24 @@ class DirectAdminCustomerPanelApi
     /**
      * @param  array<string, mixed>  $config
      * @param  array<string, mixed>  $usage
+     * @param  list<string>  $databaseNames
      * @return array<string, mixed>
      */
-    private function normalizeDashboard(string $username, array $config, array $usage, ?string $domain, ?int $databaseUsedCount = null): array
-    {
+    private function normalizeDashboard(
+        string $username,
+        array $config,
+        array $usage,
+        ?string $domain,
+        ?int $databaseUsedCount = null,
+        array $databaseNames = [],
+    ): array {
         $diskQuota = $config['quota'] ?? $config['disk'] ?? $usage['quota'] ?? null;
-        $diskUsed = $usage['quota_used'] ?? $config['quota_used'] ?? $usage['disk'] ?? null;
+        $diskUsed = $usage['quota_used'] ?? $config['quota_used'] ?? $usage['disk'] ?? $usage['disk_used'] ?? null;
         $bwQuota = $config['bandwidth'] ?? $usage['bandwidth'] ?? null;
-        $bwUsed = $usage['bandwidth_used'] ?? $config['bandwidth_used'] ?? null;
+        $bwUsed = $usage['bandwidth_used'] ?? $config['bandwidth_used'] ?? $usage['bandwidth_used_mb'] ?? null;
 
         $databaseUsed = $databaseUsedCount ?? (array_key_exists('mysql', $usage) ? (int) $usage['mysql'] : 0);
-        $databaseLimit = (int) ($config['mysql_limit'] ?? $config['mysql'] ?? 0);
+        $databaseLimit = $this->resolveDatabaseLimit($config);
 
         return [
             'username' => $username,
@@ -664,14 +685,15 @@ class DirectAdminCustomerPanelApi
                 'limit_mb' => $this->toMegabytes($bwQuota),
             ],
             'counts' => [
-                'email' => (int) ($usage['email'] ?? $config['email'] ?? 0),
-                'email_limit' => (int) ($config['email_limit'] ?? $config['email'] ?? 0),
+                'email' => (int) ($usage['email'] ?? $usage['nemails'] ?? $config['email'] ?? $config['nemails'] ?? 0),
+                'email_limit' => $this->resolvePackageCountLimit($config, 'nemails', 'unemails', 'email'),
                 'ftp' => (int) ($usage['ftp'] ?? $config['ftp'] ?? 0),
-                'ftp_limit' => (int) ($config['ftp_limit'] ?? $config['ftp'] ?? 0),
+                'ftp_limit' => $this->resolvePackageCountLimit($config, 'ftp', 'uftp'),
                 'database' => $databaseUsed,
                 'database_limit' => $databaseLimit,
                 'subdomain' => (int) ($usage['subdomains'] ?? $config['subdomains'] ?? 0),
             ],
+            'databases' => array_values(array_filter($databaseNames)),
             'nameservers' => array_values(array_filter([
                 $config['ns1'] ?? null,
                 $config['ns2'] ?? null,
@@ -683,6 +705,69 @@ class DirectAdminCustomerPanelApi
                 : $this->node->getDirectAdminPanelUrl(),
             'webmail_url' => $domain ? 'https://'.ltrim($domain, '.').'/webmail' : null,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function resolveDatabaseLimit(array $config): int
+    {
+        if ($this->isDirectAdminUnlimited($config['umysql'] ?? null)) {
+            return -1;
+        }
+
+        foreach (['mysql_limit', 'mysql', 'umysql'] as $field) {
+            if (! array_key_exists($field, $config)) {
+                continue;
+            }
+
+            $value = strtolower(trim((string) $config[$field]));
+            if (in_array($value, ['unlimited', '-1'], true)) {
+                return -1;
+            }
+
+            if ($value !== '' && is_numeric($value)) {
+                return (int) $value;
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function resolvePackageCountLimit(array $config, string $quantityField, string $unlimitedField, string ...$fallbackFields): int
+    {
+        if ($this->isDirectAdminUnlimited($config[$unlimitedField] ?? null)) {
+            return -1;
+        }
+
+        foreach ([$quantityField, ...$fallbackFields] as $field) {
+            if (! array_key_exists($field, $config)) {
+                continue;
+            }
+
+            $value = strtolower(trim((string) $config[$field]));
+            if (in_array($value, ['unlimited', '-1'], true)) {
+                return -1;
+            }
+
+            if ($value !== '' && is_numeric($value)) {
+                return (int) $value;
+            }
+        }
+
+        return 0;
+    }
+
+    private function isDirectAdminUnlimited(mixed $value): bool
+    {
+        if ($value === null || $value === '') {
+            return false;
+        }
+
+        return in_array(strtoupper(trim((string) $value)), ['ON', 'YES', 'UNLIMITED', '-1'], true);
     }
 
     /**

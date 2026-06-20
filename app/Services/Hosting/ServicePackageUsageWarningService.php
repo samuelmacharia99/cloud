@@ -25,7 +25,7 @@ class ServicePackageUsageWarningService
             return ['skipped' => true, 'notified' => false, 'at_risk' => []];
         }
 
-        $this->usage->persistSnapshot($service, $snapshot);
+        $this->usage->persistSnapshot($service, $snapshot, $this->usage->lastDashboard());
         $service->refresh();
 
         $atRisk = $this->usage->metricsNeedingUpgrade($snapshot);

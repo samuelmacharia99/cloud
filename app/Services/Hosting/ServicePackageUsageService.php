@@ -21,6 +21,9 @@ class ServicePackageUsageService
 
     public const METRIC_DATABASE = 'database';
 
+    /** @var array<string, mixed>|null */
+    private ?array $lastDashboard = null;
+
     public function warningThresholdPercent(): int
     {
         return max(50, min(100, (int) Setting::getValue('hosting_package_usage_warning_percent', 90)));
@@ -53,6 +56,25 @@ class ServicePackageUsageService
     }
 
     /**
+     * Fetch live DirectAdmin usage and persist package + account snapshots on the service.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function syncFromDirectAdmin(Service $service): ?array
+    {
+        $service->loadMissing(['product.directAdminPackage', 'node']);
+
+        $snapshot = $this->fetchLiveUsage($service);
+        if ($snapshot === null) {
+            return null;
+        }
+
+        $this->persistSnapshot($service, $snapshot, $this->lastDashboard());
+
+        return $snapshot;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function fetchLiveUsage(Service $service): ?array
@@ -71,28 +93,57 @@ class ServicePackageUsageService
             return null;
         }
 
-        $response = $api->getDashboard((string) $username);
+        $domain = $service->service_meta['domain'] ?? null;
+        $response = $api->getDashboard((string) $username, is_string($domain) ? $domain : null);
         if (! $response['success']) {
             return null;
         }
 
         $data = $response['data'];
+        $package = $service->product?->directAdminPackage;
 
-        return [
+        $diskLimitMb = isset($data['disk']['limit_mb']) ? (float) $data['disk']['limit_mb'] : null;
+        if (($diskLimitMb === null || $diskLimitMb <= 0) && $package && (float) $package->disk_quota > 0) {
+            $diskLimitMb = (float) $package->disk_quota * 1024;
+        }
+
+        $bandwidthLimitMb = isset($data['bandwidth']['limit_mb']) ? (float) $data['bandwidth']['limit_mb'] : null;
+        if (($bandwidthLimitMb === null || $bandwidthLimitMb <= 0) && $package && (float) $package->bandwidth_quota > 0) {
+            $bandwidthLimitMb = (float) $package->bandwidth_quota * 1024;
+        }
+
+        $databaseLimit = (int) ($data['counts']['database_limit'] ?? 0);
+        if ($databaseLimit <= 0 && $package) {
+            $databaseLimit = (int) $package->num_databases;
+        }
+
+        $snapshot = [
             'checked_at' => now()->toIso8601String(),
             self::METRIC_DISK => $this->metricFromMegabytes(
                 (float) ($data['disk']['used_mb'] ?? 0),
-                isset($data['disk']['limit_mb']) ? (float) $data['disk']['limit_mb'] : null,
+                $diskLimitMb,
             ),
             self::METRIC_BANDWIDTH => $this->metricFromMegabytes(
                 (float) ($data['bandwidth']['used_mb'] ?? 0),
-                isset($data['bandwidth']['limit_mb']) ? (float) $data['bandwidth']['limit_mb'] : null,
+                $bandwidthLimitMb,
             ),
             self::METRIC_DATABASE => $this->metricFromCount(
                 (int) ($data['counts']['database'] ?? 0),
-                (int) ($data['counts']['database_limit'] ?? 0),
+                $databaseLimit,
             ),
         ];
+
+        $this->lastDashboard = $data;
+
+        return $snapshot;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function lastDashboard(): ?array
+    {
+        return $this->lastDashboard;
     }
 
     /**
@@ -143,8 +194,9 @@ class ServicePackageUsageService
 
     /**
      * @param  array<string, mixed>  $snapshot
+     * @param  array<string, mixed>|null  $dashboard
      */
-    public function persistSnapshot(Service $service, array $snapshot): void
+    public function persistSnapshot(Service $service, array $snapshot, ?array $dashboard = null): void
     {
         $atRisk = $this->metricsNeedingUpgrade($snapshot);
         $meta = $service->service_meta ?? [];
@@ -155,6 +207,21 @@ class ServicePackageUsageService
             'primary_metric' => $this->primaryMetric($atRisk),
             'warning_sent_at' => $existing['warning_sent_at'] ?? null,
         ]);
+
+        if ($dashboard !== null) {
+            $meta['directadmin_account'] = [
+                'checked_at' => $snapshot['checked_at'] ?? now()->toIso8601String(),
+                'username' => $dashboard['username'] ?? ($meta['username'] ?? null),
+                'domain' => $dashboard['domain'] ?? ($meta['domain'] ?? null),
+                'package' => $dashboard['package'] ?? ($meta['package_name'] ?? null),
+                'application_stack' => $meta['application_stack'] ?? null,
+                'database_template' => $meta['database_template_name'] ?? null,
+                'databases' => array_values($dashboard['databases'] ?? []),
+                'counts' => $dashboard['counts'] ?? [],
+                'disk_used_mb' => $dashboard['disk']['used_mb'] ?? null,
+                'bandwidth_used_mb' => $dashboard['bandwidth']['used_mb'] ?? null,
+            ];
+        }
 
         $service->update(['service_meta' => $meta]);
     }
@@ -243,7 +310,7 @@ class ServicePackageUsageService
      */
     public function metricFromCount(int $used, int $limit): array
     {
-        if ($limit <= 0) {
+        if ($limit < 0 || $limit === 0) {
             return [
                 'used' => $used,
                 'limit' => null,

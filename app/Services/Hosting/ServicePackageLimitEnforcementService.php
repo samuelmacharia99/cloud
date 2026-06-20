@@ -71,7 +71,7 @@ class ServicePackageLimitEnforcementService
                     continue;
                 }
 
-                $this->usage->persistSnapshot($service, $snapshot);
+                $this->usage->persistSnapshot($service, $snapshot, $this->usage->lastDashboard());
 
                 $overLimit = $this->metricsOverLimit($snapshot, $threshold);
                 if ($overLimit === []) {

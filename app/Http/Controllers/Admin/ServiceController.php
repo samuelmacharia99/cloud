@@ -16,6 +16,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\EmailDeliveryService;
+use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
@@ -184,6 +185,18 @@ class ServiceController extends Controller
                 $service->refresh();
             } catch (\Throwable $e) {
                 \Log::warning('Live status sync failed on service show', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if ($service->isSharedHosting() && $service->node) {
+            try {
+                app(ServicePackageUsageService::class)->syncFromDirectAdmin($service);
+                $service->refresh();
+            } catch (\Throwable $e) {
+                \Log::warning('DirectAdmin account sync failed on service show', [
                     'service_id' => $service->id,
                     'error' => $e->getMessage(),
                 ]);
