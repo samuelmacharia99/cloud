@@ -4,7 +4,7 @@
     'label' => 'Country',
     'required' => false,
     'placeholder' => 'Select country...',
-    'priority' => ['KE'],
+    'priority' => config('currency.east_africa_countries', ['KE']),
     'variant' => 'default',
     'class' => '',
 ])

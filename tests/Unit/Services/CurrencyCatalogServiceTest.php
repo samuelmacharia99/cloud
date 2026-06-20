@@ -21,19 +21,20 @@ class CurrencyCatalogServiceTest extends TestCase
         $this->assertGreaterThan(0, Currency::count());
     }
 
-    public function test_ensure_provisions_missing_currency_code(): void
+    public function test_ensure_provisions_missing_east_african_currency_code(): void
     {
         Currency::create([
             'code' => 'KES',
-            'name' => 'Kenya Shilling',
-            'symbol' => 'KES',
+            'name' => 'Kenyan Shilling',
+            'symbol' => 'KSh',
             'exchange_rate' => 1.0,
             'is_active' => true,
             'order' => 1,
         ]);
 
-        $currency = app(CurrencyCatalogService::class)->ensure('NGN');
+        $currency = app(CurrencyCatalogService::class)->ensure('TZS');
 
-        $this->assertSame('NGN', $currency->code);
+        $this->assertSame('TZS', $currency->code);
+        $this->assertSame('Tanzanian Shilling', $currency->name);
     }
 }

@@ -28,6 +28,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | East African country codes (ISO 3166-1 alpha-2) for UI prioritization.
+    |--------------------------------------------------------------------------
+    */
+    'east_africa_countries' => [
+        'KE', 'TZ', 'UG', 'RW', 'BI', 'SS', 'ET', 'SO', 'DJ', 'ER', 'CD', 'MG', 'MW', 'MU', 'SC',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default currency when country is unknown or unmapped.
     |--------------------------------------------------------------------------
     */
@@ -39,16 +48,28 @@ return [
     |--------------------------------------------------------------------------
     */
     'countries' => [
+        // East Africa
         'KE' => 'KES',
-        'UG' => 'UGX',
         'TZ' => 'TZS',
+        'UG' => 'UGX',
         'RW' => 'RWF',
+        'BI' => 'BIF',
+        'SS' => 'SSP',
+        'ET' => 'ETB',
+        'SO' => 'SOS',
+        'DJ' => 'DJF',
+        'ER' => 'ERN',
+        'CD' => 'CDF',
+        'MG' => 'MGA',
+        'MW' => 'MWK',
+        'MU' => 'MUR',
+        'SC' => 'SCR',
+        // Other Africa
         'NG' => 'NGN',
         'GH' => 'GHS',
         'ZA' => 'ZAR',
         'EG' => 'EGP',
         'MA' => 'MAD',
-        'ET' => 'ETB',
         'SN' => 'XOF',
         'CI' => 'XOF',
         'CM' => 'XAF',

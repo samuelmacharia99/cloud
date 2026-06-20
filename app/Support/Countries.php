@@ -87,6 +87,20 @@ class Countries
             'RUSSIA' => 'RU',
             'TURKEY' => 'TR',
             'TANZANIA, UNITED REPUBLIC OF' => 'TZ',
+            'TANZANIA' => 'TZ',
+            'UGANDA' => 'UG',
+            'RWANDA' => 'RW',
+            'BURUNDI' => 'BI',
+            'SOUTH SUDAN' => 'SS',
+            'SOMALIA' => 'SO',
+            'DJIBOUTI' => 'DJ',
+            'ERITREA' => 'ER',
+            'DRC' => 'CD',
+            'CONGO' => 'CD',
+            'MADAGASCAR' => 'MG',
+            'MALAWI' => 'MW',
+            'MAURITIUS' => 'MU',
+            'SEYCHELLES' => 'SC',
         ];
 
         if (isset($aliases[$upper])) {

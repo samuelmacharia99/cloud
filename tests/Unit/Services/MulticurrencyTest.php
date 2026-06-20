@@ -39,8 +39,28 @@ class MulticurrencyTest extends TestCase
     public function test_country_maps_to_currency(): void
     {
         $this->assertSame('KES', CountryCurrency::forCountry('KE'));
+        $this->assertSame('TZS', CountryCurrency::forCountry('TZ'));
+        $this->assertSame('UGX', CountryCurrency::forCountry('UG'));
+        $this->assertSame('RWF', CountryCurrency::forCountry('RW'));
+        $this->assertSame('BIF', CountryCurrency::forCountry('BI'));
+        $this->assertSame('SSP', CountryCurrency::forCountry('SS'));
+        $this->assertSame('SOS', CountryCurrency::forCountry('SO'));
         $this->assertSame('NGN', CountryCurrency::forCountry('NG'));
         $this->assertSame('USD', CountryCurrency::forCountry('US'));
+    }
+
+    public function test_tanzania_customer_gets_tzs_currency(): void
+    {
+        $this->setUsableRate('TZS', 18.5);
+
+        $user = User::factory()->create([
+            'country' => 'TZ',
+            'preferred_currency' => null,
+        ]);
+
+        app(UserCurrencyService::class)->syncFromCountry($user, true);
+
+        $this->assertSame('TZS', $user->fresh()->preferred_currency);
     }
 
     public function test_user_currency_defaults_from_country(): void
