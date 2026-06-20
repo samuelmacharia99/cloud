@@ -42,18 +42,20 @@ class DirectAdminCustomerPanelApiTest extends TestCase
                 'domain' => 'example.com',
                 'package' => 'Bronze',
                 'quota' => '1024',
-                'bandwidth' => 'unlimited',
+                'bandwidth' => '5120',
                 'mysql' => '5',
+                'umysql' => 'OFF',
             ]), 200),
-            '*/CMD_API_USER_STATS*' => Http::response(json_encode([
+            '*/CMD_API_SHOW_USER_USAGE*' => Http::response(json_encode([
                 'error' => '0',
-                'quota_used' => '256',
-                'bandwidth_used' => '128',
-                'email' => '2',
+                'quota' => '256',
+                'bandwidth' => '128',
+                'mysql' => '1',
+                'nemails' => '2',
             ]), 200),
             '*/CMD_API_DATABASES*' => Http::response(json_encode([
                 'error' => '0',
-                'list0' => 'user_db',
+                'list' => ['user_db'],
             ]), 200),
         ]);
 
@@ -71,7 +73,8 @@ class DirectAdminCustomerPanelApiTest extends TestCase
         $this->assertSame('example.com', $result['data']['domain']);
         $this->assertSame('Bronze', $result['data']['package']);
         $this->assertSame(256.0, $result['data']['disk']['used_mb']);
-        $this->assertNull($result['data']['bandwidth']['limit_mb']);
+        $this->assertSame(5120.0, $result['data']['bandwidth']['limit_mb']);
+        $this->assertSame(128.0, $result['data']['bandwidth']['used_mb']);
         $this->assertSame(1, $result['data']['counts']['database']);
         $this->assertSame(5, $result['data']['counts']['database_limit']);
         $this->assertSame(['user_db'], $result['data']['databases']);

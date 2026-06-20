@@ -79,12 +79,8 @@ class DirectAdminCustomerPanelApi
             return $config;
         }
 
-        $stats = $this->directAdmin->executeAdminApiCall('CMD_API_USER_STATS', [
-            'user' => $username,
-        ]);
-
-        $data = $config['data'];
-        $usage = $stats['success'] ? $stats['data'] : [];
+        $usage = $this->directAdmin->getAccountUsage($username);
+        $data = $this->directAdmin->flattenResponseValues($config['data']);
         $databaseList = $this->listDatabases($username);
         $databaseUsed = $databaseList['success']
             ? count($databaseList['data'])
@@ -249,21 +245,42 @@ class DirectAdminCustomerPanelApi
      */
     public function listDatabases(string $username): array
     {
-        $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DATABASES', [
-            'action' => 'list',
-        ]);
+        foreach ([[], ['action' => 'list']] as $params) {
+            $response = $this->directAdmin->executeUserApiCall($username, 'CMD_API_DATABASES', $params);
 
-        if (! $response['success']) {
-            return ['success' => false, 'message' => $response['message'], 'data' => []];
+            if (! $response['success']) {
+                continue;
+            }
+
+            $items = $this->parseDatabaseNames($response['data']);
+            if ($items !== []) {
+                return [
+                    'success' => true,
+                    'message' => 'OK',
+                    'data' => array_map(fn (string $name) => ['name' => $name], $items),
+                ];
+            }
         }
 
-        return [
-            'success' => true,
-            'message' => 'OK',
-            'data' => $this->normalizeList($response['data'], 'list', fn ($item) => [
-                'name' => (string) $item,
-            ]),
-        ];
+        return ['success' => false, 'message' => 'No databases returned from DirectAdmin.', 'data' => []];
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return list<string>
+     */
+    private function parseDatabaseNames(array $data): array
+    {
+        if (isset($data['list']) && is_array($data['list'])) {
+            return array_values(array_filter(array_map('strval', $data['list'])));
+        }
+
+        $normalized = $this->normalizeList($data, 'list', fn ($item) => (string) $item);
+
+        return array_values(array_filter(array_map(
+            fn (array $row) => (string) ($row['name'] ?? ''),
+            $normalized,
+        )));
     }
 
     /**
@@ -663,10 +680,10 @@ class DirectAdminCustomerPanelApi
         ?int $databaseUsedCount = null,
         array $databaseNames = [],
     ): array {
-        $diskQuota = $config['quota'] ?? $config['disk'] ?? $usage['quota'] ?? null;
-        $diskUsed = $usage['quota_used'] ?? $config['quota_used'] ?? $usage['disk'] ?? $usage['disk_used'] ?? null;
-        $bwQuota = $config['bandwidth'] ?? $usage['bandwidth'] ?? null;
-        $bwUsed = $usage['bandwidth_used'] ?? $config['bandwidth_used'] ?? $usage['bandwidth_used_mb'] ?? null;
+        $diskQuota = $config['quota'] ?? $config['disk'] ?? null;
+        $diskUsed = $usage['quota'] ?? $usage['quota_used'] ?? $config['quota_used'] ?? $usage['disk'] ?? $usage['disk_used'] ?? null;
+        $bwQuota = $config['bandwidth'] ?? null;
+        $bwUsed = $usage['bandwidth'] ?? $usage['bandwidth_used'] ?? $config['bandwidth_used'] ?? $usage['bandwidth_used_mb'] ?? null;
 
         $databaseUsed = $databaseUsedCount ?? (array_key_exists('mysql', $usage) ? (int) $usage['mysql'] : 0);
         $databaseLimit = $this->resolveDatabaseLimit($config);
@@ -677,21 +694,21 @@ class DirectAdminCustomerPanelApi
             'package' => $config['package'] ?? ($config['package_name'] ?? null),
             'suspended' => in_array(strtolower((string) ($config['suspended'] ?? 'no')), ['yes', '1'], true),
             'disk' => [
-                'used_mb' => $this->toMegabytes($diskUsed),
+                'used_mb' => $this->toMegabytes($diskUsed) ?? 0.0,
                 'limit_mb' => $this->toMegabytes($diskQuota),
             ],
             'bandwidth' => [
-                'used_mb' => $this->toMegabytes($bwUsed),
+                'used_mb' => $this->toMegabytes($bwUsed) ?? 0.0,
                 'limit_mb' => $this->toMegabytes($bwQuota),
             ],
             'counts' => [
-                'email' => (int) ($usage['email'] ?? $usage['nemails'] ?? $config['email'] ?? $config['nemails'] ?? 0),
+                'email' => (int) ($usage['nemails'] ?? $usage['email'] ?? $config['nemails'] ?? $config['email'] ?? 0),
                 'email_limit' => $this->resolvePackageCountLimit($config, 'nemails', 'unemails', 'email'),
                 'ftp' => (int) ($usage['ftp'] ?? $config['ftp'] ?? 0),
                 'ftp_limit' => $this->resolvePackageCountLimit($config, 'ftp', 'uftp'),
                 'database' => $databaseUsed,
                 'database_limit' => $databaseLimit,
-                'subdomain' => (int) ($usage['subdomains'] ?? $config['subdomains'] ?? 0),
+                'subdomain' => (int) ($usage['nsubdomains'] ?? $usage['subdomains'] ?? $config['subdomains'] ?? 0),
             ],
             'databases' => array_values(array_filter($databaseNames)),
             'nameservers' => array_values(array_filter([

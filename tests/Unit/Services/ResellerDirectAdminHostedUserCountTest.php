@@ -61,8 +61,8 @@ class ResellerDirectAdminHostedUserCountTest extends TestCase
                 return Http::response('error=0&quota=1024', 200);
             }
 
-            if (str_contains($request->url(), 'CMD_API_USER_STATS')) {
-                return Http::response('error=0&quota_used=1024', 200);
+            if (str_contains($request->url(), 'CMD_API_SHOW_USER_USAGE')) {
+                return Http::response('error=0&quota=1024', 200);
             }
 
             return Http::response('error=1', 200);

@@ -150,16 +150,16 @@ class DirectAdminServiceTest extends TestCase
                 return Http::response('error=0&quota=1024', 200);
             }
 
-            if (str_contains($request->url(), 'CMD_API_USER_STATS') && ($request['user'] ?? null) === 'site_a') {
-                return Http::response('error=0&quota_used=512', 200);
+            if (str_contains($request->url(), 'CMD_API_SHOW_USER_USAGE') && ($request['user'] ?? null) === 'site_a') {
+                return Http::response('error=0&quota=512', 200);
             }
 
             if (str_contains($request->url(), 'CMD_API_SHOW_USER_CONFIG') && ($request['user'] ?? null) === 'site_b') {
                 return Http::response('error=0&quota=2048', 200);
             }
 
-            if (str_contains($request->url(), 'CMD_API_USER_STATS') && ($request['user'] ?? null) === 'site_b') {
-                return Http::response('error=0&quota_used=256', 200);
+            if (str_contains($request->url(), 'CMD_API_SHOW_USER_USAGE') && ($request['user'] ?? null) === 'site_b') {
+                return Http::response('error=0&quota=256', 200);
             }
 
             return Http::response('error=1&text=unexpected', 200);

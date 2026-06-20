@@ -496,11 +496,11 @@ class DirectAdminService
             return null;
         }
 
-        $stats = $this->executeAdminApiCall('CMD_API_USER_STATS', ['user' => $username]);
-        $usage = $stats['success'] ? $stats['data'] : [];
+        $stats = $this->executeAdminApiCall('CMD_API_SHOW_USER_USAGE', ['user' => $username]);
+        $usage = $stats['success'] ? $this->flattenResponseValues($stats['data']) : [];
 
-        $diskQuota = $config['data']['quota'] ?? $config['data']['disk'] ?? $usage['quota'] ?? null;
-        $diskUsed = $usage['quota_used'] ?? $config['data']['quota_used'] ?? $usage['disk'] ?? null;
+        $diskQuota = $config['data']['quota'] ?? $config['data']['disk'] ?? null;
+        $diskUsed = $usage['quota'] ?? $usage['quota_used'] ?? $config['data']['quota_used'] ?? $usage['disk'] ?? null;
 
         $usedMb = $this->toMegabytes($diskUsed);
         $limitMb = $this->toMegabytes($diskQuota);
@@ -513,6 +513,57 @@ class DirectAdminService
             'used_mb' => $usedMb,
             'limit_mb' => $limitMb,
         ];
+    }
+
+    /**
+     * Live usage counters for a DirectAdmin user (disk, bandwidth, databases, etc.).
+     *
+     * @return array<string, mixed>
+     */
+    public function getAccountUsage(string $username): array
+    {
+        if (! $this->isConfigured() || blank($username)) {
+            return [];
+        }
+
+        $stats = $this->executeAdminApiCall('CMD_API_SHOW_USER_USAGE', ['user' => $username]);
+
+        if (! $stats['success']) {
+            return [];
+        }
+
+        return $this->flattenResponseValues($stats['data']);
+    }
+
+    /**
+     * DirectAdmin JSON responses sometimes return scalar fields as single-element arrays.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    public function flattenResponseValues(array $data): array
+    {
+        $flat = [];
+
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                if ($value === []) {
+                    $flat[$key] = null;
+
+                    continue;
+                }
+
+                if (array_is_list($value)) {
+                    $flat[$key] = $value[0] ?? reset($value);
+
+                    continue;
+                }
+            }
+
+            $flat[$key] = $value;
+        }
+
+        return $flat;
     }
 
     /**
