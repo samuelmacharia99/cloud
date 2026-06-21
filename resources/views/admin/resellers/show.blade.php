@@ -85,7 +85,7 @@
 
     <!-- Tabbed Content -->
     <div x-data="{ activeTab: '{{ request('tab', request()->has('domains_page') ? 'domains' : 'overview') }}', addDomainModal: false, addServiceModal: false, upgradeModal: false, editBillingModal: false }"
-         x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any() && (old('amount') !== null || old('reason') !== null)) activeTab = 'wallet' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
+         x-init="@if($errors->any() && old('_form') === 'add_service') addServiceModal = true; activeTab = 'services' @elseif($errors->any() && (old('amount') !== null || old('reason') !== null)) activeTab = 'wallet' @elseif($errors->any() && (old('directadmin_username') !== null || old('reseller_node_id') !== null)) activeTab = 'node' @elseif($errors->any()) addDomainModal = true; activeTab = 'domains' @endif"
          class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
         <!-- Tab Navigation -->
         <div class="border-b border-slate-200 dark:border-slate-800">
@@ -107,6 +107,12 @@
                 </button>
                 <button @click="activeTab = 'wallet'" :class="activeTab === 'wallet' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
                     Wallet
+                </button>
+                <button @click="activeTab = 'node'" :class="activeTab === 'node' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400'" class="px-4 py-4 font-medium transition-colors">
+                    Node
+                    @if($user->directadmin_username)
+                        <span class="ml-1 inline-block w-2 h-2 rounded-full bg-emerald-500 align-middle" title="DirectAdmin linked"></span>
+                    @endif
                 </button>
             </div>
         </div>
@@ -215,7 +221,7 @@
                                     </p>
                                 @else
                                     <p class="text-amber-700 dark:text-amber-300 text-xs">Not linked — suspension only affects portal and cascaded customer accounts.</p>
-                                    <a href="{{ route('admin.resellers.edit', $user) }}" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">Add DirectAdmin username</a>
+                                    <button type="button" @click="activeTab = 'node'" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">Link on Node tab</button>
                                 @endif
                             </div>
                         </div>
@@ -540,6 +546,11 @@
             <!-- Wallet Tab -->
             <div x-show="activeTab === 'wallet'" x-cloak>
                 @include('admin.resellers.partials.wallet-tab', ['user' => $user])
+            </div>
+
+            <!-- Node Tab -->
+            <div x-show="activeTab === 'node'" x-cloak>
+                @include('admin.resellers.partials.node-tab', ['user' => $user, 'dashboard' => $nodeDashboard])
             </div>
         </div>
 

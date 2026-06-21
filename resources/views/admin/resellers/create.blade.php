@@ -210,7 +210,9 @@
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">You can change or assign a package later.</p>
                     </div>
 
-                    @include('admin.resellers.partials.directadmin-fields', ['user' => new \App\Models\User()])
+                    <p class="text-sm text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        After creating the reseller, open their profile and use the <strong>Node</strong> tab to link their DirectAdmin account.
+                    </p>
                 </div>
             </div>
 

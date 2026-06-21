@@ -198,6 +198,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/add-domain', [ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
         Route::post('admin/resellers/{user}/add-service', [ResellerController::class, 'addService'])->name('admin.resellers.add-service');
         Route::post('admin/resellers/{user}/wallet-adjust', [ResellerController::class, 'adjustWallet'])->name('admin.resellers.wallet-adjust');
+        Route::post('admin/resellers/{user}/directadmin/test', [ResellerController::class, 'testDirectAdminBinding'])->name('admin.resellers.directadmin.test');
+        Route::post('admin/resellers/{user}/directadmin/connect', [ResellerController::class, 'connectDirectAdmin'])->name('admin.resellers.directadmin.connect');
+        Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');
@@ -404,11 +407,6 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/wallet/topup/status/{invoice}', [WalletController::class, 'checkTopupStatus'])->name('reseller.wallet.topup.status');
         Route::get('reseller/wallet/transactions', [WalletController::class, 'transactions'])->name('reseller.wallet.transactions');
         Route::get('reseller/wallet/export', [WalletController::class, 'exportPdf'])->name('reseller.wallet.export');
-
-        Route::get('reseller/nodes', [App\Http\Controllers\Reseller\NodeController::class, 'index'])->name('reseller.nodes.index');
-        Route::post('reseller/nodes/test', [App\Http\Controllers\Reseller\NodeController::class, 'test'])->name('reseller.nodes.test');
-        Route::post('reseller/nodes/connect', [App\Http\Controllers\Reseller\NodeController::class, 'connect'])->name('reseller.nodes.connect');
-        Route::post('reseller/nodes/disconnect', [App\Http\Controllers\Reseller\NodeController::class, 'disconnect'])->name('reseller.nodes.disconnect');
 
         Route::middleware('reseller.limits')->group(function () {
             Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');

@@ -102,7 +102,7 @@ class ResellerHostingSetupService
     ): array {
         if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
             throw new \InvalidArgumentException(
-                'Your account is not linked to a DirectAdmin reseller. Ask your provider to set your DirectAdmin username and node under reseller settings.'
+                'Your account is not linked to a DirectAdmin reseller. Ask your provider to link your DirectAdmin account from the admin reseller profile.'
             );
         }
 

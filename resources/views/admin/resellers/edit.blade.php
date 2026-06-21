@@ -150,7 +150,12 @@
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Percentage of managed customer revenue attributed to this reseller (for reporting).</p>
                     </div>
 
-                    @include('admin.resellers.partials.directadmin-fields', ['user' => $user])
+                    <p class="text-sm text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        DirectAdmin linking is managed on the reseller profile <strong>Node</strong> tab.
+                        @if($user->directadmin_username)
+                            Currently linked as <code class="font-mono text-xs">{{ $user->directadmin_username }}</code>.
+                        @endif
+                    </p>
                 </div>
             </div>
 

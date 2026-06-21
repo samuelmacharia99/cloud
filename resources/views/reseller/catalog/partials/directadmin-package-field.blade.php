@@ -17,7 +17,7 @@
 
     @if (! $directAdminBinding)
         <p class="text-sm text-amber-700 dark:text-amber-300">
-            Your account is not linked to DirectAdmin yet. Ask your provider to set your DirectAdmin username and server under reseller settings.
+            Your account is not linked to DirectAdmin yet. Ask your provider to link your DirectAdmin reseller account from the admin reseller profile.
         </p>
     @elseif ($directAdminPackagesError && empty($directAdminPackages))
         <p class="text-sm text-amber-700 dark:text-amber-300">{{ $directAdminPackagesError }}</p>

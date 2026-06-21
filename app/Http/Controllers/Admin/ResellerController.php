@@ -8,7 +8,6 @@ use App\Models\Domain;
 use App\Models\DomainExtension;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
-use App\Models\Node;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\Service;
@@ -18,11 +17,11 @@ use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerInfrastructureService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerWalletService;
 use App\Services\TaxService;
 use Carbon\Carbon;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -62,7 +61,10 @@ class ResellerController extends Controller
         $user->load('resellerPackage', 'resellerNode');
 
         $directAdminUserCount = app(ResellerDirectAdminService::class)->fetchHostedUserCount($user);
-        $directAdminNodes = $this->directAdminNodes();
+        $nodeDashboard = app(ResellerInfrastructureService::class)->buildDashboard(
+            $user,
+            request()->boolean('refresh_node'),
+        );
 
         $services = Service::where('reseller_id', $user->id)
             ->with('user', 'product')
@@ -131,7 +133,7 @@ class ResellerController extends Controller
             'resellerInvoices',
             'serverProducts',
             'directAdminUserCount',
-            'directAdminNodes',
+            'nodeDashboard',
             'wallet',
             'walletTransactions',
             'upgradeQuotes',
@@ -164,16 +166,81 @@ class ResellerController extends Controller
         }
     }
 
-    /**
-     * @return Collection<int, Node>
-     */
-    private function directAdminNodes()
+    public function testDirectAdminBinding(Request $request, User $user)
     {
-        return Node::query()
-            ->where('type', 'directadmin')
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
+        abort_if(! $user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'reseller_node_id' => 'required|integer',
+            'directadmin_username' => 'required|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+        ]);
+
+        $node = app(ResellerDirectAdminService::class)->resolveConnectableNode((int) $validated['reseller_node_id']);
+
+        if (! $node) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Select a valid DirectAdmin server.',
+            ], 422);
+        }
+
+        $result = app(ResellerDirectAdminService::class)->verifyBinding($node, $validated['directadmin_username']);
+
+        return response()->json($result, $result['success'] ? 200 : 422);
+    }
+
+    public function connectDirectAdmin(Request $request, User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        $validated = $request->validate([
+            'reseller_node_id' => 'required|integer',
+            'directadmin_username' => 'required|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+        ]);
+
+        $result = app(ResellerDirectAdminService::class)->connect(
+            $user,
+            (int) $validated['reseller_node_id'],
+            $validated['directadmin_username'],
+        );
+
+        if (! $result['success']) {
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'node'])
+                ->withInput()
+                ->with('error', $result['message']);
+        }
+
+        AdminActivityService::log(
+            'reseller.directadmin_connect',
+            "Linked DirectAdmin account {$validated['directadmin_username']} for reseller {$user->name}",
+            $user,
+            [
+                'node_id' => (int) $validated['reseller_node_id'],
+                'directadmin_username' => strtolower(trim($validated['directadmin_username'])),
+            ],
+        );
+
+        return redirect()
+            ->route('admin.resellers.show', ['user' => $user, 'tab' => 'node', 'refresh_node' => 1])
+            ->with('success', $result['message']);
+    }
+
+    public function disconnectDirectAdmin(User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        app(ResellerDirectAdminService::class)->disconnect($user);
+
+        AdminActivityService::log(
+            'reseller.directadmin_disconnect',
+            "Removed DirectAdmin link for reseller {$user->name}",
+            $user,
+        );
+
+        return redirect()
+            ->route('admin.resellers.show', ['user' => $user, 'tab' => 'node'])
+            ->with('success', 'DirectAdmin connection removed for this reseller.');
     }
 
     public function promote(User $user)
@@ -201,9 +268,8 @@ class ResellerController extends Controller
     public function create()
     {
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
-        $directAdminNodes = $this->directAdminNodes();
 
-        return view('admin.resellers.create', compact('packages', 'directAdminNodes'));
+        return view('admin.resellers.create', compact('packages'));
     }
 
     public function store(Request $request)
@@ -217,15 +283,8 @@ class ResellerController extends Controller
             'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
             'notes' => 'nullable|string|max:1000',
-            'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
-            'reseller_node_id' => 'nullable|exists:nodes,id',
             'send_welcome_email' => 'sometimes|boolean',
         ]);
-
-        if (blank($validated['directadmin_username'] ?? null)) {
-            $validated['directadmin_username'] = null;
-            $validated['reseller_node_id'] = null;
-        }
 
         $plainPassword = $validated['password'];
         $sendWelcomeEmail = $request->boolean('send_welcome_email');
@@ -269,9 +328,8 @@ class ResellerController extends Controller
         abort_if(! $user->is_reseller, 404);
 
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
-        $directAdminNodes = $this->directAdminNodes();
 
-        return view('admin.resellers.edit', compact('user', 'packages', 'directAdminNodes'));
+        return view('admin.resellers.edit', compact('user', 'packages'));
     }
 
     public function update(Request $request, User $user)
@@ -287,19 +345,11 @@ class ResellerController extends Controller
             'country' => 'nullable|string|max:100',
             'reseller_package_id' => 'nullable|exists:reseller_packages,id',
             'notes' => 'nullable|string|max:1000',
-            'directadmin_username' => 'nullable|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
-            'reseller_node_id' => 'nullable|exists:nodes,id',
             'commission_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
-        // Only update password if provided
         if (empty($validated['password'])) {
             unset($validated['password']);
-        }
-
-        if (blank($validated['directadmin_username'] ?? null)) {
-            $validated['directadmin_username'] = null;
-            $validated['reseller_node_id'] = null;
         }
 
         $user->update($validated);
