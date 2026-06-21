@@ -108,6 +108,20 @@
                         </a>
                     </div>
 
+                    <!-- Infrastructure -->
+                    <div class="space-y-2">
+                        <p class="px-4 py-2 text-xs font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">Infrastructure</p>
+                        <a href="{{ route('reseller.nodes.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('reseller.nodes.*') ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800' }}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"/>
+                            </svg>
+                            <span class="text-sm font-medium">Nodes</span>
+                            @if(auth()->user()->directadmin_username)
+                                <span class="ml-auto w-2 h-2 rounded-full bg-emerald-500" title="DirectAdmin connected"></span>
+                            @endif
+                        </a>
+                    </div>
+
                     <!-- Wallet -->
                     <div class="space-y-2">
                         <p class="px-4 py-2 text-xs font-semibold text-purple-500 dark:text-purple-400 uppercase tracking-wider">Wallet</p>
