@@ -7,12 +7,13 @@
     'testUrl' => route('admin.resellers.directadmin.test', $user),
     'nodeId' => old('reseller_node_id', $user->reseller_node_id ?? ''),
     'username' => old('directadmin_username', $user->directadmin_username ?? ''),
+    'hasStoredKey' => filled($user->directadmin_login_key),
 ]))">
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">DirectAdmin node</h3>
             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                Link this reseller to their DirectAdmin account on a platform server. Resellers cannot change this themselves.
+                Link this reseller to their DirectAdmin account using their API login key. Customer hosting auto-provisions after invoice payment when username, server, and key are saved here.
             </p>
         </div>
         @if($d['is_connected'])
@@ -37,6 +38,9 @@
                         <div class="flex items-center gap-2 mb-1">
                             <span class="inline-flex w-2.5 h-2.5 rounded-full {{ $d['api_reachable'] ? 'bg-emerald-500' : 'bg-amber-500' }}"></span>
                             <span class="font-semibold text-slate-900 dark:text-white">{{ $d['api_reachable'] ? 'Linked' : 'API unreachable' }}</span>
+                            @if($d['provisioning_ready'] ?? false)
+                                <span class="ml-2 text-xs font-normal text-emerald-600 dark:text-emerald-400">Auto-provision ready</span>
+                            @endif
                         </div>
                         <p class="text-sm text-slate-600 dark:text-slate-400">
                             <code class="font-mono text-blue-700 dark:text-blue-300">{{ $d['directadmin_username'] }}</code>
@@ -160,8 +164,17 @@
                     <label for="node_tab_username" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">DirectAdmin username</label>
                     <input type="text" id="node_tab_username" name="directadmin_username" x-model="username" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm font-mono">
                 </div>
+                <div class="md:col-span-2">
+                    <label for="node_tab_login_key" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">DirectAdmin login key</label>
+                    <textarea id="node_tab_login_key" name="directadmin_login_key" x-model="loginKey" rows="3" placeholder="Leave blank to keep the existing key" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm font-mono"></textarea>
+                    @if($d['has_login_key'] ?? false)
+                        <p class="mt-1 text-xs text-slate-500">A login key is stored. Leave blank to keep it when updating username or server.</p>
+                    @else
+                        <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">Required for customer hosting to auto-provision after payment.</p>
+                    @endif
+                </div>
                 <div class="md:col-span-2 flex flex-wrap gap-3">
-                    <button type="button" @click="runTest()" :disabled="testing" class="px-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-900 disabled:opacity-50">Test</button>
+                    <button type="button" @click="runTest()" :disabled="testing || !nodeId || !username || (!loginKey && !hasStoredKey)" class="px-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-white dark:hover:bg-slate-900 disabled:opacity-50">Test</button>
                     <button type="submit" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Save link</button>
                 </div>
                 <div x-show="testMessage" x-cloak class="md:col-span-2 p-3 rounded-lg text-sm" :class="testSuccess ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200'" x-text="testMessage"></div>
@@ -192,11 +205,17 @@
                             <input type="text" id="connect_da_username" name="directadmin_username" x-model="username" value="{{ old('directadmin_username') }}" placeholder="reseller_acme" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm font-mono @error('directadmin_username') border-red-500 @enderror">
                             @error('directadmin_username')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
                         </div>
+                        <div>
+                            <label for="connect_da_login_key" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">DirectAdmin login key</label>
+                            <textarea id="connect_da_login_key" name="directadmin_login_key" x-model="loginKey" rows="4" required placeholder="Paste the reseller API login key from DirectAdmin" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm font-mono @error('directadmin_login_key') border-red-500 @enderror"></textarea>
+                            @error('directadmin_login_key')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                            <p class="mt-1 text-xs text-slate-500">Create under DirectAdmin → Login Keys for the reseller account. Required for auto-provisioning customer hosting.</p>
+                        </div>
                         <div x-show="testMessage" x-cloak class="p-3 rounded-lg text-sm" :class="testSuccess ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200'">
                             <p x-text="testMessage"></p>
                         </div>
                         <div class="flex gap-3">
-                            <button type="button" @click="runTest()" :disabled="testing || !nodeId || !username" class="px-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg disabled:opacity-50">Test connection</button>
+                            <button type="button" @click="runTest()" :disabled="testing || !nodeId || !username || (!loginKey && !hasStoredKey)" class="px-4 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded-lg disabled:opacity-50">Test connection</button>
                             <button type="submit" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg">Link account</button>
                         </div>
                     </form>
@@ -205,9 +224,10 @@
             <div class="lg:col-span-2 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800 p-5 text-sm text-slate-600 dark:text-slate-400 space-y-2">
                 <p class="font-semibold text-slate-900 dark:text-white">Setup checklist</p>
                 <p>1. Create the reseller account in DirectAdmin.</p>
-                <p>2. Create user hosting packages under that reseller.</p>
-                <p>3. Select the matching server and username here.</p>
-                <p class="text-xs pt-2 border-t border-blue-200 dark:border-blue-800">The platform uses its admin API key to verify and provision — the reseller password is never stored.</p>
+                <p>2. Create a login key for that reseller in DirectAdmin.</p>
+                <p>3. Create user hosting packages under that reseller.</p>
+                <p>4. Enter server, username, and login key here.</p>
+                <p class="text-xs pt-2 border-t border-blue-200 dark:border-blue-800">After a customer pays, hosting is created on DirectAdmin using the reseller login key.</p>
             </div>
         </div>
     @endif
@@ -219,11 +239,13 @@ function adminResellerNodeTab(config) {
     return {
         nodeId: config.nodeId ? String(config.nodeId) : '',
         username: config.username || '',
+        loginKey: '',
+        hasStoredKey: config.hasStoredKey || false,
         testing: false,
         testMessage: '',
         testSuccess: false,
         async runTest() {
-            if (!this.nodeId || !this.username) return;
+            if (!this.nodeId || !this.username || (!this.loginKey && !this.hasStoredKey)) return;
             this.testing = true;
             this.testMessage = '';
             try {
@@ -237,6 +259,7 @@ function adminResellerNodeTab(config) {
                     body: JSON.stringify({
                         reseller_node_id: parseInt(this.nodeId, 10),
                         directadmin_username: this.username,
+                        directadmin_login_key: this.loginKey || null,
                     }),
                 });
                 const data = await response.json();

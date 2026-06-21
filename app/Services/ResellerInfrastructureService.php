@@ -88,6 +88,8 @@ class ResellerInfrastructureService
             'node' => $node,
             'directadmin_username' => $reseller->directadmin_username,
             'connected_at' => $settings['directadmin_connected_at'] ?? null,
+            'has_login_key' => filled($reseller->directadmin_login_key),
+            'provisioning_ready' => $this->resellerDirectAdmin->canAutoProvision($reseller),
             'control_panel_url' => $this->controlPanelUrl($node),
             'packages' => $packages,
             'packages_error' => $packagesError,

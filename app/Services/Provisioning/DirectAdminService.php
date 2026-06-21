@@ -20,6 +20,8 @@ class DirectAdminService
 
     protected ?Node $node;
 
+    protected bool $directResellerAuth = false;
+
     public function __construct(?Node $node = null)
     {
         if ($node) {
@@ -38,6 +40,24 @@ class DirectAdminService
     public function isConfigured(): bool
     {
         return ! empty($this->apiUrl) && ! empty($this->password);
+    }
+
+    public function usesDirectResellerAuth(): bool
+    {
+        return $this->directResellerAuth;
+    }
+
+    /**
+     * Authenticate API calls as a DirectAdmin reseller using their login key.
+     */
+    public static function forResellerAccount(Node $node, string $resellerUsername, string $loginKey): self
+    {
+        $service = new self($node);
+        $service->directResellerAuth = true;
+        $service->username = strtolower(trim($resellerUsername));
+        $service->password = $loginKey;
+
+        return $service;
     }
 
     /**
@@ -636,7 +656,7 @@ class DirectAdminService
     private function httpClient(?string $impersonateUsername = null)
     {
         $authUsername = $this->username;
-        if (filled($impersonateUsername)) {
+        if (! $this->directResellerAuth && filled($impersonateUsername)) {
             $authUsername = $authUsername.'|'.$impersonateUsername;
         }
 
@@ -722,11 +742,13 @@ class DirectAdminService
         }
 
         try {
+            $query = ['json' => 'yes'];
+            if (! $this->directResellerAuth) {
+                $query['reseller'] = $resellerUsername;
+            }
+
             $response = $this->httpClient()
-                ->get(rtrim($this->apiUrl, '/').'/CMD_API_SHOW_USERS', [
-                    'reseller' => $resellerUsername,
-                    'json' => 'yes',
-                ]);
+                ->get(rtrim($this->apiUrl, '/').'/CMD_API_SHOW_USERS', $query);
 
             if ($response->status() >= 400) {
                 Log::warning('DirectAdmin SHOW_USERS failed', [
@@ -933,6 +955,10 @@ class DirectAdminService
     {
         if (! $this->isConfigured() || blank($resellerUsername)) {
             return [];
+        }
+
+        if ($this->directResellerAuth) {
+            return $this->getPackages();
         }
 
         try {

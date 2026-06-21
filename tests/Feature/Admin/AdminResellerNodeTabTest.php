@@ -75,6 +75,7 @@ class AdminResellerNodeTabTest extends TestCase
             ->post(route('admin.resellers.directadmin.connect', $reseller), [
                 'reseller_node_id' => $node->id,
                 'directadmin_username' => 'reseller_acme',
+                'directadmin_login_key' => 'reseller-api-key',
             ])
             ->assertRedirect(route('admin.resellers.show', ['user' => $reseller, 'tab' => 'node', 'refresh_node' => 1]));
 
@@ -82,6 +83,7 @@ class AdminResellerNodeTabTest extends TestCase
 
         $this->assertSame('reseller_acme', $reseller->directadmin_username);
         $this->assertSame($node->id, $reseller->reseller_node_id);
+        $this->assertTrue(filled($reseller->directadmin_login_key));
     }
 
     public function test_admin_can_disconnect_reseller_directadmin(): void
@@ -91,6 +93,7 @@ class AdminResellerNodeTabTest extends TestCase
         $reseller->update([
             'directadmin_username' => 'res_acme',
             'reseller_node_id' => $node->id,
+            'directadmin_login_key' => 'stored-key',
         ]);
 
         $this->actingAs($this->adminUser())
@@ -100,6 +103,8 @@ class AdminResellerNodeTabTest extends TestCase
         $reseller->refresh();
 
         $this->assertNull($reseller->directadmin_username);
+        $this->assertNull($reseller->reseller_node_id);
+        $this->assertNull($reseller->directadmin_login_key);
     }
 
     public function test_reseller_cannot_access_admin_directadmin_connect(): void

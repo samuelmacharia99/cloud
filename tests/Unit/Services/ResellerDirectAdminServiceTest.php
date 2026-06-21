@@ -63,7 +63,7 @@ class ResellerDirectAdminServiceTest extends TestCase
             'verify_ssl' => false,
         ]);
 
-        $result = app(ResellerDirectAdminService::class)->verifyBinding($node, 'res_acme');
+        $result = app(ResellerDirectAdminService::class)->verifyBinding($node, 'res_acme', 'reseller-login-key');
 
         $this->assertTrue($result['success']);
         $this->assertSame(0, $result['hosted_user_count']);

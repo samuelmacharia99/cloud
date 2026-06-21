@@ -12,8 +12,6 @@ use Illuminate\Support\Facades\Log;
 class ResellerDirectAdminService
 {
     /**
-     * Active DirectAdmin nodes resellers may connect to (API must be configured).
-     *
      * @return Collection<int, Node>
      */
     public function availableNodes()
@@ -33,8 +31,6 @@ class ResellerDirectAdminService
     }
 
     /**
-     * Verify a DirectAdmin reseller username on a node before saving the binding.
-     *
      * @return array{
      *     success: bool,
      *     message: string,
@@ -43,42 +39,33 @@ class ResellerDirectAdminService
      *     disk_used_mb: ?float
      * }
      */
-    public function verifyBinding(Node $node, string $username): array
+    public function verifyBinding(Node $node, string $username, string $loginKey): array
     {
         $username = strtolower(trim($username));
+        $loginKey = trim($loginKey);
 
         if (! preg_match('/^[a-z][a-z0-9_]*$/i', $username)) {
-            return [
-                'success' => false,
-                'message' => 'Username must start with a letter and contain only letters, numbers, and underscores.',
-                'packages' => [],
-                'hosted_user_count' => null,
-                'disk_used_mb' => null,
-            ];
+            return $this->verificationFailure('Username must start with a letter and contain only letters, numbers, and underscores.');
         }
 
-        $da = new DirectAdminService($node);
+        if ($loginKey === '') {
+            return $this->verificationFailure('DirectAdmin login key is required.');
+        }
+
+        if (blank($node->api_url)) {
+            return $this->verificationFailure('This server is not ready for connections yet. Contact your provider.');
+        }
+
+        $da = DirectAdminService::forResellerAccount($node, $username, $loginKey);
 
         if (! $da->isConfigured()) {
-            return [
-                'success' => false,
-                'message' => 'This server is not ready for connections yet. Contact your provider.',
-                'packages' => [],
-                'hosted_user_count' => null,
-                'disk_used_mb' => null,
-            ];
+            return $this->verificationFailure('This server is not ready for connections yet. Contact your provider.');
         }
 
         $hostedUserCount = $da->countUsersOwnedByReseller($username);
 
         if ($hostedUserCount === null) {
-            return [
-                'success' => false,
-                'message' => 'Could not verify the DirectAdmin reseller account on this server. Check the username and try again.',
-                'packages' => [],
-                'hosted_user_count' => null,
-                'disk_used_mb' => null,
-            ];
+            return $this->verificationFailure('Could not verify the DirectAdmin account. Check the username and login key.');
         }
 
         $packages = $da->getResellerPackages($username);
@@ -87,7 +74,7 @@ class ResellerDirectAdminService
         return [
             'success' => true,
             'message' => $packages === []
-                ? 'Connected. No hosting packages found yet — create packages in DirectAdmin to sell plans.'
+                ? 'Verified. No hosting packages found yet — create packages in DirectAdmin before selling plans.'
                 : 'DirectAdmin reseller account verified successfully.',
             'packages' => $packages,
             'hosted_user_count' => $hostedUserCount,
@@ -98,7 +85,7 @@ class ResellerDirectAdminService
     /**
      * @return array{success: bool, message: string}
      */
-    public function connect(User $reseller, int $nodeId, string $username): array
+    public function connect(User $reseller, int $nodeId, string $username, string $loginKey): array
     {
         if (! $reseller->is_reseller) {
             return ['success' => false, 'message' => 'Only reseller accounts can connect to DirectAdmin.'];
@@ -110,7 +97,7 @@ class ResellerDirectAdminService
             return ['success' => false, 'message' => 'Select a valid DirectAdmin server.'];
         }
 
-        $verification = $this->verifyBinding($node, $username);
+        $verification = $this->verifyBinding($node, $username, $loginKey);
 
         if (! $verification['success']) {
             return ['success' => false, 'message' => $verification['message']];
@@ -123,6 +110,7 @@ class ResellerDirectAdminService
         $reseller->update([
             'directadmin_username' => $normalizedUsername,
             'reseller_node_id' => $node->id,
+            'directadmin_login_key' => trim($loginKey),
             'settings' => $settings,
         ]);
 
@@ -152,6 +140,7 @@ class ResellerDirectAdminService
         $reseller->update([
             'directadmin_username' => null,
             'reseller_node_id' => null,
+            'directadmin_login_key' => null,
             'settings' => $settings,
         ]);
 
@@ -164,7 +153,13 @@ class ResellerDirectAdminService
     {
         return $reseller->is_reseller
             && filled($reseller->directadmin_username)
+            && filled($reseller->directadmin_login_key)
             && $this->resolveNode($reseller) !== null;
+    }
+
+    public function canAutoProvision(User $reseller): bool
+    {
+        return $this->hasDirectAdminBinding($reseller);
     }
 
     public function resolveNode(User $reseller): ?Node
@@ -204,6 +199,21 @@ class ResellerDirectAdminService
     {
         $node = $this->resolveNode($reseller);
 
+        if (! $node || ! filled($reseller->directadmin_username) || ! filled($reseller->directadmin_login_key)) {
+            return null;
+        }
+
+        $service = DirectAdminService::forResellerAccount(
+            $node,
+            (string) $reseller->directadmin_username,
+            (string) $reseller->directadmin_login_key,
+        );
+
+        return $service->isConfigured() ? $service : null;
+    }
+
+    public function adminDirectAdmin(?Node $node): ?DirectAdminService
+    {
         if (! $node) {
             return null;
         }
@@ -211,6 +221,60 @@ class ResellerDirectAdminService
         $service = new DirectAdminService($node);
 
         return $service->isConfigured() ? $service : null;
+    }
+
+    public function resolveResellerForService(Service $service): ?User
+    {
+        if ($service->reseller_id) {
+            return User::query()->find($service->reseller_id);
+        }
+
+        $service->loadMissing('user');
+
+        if ($service->user?->reseller_id) {
+            return User::query()->find($service->user->reseller_id);
+        }
+
+        return null;
+    }
+
+    public function serviceUsesResellerDirectAuth(Service $service): bool
+    {
+        $reseller = $this->resolveResellerForService($service);
+
+        return $reseller !== null && $this->canAutoProvision($reseller);
+    }
+
+    public function directAdminForService(Service $service): ?DirectAdminService
+    {
+        $reseller = $this->resolveResellerForService($service);
+
+        if ($reseller && $this->canAutoProvision($reseller)) {
+            return $this->directAdmin($reseller);
+        }
+
+        $service->loadMissing('node');
+        $node = $service->node;
+
+        return $this->adminDirectAdmin($node);
+    }
+
+    public function impersonationUsernameForService(Service $service): ?string
+    {
+        if ($this->serviceUsesResellerDirectAuth($service)) {
+            return null;
+        }
+
+        $meta = $service->service_meta ?? [];
+        $ownerReseller = $meta['directadmin_reseller'] ?? null;
+
+        if (! $ownerReseller && $service->reseller_id) {
+            $ownerReseller = User::query()
+                ->whereKey($service->reseller_id)
+                ->value('directadmin_username');
+        }
+
+        return filled($ownerReseller) ? (string) $ownerReseller : null;
     }
 
     /**
@@ -221,7 +285,7 @@ class ResellerDirectAdminService
         if (! $this->hasDirectAdminBinding($reseller)) {
             return [
                 'packages' => [],
-                'error' => 'Your account is not linked to a DirectAdmin reseller. Ask your provider to set your DirectAdmin username and server.',
+                'error' => 'Your account is not linked to a DirectAdmin reseller. Ask your provider to link your DirectAdmin account from the admin reseller profile.',
             ];
         }
 
@@ -280,19 +344,19 @@ class ResellerDirectAdminService
             return null;
         }
 
-        $da = new DirectAdminService($node);
+        if ((int) $reseller->reseller_node_id === (int) $node->id && filled($reseller->directadmin_login_key)) {
+            $da = $this->directAdmin($reseller);
+        } else {
+            $da = $this->adminDirectAdmin($node);
+        }
 
-        if (! $da->isConfigured()) {
+        if (! $da) {
             return null;
         }
 
         return $da->countUsersOwnedByReseller($reseller->directadmin_username);
     }
 
-    /**
-     * Total disk used (MB) by all end-user accounts on the reseller's DirectAdmin account.
-     * Includes hosting accounts created directly in DirectAdmin, not only via this platform.
-     */
     public function fetchTotalHostedDiskMb(User $reseller): ?float
     {
         if (! filled($reseller->directadmin_username)) {
@@ -314,9 +378,13 @@ class ResellerDirectAdminService
             return null;
         }
 
-        $da = new DirectAdminService($node);
+        if ((int) $reseller->reseller_node_id === (int) $node->id && filled($reseller->directadmin_login_key)) {
+            $da = $this->directAdmin($reseller);
+        } else {
+            $da = $this->adminDirectAdmin($node);
+        }
 
-        if (! $da->isConfigured()) {
+        if (! $da) {
             return null;
         }
 
@@ -325,11 +393,11 @@ class ResellerDirectAdminService
 
     public function suspendResellerAccount(User $reseller): bool
     {
-        if (! $this->hasDirectAdminBinding($reseller)) {
+        if (! filled($reseller->directadmin_username) || ! $this->resolveNode($reseller)) {
             return false;
         }
 
-        $da = $this->directAdmin($reseller);
+        $da = $this->adminDirectAdmin($this->resolveNode($reseller));
         if (! $da) {
             return false;
         }
@@ -348,11 +416,11 @@ class ResellerDirectAdminService
 
     public function unsuspendResellerAccount(User $reseller): bool
     {
-        if (! $this->hasDirectAdminBinding($reseller)) {
+        if (! filled($reseller->directadmin_username) || ! $this->resolveNode($reseller)) {
             return false;
         }
 
-        $da = $this->directAdmin($reseller);
+        $da = $this->adminDirectAdmin($this->resolveNode($reseller));
         if (! $da) {
             return false;
         }
@@ -367,5 +435,25 @@ class ResellerDirectAdminService
         }
 
         return $ok;
+    }
+
+    /**
+     * @return array{
+     *     success: false,
+     *     message: string,
+     *     packages: array{},
+     *     hosted_user_count: null,
+     *     disk_used_mb: null
+     * }
+     */
+    private function verificationFailure(string $message): array
+    {
+        return [
+            'success' => false,
+            'message' => $message,
+            'packages' => [],
+            'hosted_user_count' => null,
+            'disk_used_mb' => null,
+        ];
     }
 }

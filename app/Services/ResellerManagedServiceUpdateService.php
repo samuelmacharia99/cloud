@@ -6,7 +6,6 @@ use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Customer\CustomerHostingUpgradeService;
-use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use Illuminate\Support\Facades\Log;
 
@@ -186,12 +185,16 @@ class ResellerManagedServiceUpdateService
         }
 
         $packageMeta = $listing->directAdminPackageMeta();
-        $directAdmin = new DirectAdminService($node);
+        $directAdmin = $this->resellerDirectAdmin->directAdminForService($service);
+
+        if (! $directAdmin) {
+            throw new \RuntimeException('DirectAdmin API is not configured for this service.');
+        }
 
         $this->directAdminSetup->ensurePackageLimitsOnServer(
             $directAdmin,
             $service,
-            $reseller->directadmin_username,
+            $this->resellerDirectAdmin->impersonationUsernameForService($service),
         );
 
         $result = $directAdmin->changeUserPackage($username, $packageMeta['package']);

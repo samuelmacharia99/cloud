@@ -261,9 +261,18 @@ class ProvisioningService
             throw new \Exception("Service node {$node->name} is not a DirectAdmin server (type: {$node->type}).");
         }
 
-        $daService = new DirectAdminService($node);
+        $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+        $reseller = $resellerDirectAdmin->resolveResellerForService($service);
 
-        if (! $daService->isConfigured()) {
+        if ($reseller && ! $resellerDirectAdmin->canAutoProvision($reseller)) {
+            throw new \Exception(
+                'Reseller DirectAdmin is not fully configured — admin must link username, server, and login key on the reseller Node tab before customer hosting can auto-provision.'
+            );
+        }
+
+        $daService = $resellerDirectAdmin->directAdminForService($service);
+
+        if (! $daService) {
             throw new \Exception("DirectAdmin API is not configured for node {$node->name}.");
         }
 
@@ -286,14 +295,9 @@ class ProvisioningService
             throw new \Exception("DirectAdmin account \"{$username}\" already exists on {$node->name}.");
         }
 
-        $ownerReseller = $meta['directadmin_reseller'] ?? null;
-        if (! $ownerReseller && $service->reseller_id) {
-            $ownerReseller = User::query()
-                ->whereKey($service->reseller_id)
-                ->value('directadmin_username');
-        }
+        $ownerReseller = $resellerDirectAdmin->impersonationUsernameForService($service);
 
-        if ($service->reseller_id && ! filled($ownerReseller)) {
+        if ($service->reseller_id && ! $resellerDirectAdmin->serviceUsesResellerDirectAuth($service) && ! filled($ownerReseller)) {
             throw new \Exception(
                 'Reseller DirectAdmin username is not configured — customer hosting cannot be created under the reseller account.'
             );
@@ -302,7 +306,7 @@ class ProvisioningService
         $this->directAdminSetup->ensurePackageLimitsOnServer(
             $daService,
             $service,
-            filled($ownerReseller) ? (string) $ownerReseller : null,
+            $ownerReseller,
         );
 
         $result = $daService->createHostingAccount(
@@ -311,10 +315,14 @@ class ProvisioningService
             $password,
             $domain,
             $packageName,
-            filled($ownerReseller) ? (string) $ownerReseller : null,
+            $ownerReseller,
         );
 
         if ($result['success']) {
+            $storedOwner = $reseller?->directadmin_username
+                ?? (filled($ownerReseller) ? (string) $ownerReseller : null)
+                ?? ($meta['directadmin_reseller'] ?? null);
+
             $service->update([
                 'status' => 'active',
                 'external_reference' => $username,
@@ -327,7 +335,7 @@ class ProvisioningService
                     'node_id' => $node->id,
                     'node_name' => $node->name,
                     'provisioned_at' => now()->toIso8601String(),
-                    'directadmin_reseller' => filled($ownerReseller) ? (string) $ownerReseller : ($meta['directadmin_reseller'] ?? null),
+                    'directadmin_reseller' => filled($storedOwner) ? (string) $storedOwner : null,
                 ]),
                 'credentials' => json_encode($result['credentials']),
             ]);

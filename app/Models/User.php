@@ -43,6 +43,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'reseller_suspension_reason',
         'directadmin_username',
         'reseller_node_id',
+        'directadmin_login_key',
         'two_factor_enabled',
         'two_factor_code',
         'two_factor_code_expires_at',
@@ -55,6 +56,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'remember_token',
         'two_factor_code',
         'two_factor_recovery_codes',
+        'directadmin_login_key',
         'settings',
     ];
 
@@ -70,6 +72,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'package_expires_at' => 'datetime',
             'reseller_suspended_at' => 'datetime',
             'reseller_node_id' => 'integer',
+            'directadmin_login_key' => 'encrypted',
             'two_factor_enabled' => 'boolean',
             'two_factor_code_expires_at' => 'datetime',
             'two_factor_recovery_codes' => 'array',

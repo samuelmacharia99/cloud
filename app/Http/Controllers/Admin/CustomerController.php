@@ -20,8 +20,8 @@ use App\Services\AdminActivityService;
 use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
-use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
+use App\Services\ResellerDirectAdminService;
 use App\Services\TaxService;
 use App\Services\UserCurrencyService;
 use Carbon\Carbon;
@@ -826,9 +826,19 @@ class CustomerController extends Controller
                 return ['success' => false, 'message' => 'no DirectAdmin node assigned to service'];
             }
 
-            $da = new DirectAdminService($node);
+            $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+            $reseller = $resellerDirectAdmin->resolveResellerForService($service);
 
-            if (! $da->isConfigured()) {
+            if ($reseller && ! $resellerDirectAdmin->canAutoProvision($reseller)) {
+                return [
+                    'success' => false,
+                    'message' => 'Reseller DirectAdmin is not fully configured — link username, server, and login key on the reseller Node tab first.',
+                ];
+            }
+
+            $da = $resellerDirectAdmin->directAdminForService($service);
+
+            if (! $da || ! $da->isConfigured()) {
                 return ['success' => false, 'message' => 'DirectAdmin node is not configured (missing API URL or password)'];
             }
 
@@ -843,12 +853,7 @@ class CustomerController extends Controller
             }
 
             $meta = $service->service_meta ?? [];
-            $ownerReseller = $meta['directadmin_reseller'] ?? null;
-            if (! $ownerReseller && $service->reseller_id) {
-                $ownerReseller = User::query()
-                    ->whereKey($service->reseller_id)
-                    ->value('directadmin_username');
-            }
+            $ownerReseller = $resellerDirectAdmin->impersonationUsernameForService($service);
 
             app(DirectAdminSetupService::class)->ensurePackageLimitsOnServer(
                 $da,

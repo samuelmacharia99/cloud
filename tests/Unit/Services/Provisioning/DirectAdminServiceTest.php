@@ -370,4 +370,12 @@ class DirectAdminServiceTest extends TestCase
         $this->assertFalse($result['success']);
         $this->assertStringContainsString('empty response', strtolower($result['message']));
     }
+
+    public function test_for_reseller_account_uses_direct_auth_without_impersonation(): void
+    {
+        $node = $this->createDirectAdminNode();
+        $da = DirectAdminService::forResellerAccount($node, 'res_acme', 'reseller-key');
+
+        $this->assertTrue($da->usesDirectResellerAuth());
+    }
 }

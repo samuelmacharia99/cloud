@@ -173,6 +173,7 @@ class ResellerController extends Controller
         $validated = $request->validate([
             'reseller_node_id' => 'required|integer',
             'directadmin_username' => 'required|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+            'directadmin_login_key' => 'nullable|string',
         ]);
 
         $node = app(ResellerDirectAdminService::class)->resolveConnectableNode((int) $validated['reseller_node_id']);
@@ -184,7 +185,20 @@ class ResellerController extends Controller
             ], 422);
         }
 
-        $result = app(ResellerDirectAdminService::class)->verifyBinding($node, $validated['directadmin_username']);
+        $loginKey = $this->resolveDirectAdminLoginKey($user, $validated['directadmin_login_key'] ?? null);
+
+        if ($loginKey === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'DirectAdmin login key is required.',
+            ], 422);
+        }
+
+        $result = app(ResellerDirectAdminService::class)->verifyBinding(
+            $node,
+            $validated['directadmin_username'],
+            $loginKey,
+        );
 
         return response()->json($result, $result['success'] ? 200 : 422);
     }
@@ -196,12 +210,23 @@ class ResellerController extends Controller
         $validated = $request->validate([
             'reseller_node_id' => 'required|integer',
             'directadmin_username' => 'required|string|max:48|regex:/^[a-z][a-z0-9_]*$/i',
+            'directadmin_login_key' => 'nullable|string',
         ]);
+
+        $loginKey = $this->resolveDirectAdminLoginKey($user, $validated['directadmin_login_key'] ?? null);
+
+        if ($loginKey === null) {
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'node'])
+                ->withInput()
+                ->with('error', 'DirectAdmin login key is required for auto-provisioning.');
+        }
 
         $result = app(ResellerDirectAdminService::class)->connect(
             $user,
             (int) $validated['reseller_node_id'],
             $validated['directadmin_username'],
+            $loginKey,
         );
 
         if (! $result['success']) {
@@ -647,5 +672,18 @@ class ResellerController extends Controller
         ]);
 
         return $invoice;
+    }
+
+    private function resolveDirectAdminLoginKey(User $user, ?string $submittedKey): ?string
+    {
+        if (filled($submittedKey)) {
+            return trim((string) $submittedKey);
+        }
+
+        if (filled($user->directadmin_login_key)) {
+            return (string) $user->directadmin_login_key;
+        }
+
+        return null;
     }
 }
