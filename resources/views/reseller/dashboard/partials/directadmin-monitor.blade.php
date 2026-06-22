@@ -43,18 +43,15 @@
         </div>
     </div>
 
-    <template x-if="!connected">
-        <div class="p-8 text-center">
-            <div class="mx-auto w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
-                <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-            </div>
-            <p class="font-medium text-slate-900 dark:text-white">DirectAdmin not linked yet</p>
-            <p class="text-sm text-slate-500 mt-2 max-w-md mx-auto">Ask your platform admin to connect your reseller account on the Node tab. Once linked, this panel shows live disk, accounts, and payment trends.</p>
+    <div x-show="!connected" x-cloak class="p-8 text-center">
+        <div class="mx-auto w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-4">
+            <svg class="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
         </div>
-    </template>
+        <p class="font-medium text-slate-900 dark:text-white">DirectAdmin not linked yet</p>
+        <p class="text-sm text-slate-500 mt-2 max-w-md mx-auto">Ask your platform admin to connect your reseller account on the Node tab. Once linked, this panel shows live disk, accounts, and payment trends.</p>
+    </div>
 
-    <template x-if="connected">
-        <div class="p-6 space-y-6">
+    <div x-show="connected" x-cloak class="p-6 space-y-6">
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="rounded-xl border border-violet-200/70 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/30 p-4">
                     <p class="text-xs font-medium text-violet-700 dark:text-violet-300">Payments today</p>
@@ -99,11 +96,10 @@
                     </div>
                 </div>
                 <div class="h-56 sm:h-64">
-                    <canvas id="resellerDaMonitorChart"></canvas>
+                    <canvas x-ref="chartCanvas" aria-label="DirectAdmin trends chart"></canvas>
                 </div>
             </div>
-        </div>
-    </template>
+    </div>
 </div>
 
 @once
@@ -174,19 +170,45 @@ function resellerDirectAdminMonitor(config) {
         },
         init() {
             if (!this.connected) return;
-            this.$nextTick(() => this.renderChart());
+            this.queueChartRender();
             this.pollTimer = setInterval(() => this.refresh(), 45000);
         },
         destroy() {
             if (this.pollTimer) clearInterval(this.pollTimer);
-            if (this.chart) this.chart.destroy();
+            if (this.chart) {
+                this.chart.destroy();
+                this.chart = null;
+            }
         },
-        renderChart() {
-            const canvas = document.getElementById('resellerDaMonitorChart');
+        queueChartRender(retries = 0) {
+            this.$nextTick(() => {
+                const canvas = this.$refs.chartCanvas;
+                if (typeof Chart === 'undefined') {
+                    if (retries < 40) {
+                        setTimeout(() => this.queueChartRender(retries + 1), 50);
+                    }
+                    return;
+                }
+                if (!canvas || typeof canvas.getContext !== 'function') {
+                    if (retries < 20) {
+                        requestAnimationFrame(() => this.queueChartRender(retries + 1));
+                    }
+                    return;
+                }
+                if (!canvas.getContext('2d')) return;
+                this.renderChart(canvas);
+            });
+        },
+        normalizeSeries(values) {
+            return (values || []).map((value) => (value === null || value === undefined ? NaN : value));
+        },
+        renderChart(canvas) {
             if (!canvas || typeof Chart === 'undefined') return;
-            if (this.chart) this.chart.destroy();
+            if (this.chart) {
+                this.chart.destroy();
+                this.chart = null;
+            }
 
-            const styles = getComputedStyle(document.documentElement);
             const grid = document.documentElement.classList.contains('dark') ? 'rgba(148,163,184,0.15)' : 'rgba(148,163,184,0.25)';
             const labels = this.chartConfig.labels || [];
 
@@ -197,7 +219,7 @@ function resellerDirectAdminMonitor(config) {
                     datasets: [
                         {
                             label: 'Payments',
-                            data: this.chartConfig.payments || [],
+                            data: this.normalizeSeries(this.chartConfig.payments),
                             borderColor: 'rgb(139, 92, 246)',
                             backgroundColor: 'rgba(139, 92, 246, 0.12)',
                             fill: true,
@@ -207,7 +229,7 @@ function resellerDirectAdminMonitor(config) {
                         },
                         {
                             label: 'Disk GB',
-                            data: this.chartConfig.disk_gb || [],
+                            data: this.normalizeSeries(this.chartConfig.disk_gb),
                             borderColor: 'rgb(16, 185, 129)',
                             backgroundColor: 'transparent',
                             tension: 0.35,
@@ -217,7 +239,7 @@ function resellerDirectAdminMonitor(config) {
                         },
                         {
                             label: 'Hosted accounts',
-                            data: this.chartConfig.hosted_users || [],
+                            data: this.normalizeSeries(this.chartConfig.hosted_users),
                             borderColor: 'rgb(245, 158, 11)',
                             backgroundColor: 'transparent',
                             tension: 0.35,
@@ -281,13 +303,17 @@ function resellerDirectAdminMonitor(config) {
 
             const last = this.chart.data.labels.length - 1;
             if (last >= 0) {
-                if (data.disk_used_gb !== null) {
+                if (data.disk_used_gb !== null && data.disk_used_gb !== undefined) {
                     this.chart.data.datasets[1].data[last] = data.disk_used_gb;
                 }
-                if (data.hosted_user_count !== null) {
+                if (data.hosted_user_count !== null && data.hosted_user_count !== undefined) {
                     this.chart.data.datasets[2].data[last] = data.hosted_user_count;
                 }
-                this.chart.update('none');
+                try {
+                    this.chart.update('none');
+                } catch (e) {
+                    /* chart may be tearing down */
+                }
             }
         },
         async refresh() {
