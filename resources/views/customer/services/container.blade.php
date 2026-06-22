@@ -1,4 +1,6 @@
-@extends('layouts.app')
+@extends('layouts.customer')
+
+@section('title', 'Container: ' . $service->name)
 
 @section('content')
 <div class="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen py-8">

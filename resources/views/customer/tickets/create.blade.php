@@ -1,11 +1,9 @@
-@extends('layouts.app')
+@extends('layouts.customer')
 
 @section('title', 'Create Support Ticket')
 
 @section('content')
-<div class="py-12">
-    <div class="max-w-2xl mx-auto sm:px-6 lg:px-8">
-        <div class="space-y-6">
+<div class="space-y-6">
             <!-- Header -->
             <div class="flex justify-between items-start">
                 <div>
@@ -80,7 +78,5 @@
                     </div>
                 </form>
             </div>
-        </div>
-    </div>
 </div>
 @endsection

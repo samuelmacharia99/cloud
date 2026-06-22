@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.auth-premium')
 
 @section('title', 'Two-Factor Authentication')
 

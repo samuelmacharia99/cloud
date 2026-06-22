@@ -1,11 +1,9 @@
-@extends('layouts.app')
+@extends('layouts.customer')
 
 @section('title', 'Ticket #' . $ticket->id)
 
 @section('content')
-<div class="py-12">
-    <div class="max-w-4xl mx-auto sm:px-6 lg:px-8">
-        <div class="space-y-6">
+<div class="space-y-6">
             <!-- Header -->
             <div class="flex justify-between items-start">
                 <div>
@@ -123,7 +121,5 @@
             </div>
             @endif
             @endcan
-        </div>
-    </div>
 </div>
 @endsection
