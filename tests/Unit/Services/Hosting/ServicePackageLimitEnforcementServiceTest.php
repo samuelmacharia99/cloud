@@ -42,16 +42,41 @@ class ServicePackageLimitEnforcementServiceTest extends TestCase
         ], 100));
     }
 
-    public function test_metrics_over_limit_includes_database_at_capacity(): void
+    public function test_metrics_over_limit_suspends_database_only_when_exceeding_count(): void
     {
-        $over = $this->service->metricsOverLimit([
+        $atCapacity = $this->service->metricsOverLimit([
             'disk' => ['used' => 100, 'limit' => 1000, 'percent' => 10, 'unlimited' => false, 'unit' => 'MB'],
             'bandwidth' => ['used' => 950, 'limit' => 1000, 'percent' => 95, 'unlimited' => false, 'unit' => 'MB'],
             'database' => ['used' => 5, 'limit' => 5, 'percent' => 100, 'unlimited' => false, 'unit' => 'count'],
         ], 100);
 
-        $this->assertArrayHasKey('database', $over);
-        $this->assertArrayNotHasKey('disk', $over);
-        $this->assertArrayNotHasKey('bandwidth', $over);
+        $this->assertArrayNotHasKey('database', $atCapacity);
+        $this->assertArrayNotHasKey('disk', $atCapacity);
+        $this->assertArrayNotHasKey('bandwidth', $atCapacity);
+
+        $exceeded = $this->service->metricsOverLimit([
+            'database' => ['used' => 6, 'limit' => 5, 'percent' => 120, 'unlimited' => false, 'unit' => 'count'],
+        ], 100);
+
+        $this->assertArrayHasKey('database', $exceeded);
+    }
+
+    public function test_database_count_at_capacity_is_not_over_limit_for_suspension(): void
+    {
+        $this->assertFalse($this->service->isMetricOverLimit([
+            'used' => 5,
+            'limit' => 5,
+            'percent' => 100,
+            'unlimited' => false,
+            'unit' => 'count',
+        ], 100));
+
+        $this->assertTrue($this->service->isMetricOverLimit([
+            'used' => 6,
+            'limit' => 5,
+            'percent' => 120,
+            'unlimited' => false,
+            'unit' => 'count',
+        ], 100));
     }
 }

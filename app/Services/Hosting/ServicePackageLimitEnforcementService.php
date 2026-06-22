@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Suspends shared hosting services that exceed package limits (disk, bandwidth, databases)
+ * Suspends shared hosting services that exceed package limits (disk, bandwidth, database count)
  * and restores them when usage returns below the configured threshold.
  */
 class ServicePackageLimitEnforcementService
@@ -161,6 +161,12 @@ class ServicePackageLimitEnforcementService
 
         if ($limit === null || $limit <= 0 || $used === null) {
             return false;
+        }
+
+        // DirectAdmin database slots: suspend only when count exceeds the package allowance.
+        // At capacity (e.g. 5/5) is allowed; disk and bandwidth still suspend at/over quota.
+        if (($entry['unit'] ?? '') === 'count') {
+            return (float) $used > (float) $limit;
         }
 
         if ($thresholdPercent >= 100) {
