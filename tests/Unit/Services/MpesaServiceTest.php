@@ -83,6 +83,7 @@ class MpesaServiceTest extends TestCase
             'user_id' => $user->id,
             'invoice_id' => $invoice->id,
             'payment_method' => 'mpesa',
+            'payment_purpose' => 'invoice_payment',
             'transaction_reference' => 'ws_CO_123456789',
             'status' => 'pending',
         ]);

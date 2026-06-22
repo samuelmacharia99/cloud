@@ -179,6 +179,7 @@ class MpesaService implements PaymentGatewayInterface
                 checkoutRequestId: (string) $checkoutRequestId,
                 responseCode: $responseCode,
                 phone: $phone,
+                paymentPurpose: 'invoice_payment',
             );
 
             return [
@@ -229,7 +230,10 @@ class MpesaService implements PaymentGatewayInterface
             Payment::query()
                 ->where('user_id', $userId)
                 ->where('payment_method', 'mpesa')
-                ->whereNull('payment_purpose'),
+                ->where(function ($query) {
+                    $query->whereNull('payment_purpose')
+                        ->orWhere('payment_purpose', 'invoice_payment');
+                }),
             $amount,
             $phone,
         );
@@ -1110,7 +1114,7 @@ class MpesaService implements PaymentGatewayInterface
         string $checkoutRequestId,
         string $responseCode,
         string $phone,
-        ?string $paymentPurpose = null,
+        ?string $paymentPurpose = 'invoice_payment',
     ): Payment {
         return Payment::create([
             'user_id' => $userId,
@@ -1118,7 +1122,7 @@ class MpesaService implements PaymentGatewayInterface
             'amount' => $amount,
             'currency' => 'KES',
             'payment_method' => 'mpesa',
-            'payment_purpose' => $paymentPurpose,
+            'payment_purpose' => $paymentPurpose ?? 'invoice_payment',
             'transaction_reference' => $checkoutRequestId,
             'status' => PaymentStatus::Pending->value,
             'notes' => json_encode([
