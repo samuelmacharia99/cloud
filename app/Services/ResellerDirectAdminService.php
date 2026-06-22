@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Node;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Hosting\DirectAdminCustomerPanelApi;
 use App\Services\Provisioning\DirectAdminService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
@@ -166,6 +167,29 @@ class ResellerDirectAdminService
     public function canAutoProvision(User $reseller): bool
     {
         return $this->hasDirectAdminBinding($reseller);
+    }
+
+    /**
+     * @return array{success: bool, url?: string, message?: string}
+     */
+    public function createPanelLoginUrl(User $reseller): array
+    {
+        if (! filled($reseller->directadmin_username)) {
+            return ['success' => false, 'message' => 'DirectAdmin username is not linked for this reseller.'];
+        }
+
+        $node = $this->resolveNode($reseller);
+        if (! $node) {
+            return ['success' => false, 'message' => 'No DirectAdmin server is linked for this reseller.'];
+        }
+
+        $api = DirectAdminCustomerPanelApi::forServiceNode($node);
+
+        if (! $api->isAvailable()) {
+            return ['success' => false, 'message' => 'DirectAdmin API is not configured on this server.'];
+        }
+
+        return $api->createOneTimeLoginUrl((string) $reseller->directadmin_username);
     }
 
     public function resolveNode(User $reseller): ?Node

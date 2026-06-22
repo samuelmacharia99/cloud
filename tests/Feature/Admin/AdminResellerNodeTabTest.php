@@ -119,4 +119,23 @@ class AdminResellerNodeTabTest extends TestCase
             ])
             ->assertForbidden();
     }
+
+    public function test_admin_can_open_reseller_directadmin_panel_login(): void
+    {
+        Http::fake([
+            '*/CMD_API_LOGIN_KEYS' => Http::response('error=0&details=/CMD_LOGIN_URL?hash=abc123', 200),
+        ]);
+
+        $node = $this->directAdminNode();
+        $reseller = $this->reseller();
+        $reseller->update([
+            'directadmin_username' => 'res_acme',
+            'reseller_node_id' => $node->id,
+            'directadmin_login_key' => 'stored-key',
+        ]);
+
+        $this->actingAs($this->adminUser())
+            ->get(route('admin.resellers.directadmin.panel-login', $reseller))
+            ->assertRedirect();
+    }
 }

@@ -21,8 +21,8 @@
                 <a href="{{ route('admin.resellers.show', ['user' => $user, 'tab' => 'node', 'refresh_node' => 1]) }}" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition">
                     Refresh stats
                 </a>
-                @if($d['control_panel_url'])
-                    <a href="{{ $d['control_panel_url'] }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">
+                @if($user->directadmin_username)
+                    <a href="{{ route('admin.resellers.directadmin.panel-login', $user) }}" class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition">
                         Open DirectAdmin
                     </a>
                 @endif

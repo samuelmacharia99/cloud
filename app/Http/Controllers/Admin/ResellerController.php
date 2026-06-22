@@ -268,6 +268,21 @@ class ResellerController extends Controller
             ->with('success', 'DirectAdmin connection removed for this reseller.');
     }
 
+    public function directAdminPanelLogin(User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        $result = app(ResellerDirectAdminService::class)->createPanelLoginUrl($user);
+
+        if (! ($result['success'] ?? false) || empty($result['url'])) {
+            return redirect()
+                ->route('admin.resellers.show', ['user' => $user, 'tab' => 'node'])
+                ->with('error', $result['message'] ?? 'Unable to open DirectAdmin.');
+        }
+
+        return redirect()->away($result['url']);
+    }
+
     public function promote(User $user)
     {
         $this->authorize('promote', $user);

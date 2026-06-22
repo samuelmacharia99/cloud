@@ -201,6 +201,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/directadmin/test', [ResellerController::class, 'testDirectAdminBinding'])->name('admin.resellers.directadmin.test');
         Route::post('admin/resellers/{user}/directadmin/connect', [ResellerController::class, 'connectDirectAdmin'])->name('admin.resellers.directadmin.connect');
         Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');
+        Route::get('admin/resellers/{user}/directadmin/panel-login', [ResellerController::class, 'directAdminPanelLogin'])->middleware('throttle:10,1')->name('admin.resellers.directadmin.panel-login');
         Route::get('admin/settings', [SettingController::class, 'index'])->name('admin.settings.index');
         Route::post('admin/settings', [SettingController::class, 'update'])->name('admin.settings.update');
         Route::post('admin/settings/node-nameservers', [SettingController::class, 'updateDirectAdminNameservers'])->name('admin.settings.update-node-nameservers');

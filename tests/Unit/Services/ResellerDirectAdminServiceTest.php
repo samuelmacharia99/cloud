@@ -84,4 +84,35 @@ class ResellerDirectAdminServiceTest extends TestCase
         $this->assertNotNull($resolved);
         $this->assertSame('https://da.example.com:2222', $resolved->api_url);
     }
+
+    public function test_create_panel_login_url_uses_one_time_login_for_reseller(): void
+    {
+        Http::fake([
+            '*/CMD_API_LOGIN_KEYS' => Http::response('error=0&details=/CMD_LOGIN_URL?hash=reseller123', 200),
+        ]);
+
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'is_active' => true,
+            'hostname' => 'da.example.com',
+            'da_port' => 2222,
+            'api_url' => 'https://da.example.com:2222',
+            'da_admin_username' => 'admin',
+            'da_login_key' => 'secret',
+            'verify_ssl' => false,
+        ]);
+
+        $reseller = User::factory()->create([
+            'is_reseller' => true,
+            'directadmin_username' => 'willisoch',
+            'reseller_node_id' => $node->id,
+            'directadmin_login_key' => 'reseller-key',
+        ]);
+
+        $result = app(ResellerDirectAdminService::class)->createPanelLoginUrl($reseller);
+
+        $this->assertTrue($result['success']);
+        $this->assertStringContainsString('CMD_LOGIN_URL', $result['url']);
+        $this->assertStringContainsString('hash=reseller123', $result['url']);
+    }
 }
