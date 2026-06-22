@@ -27,7 +27,13 @@ class ResellerDirectAdminService
 
     public function resolveConnectableNode(int $nodeId): ?Node
     {
-        return $this->availableNodes()->firstWhere('id', $nodeId);
+        return Node::query()
+            ->where('id', $nodeId)
+            ->where('type', 'directadmin')
+            ->where('is_active', true)
+            ->whereNotNull('api_url')
+            ->where('api_url', '!=', '')
+            ->first();
     }
 
     /**

@@ -69,4 +69,19 @@ class ResellerDirectAdminServiceTest extends TestCase
         $this->assertSame(0, $result['hosted_user_count']);
         $this->assertCount(1, $result['packages']);
     }
+
+    public function test_resolve_connectable_node_includes_api_url_for_verification(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'is_active' => true,
+            'api_url' => 'https://da.example.com:2222',
+            'verify_ssl' => false,
+        ]);
+
+        $resolved = app(ResellerDirectAdminService::class)->resolveConnectableNode($node->id);
+
+        $this->assertNotNull($resolved);
+        $this->assertSame('https://da.example.com:2222', $resolved->api_url);
+    }
 }
