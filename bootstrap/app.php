@@ -12,6 +12,7 @@ use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\MarkAdminSectionSeen;
 use App\Http\Middleware\ResellerPublicApiCors;
 use App\Http\Middleware\ResolveResellerPublicApiTenant;
+use App\Http\Middleware\ResolveResellerTenant;
 use App\Http\Middleware\RestrictResellerCustomerPlatformCatalog;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SkipVerificationIfImpersonating;
