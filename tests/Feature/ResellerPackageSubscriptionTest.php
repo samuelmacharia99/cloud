@@ -159,6 +159,56 @@ class ResellerPackageSubscriptionTest extends TestCase
         ]);
     }
 
+    public function test_unpaid_upgrade_invoice_does_not_block_renewal_invoice_generation(): void
+    {
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+
+        $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);
+        $pro = $this->createPackage(['name' => 'Pro', 'price' => 10600]);
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $starter);
+        $reseller->update(['package_expires_at' => now()->addDays(5)->startOfDay()]);
+        $reseller->refresh();
+
+        $upgradeInvoice = $service->createSubscriptionInvoice($reseller, $pro);
+        $this->assertStringContainsString(ResellerPackageSubscriptionService::UPGRADE_META, $upgradeInvoice->notes ?? '');
+
+        $this->artisan('cron:generate-reseller-invoices')->assertSuccessful();
+
+        $renewalInvoice = Invoice::query()
+            ->where('user_id', $reseller->id)
+            ->where('type', 'reseller_subscription')
+            ->where('notes', 'like', '%Renewal%')
+            ->first();
+
+        $this->assertNotNull($renewalInvoice);
+        $this->assertSame('unpaid', $renewalInvoice->status->value);
+    }
+
+    public function test_admin_can_generate_renewal_invoice_manually(): void
+    {
+        $package = $this->createPackage();
+        $admin = User::factory()->admin()->create();
+        $reseller = User::factory()->reseller()->create([
+            'reseller_package_id' => $package->id,
+            'package_subscribed_at' => now()->subMonth(),
+            'package_expires_at' => now()->addDays(3)->startOfDay(),
+        ]);
+
+        $response = $this->actingAs($admin)->post(route('admin.resellers.generate-renewal-invoice', $reseller));
+
+        $response->assertRedirect(route('admin.resellers.show', $reseller));
+        $response->assertSessionHas('success');
+
+        $this->assertDatabaseHas('invoices', [
+            'user_id' => $reseller->id,
+            'type' => 'reseller_subscription',
+            'status' => 'unpaid',
+        ]);
+    }
+
     public function test_upgrade_invoice_charges_prorated_difference_not_full_package_price(): void
     {
         $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);

@@ -179,6 +179,55 @@ class ResellerPackageSubscriptionService
         return $query->latest()->first();
     }
 
+    /**
+     * Open renewal invoice for the current package billing period only.
+     * Upgrade or stale subscription invoices must not block cron renewal generation.
+     */
+    public function pendingRenewalSubscriptionInvoice(User $user): ?Invoice
+    {
+        $schedule = app(InvoiceGenerationScheduleService::class);
+        $renewalDue = $schedule->resellerPackageRenewalDueDate($user);
+
+        if (! $renewalDue) {
+            return null;
+        }
+
+        $dueDate = $renewalDue->toDateString();
+
+        return Invoice::query()
+            ->where('user_id', $user->id)
+            ->where('type', 'reseller_subscription')
+            ->whereIn('status', ['unpaid', 'overdue'])
+            ->where('notes', 'like', '%Renewal%')
+            ->whereDate('due_date', $dueDate)
+            ->latest()
+            ->first();
+    }
+
+    /**
+     * Create a package renewal invoice when inside the billing window.
+     */
+    public function createRenewalInvoiceIfNeeded(User $user, bool $force = false): Invoice
+    {
+        $package = $user->resellerPackage;
+        if (! $package) {
+            throw new \InvalidArgumentException('Reseller has no package assigned.');
+        }
+
+        $schedule = app(InvoiceGenerationScheduleService::class);
+
+        if (! $force && ! $schedule->isResellerPackageDueForRenewalInvoice($user)) {
+            throw new \InvalidArgumentException('Reseller is not yet due for a renewal invoice.');
+        }
+
+        $pending = $this->pendingRenewalSubscriptionInvoice($user);
+        if ($pending) {
+            throw new \InvalidArgumentException('An unpaid renewal invoice already exists for this billing period.');
+        }
+
+        return $this->createSubscriptionInvoice($user, $package, renewal: true);
+    }
+
     public function activateFromPaidInvoice(Invoice $invoice): void
     {
         if ($invoice->type !== 'reseller_subscription' || ! $invoice->isPaid()) {

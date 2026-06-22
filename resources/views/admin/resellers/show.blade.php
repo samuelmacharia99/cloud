@@ -302,6 +302,36 @@
                                 @endif
                             </div>
                         </div>
+
+                        @if ($packageMissingRenewalInvoice ?? false)
+                            <div class="mt-4 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-medium text-amber-900 dark:text-amber-200">Renewal invoice missing</p>
+                                    <p class="text-xs text-amber-800 dark:text-amber-300 mt-1">
+                                        Payment is due {{ $user->package_renewal_due_date?->format('M d, Y') }} but no renewal invoice exists for this period.
+                                        Run <code class="text-xs">php artisan cron:generate-reseller-invoices</code> or generate one now.
+                                    </p>
+                                </div>
+                                <form method="POST" action="{{ route('admin.resellers.generate-renewal-invoice', $user) }}" class="shrink-0">
+                                    @csrf
+                                    <button type="submit" class="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition whitespace-nowrap">
+                                        Generate renewal invoice
+                                    </button>
+                                </form>
+                            </div>
+                        @elseif ($pendingRenewalInvoice ?? null)
+                            <div class="mt-4 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/20 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-medium text-blue-900 dark:text-blue-200">Renewal invoice open</p>
+                                    <p class="text-xs text-blue-800 dark:text-blue-300 mt-1">
+                                        {{ $pendingRenewalInvoice->invoice_number }} · due {{ $pendingRenewalInvoice->due_date?->format('M d, Y') }}
+                                    </p>
+                                </div>
+                                <a href="{{ route('admin.invoices.show', $pendingRenewalInvoice) }}" class="text-xs font-medium text-blue-700 dark:text-blue-300 hover:underline shrink-0">
+                                    View invoice →
+                                </a>
+                            </div>
+                        @endif
                     </div>
                 </div>
                 @endif

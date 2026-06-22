@@ -92,8 +92,20 @@ class InvoiceGenerationScheduleService
         $expiresAt = $this->resellerPackageRenewalDueDate($user);
 
         return $expiresAt
-            && $expiresAt->greaterThan($reference)
+            && $expiresAt->greaterThanOrEqualTo($reference)
             && $reference->greaterThanOrEqualTo($generateOnOrBefore);
+    }
+
+    /**
+     * True when the reseller is inside the renewal invoice window but has no open renewal invoice.
+     */
+    public function resellerPackageMissingRenewalInvoice(User $user): bool
+    {
+        if (! $this->isResellerPackageDueForRenewalInvoice($user)) {
+            return false;
+        }
+
+        return app(ResellerPackageSubscriptionService::class)->pendingRenewalSubscriptionInvoice($user) === null;
     }
 
     public function serviceAdvanceDays(Service $service): int

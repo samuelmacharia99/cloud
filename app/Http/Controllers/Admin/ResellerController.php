@@ -113,12 +113,17 @@ class ResellerController extends Controller
 
         $subscriptionService = app(ResellerPackageSubscriptionService::class);
         $upgradeQuotes = [];
+        $pendingRenewalInvoice = null;
+        $packageMissingRenewalInvoice = false;
         if ($user->resellerPackage) {
             foreach ($packages as $pkg) {
                 if ($subscriptionService->isPackageUpgrade($user, $pkg)) {
                     $upgradeQuotes[$pkg->id] = $subscriptionService->upgradeQuote($user, $pkg);
                 }
             }
+            $pendingRenewalInvoice = $subscriptionService->pendingRenewalSubscriptionInvoice($user);
+            $packageMissingRenewalInvoice = app(InvoiceGenerationScheduleService::class)
+                ->resellerPackageMissingRenewalInvoice($user);
         }
 
         return view('admin.resellers.show', compact(
@@ -137,6 +142,8 @@ class ResellerController extends Controller
             'wallet',
             'walletTransactions',
             'upgradeQuotes',
+            'pendingRenewalInvoice',
+            'packageMissingRenewalInvoice',
         ));
     }
 
@@ -451,6 +458,38 @@ class ResellerController extends Controller
 
         return redirect()->route('admin.resellers.show', $user)
             ->with('success', 'Billing dates updated successfully.');
+    }
+
+    public function generateRenewalInvoice(User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        $user->loadMissing('resellerPackage');
+
+        try {
+            $invoice = app(ResellerPackageSubscriptionService::class)
+                ->createRenewalInvoiceIfNeeded($user, force: true);
+
+            AdminActivityService::log(
+                'reseller.renewal_invoice',
+                "Generated package renewal invoice {$invoice->invoice_number} for {$user->name}",
+                $user,
+            );
+
+            return redirect()->route('admin.resellers.show', $user)
+                ->with('success', "Renewal invoice {$invoice->invoice_number} created. Due {$invoice->due_date->format('M d, Y')}.");
+        } catch (\InvalidArgumentException $e) {
+            return redirect()->route('admin.resellers.show', $user)
+                ->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error('Failed to generate reseller renewal invoice', [
+                'reseller_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return redirect()->route('admin.resellers.show', $user)
+                ->with('error', 'Failed to generate renewal invoice: '.$e->getMessage());
+        }
     }
 
     public function impersonate(User $user)

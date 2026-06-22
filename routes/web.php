@@ -195,6 +195,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/assign-package', [ResellerController::class, 'assignPackage'])->name('admin.resellers.assign-package');
         Route::post('admin/resellers/{user}/upgrade-package', [ResellerController::class, 'upgradePackage'])->name('admin.resellers.upgrade-package');
         Route::post('admin/resellers/{user}/update-billing', [ResellerController::class, 'updateBilling'])->name('admin.resellers.update-billing');
+        Route::post('admin/resellers/{user}/generate-renewal-invoice', [ResellerController::class, 'generateRenewalInvoice'])->name('admin.resellers.generate-renewal-invoice');
         Route::post('admin/resellers/{user}/impersonate', [ResellerController::class, 'impersonate'])->name('admin.resellers.impersonate');
         Route::post('admin/resellers/{user}/add-domain', [ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
         Route::post('admin/resellers/{user}/add-service', [ResellerController::class, 'addService'])->name('admin.resellers.add-service');

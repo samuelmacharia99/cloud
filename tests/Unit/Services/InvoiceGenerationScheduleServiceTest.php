@@ -143,6 +143,30 @@ class InvoiceGenerationScheduleServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_reseller_package_due_for_invoice_on_payment_due_date(): void
+    {
+        Setting::setValue('reseller_package_invoice_advance_days', '10');
+
+        Carbon::setTestNow(Carbon::parse('2026-07-04'));
+
+        $reseller = User::factory()->reseller()->create([
+            'reseller_package_id' => ResellerPackage::create([
+                'name' => 'Test',
+                'description' => 'Test',
+                'billing_cycle' => 'monthly',
+                'storage_space' => 10,
+                'max_users' => 5,
+                'price' => 1000,
+                'active' => true,
+            ])->id,
+            'package_expires_at' => Carbon::parse('2026-07-04'),
+        ]);
+
+        $this->assertTrue($this->schedule->isResellerPackageDueForRenewalInvoice($reseller));
+
+        Carbon::setTestNow();
+    }
+
     public function test_monthly_service_not_due_outside_ten_day_window(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-03-01'));
