@@ -64,6 +64,10 @@
         this.showPaymentModal = false;
     },
     submitPayment() {
+        if (this.submitting) {
+            return;
+        }
+
         if (!this.selectedGateway && this.payableAmount > 0) {
             alert('Please select a payment method.');
             return;

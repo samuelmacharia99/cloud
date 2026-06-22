@@ -56,6 +56,26 @@ class CreditController extends Controller
         ]);
 
         try {
+            if ($validated['payment_method'] === 'mpesa') {
+                $mpesa = new MpesaService;
+                $existing = $mpesa->findReusablePendingTopup(
+                    $customer,
+                    'credit_topup',
+                    (float) $validated['amount'],
+                    (string) ($validated['phone'] ?? $customer->phone),
+                );
+
+                if ($existing?->invoice_id) {
+                    return response()->json([
+                        'success' => true,
+                        'invoice_id' => $existing->invoice_id,
+                        'checkout_request_id' => $existing->transaction_reference,
+                        'message' => 'An M-Pesa prompt is already on your phone. Enter your PIN to complete payment.',
+                        'reused_session' => true,
+                    ]);
+                }
+            }
+
             $topupInvoice = $this->topupService->createTopupInvoice($customer, (float) $validated['amount']);
 
             $customerData = [

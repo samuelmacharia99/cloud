@@ -11,6 +11,8 @@ use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\CustomerCreditTopupService;
 use App\Services\NotificationService;
 use App\Services\ResellerBrandingResolver;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -18,6 +20,8 @@ use Illuminate\Support\Facades\Log;
 
 class MpesaService implements PaymentGatewayInterface
 {
+    private const STK_SESSION_MINUTES = 5;
+
     protected ?string $consumerKey;
 
     protected ?string $consumerSecret;
@@ -87,6 +91,27 @@ class MpesaService implements PaymentGatewayInterface
      */
     public function initiate(Invoice $invoice, array $customerData = []): array
     {
+        $lockKey = 'mpesa_stk:invoice:'.$invoice->id;
+
+        try {
+            return Cache::lock($lockKey, 30)->block(10, function () use ($invoice, $customerData) {
+                return $this->performInvoiceStkInitiate($invoice, $customerData);
+            });
+        } catch (LockTimeoutException $e) {
+            Log::warning('M-Pesa STK lock timeout for invoice', ['invoice_id' => $invoice->id]);
+
+            return [
+                'success' => false,
+                'message' => 'A payment request is already being processed. Please check your phone for the M-Pesa prompt.',
+            ];
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string, checkout_request_id?: string, response_code?: string, reused_session?: bool}
+     */
+    private function performInvoiceStkInitiate(Invoice $invoice, array $customerData): array
+    {
         try {
             if (! $this->isConfigured()) {
                 throw new \Exception('M-Pesa is not configured');
@@ -95,49 +120,40 @@ class MpesaService implements PaymentGatewayInterface
             $phone = $this->sanitizePhone($customerData['phone'] ?? '');
             $settlement = app(InvoiceCurrencyService::class)->settlementAmount($invoice, 'KES');
             $chargeAmount = (float) ($customerData['charge_amount'] ?? $settlement['amount']);
-            $token = $this->getAccessToken();
 
+            $existing = $this->findReusablePendingPaymentForInvoice($invoice, $chargeAmount, $phone);
+            if ($existing) {
+                return $this->reusePendingStkResponse($existing);
+            }
+
+            $token = $this->getAccessToken();
             if (! $token) {
                 throw new \Exception('Failed to get M-Pesa access token');
             }
 
-            $timestamp = now()->format('YmdHis');
-            $password = base64_encode($this->businessShortCode.$this->passkey.$timestamp);
-
-            $payload = [
-                'BusinessShortCode' => $this->businessShortCode,
-                'Password' => $password,
-                'Timestamp' => $timestamp,
-                'TransactionType' => 'CustomerPayBillOnline',
-                'Amount' => (int) ceil($chargeAmount),
-                'PartyA' => $phone,
-                'PartyB' => $this->businessShortCode,
-                'PhoneNumber' => $phone,
-                'CallBackURL' => $this->buildCallbackUrl(),
-                'AccountReference' => $invoice->invoice_number,
-                'TransactionDesc' => "Invoice {$invoice->invoice_number}",
-            ];
-
-            Log::info('M-Pesa STK Push Request', [
+            $payload = $this->buildStkPayload($phone, $chargeAmount, $invoice->invoice_number, "Invoice {$invoice->invoice_number}");
+            $stkResult = $this->postStkPush($payload, $token, [
                 'invoice_id' => $invoice->id,
                 'phone' => $phone,
                 'callback_url' => $this->buildCallbackUrl(),
             ]);
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-            ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
+            if (! $stkResult['successful']) {
+                $recovered = $this->recoverFromDuplicatedMsisdn(
+                    $stkResult,
+                    fn () => $this->findReusablePendingPaymentForInvoice($invoice, $chargeAmount, $phone)
+                        ?? $this->findReusablePendingPaymentByPhone((int) $invoice->user_id, $phone, $chargeAmount),
+                    ['invoice_id' => $invoice->id, 'phone' => $phone],
+                );
 
-            if (! $response->successful()) {
-                Log::error('M-Pesa STK Push failed', [
-                    'invoice_id' => $invoice->id,
-                    'status_code' => $response->status(),
-                    'response' => $response->json(),
-                ]);
-                throw new \Exception('M-Pesa request failed: '.($response->json()['errorMessage'] ?? 'Unknown error'));
+                if ($recovered !== null) {
+                    return $recovered;
+                }
+
+                throw new \Exception('M-Pesa request failed: '.($stkResult['body']['errorMessage'] ?? 'Unknown error'));
             }
 
-            $data = $response->json();
+            $data = $stkResult['body'];
             $responseCode = (string) ($data['ResponseCode'] ?? '');
             $checkoutRequestId = $data['CheckoutRequestID'] ?? null;
 
@@ -156,19 +172,14 @@ class MpesaService implements PaymentGatewayInterface
                 ];
             }
 
-            Payment::create([
-                'user_id' => $invoice->user_id,
-                'invoice_id' => $invoice->id,
-                'amount' => $chargeAmount,
-                'currency' => 'KES',
-                'payment_method' => 'mpesa',
-                'transaction_reference' => $checkoutRequestId,
-                'status' => 'pending',
-                'notes' => json_encode([
-                    'response_code' => $responseCode,
-                    'checkout_request_id' => $checkoutRequestId,
-                ]),
-            ]);
+            $this->createPendingMpesaPayment(
+                userId: (int) $invoice->user_id,
+                invoiceId: (int) $invoice->id,
+                amount: $chargeAmount,
+                checkoutRequestId: (string) $checkoutRequestId,
+                responseCode: $responseCode,
+                phone: $phone,
+            );
 
             return [
                 'success' => true,
@@ -187,6 +198,41 @@ class MpesaService implements PaymentGatewayInterface
                 'message' => 'Payment initiation failed: '.$e->getMessage(),
             ];
         }
+    }
+
+    public function findReusablePendingPaymentForInvoice(Invoice $invoice, float $amount, string $phone): ?Payment
+    {
+        return $this->matchReusablePendingPayment(
+            Payment::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('payment_method', 'mpesa'),
+            $amount,
+            $phone,
+        );
+    }
+
+    public function findReusablePendingTopup(User $user, string $paymentPurpose, float $amount, string $phone): ?Payment
+    {
+        return $this->matchReusablePendingPayment(
+            Payment::query()
+                ->where('user_id', $user->id)
+                ->where('payment_purpose', $paymentPurpose)
+                ->where('payment_method', 'mpesa'),
+            $amount,
+            $phone,
+        );
+    }
+
+    public function findReusablePendingPaymentByPhone(int $userId, string $phone, float $amount): ?Payment
+    {
+        return $this->matchReusablePendingPayment(
+            Payment::query()
+                ->where('user_id', $userId)
+                ->where('payment_method', 'mpesa')
+                ->whereNull('payment_purpose'),
+            $amount,
+            $phone,
+        );
     }
 
     /**
@@ -508,6 +554,35 @@ class MpesaService implements PaymentGatewayInterface
         Invoice $topupInvoice,
         string $paymentPurpose = 'wallet_topup'
     ): array {
+        $lockKey = 'mpesa_stk:topup:'.$user->id.':'.$paymentPurpose;
+
+        try {
+            return Cache::lock($lockKey, 30)->block(10, function () use ($user, $amount, $phone, $topupInvoice, $paymentPurpose) {
+                return $this->performTopupStkInitiate($user, $amount, $phone, $topupInvoice, $paymentPurpose);
+            });
+        } catch (LockTimeoutException $e) {
+            Log::warning('M-Pesa STK lock timeout for top-up', [
+                'user_id' => $user->id,
+                'payment_purpose' => $paymentPurpose,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'A payment request is already being processed. Please check your phone for the M-Pesa prompt.',
+            ];
+        }
+    }
+
+    /**
+     * @return array{success: bool, message: string, checkout_request_id?: string, response_code?: string, reused_session?: bool}
+     */
+    private function performTopupStkInitiate(
+        User $user,
+        float $amount,
+        string $phone,
+        Invoice $topupInvoice,
+        string $paymentPurpose,
+    ): array {
         $purposeLabels = [
             'wallet_topup' => ['prefix' => 'WALLET', 'desc' => 'Wallet top-up'],
             'credit_topup' => ['prefix' => 'CREDIT', 'desc' => 'Account credit purchase'],
@@ -521,51 +596,46 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $phone = $this->sanitizePhone($phone);
-            $token = $this->getAccessToken();
 
+            $existing = $this->findReusablePendingTopup($user, $paymentPurpose, $amount, $phone);
+            if ($existing) {
+                return $this->reusePendingStkResponse($existing);
+            }
+
+            $token = $this->getAccessToken();
             if (! $token) {
                 throw new \Exception('Failed to get M-Pesa access token');
             }
 
-            $timestamp = now()->format('YmdHis');
-            $password = base64_encode($this->businessShortCode.$this->passkey.$timestamp);
+            $payload = $this->buildStkPayload(
+                $phone,
+                $amount,
+                "{$labels['prefix']}-{$user->id}",
+                "{$labels['desc']} - {$amount} KES",
+            );
 
-            $payload = [
-                'BusinessShortCode' => $this->businessShortCode,
-                'Password' => $password,
-                'Timestamp' => $timestamp,
-                'TransactionType' => 'CustomerPayBillOnline',
-                'Amount' => (int) ceil($amount),
-                'PartyA' => $phone,
-                'PartyB' => $this->businessShortCode,
-                'PhoneNumber' => $phone,
-                'CallBackURL' => $this->buildCallbackUrl(),
-                'AccountReference' => "{$labels['prefix']}-{$user->id}",
-                'TransactionDesc' => "{$labels['desc']} - {$amount} KES",
-            ];
-
-            Log::info('M-Pesa top-up STK Push Request', [
+            $stkResult = $this->postStkPush($payload, $token, [
                 'user_id' => $user->id,
                 'payment_purpose' => $paymentPurpose,
                 'phone' => $phone,
                 'amount' => $amount,
             ]);
 
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$token}",
-            ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
+            if (! $stkResult['successful']) {
+                $recovered = $this->recoverFromDuplicatedMsisdn(
+                    $stkResult,
+                    fn () => $this->findReusablePendingTopup($user, $paymentPurpose, $amount, $phone),
+                    ['user_id' => $user->id, 'payment_purpose' => $paymentPurpose, 'phone' => $phone],
+                );
 
-            if (! $response->successful()) {
-                Log::error('M-Pesa top-up STK Push failed', [
-                    'user_id' => $user->id,
-                    'payment_purpose' => $paymentPurpose,
-                    'status_code' => $response->status(),
-                    'response' => $response->json(),
-                ]);
-                throw new \Exception('M-Pesa request failed: '.($response->json()['errorMessage'] ?? 'Unknown error'));
+                if ($recovered !== null) {
+                    return $recovered;
+                }
+
+                throw new \Exception('M-Pesa request failed: '.($stkResult['body']['errorMessage'] ?? 'Unknown error'));
             }
 
-            $data = $response->json();
+            $data = $stkResult['body'];
             $responseCode = (string) ($data['ResponseCode'] ?? '');
             $checkoutRequestId = $data['CheckoutRequestID'] ?? null;
 
@@ -585,20 +655,15 @@ class MpesaService implements PaymentGatewayInterface
                 ];
             }
 
-            Payment::create([
-                'user_id' => $user->id,
-                'invoice_id' => $topupInvoice->id,
-                'amount' => $amount,
-                'currency' => 'KES',
-                'payment_method' => 'mpesa',
-                'payment_purpose' => $paymentPurpose,
-                'transaction_reference' => $checkoutRequestId,
-                'status' => 'pending',
-                'notes' => json_encode([
-                    'response_code' => $responseCode,
-                    'checkout_request_id' => $checkoutRequestId,
-                ]),
-            ]);
+            $this->createPendingMpesaPayment(
+                userId: (int) $user->id,
+                invoiceId: (int) $topupInvoice->id,
+                amount: $amount,
+                checkoutRequestId: (string) $checkoutRequestId,
+                responseCode: $responseCode,
+                phone: $phone,
+                paymentPurpose: $paymentPurpose,
+            );
 
             return [
                 'success' => true,
@@ -906,6 +971,177 @@ class MpesaService implements PaymentGatewayInterface
                 'message' => 'Payment simulation failed: '.$e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * @param  Builder<Payment>  $query
+     */
+    private function matchReusablePendingPayment($query, float $amount, string $phone): ?Payment
+    {
+        $phone = $this->sanitizePhone($phone);
+        $expectedAmount = (int) ceil($amount);
+
+        $payments = $query
+            ->where('status', PaymentStatus::Pending->value)
+            ->where('created_at', '>=', now()->subMinutes(self::STK_SESSION_MINUTES))
+            ->orderByDesc('id')
+            ->get();
+
+        foreach ($payments as $payment) {
+            if ((int) ceil((float) $payment->amount) !== $expectedAmount) {
+                continue;
+            }
+
+            $notes = json_decode((string) $payment->notes, true) ?: [];
+            $storedPhone = isset($notes['phone']) ? $this->sanitizePhone((string) $notes['phone']) : null;
+
+            if ($storedPhone !== null && $storedPhone !== $phone) {
+                continue;
+            }
+
+            return $payment;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{success: bool, message: string, checkout_request_id: string, reused_session: true}
+     */
+    private function reusePendingStkResponse(Payment $payment): array
+    {
+        Log::info('M-Pesa STK session reused', [
+            'payment_id' => $payment->id,
+            'invoice_id' => $payment->invoice_id,
+            'checkout_request_id' => $payment->transaction_reference,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'An M-Pesa prompt is already on your phone. Enter your PIN to complete payment.',
+            'checkout_request_id' => (string) $payment->transaction_reference,
+            'reused_session' => true,
+        ];
+    }
+
+    /**
+     * @param  callable(): (?Payment)  $findPending
+     * @param  array<string, mixed>  $context
+     * @return array{success: bool, message: string, checkout_request_id: string, reused_session: true}|null
+     */
+    private function recoverFromDuplicatedMsisdn(array $stkResult, callable $findPending, array $context): ?array
+    {
+        if (! $this->isDuplicatedMsisdnError($stkResult['body'], $stkResult['status'])) {
+            Log::error('M-Pesa STK Push failed', array_merge($context, [
+                'status_code' => $stkResult['status'],
+                'response' => $stkResult['body'],
+            ]));
+
+            return null;
+        }
+
+        $existing = $findPending();
+        if ($existing) {
+            Log::info('M-Pesa duplicated MSISDN recovered using pending payment', array_merge($context, [
+                'payment_id' => $existing->id,
+                'checkout_request_id' => $existing->transaction_reference,
+            ]));
+
+            return $this->reusePendingStkResponse($existing);
+        }
+
+        Log::warning('M-Pesa duplicated MSISDN with no reusable pending payment', array_merge($context, [
+            'status_code' => $stkResult['status'],
+            'response' => $stkResult['body'],
+        ]));
+
+        return [
+            'success' => false,
+            'message' => 'An M-Pesa prompt is already active on this phone. Complete or cancel it on your phone, then wait 2 minutes before trying again.',
+            'duplicate_session' => true,
+        ];
+    }
+
+    /**
+     * @return array{successful: bool, status: int, body: array<string, mixed>}
+     */
+    private function postStkPush(array $payload, string $token, array $logContext): array
+    {
+        Log::info('M-Pesa STK Push Request', $logContext);
+
+        $response = Http::withHeaders([
+            'Authorization' => "Bearer {$token}",
+        ])->post("{$this->baseUrl}/mpesa/stkpush/v1/processrequest", $payload);
+
+        return [
+            'successful' => $response->successful(),
+            'status' => $response->status(),
+            'body' => $response->json() ?? [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildStkPayload(string $phone, float $amount, string $accountReference, string $transactionDesc): array
+    {
+        $timestamp = now()->format('YmdHis');
+        $password = base64_encode($this->businessShortCode.$this->passkey.$timestamp);
+
+        return [
+            'BusinessShortCode' => $this->businessShortCode,
+            'Password' => $password,
+            'Timestamp' => $timestamp,
+            'TransactionType' => 'CustomerPayBillOnline',
+            'Amount' => (int) ceil($amount),
+            'PartyA' => $phone,
+            'PartyB' => $this->businessShortCode,
+            'PhoneNumber' => $phone,
+            'CallBackURL' => $this->buildCallbackUrl(),
+            'AccountReference' => $accountReference,
+            'TransactionDesc' => $transactionDesc,
+        ];
+    }
+
+    private function createPendingMpesaPayment(
+        int $userId,
+        int $invoiceId,
+        float $amount,
+        string $checkoutRequestId,
+        string $responseCode,
+        string $phone,
+        ?string $paymentPurpose = null,
+    ): Payment {
+        return Payment::create([
+            'user_id' => $userId,
+            'invoice_id' => $invoiceId,
+            'amount' => $amount,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'payment_purpose' => $paymentPurpose,
+            'transaction_reference' => $checkoutRequestId,
+            'status' => PaymentStatus::Pending->value,
+            'notes' => json_encode([
+                'response_code' => $responseCode,
+                'checkout_request_id' => $checkoutRequestId,
+                'phone' => $this->sanitizePhone($phone),
+            ]),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $responseJson
+     */
+    private function isDuplicatedMsisdnError(array $responseJson, int $statusCode): bool
+    {
+        $errorCode = (string) ($responseJson['errorCode'] ?? '');
+        $errorMessage = strtolower((string) ($responseJson['errorMessage'] ?? ''));
+
+        if ($errorCode === '500.001.1001' && str_contains($errorMessage, 'duplicated msisdn')) {
+            return true;
+        }
+
+        return $statusCode >= 400 && str_contains($errorMessage, 'existing ussd session');
     }
 
     /**

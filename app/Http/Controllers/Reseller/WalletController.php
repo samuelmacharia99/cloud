@@ -46,6 +46,26 @@ class WalletController extends Controller
         ]);
 
         try {
+            if ($validated['payment_method'] === 'mpesa') {
+                $mpesa = new MpesaService;
+                $existing = $mpesa->findReusablePendingTopup(
+                    $reseller,
+                    'wallet_topup',
+                    (float) $validated['amount'],
+                    (string) ($validated['phone'] ?? $reseller->phone),
+                );
+
+                if ($existing?->invoice_id) {
+                    return response()->json([
+                        'success' => true,
+                        'invoice_id' => $existing->invoice_id,
+                        'checkout_request_id' => $existing->transaction_reference,
+                        'message' => 'An M-Pesa prompt is already on your phone. Enter your PIN to complete payment.',
+                        'reused_session' => true,
+                    ]);
+                }
+            }
+
             // Create stub invoice for wallet top-up
             $topupInvoice = Invoice::create([
                 'user_id' => $reseller->id,
