@@ -26,6 +26,7 @@ use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerNameserverService;
+use App\Services\ResellerPublicApiService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\TechStackRoutingService;
@@ -595,7 +596,13 @@ class CheckoutController extends Controller
         }
 
         $customer = auth()->user();
+        $hostReseller = $this->checkoutReseller();
+
         if ($customer?->reseller_id && $resellerProduct->reseller_id !== $customer->reseller_id) {
+            return null;
+        }
+
+        if (! $customer && $hostReseller && $resellerProduct->reseller_id !== $hostReseller->id) {
             return null;
         }
 
@@ -850,13 +857,21 @@ class CheckoutController extends Controller
             ]);
 
             // Create user account — do NOT auto-verify email; trigger normal verification flow
+            $hostReseller = $this->checkoutReseller();
+            $resellerId = $hostReseller?->id ?? session('registration_reseller_id');
+
             $user = User::create([
                 'name' => $request->name,
                 'country' => $request->country,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'email_verified_at' => null,
+                'reseller_id' => $resellerId ?: null,
             ]);
+
+            if ($resellerId) {
+                session(['registration_reseller_id' => (int) $resellerId]);
+            }
 
             app(UserCurrencyService::class)->syncFromCountry($user, true);
 
@@ -1269,9 +1284,24 @@ class CheckoutController extends Controller
         }
     }
 
-    private function domainRegistrationPrice(User $user, DomainExtension $extension, int $years): ?float
+    private function domainRegistrationPrice(?User $user, DomainExtension $extension, int $years): ?float
     {
+        $hostReseller = $this->checkoutReseller();
+
+        if ($hostReseller && ($user === null || $user->reseller_id === $hostReseller->id)) {
+            return app(ResellerPublicApiService::class)->retailPrice($hostReseller, $extension, $years);
+        }
+
         return app(ResellerCustomerCatalogService::class)->domainRegistrationPrice($user, $extension, $years);
+    }
+
+    private function checkoutReseller(): ?User
+    {
+        if (! app()->bound('currentReseller')) {
+            return null;
+        }
+
+        return app('currentReseller');
     }
 
     private function resellerDomainInvoiceItemFields(User $user, Domain $domain, Invoice $invoice, array $item): array

@@ -1,23 +1,26 @@
 <?php
 
+use App\Console\Scheduling\ApplicationSchedule;
 use App\Http\Middleware\CheckAdminRole;
 use App\Http\Middleware\CheckCustomerRole;
 use App\Http\Middleware\CheckResellerRole;
 use App\Http\Middleware\EnforceResellerLimits;
 use App\Http\Middleware\EnsureResellerBillingCurrent;
+use App\Http\Middleware\EnsureResellerHost;
+use App\Http\Middleware\EnsureResellerPublicApi;
 use App\Http\Middleware\LogActivity;
 use App\Http\Middleware\MarkAdminSectionSeen;
-use App\Http\Middleware\ResolveResellerTenant;
+use App\Http\Middleware\ResellerPublicApiCors;
+use App\Http\Middleware\ResolveResellerPublicApiTenant;
 use App\Http\Middleware\RestrictResellerCustomerPlatformCatalog;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SkipVerificationIfImpersonating;
 use App\Http\Middleware\ThrottleRegistration;
 use App\Http\Middleware\VerifyCsrfToken;
-use App\Console\Scheduling\ApplicationSchedule;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -60,6 +63,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'skip.verification.if.impersonating' => SkipVerificationIfImpersonating::class,
             'registration.throttle' => ThrottleRegistration::class,
             'reseller.customer.catalog' => RestrictResellerCustomerPlatformCatalog::class,
+            'reseller.host' => EnsureResellerHost::class,
+            'reseller.public.api' => EnsureResellerPublicApi::class,
+            'reseller.public.api.tenant' => ResolveResellerPublicApiTenant::class,
+            'reseller.public.api.cors' => ResellerPublicApiCors::class,
             'admin.attention.seen' => MarkAdminSectionSeen::class,
         ]);
     })

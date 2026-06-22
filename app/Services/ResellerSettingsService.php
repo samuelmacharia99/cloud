@@ -214,6 +214,22 @@ class ResellerSettingsService
             'updated_at' => now(),
         ]);
 
+        if (array_key_exists('public_api_enabled', $data)) {
+            $origins = $data['public_api_allowed_origins'] ?? '';
+            $parsedOrigins = is_array($origins)
+                ? $origins
+                : preg_split('/[\s,]+/', (string) $origins, -1, PREG_SPLIT_NO_EMPTY);
+
+            $settings['public_api'] = [
+                'enabled' => filter_var($data['public_api_enabled'], FILTER_VALIDATE_BOOLEAN),
+                'allowed_origins' => array_values(array_unique(array_filter(array_map(
+                    static fn (string $origin) => strtolower(rtrim(trim($origin), '/')),
+                    $parsedOrigins ?: [],
+                )))),
+                'updated_at' => now()->toIso8601String(),
+            ];
+        }
+
         if ($newDomain !== $previousDomain) {
             $settings['branding']['ssl'] = app(ResellerSslService::class)->sslStatusForCliManaged($newDomain);
 

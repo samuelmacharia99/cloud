@@ -11,5 +11,6 @@ class VerifyCsrfToken extends Middleware
         'webhooks/mpesa/callback',
         'webhooks/stripe',
         'webhooks/paypal',
+        'api/v1/public/*',
     ];
 }

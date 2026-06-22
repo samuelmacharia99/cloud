@@ -51,6 +51,7 @@ use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\CustomerOrderController;
 use App\Http\Controllers\Reseller\DashboardDirectAdminController;
+use App\Http\Controllers\Reseller\DeveloperController;
 use App\Http\Controllers\Reseller\DomainPricingController;
 use App\Http\Controllers\Reseller\DomainPushController;
 use App\Http\Controllers\Reseller\ManagedServiceController;
@@ -115,6 +116,27 @@ Route::middleware(['throttle:60,1'])->group(function () {
         ->middleware(['throttle:5,1', 'registration.throttle'])
         ->name('checkout.process.public');
 });
+
+// Reseller branding domain: public website API + guest checkout
+Route::middleware(['reseller.host'])->group(function () {
+    Route::get('/checkout', [CheckoutController::class, 'showPublic'])->name('reseller.public.checkout.show');
+    Route::post('/checkout', [CheckoutController::class, 'processPublic'])
+        ->middleware(['throttle:5,1', 'registration.throttle'])
+        ->name('reseller.public.checkout.process');
+});
+
+Route::prefix('api/v1/public')
+    ->middleware(['reseller.public.api.cors', 'reseller.public.api.tenant', 'reseller.public.api', 'throttle:reseller-public-api'])
+    ->group(function () {
+        Route::get('domains/search', [App\Http\Controllers\Api\V1\ResellerPublic\DomainController::class, 'search'])
+            ->name('reseller.public.api.domains.search');
+        Route::get('domains/extensions', [App\Http\Controllers\Api\V1\ResellerPublic\DomainController::class, 'extensions'])
+            ->name('reseller.public.api.domains.extensions');
+        Route::get('services', [App\Http\Controllers\Api\V1\ResellerPublic\CatalogController::class, 'index'])
+            ->name('reseller.public.api.services');
+        Route::post('cart', [App\Http\Controllers\Api\V1\ResellerPublic\CartController::class, 'store'])
+            ->name('reseller.public.api.cart');
+    });
 
 // Payment webhooks (public, no authentication required)
 Route::middleware(['throttle:120,1'])->group(function () {
@@ -406,6 +428,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/settings/branding/ssl/issue', [App\Http\Controllers\Reseller\SettingController::class, 'issueSsl'])->name('reseller.settings.branding.ssl.issue');
         Route::post('reseller/settings/branding/ssl/provision', [App\Http\Controllers\Reseller\SettingController::class, 'provisionSsl'])->name('reseller.settings.branding.ssl.provision');
         Route::post('reseller/settings/branding/ssl/renew', [App\Http\Controllers\Reseller\SettingController::class, 'renewSsl'])->name('reseller.settings.branding.ssl.renew');
+
+        Route::get('reseller/developers', [DeveloperController::class, 'index'])->name('reseller.developers.index');
+        Route::post('reseller/developers/token', [DeveloperController::class, 'regenerateToken'])->name('reseller.developers.token.regenerate');
 
         Route::resource('reseller/invoices', App\Http\Controllers\Reseller\InvoiceController::class)->only(['index', 'show'])->names('reseller.invoices');
         Route::get('reseller/invoices/{invoice}/download', [App\Http\Controllers\Reseller\InvoiceController::class, 'download'])->name('reseller.invoices.download');

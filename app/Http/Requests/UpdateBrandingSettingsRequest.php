@@ -21,6 +21,8 @@ class UpdateBrandingSettingsRequest extends FormRequest
             'footer_text' => 'nullable|string|max:500',
             'support_email' => 'nullable|email|max:255',
             'support_phone' => 'nullable|string|max:30',
+            'public_api_enabled' => 'nullable|boolean',
+            'public_api_allowed_origins' => 'nullable|string|max:2000',
         ];
     }
 

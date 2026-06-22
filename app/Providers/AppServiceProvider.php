@@ -102,6 +102,12 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        RateLimiter::for('reseller-public-api', function (Request $request) {
+            $resellerId = app()->bound('currentReseller') ? app('currentReseller')->id : 'unknown';
+
+            return Limit::perMinute(30)->by($request->ip().'|reseller:'.$resellerId);
+        });
+
         RateLimiter::for('laravel-container-actions', function (Request $request) {
             $service = $request->route('service');
             $serviceId = is_object($service) ? $service->id : $service;

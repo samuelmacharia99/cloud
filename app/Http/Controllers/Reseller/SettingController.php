@@ -16,6 +16,7 @@ use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerNameserverService;
+use App\Services\ResellerPublicApiService;
 use App\Services\ResellerSettingsService;
 use App\Services\ResellerSslService;
 use App\Services\TalksasaSmsService;
@@ -37,6 +38,7 @@ class SettingController extends Controller
         private ResellerBrandingResolver $brandingResolver,
         private ResellerMailService $resellerMail,
         private ResellerNameserverService $nameserverService,
+        private ResellerPublicApiService $publicApi,
     ) {}
 
     public function index(Request $request): View
@@ -53,6 +55,10 @@ class SettingController extends Controller
             'platformNameservers' => $this->nameserverService->platformDefaults(),
             'brandingStatus' => $this->brandingResolver->status($user),
             'registrationInviteUrl' => $this->brandingResolver->signedRegistrationUrl($user),
+            'publicApiSettings' => $this->publicApi->settings($user),
+            'publicApiBaseUrl' => filled($this->brandingResolver->forReseller($user)['custom_domain'] ?? null)
+                ? $this->publicApi->portalBaseUrl($user).'/api/v1/public'
+                : null,
             'activeSettingsTab' => $this->resolveSettingsTab($request),
         ]);
     }

@@ -600,6 +600,49 @@
                                 @endif
                             </div>
 
+                            @php
+                                $publicApiEnabled = old('public_api_enabled', $publicApiSettings['enabled'] ?? false);
+                                $publicApiOrigins = old(
+                                    'public_api_allowed_origins',
+                                    implode("\n", $publicApiSettings['allowed_origins'] ?? []),
+                                );
+                            @endphp
+                            <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-4 bg-slate-50/80 dark:bg-slate-800/20">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Website sales API</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Let visitors on your own site search domains, browse your services, and check out on your branding domain. Requires a saved custom domain.</p>
+                                </div>
+
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="hidden" name="public_api_enabled" value="0">
+                                    <input type="checkbox" name="public_api_enabled" value="1"
+                                        @checked($publicApiEnabled)
+                                        class="mt-1 rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                    <span>
+                                        <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">Enable public website API</span>
+                                        <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">Opt-in. When enabled, JSON endpoints are available on your custom domain only.</span>
+                                    </span>
+                                </label>
+
+                                <div>
+                                    <label for="public_api_allowed_origins" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Allowed website origins (optional)</label>
+                                    <textarea id="public_api_allowed_origins" name="public_api_allowed_origins" rows="3"
+                                        placeholder="https://www.yourcompany.com&#10;https://yourcompany.com"
+                                        class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm font-mono">{{ $publicApiOrigins }}</textarea>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">One origin per line. Required only if your marketing site is on a different domain than your portal API. Same-domain embeds do not need CORS.</p>
+                                </div>
+
+                                @if($publicApiBaseUrl)
+                                    <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-4 space-y-2">
+                                        <p class="text-xs font-medium text-amber-900 dark:text-amber-200">API base URL</p>
+                                        <code class="block text-xs break-all text-amber-800 dark:text-amber-300">{{ $publicApiBaseUrl }}</code>
+                                        <p class="text-xs text-slate-600 dark:text-slate-400">Endpoints and token management live on the <a href="{{ route('reseller.developers.index') }}" class="text-purple-600 dark:text-purple-400 font-medium hover:underline">Developers</a> page.</p>
+                                    </div>
+                                @else
+                                    <p class="text-xs text-amber-700 dark:text-amber-300">Save a custom domain above to see your API base URL.</p>
+                                @endif
+                            </div>
+
                             <div class="flex flex-wrap gap-3">
                                 <button type="submit" class="px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition">
                                     Save Branding Settings
