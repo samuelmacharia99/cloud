@@ -169,7 +169,7 @@
                         <form action="{{ route('reseller.packages.renew') }}" method="POST" data-confirm="{{ $renewConfirm }}" data-confirm-title="Renew plan">
                             @csrf
                             <button type="submit" class="inline-flex justify-center px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
-                                Renew plan@if ($renewalTotal) — KSH {{ number_format($renewalTotal, 0) }}@endif
+                                Renew plan{{ $renewalTotal ? ' — KSH '.number_format($renewalTotal, 0) : '' }}
                             </button>
                         </form>
                     @endif
