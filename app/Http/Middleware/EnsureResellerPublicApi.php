@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\ResellerPublicApiService;
+use App\Services\PublicWebsiteApiContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -10,24 +10,22 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsureResellerPublicApi
 {
     public function __construct(
-        private ResellerPublicApiService $publicApi,
+        private PublicWebsiteApiContext $api,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! app()->bound('currentReseller')) {
+        if (! $this->api->isReseller() && ! $this->api->isPlatform()) {
             return response()->json([
                 'success' => false,
-                'message' => 'This API is only available on your branding domain or with a valid API token.',
+                'message' => 'This API is only available on an enabled platform or reseller branding domain, or with a valid API token.',
             ], 404);
         }
 
-        $reseller = app('currentReseller');
-
-        if (! $this->publicApi->isEnabled($reseller)) {
+        if (! $this->api->isEnabled()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Public website API is not enabled for this reseller.',
+                'message' => 'Public website API is not enabled.',
             ], 403);
         }
 

@@ -244,6 +244,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/debug-log', [SettingController::class, 'debugLog'])->name('admin.settings.debug-log');
         Route::post('admin/settings/refresh-currencies', [SettingController::class, 'refreshCurrencies'])->name('admin.settings.refresh-currencies');
 
+        Route::get('admin/developers', [App\Http\Controllers\Admin\DeveloperController::class, 'index'])->name('admin.developers.index');
+        Route::post('admin/developers/settings', [App\Http\Controllers\Admin\DeveloperController::class, 'updateSettings'])->name('admin.developers.settings.update');
+        Route::post('admin/developers/token', [App\Http\Controllers\Admin\DeveloperController::class, 'regenerateToken'])->name('admin.developers.token.regenerate');
+
         Route::post('admin/registrars', [RegistrarController::class, 'store'])->name('admin.registrars.store');
         Route::put('admin/registrars/{registrar}', [RegistrarController::class, 'update'])->name('admin.registrars.update');
         Route::delete('admin/registrars/{registrar}', [RegistrarController::class, 'destroy'])->name('admin.registrars.destroy');

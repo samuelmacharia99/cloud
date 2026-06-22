@@ -1,0 +1,75 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Services\PlatformApiTokenService;
+use App\Services\PlatformPublicApiService;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\View\View;
+
+class DeveloperController extends Controller
+{
+    public function __construct(
+        private PlatformApiTokenService $apiToken,
+        private PlatformPublicApiService $publicApi,
+    ) {}
+
+    public function index(): View
+    {
+        return view('admin.developers.index', [
+            'apiEnabled' => $this->publicApi->isEnabled(),
+            'publicApiSettings' => $this->publicApi->settings(),
+            'apiBaseUrl' => $this->publicApi->apiBaseUrl(),
+            'checkoutUrl' => $this->publicApi->checkoutUrl(),
+            'tokenMetadata' => $this->apiToken->metadata(),
+            'plainTextToken' => session()->pull('platform_api_plain_token'),
+        ]);
+    }
+
+    public function updateSettings(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'public_api_enabled' => 'nullable|boolean',
+            'public_api_allowed_origins' => 'nullable|string|max:2000',
+        ]);
+
+        $origins = $validated['public_api_allowed_origins'] ?? '';
+        $parsedOrigins = preg_split('/[\s,]+/', (string) $origins, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        $this->publicApi->updateSettings(
+            filter_var($validated['public_api_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            $parsedOrigins,
+        );
+
+        return redirect()
+            ->route('admin.developers.index')
+            ->with('success', 'Website API settings saved.');
+    }
+
+    public function regenerateToken(Request $request): RedirectResponse
+    {
+        $admin = auth()->user();
+
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        if (! Hash::check($request->password, $admin->password)) {
+            return back()->withErrors(['password' => 'The password you entered is incorrect.']);
+        }
+
+        if (! $this->publicApi->isEnabled()) {
+            return back()->with('error', 'Enable the public website API on this page before generating a token.');
+        }
+
+        $plainText = $this->apiToken->regenerate($admin);
+
+        return redirect()
+            ->route('admin.developers.index')
+            ->with('success', 'API token regenerated. Copy it now — it will not be shown again.')
+            ->with('platform_api_plain_token', $plainText);
+    }
+}

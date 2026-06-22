@@ -103,9 +103,15 @@ class AppServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('reseller-public-api', function (Request $request) {
-            $resellerId = app()->bound('currentReseller') ? app('currentReseller')->id : 'unknown';
+            if (app()->bound('currentReseller')) {
+                $key = 'reseller:'.app('currentReseller')->id;
+            } elseif (app()->bound('platformPublicApi')) {
+                $key = 'platform';
+            } else {
+                $key = 'unknown';
+            }
 
-            return Limit::perMinute(30)->by($request->ip().'|reseller:'.$resellerId);
+            return Limit::perMinute(30)->by($request->ip().'|'.$key);
         });
 
         RateLimiter::for('laravel-container-actions', function (Request $request) {

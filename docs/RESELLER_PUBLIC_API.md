@@ -10,7 +10,21 @@ The API is only served on the reseller's configured custom domain — not on the
 
 ---
 
-## Enable the API
+## Platform (main website)
+
+Super admins can enable the same API on the **main platform domain** (e.g. `servers.talksasa.com`) from **Admin → Developers**:
+
+- Enable public website API and optional CORS origins
+- Generate a platform API token (admin bearer auth)
+- List **retail domain pricing** for enabled TLDs with admin retail tiers
+- List **active platform products** from Admin → Products
+- Cart → `domain-checkout` for guest account creation
+
+Base URL: `https://{platform-domain}/api/v1/public`
+
+Reseller branding domains continue to use the same paths with reseller retail pricing and `/checkout` on their custom domain.
+
+---
 
 1. **Settings → Branding** — set and save your **custom domain** (e.g. `billing.acmehosting.com`).
 2. Point DNS to this server and provision SSL (see `docs/RESELLER_SSL.md`).

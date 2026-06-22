@@ -2,7 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Services\ResellerPublicApiService;
+use App\Services\PublicWebsiteApiContext;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -10,36 +10,31 @@ use Symfony\Component\HttpFoundation\Response;
 class ResellerPublicApiCors
 {
     public function __construct(
-        private ResellerPublicApiService $publicApi,
+        private PublicWebsiteApiContext $api,
     ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
-        if (! app()->bound('currentReseller')) {
-            return $next($request);
-        }
-
-        $reseller = app('currentReseller');
         $origin = $request->headers->get('Origin');
 
         if ($request->isMethod('OPTIONS')) {
             $response = response('', 204);
 
-            return $this->applyCorsHeaders($response, $reseller, $origin);
+            return $this->applyCorsHeaders($response, $origin);
         }
 
         $response = $next($request);
 
-        return $this->applyCorsHeaders($response, $reseller, $origin);
+        return $this->applyCorsHeaders($response, $origin);
     }
 
-    private function applyCorsHeaders(Response $response, $reseller, ?string $origin): Response
+    private function applyCorsHeaders(Response $response, ?string $origin): Response
     {
-        if ($origin && $this->publicApi->originAllowed($reseller, $origin)) {
+        if ($origin && $this->api->originAllowed($origin)) {
             $response->headers->set('Access-Control-Allow-Origin', $origin);
             $response->headers->set('Vary', 'Origin');
             $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept');
+            $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization');
             $response->headers->set('Access-Control-Max-Age', '86400');
         }
 
