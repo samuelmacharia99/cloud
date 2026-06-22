@@ -77,7 +77,7 @@ class ServiceOverdueEnforcementService
     public function suspendedServicesWithPaidBillingInvoiceQuery(): Builder
     {
         return Service::query()
-            ->with(['user', 'invoice', 'product'])
+            ->with(['user', 'invoice', 'invoiceItems.invoice', 'product'])
             ->where('status', ServiceStatus::Suspended)
             ->where(function (Builder $query) {
                 $query->whereNull('service_meta->'.ResellerEnforcementService::META_SUSPENSION_REASON)
@@ -96,10 +96,10 @@ class ServiceOverdueEnforcementService
         }
 
         $graceCutoff = $this->graceCutoffDate();
-        $today = now()->startOfDay()->toDateString();
+        $today = now()->startOfDay();
 
-        return $this->serviceMatchesOverduePastGrace($service, $graceCutoff)
-            || $this->serviceMatchesUnpaidDueOn($service, $today);
+        return $this->serviceHasUnpaidBillingInvoiceDue($service, $today)
+            || $this->serviceMatchesOverduePastGrace($service, $graceCutoff);
     }
 
     public function canAutoUnsuspendForPaidInvoice(Service $service): bool
@@ -251,17 +251,7 @@ class ServiceOverdueEnforcementService
 
     private function serviceMatchesOverduePastGrace(Service $service, Carbon $graceCutoff): bool
     {
-        $service->loadMissing(['invoice', 'invoiceItems.invoice']);
-
-        $invoices = collect([$service->invoice])
-            ->merge($service->invoiceItems->pluck('invoice'))
-            ->filter();
-
-        foreach ($invoices as $invoice) {
-            if ($invoice->type === 'reseller_subscription') {
-                continue;
-            }
-
+        foreach ($this->billingInvoicesForService($service) as $invoice) {
             if (in_array($invoice->status, ['unpaid', 'overdue'], true)
                 && $invoice->due_date?->lt($graceCutoff)) {
                 return true;
@@ -271,19 +261,40 @@ class ServiceOverdueEnforcementService
         return false;
     }
 
-    private function serviceMatchesUnpaidDueOn(Service $service, string $dueDate): bool
+    private function serviceHasUnpaidBillingInvoiceDue(Service $service, Carbon $reference): bool
     {
-        $service->loadMissing(['invoice', 'invoiceItems.invoice']);
-
-        $invoices = collect([$service->invoice])
-            ->merge($service->invoiceItems->pluck('invoice'))
-            ->filter();
-
-        foreach ($invoices as $invoice) {
-            if ($invoice->type === 'reseller_subscription') {
+        foreach ($this->billingInvoicesForService($service) as $invoice) {
+            if (! $invoice->due_date) {
                 continue;
             }
 
+            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+                && $invoice->due_date->copy()->startOfDay()->lte($reference)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return Collection<int, Invoice>
+     */
+    private function billingInvoicesForService(Service $service): Collection
+    {
+        $service->loadMissing(['invoice', 'invoiceItems.invoice']);
+
+        return collect([$service->invoice])
+            ->merge($service->invoiceItems->pluck('invoice'))
+            ->filter()
+            ->unique('id')
+            ->filter(fn (Invoice $invoice) => $invoice->type !== 'reseller_subscription')
+            ->values();
+    }
+
+    private function serviceMatchesUnpaidDueOn(Service $service, string $dueDate): bool
+    {
+        foreach ($this->billingInvoicesForService($service) as $invoice) {
             if (in_array($invoice->status, ['unpaid', 'overdue'], true)
                 && $invoice->due_date?->toDateString() === $dueDate) {
                 return true;

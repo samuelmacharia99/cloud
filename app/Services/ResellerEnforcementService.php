@@ -483,6 +483,15 @@ class ResellerEnforcementService
         $count = 0;
 
         foreach ($services as $service) {
+            if ($this->overdueEnforcement->shouldSuspendForOverdueInvoice($service)) {
+                Log::info('Skipping cascade unsuspend — customer billing invoice still unpaid', [
+                    'service_id' => $service->id,
+                    'reseller_id' => $reseller->id,
+                ]);
+
+                continue;
+            }
+
             try {
                 $this->clearEnforcementMeta($service);
                 $this->provisioning()->unsuspend($service->fresh());

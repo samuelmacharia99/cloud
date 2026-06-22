@@ -111,6 +111,49 @@ class ResellerEnforcementServiceTest extends TestCase
         $this->assertArrayNotHasKey(ResellerEnforcementService::META_SUSPENSION_REASON, $service->service_meta ?? []);
     }
 
+    public function test_unsuspend_reseller_does_not_restore_customer_service_with_unpaid_invoice(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-10'));
+        Setting::setValue('suspend_on_overdue', 'true');
+
+        $package = $this->createPackage();
+        $reseller = User::factory()->reseller()->create([
+            'reseller_package_id' => $package->id,
+            'package_expires_at' => now()->addMonth(),
+            'reseller_suspended_at' => now(),
+            'reseller_suspension_reason' => ResellerEnforcementService::REASON_RESELLER_OVERDUE,
+        ]);
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+        $product = Product::factory()->create(['provisioning_driver_key' => 'cpanel']);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'due_date' => Carbon::parse('2026-06-09'),
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'invoice_id' => $invoice->id,
+            'service_meta' => [
+                ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_RESELLER_OVERDUE,
+            ],
+        ]);
+
+        $restored = $this->enforcement->unsuspendReseller($reseller);
+
+        $service->refresh();
+
+        $this->assertFalse($reseller->fresh()->isResellerSuspended());
+        $this->assertSame(0, $restored);
+        $this->assertSame(ServiceStatus::Suspended, $service->status);
+
+        Carbon::setTestNow();
+    }
+
     public function test_excess_services_returns_only_slots_beyond_limit(): void
     {
         $package = $this->createPackage(maxServices: 1);
