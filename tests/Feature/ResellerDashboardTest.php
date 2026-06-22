@@ -84,6 +84,35 @@ class ResellerDashboardTest extends TestCase
         $response->assertSee('Invoice breakdown');
         $response->assertSee('Margins (30d)');
         $response->assertSee('Whitelabel dashboard');
+        $response->assertSee('Server pulse');
+    }
+
+    public function test_reseller_directadmin_live_endpoint_returns_json(): void
+    {
+        $reseller = $this->createResellerWithPackage();
+
+        $response = $this->actingAs($reseller)->getJson(route('reseller.dashboard.directadmin-live'));
+
+        $response->assertOk();
+        $response->assertJsonStructure([
+            'is_connected',
+            'api_reachable',
+            'hosted_user_count',
+            'disk_used_gb',
+            'disk_pool_gb',
+            'disk_pool_percent',
+            'payments_today',
+            'updated_at',
+        ]);
+    }
+
+    public function test_customer_cannot_access_reseller_directadmin_live_endpoint(): void
+    {
+        $customer = User::factory()->customer()->create();
+
+        $this->actingAs($customer)
+            ->getJson(route('reseller.dashboard.directadmin-live'))
+            ->assertForbidden();
     }
 
     public function test_reseller_can_view_managed_service_but_not_unrelated_service(): void

@@ -103,6 +103,8 @@
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div class="lg:col-span-2 space-y-6">
+            @include('reseller.dashboard.partials.directadmin-monitor', ['directAdminMonitor' => $directAdminMonitor ?? []])
+
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div class="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Managed Services</h2>

@@ -72,6 +72,8 @@ class ResellerAnalyticsService
             now()->toDateString(),
         );
 
+        $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelData($reseller);
+
         $maxServices = $reseller->resellerPackage?->max_services ?? 0;
 
         return [
@@ -107,6 +109,7 @@ class ResellerAnalyticsService
             'diskDirectAdminGb' => $diskUsageSnapshot['directadmin_used_gb'],
             'diskContainerGb' => $diskUsageSnapshot['container_used_gb'],
             'diskPoolPercent' => $diskPoolPercent,
+            'directAdminMonitor' => $directAdminMonitor,
         ];
     }
 

@@ -50,6 +50,7 @@ use App\Http\Controllers\Reseller\CartController;
 use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\CustomerOrderController;
+use App\Http\Controllers\Reseller\DashboardDirectAdminController;
 use App\Http\Controllers\Reseller\DomainPricingController;
 use App\Http\Controllers\Reseller\DomainPushController;
 use App\Http\Controllers\Reseller\ManagedServiceController;
@@ -340,6 +341,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
     // Reseller-only routes
     Route::middleware(['reseller', 'reseller.billing'])->group(function () {
+        Route::get('reseller/dashboard/directadmin-live', [DashboardDirectAdminController::class, 'live'])
+            ->middleware('throttle:30,1')
+            ->name('reseller.dashboard.directadmin-live');
+
         Route::resource('reseller/tickets', App\Http\Controllers\Reseller\TicketController::class)
             ->only(['index', 'show', 'create', 'store'])
             ->names('reseller.tickets');
