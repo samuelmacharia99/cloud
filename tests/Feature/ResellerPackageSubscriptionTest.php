@@ -209,6 +209,63 @@ class ResellerPackageSubscriptionTest extends TestCase
         ]);
     }
 
+    public function test_reseller_can_renew_current_package_early(): void
+    {
+        $package = $this->createPackage();
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $package);
+        $reseller->update(['package_expires_at' => now()->addMonths(2)->startOfDay()]);
+        $reseller->refresh();
+
+        $response = $this->actingAs($reseller)->post(route('reseller.packages.renew'));
+
+        $invoice = Invoice::query()
+            ->where('user_id', $reseller->id)
+            ->where('type', 'reseller_subscription')
+            ->where('notes', 'like', '%Renewal%')
+            ->first();
+
+        $this->assertNotNull($invoice);
+        $response->assertRedirect(route('reseller.payment.select-method', $invoice));
+        $response->assertSessionHas('success');
+    }
+
+    public function test_renew_redirects_to_existing_pending_renewal_invoice(): void
+    {
+        $package = $this->createPackage();
+        $reseller = $this->createReseller();
+        $service = app(ResellerPackageSubscriptionService::class);
+
+        $service->activateSubscription($reseller, $package);
+        $existing = $service->createRenewalInvoiceIfNeeded($reseller, force: true);
+
+        $response = $this->actingAs($reseller)->post(route('reseller.packages.renew'));
+
+        $response->assertRedirect(route('reseller.payment.select-method', $existing));
+        $response->assertSessionHas('info');
+
+        $this->assertSame(
+            1,
+            Invoice::query()
+                ->where('user_id', $reseller->id)
+                ->where('type', 'reseller_subscription')
+                ->where('notes', 'like', '%Renewal%')
+                ->count()
+        );
+    }
+
+    public function test_renew_without_active_package_returns_error(): void
+    {
+        $reseller = $this->createReseller();
+
+        $response = $this->actingAs($reseller)->post(route('reseller.packages.renew'));
+
+        $response->assertRedirect();
+        $response->assertSessionHas('error');
+    }
+
     public function test_upgrade_invoice_charges_prorated_difference_not_full_package_price(): void
     {
         $starter = $this->createPackage(['name' => 'Starter', 'price' => 5300]);

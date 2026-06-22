@@ -388,6 +388,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
 
         Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');
+        Route::post('my/packages/renew', [PackageController::class, 'renew'])->name('reseller.packages.renew');
         Route::post('my/packages/{package}/subscribe', [PackageController::class, 'subscribe'])->name('reseller.packages.subscribe');
 
         Route::get('reseller/settings', [App\Http\Controllers\Reseller\SettingController::class, 'index'])->name('reseller.settings.index');

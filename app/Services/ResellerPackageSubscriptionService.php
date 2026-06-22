@@ -165,6 +165,23 @@ class ResellerPackageSubscriptionService
         ];
     }
 
+    /**
+     * Preview package expiry after a successful renewal payment.
+     */
+    public function previewRenewalExpiry(User $user): ?\Carbon\Carbon
+    {
+        $package = $user->resellerPackage;
+        if (! $package) {
+            return null;
+        }
+
+        $base = $user->package_expires_at && $user->package_expires_at->isFuture()
+            ? $user->package_expires_at->copy()
+            : now();
+
+        return $this->calculateExpiryFrom($base, $package);
+    }
+
     public function pendingSubscriptionInvoice(User $user, ?ResellerPackage $package = null): ?Invoice
     {
         $query = Invoice::query()

@@ -36,7 +36,25 @@
     @endif
 
     <!-- Pending Payment Alert -->
-    @if ($pendingInvoice)
+    @if ($pendingRenewalInvoice ?? null)
+        <div class="p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+                <h3 class="font-semibold text-amber-900 dark:text-amber-100">Renewal payment required</h3>
+                <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                    Invoice #{{ $pendingRenewalInvoice->invoice_number }} (KSH {{ number_format($pendingRenewalInvoice->total, 0) }}) is awaiting payment
+                    @if ($pendingRenewalInvoice->due_date)
+                        — due {{ $pendingRenewalInvoice->due_date->format('M d, Y') }}
+                    @endif
+                    @if ($renewalExtendsTo ?? null)
+                        . After payment, your plan extends to {{ $renewalExtendsTo->format('M d, Y') }}.
+                    @endif
+                </p>
+            </div>
+            <a href="{{ route('reseller.payment.select-method', $pendingRenewalInvoice) }}" class="inline-flex justify-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition-colors">
+                Pay renewal
+            </a>
+        </div>
+    @elseif ($pendingInvoice)
         <div class="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
                 <h3 class="font-semibold text-blue-900 dark:text-blue-100">Payment required</h3>
@@ -134,6 +152,33 @@
                         </p>
                     @endif
                 </div>
+
+                @php
+                    $renewConfirm = $renewalTotal
+                        ? ($renewalExtendsTo
+                            ? 'You will be charged KSH '.number_format($renewalTotal, 0).' to renew your '.$user->resellerPackage->name.' plan. After payment, your plan extends to '.$renewalExtendsTo->format('M d, Y').'. Continue?'
+                            : 'You will be charged KSH '.number_format($renewalTotal, 0).' to renew your '.$user->resellerPackage->name.' plan. Continue?')
+                        : 'Renew your current plan?';
+                @endphp
+                <div class="mt-6 flex flex-wrap items-center gap-3">
+                    @if ($pendingRenewalInvoice ?? null)
+                        <a href="{{ route('reseller.payment.select-method', $pendingRenewalInvoice) }}" class="inline-flex justify-center px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                            Pay renewal — KSH {{ number_format($pendingRenewalInvoice->total, 0) }}
+                        </a>
+                    @else
+                        <form action="{{ route('reseller.packages.renew') }}" method="POST" data-confirm="{{ $renewConfirm }}" data-confirm-title="Renew plan">
+                            @csrf
+                            <button type="submit" class="inline-flex justify-center px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                Renew plan@if ($renewalTotal) — KSH {{ number_format($renewalTotal, 0) }}@endif
+                            </button>
+                        </form>
+                    @endif
+                    @if ($renewalExtendsTo && !($pendingRenewalInvoice ?? null))
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                            Early renewal stacks onto your current term (extends to {{ $renewalExtendsTo->format('M d, Y') }}).
+                        </p>
+                    @endif
+                </div>
             </div>
         </div>
     @endif
@@ -206,9 +251,18 @@
 
                 <!-- Action Button -->
                 @if ($user->reseller_package_id === $package->id)
-                    <button disabled class="w-full px-4 py-2 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-lg text-sm font-medium cursor-default">
-                        Current Plan
-                    </button>
+                    @if ($pendingRenewalInvoice ?? null)
+                        <a href="{{ route('reseller.payment.select-method', $pendingRenewalInvoice) }}" class="block w-full text-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                            Pay renewal
+                        </a>
+                    @else
+                        <form action="{{ route('reseller.packages.renew') }}" method="POST" data-confirm="{{ $renewConfirm ?? 'Renew your current plan?' }}" data-confirm-title="Renew plan">
+                            @csrf
+                            <button type="submit" class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors">
+                                Renew plan
+                            </button>
+                        </form>
+                    @endif
                 @elseif ($user->resellerPackage && $package->price < $user->resellerPackage->price)
                     <button disabled class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-lg text-sm font-medium cursor-not-allowed">
                         Cannot Downgrade

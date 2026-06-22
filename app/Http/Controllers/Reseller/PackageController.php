@@ -33,6 +33,15 @@ class PackageController extends Controller
         $currentCustomers = $user->getResellerUserCountForLimits();
         $hostedUserCountSource = $user->getResellerUserCountBreakdown()['source'];
         $pendingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user);
+        $pendingRenewalInvoice = $user->resellerPackage
+            ? $this->subscriptions->pendingRenewalSubscriptionInvoice($user)
+            : null;
+        $renewalTotal = null;
+        $renewalExtendsTo = null;
+        if ($user->resellerPackage) {
+            $renewalTotal = $this->subscriptions->calculateAmounts((float) $user->resellerPackage->price)['total'];
+            $renewalExtendsTo = $this->subscriptions->previewRenewalExpiry($user);
+        }
 
         $upgradeQuotes = [];
         if ($user->resellerPackage) {
@@ -51,8 +60,48 @@ class PackageController extends Controller
             'currentCustomers',
             'hostedUserCountSource',
             'pendingInvoice',
+            'pendingRenewalInvoice',
+            'renewalTotal',
+            'renewalExtendsTo',
             'upgradeQuotes',
         ));
+    }
+
+    /**
+     * Renew the current package (early or in-window). POST /my/packages/renew
+     */
+    public function renew()
+    {
+        $user = auth()->user();
+
+        if (! $user->isReseller()) {
+            abort(403, 'Only resellers can renew packages.');
+        }
+
+        if (! $user->resellerPackage) {
+            return back()->with('error', 'You do not have an active plan to renew.');
+        }
+
+        $pending = $this->subscriptions->pendingRenewalSubscriptionInvoice($user);
+        if ($pending) {
+            return redirect()
+                ->route('reseller.payment.select-method', $pending)
+                ->with('info', 'Complete payment for renewal invoice #'.$pending->invoice_number.'.');
+        }
+
+        try {
+            $invoice = $this->subscriptions->createRenewalInvoiceIfNeeded($user, force: true);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if ($invoice->isPaid()) {
+            return back()->with('success', 'Your plan was renewed using your wallet balance.');
+        }
+
+        return redirect()
+            ->route('reseller.payment.select-method', $invoice)
+            ->with('success', 'Renewal invoice #'.$invoice->invoice_number.' created. Complete payment to extend your plan.');
     }
 
     /**
