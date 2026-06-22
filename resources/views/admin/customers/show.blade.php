@@ -348,19 +348,17 @@
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
-                        @foreach ($customer->invoices as $invoice)
+                        @foreach ($customer->invoices->sortByDesc('created_at') as $invoice)
                             <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">#{{ str_pad($invoice->id, 5, '0', STR_PAD_LEFT) }}</td>
+                                <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">{{ $invoice->invoice_number }}</td>
                                 <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $invoice->created_at->format('M d, Y') }}</td>
-                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $invoice->due_at ? $invoice->due_at->format('M d, Y') : '-' }}</td>
+                                <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $invoice->due_date?->format('M d, Y') ?? '—' }}</td>
                                 <td class="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">KSH {{ number_format($invoice->total, 2) }}</td>
                                 <td class="px-6 py-4">
-                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-400">
-                                        Draft
-                                    </span>
+                                    <x-status-badge :status="$invoice->status" type="invoice" />
                                 </td>
                                 <td class="px-6 py-4 text-right">
-                                    <a href="#" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
+                                    <a href="{{ route('admin.invoices.show', $invoice) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                 </td>
                             </tr>
                         @endforeach
