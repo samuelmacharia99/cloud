@@ -34,14 +34,21 @@ class ResellerInfrastructureService
 
         if ($isConnected && $node) {
             if ($refresh) {
-                $verification = $this->resellerDirectAdmin->verifyBinding(
-                    $node,
-                    (string) $reseller->directadmin_username,
-                );
-                $packages = $verification['packages'];
-                $packagesError = $verification['success'] ? null : $verification['message'];
-                $hostedUserCount = $verification['hosted_user_count'];
-                $diskUsedMb = $verification['disk_used_mb'];
+                $loginKey = (string) ($reseller->directadmin_login_key ?? '');
+
+                if ($loginKey === '') {
+                    $packagesError = 'DirectAdmin login key is missing — re-link the account on the Node tab.';
+                } else {
+                    $verification = $this->resellerDirectAdmin->verifyBinding(
+                        $node,
+                        (string) $reseller->directadmin_username,
+                        $loginKey,
+                    );
+                    $packages = $verification['packages'];
+                    $packagesError = $verification['success'] ? null : $verification['message'];
+                    $hostedUserCount = $verification['hosted_user_count'];
+                    $diskUsedMb = $verification['disk_used_mb'];
+                }
             } else {
                 $packageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
                 $packages = $packageResult['packages'];
