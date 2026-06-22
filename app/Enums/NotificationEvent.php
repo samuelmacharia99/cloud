@@ -47,6 +47,8 @@ enum NotificationEvent: string
     case ResellerSslProvisionFailed = 'reseller_ssl_provision_failed';
     case HostingPackageUsageWarning = 'hosting_package_usage_warning';
     case HostingUpgradeCompleted = 'hosting_upgrade_completed';
+    case CustomerAccountTransferred = 'customer_account_transferred';
+    case ResellerCustomerAssigned = 'reseller_customer_assigned';
 
     public function settingKey(): string
     {
@@ -93,6 +95,8 @@ enum NotificationEvent: string
             self::ResellerSslProvisionFailed => 'notify_reseller_ssl_provision_failed',
             self::HostingPackageUsageWarning => 'notify_hosting_package_usage_warning',
             self::HostingUpgradeCompleted => 'notify_hosting_upgrade_completed',
+            self::CustomerAccountTransferred => 'notify_customer_account_transferred',
+            self::ResellerCustomerAssigned => 'notify_reseller_customer_assigned',
         };
     }
 
@@ -117,7 +121,8 @@ enum NotificationEvent: string
             self::ResellerSuspended,
             self::ResellerDiskPoolWarning,
             self::ResellerDomainOrderExpired,
-            self::ResellerSslProvisionFailed => 'reseller',
+            self::ResellerSslProvisionFailed,
+            self::ResellerCustomerAssigned => 'reseller',
             default => 'customer',
         };
     }

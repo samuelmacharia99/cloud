@@ -118,6 +118,8 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_service_unsuspended', 'value' => 'true', 'description' => 'Notify when service is restored'],
             ['key' => 'notify_hosting_package_usage_warning', 'value' => 'true', 'description' => 'Notify customers when hosting usage reaches the upgrade warning threshold'],
             ['key' => 'notify_hosting_upgrade_completed', 'value' => 'true', 'description' => 'Notify customers when a paid hosting upgrade is applied'],
+            ['key' => 'notify_customer_account_transferred', 'value' => 'true', 'description' => 'Email customers when their account is reassigned to a reseller partner'],
+            ['key' => 'notify_reseller_customer_assigned', 'value' => 'true', 'description' => 'Email resellers when a customer account is assigned to them'],
             ['key' => 'notify_container_backup', 'value' => 'true', 'description' => 'Notify on container backup completion'],
             ['key' => 'notify_container_backup_failure', 'value' => 'true', 'description' => 'Notify admins on container backup failure'],
             ['key' => 'notify_container_failure', 'value' => 'true', 'description' => 'Notify on container failure'],

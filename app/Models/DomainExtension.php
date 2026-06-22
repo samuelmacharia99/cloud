@@ -93,6 +93,24 @@ class DomainExtension extends Model
             return $this->getWholesalePricing($periodYears) ?? $this->getRetailPricing($periodYears);
         }
 
+        if ($user->reseller_id) {
+            $resellerPricing = ResellerDomainPricing::query()
+                ->where('reseller_id', $user->reseller_id)
+                ->where('domain_extension_id', $this->id)
+                ->where('period_years', $periodYears)
+                ->where('enabled', true)
+                ->first();
+
+            if ($resellerPricing) {
+                $retail = (float) $resellerPricing->retail_price;
+
+                return (object) [
+                    'price' => $retail,
+                    'renewal_price' => $retail,
+                ];
+            }
+        }
+
         return $this->getRetailPricing($periodYears);
     }
 

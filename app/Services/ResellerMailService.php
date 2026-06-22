@@ -51,6 +51,37 @@ class ResellerMailService
         Mail::mailer($mailer)->to($customer->email)->sendNow($mailable);
     }
 
+    /**
+     * Send with reseller branding; use reseller SMTP when configured, otherwise platform SMTP
+     * with the reseller company name as the from-name (no platform branding in the message).
+     */
+    public function sendBrandedWithPlatformFallback(User $customer, Mailable $mailable): void
+    {
+        $branding = $this->brandingResolver->forCustomer($customer);
+        $reseller = $this->brandingResolver->resellerForCustomer($customer);
+
+        View::share('emailBranding', $branding);
+
+        if ($reseller && $this->resellerSmtpEnabled($reseller)) {
+            $this->sendToCustomer($customer, $mailable);
+
+            return;
+        }
+
+        $previousFrom = config('mail.from');
+
+        Config::set('mail.from', [
+            'address' => Setting::getValue('mail_from_address', config('mail.from.address')),
+            'name' => $branding['company_name'] ?? config('mail.from.name'),
+        ]);
+
+        try {
+            Mail::to($customer->email)->sendNow($mailable);
+        } finally {
+            Config::set('mail.from', $previousFrom);
+        }
+    }
+
     public function sendRaw(User $recipient, string $subject, string $body, ?User $reseller = null): void
     {
         $branding = $this->brandingResolver->forReseller($reseller);

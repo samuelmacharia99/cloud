@@ -1005,6 +1005,32 @@ class CustomerController extends Controller
     }
 
     /**
+     * Preview customer transfer to a reseller (JSON for admin UI).
+     */
+    public function transferPreview(Request $request, User $customer, CustomerResellerTransferService $transferService)
+    {
+        if ($customer->is_admin || $customer->is_reseller) {
+            abort(404);
+        }
+
+        $request->validate([
+            'target_reseller_id' => 'required',
+        ]);
+
+        $targetReseller = null;
+        if ($request->query('target_reseller_id') !== 'platform') {
+            $request->validate(['target_reseller_id' => 'exists:users,id']);
+            $targetReseller = User::findOrFail($request->query('target_reseller_id'));
+        }
+
+        try {
+            return response()->json($transferService->preview($customer, $targetReseller));
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
      * Reassign a managed customer to another reseller (ownership stays with the customer).
      */
     public function transferToReseller(Request $request, User $customer, CustomerResellerTransferService $transferService)
@@ -1031,7 +1057,17 @@ class CustomerController extends Controller
             $result = $transferService->transfer($customer, $targetReseller);
 
             $fromLabel = $result['from_reseller'] ?? 'Platform';
-            $flash = "'{$customer->name}' is now managed by {$result['to_reseller']} (previously {$fromLabel}). Services and domains were reassigned; billing history remains on the customer account.";
+            $flash = "'{$customer->name}' is now managed by {$result['to_reseller']} (previously {$fromLabel}).";
+
+            if ($result['cancelled_invoices'] > 0) {
+                $flash .= " {$result['cancelled_invoices']} open invoice(s) were cancelled.";
+            }
+
+            if ($result['email_sent']) {
+                $flash .= ' Customer notified by email.';
+            } elseif ($targetReseller !== null) {
+                $flash .= ' Customer email could not be sent (check mail settings).';
+            }
 
             if (! empty($result['da_warnings'])) {
                 $flash .= ' Some DirectAdmin accounts could not be moved: '.implode(' ', $result['da_warnings']);
@@ -1043,7 +1079,7 @@ class CustomerController extends Controller
         } catch (\Exception $e) {
             Log::error('Customer reseller transfer failed', [
                 'customer_id' => $customer->id,
-                'target_reseller_id' => $targetReseller->id,
+                'target_reseller_id' => $targetReseller?->id,
                 'error' => $e->getMessage(),
             ]);
 

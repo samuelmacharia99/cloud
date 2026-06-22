@@ -222,6 +222,7 @@ class InvoiceGenerationScheduleService
             ->with(['product.containerTemplate', 'user', 'containerDeployment.node'])
             ->where('status', 'active')
             ->whereNotNull('next_due_date')
+            ->whereHas('user', fn (Builder $userQuery) => $userQuery->whereNull('reseller_id'))
             ->where(function (Builder $q) use ($today, $monthlyAdvance, $nonMonthlyAdvance) {
                 $q->where(function (Builder $q) use ($today, $monthlyAdvance) {
                     $q->where('billing_cycle', 'monthly')
@@ -247,6 +248,7 @@ class InvoiceGenerationScheduleService
         return Domain::query()
             ->where('status', 'active')
             ->whereNotNull('expires_at')
+            ->whereHas('user', fn (Builder $userQuery) => $userQuery->whereNull('reseller_id'))
             ->whereDate('expires_at', '>', $today)
             ->whereDate('expires_at', '<=', $today->copy()->addDays($advanceDays))
             ->whereDoesntHave('renewalOrders', function (Builder $q) use ($lookbackDays) {

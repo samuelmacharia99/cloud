@@ -136,7 +136,44 @@
                                 {{ $customer->invoices_count }}
                             </td>
                             <td class="px-6 py-4 text-right">
-                                <div class="flex items-center justify-end gap-1" x-data="{ menuOpen: false, convertModal: false, transferModal: false }">
+                                <div class="flex items-center justify-end gap-1" x-data="{
+                                    menuOpen: false,
+                                    convertModal: false,
+                                    transferModal: false,
+                                    targetResellerId: '',
+                                    transferPreview: null,
+                                    previewLoading: false,
+                                    previewError: null,
+                                    previewUrl: @js(route('admin.customers.transfer-preview', $customer)),
+                                    async loadTransferPreview() {
+                                        this.previewError = null;
+                                        this.transferPreview = null;
+                                        if (!this.targetResellerId) return;
+                                        this.previewLoading = true;
+                                        try {
+                                            const res = await fetch(this.previewUrl + '?target_reseller_id=' + encodeURIComponent(this.targetResellerId), {
+                                                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                                            });
+                                            const data = await res.json();
+                                            if (!res.ok) {
+                                                this.previewError = data.error || 'Could not load preview.';
+                                                return;
+                                            }
+                                            this.transferPreview = data;
+                                        } catch (e) {
+                                            this.previewError = 'Could not load preview.';
+                                        } finally {
+                                            this.previewLoading = false;
+                                        }
+                                    },
+                                    openTransferModal() {
+                                        this.menuOpen = false;
+                                        this.transferModal = true;
+                                        this.targetResellerId = '';
+                                        this.transferPreview = null;
+                                        this.previewError = null;
+                                    }
+                                }">
                                     <a href="{{ route('admin.customers.show', $customer) }}" class="action-icon-btn text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/40" title="View customer">
                                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -170,7 +207,7 @@
                                                     Convert to reseller
                                                 </button>
                                             @endif
-                                            <button type="button" @click="menuOpen = false; transferModal = true" class="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40">
+                                            <button type="button" @click="openTransferModal()" class="w-full text-left px-4 py-2.5 text-sm font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-950/40">
                                                 Transfer to reseller
                                             </button>
                                             <form method="POST" action="{{ route('admin.customers.destroy', $customer) }}" data-confirm="Are you sure you want to delete this customer?">
@@ -204,9 +241,11 @@
                                     @endif
 
                                     <div x-show="transferModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="transferModal = false">
-                                        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full">
+                                        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
                                             <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Transfer to Reseller</h3>
-                                            <p class="text-slate-600 dark:text-slate-400 mb-4 text-sm">Reassign <strong>{{ $customer->name }}</strong> to another reseller. The customer keeps their login and billing history; services and domains move to the new reseller's management.</p>
+                                            <p class="text-slate-600 dark:text-slate-400 mb-3 text-sm">
+                                                Move <strong>{{ $customer->name }}</strong> to a reseller partner. The customer keeps their login; services and domains are reassigned. Open invoices are cancelled so the reseller can start fresh billing.
+                                            </p>
                                             @if ($customer->reseller)
                                             <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">Current owner: <strong>{{ $customer->reseller->name }}</strong></p>
                                             @else
@@ -214,7 +253,8 @@
                                             @endif
                                             <form method="POST" action="{{ route('admin.customers.transfer-to-reseller', $customer) }}">
                                                 @csrf
-                                                <select name="target_reseller_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm mb-4" required>
+                                                <label class="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">Destination</label>
+                                                <select name="target_reseller_id" x-model="targetResellerId" @change="loadTransferPreview()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm mb-4" required>
                                                     <option value="">Select destination...</option>
                                                     @if($customer->reseller_id)
                                                         <option value="platform">Platform (direct)</option>
@@ -223,12 +263,59 @@
                                                         <option value="{{ $reseller->id }}">{{ $reseller->name }} ({{ $reseller->email }})</option>
                                                     @endforeach
                                                 </select>
+
+                                                <div x-show="previewLoading" class="text-sm text-slate-500 mb-4">Loading preview…</div>
+                                                <div x-show="previewError" x-cloak class="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm" x-text="previewError"></div>
+
+                                                <template x-if="transferPreview">
+                                                    <div class="mb-4 space-y-3 text-sm">
+                                                        <div class="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                                                            <p class="font-medium text-slate-900 dark:text-white mb-2">What will happen</p>
+                                                            <ul class="space-y-1 text-slate-600 dark:text-slate-400 list-disc list-inside">
+                                                                <li><span x-text="transferPreview.counts.services"></span> service(s) and <span x-text="transferPreview.counts.domains"></span> domain(s) reassigned</li>
+                                                                <li><span x-text="transferPreview.counts.open_tickets"></span> open ticket(s) routed to the new manager</li>
+                                                                <template x-if="transferPreview.will_cancel_invoices">
+                                                                    <li><span x-text="transferPreview.counts.open_invoices"></span> open invoice(s) will be <strong>cancelled</strong></li>
+                                                                </template>
+                                                                <template x-if="transferPreview.will_send_customer_email">
+                                                                    <li>Customer receives a branded email (no SMS)</li>
+                                                                </template>
+                                                                <template x-if="transferPreview.counts.da_accounts > 0">
+                                                                    <li><span x-text="transferPreview.counts.da_accounts"></span> DirectAdmin hosting account(s) moved on the server</li>
+                                                                </template>
+                                                            </ul>
+                                                        </div>
+
+                                                        <template x-if="transferPreview.open_invoices && transferPreview.open_invoices.length > 0 && transferPreview.will_cancel_invoices">
+                                                            <div class="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                                                                <p class="font-medium text-amber-900 dark:text-amber-200 mb-1">Invoices to cancel</p>
+                                                                <ul class="text-amber-800 dark:text-amber-300 text-xs space-y-0.5">
+                                                                    <template x-for="inv in transferPreview.open_invoices" :key="inv.number">
+                                                                        <li x-text="inv.number + ' — ' + inv.status + ' — KES ' + inv.total"></li>
+                                                                    </template>
+                                                                </ul>
+                                                            </div>
+                                                        </template>
+
+                                                        <template x-if="transferPreview.warnings && transferPreview.warnings.length > 0">
+                                                            <div class="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                                                                <p class="font-medium text-amber-900 dark:text-amber-200 mb-1">Warnings</p>
+                                                                <ul class="text-amber-800 dark:text-amber-300 text-xs space-y-0.5 list-disc list-inside">
+                                                                    <template x-for="(w, i) in transferPreview.warnings" :key="i">
+                                                                        <li x-text="w"></li>
+                                                                    </template>
+                                                                </ul>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+
                                                 <div class="flex gap-3 justify-end">
                                                     <button type="button" @click="transferModal = false" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition text-sm">
                                                         Cancel
                                                     </button>
-                                                    <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">
-                                                        Transfer
+                                                    <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm" :disabled="!targetResellerId">
+                                                        Confirm transfer
                                                     </button>
                                                 </div>
                                             </form>
