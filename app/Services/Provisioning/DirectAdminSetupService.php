@@ -8,7 +8,6 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
-use Illuminate\Support\Str;
 
 class DirectAdminSetupService
 {
@@ -33,7 +32,7 @@ class DirectAdminSetupService
                 'username' => $this->credentials->generateUsername($user),
                 'password' => $this->credentials->generatePassword(),
                 'domain' => $domain,
-                'package' => Str::slug($packageName),
+                'package' => $packageName,
                 'package_name' => $packageName,
                 'node_id' => $node->id,
                 'node_name' => $node->name,

@@ -185,6 +185,7 @@ class ResellerManagedServiceUpdateService
         }
 
         $packageMeta = $listing->directAdminPackageMeta();
+        $packageApiName = (string) ($packageMeta['package'] ?? $listing->direct_admin_package_name);
         $directAdmin = $this->resellerDirectAdmin->directAdminForService($service);
 
         if (! $directAdmin) {
@@ -197,7 +198,7 @@ class ResellerManagedServiceUpdateService
             $this->resellerDirectAdmin->impersonationUsernameForService($service),
         );
 
-        $result = $directAdmin->changeUserPackage($username, $packageMeta['package']);
+        $result = $directAdmin->changeUserPackage($username, $packageApiName);
 
         if (! $result['success']) {
             throw new \RuntimeException($result['message']);

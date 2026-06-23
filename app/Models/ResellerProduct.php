@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
 
 class ResellerProduct extends Model
 {
@@ -110,11 +109,13 @@ class ResellerProduct extends Model
      */
     public function directAdminPackageMeta(): array
     {
-        $name = (string) $this->direct_admin_package_name;
+        $name = trim((string) $this->direct_admin_package_name);
 
+        // DirectAdmin MODIFY_USER / ACCOUNT_USER expect the exact package name from
+        // CMD_API_PACKAGES_USER — slugging breaks names like "Gold Package".
         return [
             'package_name' => $name,
-            'package' => Str::slug($name),
+            'package' => $name,
         ];
     }
 
