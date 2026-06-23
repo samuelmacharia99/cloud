@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use App\Services\PlatformApiTokenService;
+use App\Services\PlatformPublicApiService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -93,6 +94,31 @@ class PlatformPublicApiTest extends TestCase
         $response->assertOk()
             ->assertJsonCount(1, 'services')
             ->assertJsonPath('services.0.name', 'Starter Hosting');
+    }
+
+    public function test_platform_api_works_on_site_url_host_when_app_url_differs(): void
+    {
+        config(['app.url' => 'https://talksasa.com']);
+        Setting::setValue('site_url', 'https://servers.talksasa.com');
+
+        Product::create([
+            'name' => 'Cloud VPS',
+            'slug' => 'cloud-vps',
+            'type' => 'vps',
+            'monthly_price' => 2500,
+            'is_active' => true,
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'servers.talksasa.com'])
+            ->getJson('https://servers.talksasa.com/api/v1/public/services');
+
+        $response->assertOk()
+            ->assertJsonPath('services.0.name', 'Cloud VPS');
+
+        $this->assertSame(
+            'https://servers.talksasa.com/api/v1/public',
+            app(PlatformPublicApiService::class)->apiBaseUrl(),
+        );
     }
 
     public function test_admin_developers_page_and_token(): void

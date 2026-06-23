@@ -11,6 +11,7 @@ class PlatformPublicApiService
 {
     public function __construct(
         private DomainAvailabilityService $availability,
+        private ResellerBrandingResolver $brandingResolver,
     ) {}
 
     public function isEnabled(): bool
@@ -48,12 +49,12 @@ class PlatformPublicApiService
 
     public function apiBaseUrl(): string
     {
-        return rtrim(Setting::getValue('site_url', config('app.url')), '/').'/api/v1/public';
+        return $this->brandingResolver->platformBaseUrl().'/api/v1/public';
     }
 
     public function checkoutUrl(): string
     {
-        return rtrim(Setting::getValue('site_url', config('app.url')), '/').'/domain-checkout';
+        return $this->brandingResolver->platformBaseUrl().'/domain-checkout';
     }
 
     /**
@@ -307,12 +308,23 @@ class PlatformPublicApiService
 
     public function originAllowed(?string $origin): bool
     {
-        $allowed = $this->settings()['allowed_origins'];
-
-        if ($allowed === [] || $origin === null || $origin === '') {
+        if ($origin === null || $origin === '') {
             return false;
         }
 
-        return in_array(strtolower(rtrim(trim($origin), '/')), $allowed, true);
+        $normalized = strtolower(rtrim(trim($origin), '/'));
+        $platformOrigin = strtolower($this->brandingResolver->platformBaseUrl());
+
+        if ($normalized === $platformOrigin) {
+            return true;
+        }
+
+        $allowed = $this->settings()['allowed_origins'];
+
+        if ($allowed === []) {
+            return false;
+        }
+
+        return in_array($normalized, $allowed, true);
     }
 }

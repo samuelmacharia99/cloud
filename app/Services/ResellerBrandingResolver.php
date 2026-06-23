@@ -214,11 +214,48 @@ class ResellerBrandingResolver
         return $host;
     }
 
+    public function platformBaseUrl(): string
+    {
+        $url = trim((string) Setting::getValue('site_url', config('app.url')));
+
+        if ($url === '') {
+            $url = (string) config('app.url');
+        }
+
+        if ($url !== '' && ! preg_match('#^https?://#i', $url)) {
+            $url = 'https://'.$url;
+        }
+
+        return rtrim($url, '/');
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function platformHosts(): array
+    {
+        $hosts = [];
+
+        foreach ([$this->platformBaseUrl(), (string) config('app.url')] as $url) {
+            $host = $this->normalizeHost(parse_url($url, PHP_URL_HOST) ?: '');
+
+            if ($host !== '') {
+                $hosts[$host] = true;
+            }
+        }
+
+        return array_keys($hosts);
+    }
+
     public function isPlatformHost(string $host): bool
     {
-        $platformHost = $this->normalizeHost(parse_url(config('app.url'), PHP_URL_HOST) ?: '');
+        $host = $this->normalizeHost($host);
 
-        return $platformHost !== '' && $host === $platformHost;
+        if ($host === '') {
+            return false;
+        }
+
+        return in_array($host, $this->platformHosts(), true);
     }
 
     public function forgetDomainCache(?string $domain): void

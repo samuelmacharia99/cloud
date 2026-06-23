@@ -8,6 +8,7 @@ use App\Models\DomainPricing;
 use App\Models\ResellerDomainPricing;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -101,8 +102,11 @@ class ResellerPublicApiTest extends TestCase
     public function test_api_returns_404_on_platform_host(): void
     {
         $this->createReseller();
+        config(['app.url' => 'https://platform.example.test']);
+        Setting::setValue('site_url', 'https://platform.example.test');
 
-        $response = $this->getJson('/api/v1/public/domains/search?q=example');
+        $response = $this->withServerVariables(['HTTP_HOST' => 'unknown.example.test'])
+            ->getJson('https://unknown.example.test/api/v1/public/domains/search?q=example');
 
         $response->assertNotFound()
             ->assertJson(['success' => false]);

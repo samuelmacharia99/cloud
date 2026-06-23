@@ -12,7 +12,7 @@ class SettingSeeder extends Seeder
         $settings = [
             // General settings
             ['key' => 'site_name', 'value' => 'Talksasa Cloud', 'description' => 'Application name'],
-            ['key' => 'site_url', 'value' => 'https://talksasa.cloud', 'description' => 'Application URL'],
+            ['key' => 'site_url', 'value' => 'https://servers.talksasa.com', 'description' => 'Application URL'],
             ['key' => 'site_email', 'value' => 'noreply@talksasa.cloud', 'description' => 'No-reply email address'],
             ['key' => 'support_email', 'value' => 'support@talksasa.cloud', 'description' => 'Support email address'],
             ['key' => 'timezone', 'value' => 'Africa/Nairobi', 'description' => 'Default timezone'],

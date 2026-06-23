@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Services\PlatformApiTokenService;
 use App\Services\PlatformPublicApiService;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -15,15 +16,22 @@ class DeveloperController extends Controller
     public function __construct(
         private PlatformApiTokenService $apiToken,
         private PlatformPublicApiService $publicApi,
+        private ResellerBrandingResolver $brandingResolver,
     ) {}
 
     public function index(): View
     {
+        $platformHosts = $this->brandingResolver->platformHosts();
+        $requestHost = $this->brandingResolver->normalizeHost(request()->getHost());
+
         return view('admin.developers.index', [
             'apiEnabled' => $this->publicApi->isEnabled(),
             'publicApiSettings' => $this->publicApi->settings(),
             'apiBaseUrl' => $this->publicApi->apiBaseUrl(),
             'checkoutUrl' => $this->publicApi->checkoutUrl(),
+            'platformHosts' => $platformHosts,
+            'requestHost' => $requestHost,
+            'hostRecognized' => $this->brandingResolver->isPlatformHost($requestHost),
             'tokenMetadata' => $this->apiToken->metadata(),
             'plainTextToken' => session()->pull('platform_api_plain_token'),
         ]);
