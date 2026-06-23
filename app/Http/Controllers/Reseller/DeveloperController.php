@@ -58,7 +58,34 @@ class DeveloperController extends Controller
 
         return redirect()
             ->route('reseller.developers.index')
-            ->with('success', 'API token regenerated. Copy it now — it will not be shown again.')
+            ->with('success', 'API token regenerated.')
+            ->with('reseller_api_plain_token', $plainText);
+    }
+
+    public function revealToken(Request $request): RedirectResponse
+    {
+        $reseller = auth()->user();
+
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        if (! Hash::check($request->password, $reseller->password)) {
+            return back()->withErrors(['reveal_password' => 'The password you entered is incorrect.']);
+        }
+
+        if (! $this->apiToken->hasActiveToken($reseller)) {
+            return back()->with('error', 'No API token exists yet. Generate one first.');
+        }
+
+        $plainText = $this->apiToken->revealPlainText($reseller);
+
+        if ($plainText === null) {
+            return back()->with('error', 'This token cannot be copied. Regenerate it once to enable copying later.');
+        }
+
+        return redirect()
+            ->route('reseller.developers.index')
             ->with('reseller_api_plain_token', $plainText);
     }
 }

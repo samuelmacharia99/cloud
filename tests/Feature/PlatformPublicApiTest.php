@@ -135,6 +135,20 @@ class PlatformPublicApiTest extends TestCase
         $this->assertTrue(app(PlatformApiTokenService::class)->hasActiveToken());
     }
 
+    public function test_admin_can_reveal_existing_token_with_password(): void
+    {
+        $admin = $this->createAdmin();
+        $service = app(PlatformApiTokenService::class);
+        $plainText = $service->regenerate($admin);
+
+        $response = $this->actingAs($admin)->post(route('admin.developers.token.reveal'), [
+            'password' => 'secret-password',
+        ]);
+
+        $response->assertRedirect(route('admin.developers.index'));
+        $response->assertSessionHas('platform_api_plain_token', $plainText);
+    }
+
     public function test_platform_cart_prepares_checkout_session(): void
     {
         $this->seedDomain('.com', 1500);

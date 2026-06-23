@@ -80,23 +80,41 @@
 
                 @if($plainTextToken)
                     <div class="rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-4 space-y-2">
-                        <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">New API token — copy now</p>
-                        <p class="text-xs text-amber-800/80 dark:text-amber-300/80">This is the only time the full token is displayed.</p>
+                        <p class="text-sm font-semibold text-amber-900 dark:text-amber-200">API token</p>
                         <div class="flex items-center gap-2">
                             <code class="flex-1 text-xs sm:text-sm px-3 py-2.5 rounded-lg bg-white dark:bg-slate-900 font-mono text-slate-900 dark:text-white break-all select-all">{{ $plainTextToken }}</code>
                             <button type="button" @click="copy(@js($plainTextToken), 'token')" class="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white transition" x-text="copied === 'token' ? 'Copied' : 'Copy'"></button>
                         </div>
                     </div>
                 @elseif($tokenMetadata['exists'])
-                    <div>
-                        <label class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">API token</label>
-                        <p class="mt-1.5 text-sm font-mono text-slate-700 dark:text-slate-300">••••••••••••{{ $tokenMetadata['hint'] ?? '····' }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Created {{ $tokenMetadata['created_at'] ? \Carbon\Carbon::parse($tokenMetadata['created_at'])->diffForHumans() : 'recently' }}
-                            @if($tokenMetadata['last_used_at'])
-                                · Last used {{ \Carbon\Carbon::parse($tokenMetadata['last_used_at'])->diffForHumans() }}
-                            @endif
-                        </p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">API token</label>
+                            <p class="mt-1.5 text-sm font-mono text-slate-700 dark:text-slate-300">••••••••••••{{ $tokenMetadata['hint'] ?? '····' }}</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Created {{ $tokenMetadata['created_at'] ? \Carbon\Carbon::parse($tokenMetadata['created_at'])->diffForHumans() : 'recently' }}
+                                @if($tokenMetadata['last_used_at'])
+                                    · Last used {{ \Carbon\Carbon::parse($tokenMetadata['last_used_at'])->diffForHumans() }}
+                                @endif
+                            </p>
+                        </div>
+                        <form method="POST" action="{{ route('reseller.developers.token.reveal') }}" class="flex flex-wrap items-end gap-2">
+                            @csrf
+                            <div class="flex-1 min-w-[12rem]">
+                                <input type="password" name="password" required autocomplete="current-password" placeholder="Your password to reveal token"
+                                    class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white @error('reveal_password') border-red-500 @enderror">
+                                @error('reveal_password')
+                                    <p class="text-xs text-red-600 mt-1">{{ $message }}</p>
+                                @enderror
+                            </div>
+                            <button type="submit" @if(! $apiEnabled) disabled @endif
+                                class="px-4 py-2 rounded-lg text-sm font-medium transition {{ $apiEnabled ? 'border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300' : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed' }}">
+                                Reveal &amp; copy
+                            </button>
+                        </form>
+                        @unless($tokenMetadata['copyable'] ?? false)
+                            <p class="text-xs text-amber-700 dark:text-amber-300">This token was created before copy was supported. Regenerate once to enable copying later.</p>
+                        @endunless
                     </div>
                 @else
                     <p class="text-sm text-slate-500 dark:text-slate-400">No API token yet. Generate one to authenticate requests with <code class="text-xs">Authorization: Bearer</code>.</p>

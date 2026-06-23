@@ -248,6 +248,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/developers', [App\Http\Controllers\Admin\DeveloperController::class, 'index'])->name('admin.developers.index');
         Route::post('admin/developers/settings', [App\Http\Controllers\Admin\DeveloperController::class, 'updateSettings'])->name('admin.developers.settings.update');
         Route::post('admin/developers/token', [App\Http\Controllers\Admin\DeveloperController::class, 'regenerateToken'])->name('admin.developers.token.regenerate');
+        Route::post('admin/developers/token/reveal', [App\Http\Controllers\Admin\DeveloperController::class, 'revealToken'])->name('admin.developers.token.reveal');
 
         Route::post('admin/registrars', [RegistrarController::class, 'store'])->name('admin.registrars.store');
         Route::put('admin/registrars/{registrar}', [RegistrarController::class, 'update'])->name('admin.registrars.update');
@@ -436,6 +437,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         Route::get('reseller/developers', [DeveloperController::class, 'index'])->name('reseller.developers.index');
         Route::post('reseller/developers/token', [DeveloperController::class, 'regenerateToken'])->name('reseller.developers.token.regenerate');
+        Route::post('reseller/developers/token/reveal', [DeveloperController::class, 'revealToken'])->name('reseller.developers.token.reveal');
 
         Route::resource('reseller/invoices', App\Http\Controllers\Reseller\InvoiceController::class)->only(['index', 'show'])->names('reseller.invoices');
         Route::get('reseller/invoices/{invoice}/download', [App\Http\Controllers\Reseller\InvoiceController::class, 'download'])->name('reseller.invoices.download');
