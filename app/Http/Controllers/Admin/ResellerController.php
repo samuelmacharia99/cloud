@@ -19,6 +19,7 @@ use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerInfrastructureService;
 use App\Services\ResellerPackageSubscriptionService;
+use App\Services\ResellerScopeService;
 use App\Services\ResellerWalletService;
 use App\Services\TaxService;
 use Carbon\Carbon;
@@ -66,12 +67,18 @@ class ResellerController extends Controller
             request()->boolean('refresh_node'),
         );
 
-        $services = Service::where('reseller_id', $user->id)
+        $scope = app(ResellerScopeService::class);
+
+        $services = $scope->managedServicesQuery($user)
             ->with('user', 'product')
             ->get();
 
-        $customerIds = $services->pluck('user_id')->unique();
-        $customers = User::whereIn('id', $customerIds)->get();
+        $customerIds = collect($scope->allManagedCustomerIds($user));
+        $customers = User::query()
+            ->whereIn('id', $customerIds)
+            ->withCount('services')
+            ->orderBy('name')
+            ->get();
         $packages = ResellerPackage::where('active', true)->orderBy('price')->get();
 
         // Get domains associated with this reseller and their customers
@@ -533,14 +540,12 @@ class ResellerController extends Controller
             'notes' => 'nullable|string|max:2000',
         ]);
 
-        // Build allowed owner IDs: reseller themselves or their customers
-        $allowedIds = Service::where('reseller_id', $user->id)
-            ->distinct()
-            ->pluck('user_id')
-            ->push($user->id)
-            ->unique();
-
-        abort_if(! $allowedIds->contains($validated['owner_id']), 403, 'This owner is not managed by this reseller.');
+        // Build allowed owner IDs: reseller themselves or their managed customers
+        abort_if(
+            ! app(ResellerScopeService::class)->resellerMayAssignResourceToOwner($user, (int) $validated['owner_id']),
+            403,
+            'This owner is not managed by this reseller.',
+        );
 
         // Parse domain name: strip extension suffix if present in input
         $domainInput = $validated['domain_name'];
@@ -621,11 +626,11 @@ class ResellerController extends Controller
         ]);
 
         // Owner must be the reseller themselves or one of their managed customers
-        $allowedIds = Service::where('reseller_id', $user->id)
-            ->distinct()->pluck('user_id')
-            ->push($user->id)->unique();
-
-        abort_if(! $allowedIds->contains((int) $validated['owner_id']), 403, 'This owner is not managed by this reseller.');
+        abort_if(
+            ! app(ResellerScopeService::class)->resellerMayAssignResourceToOwner($user, (int) $validated['owner_id']),
+            403,
+            'This owner is not managed by this reseller.',
+        );
 
         $product = Product::findOrFail($validated['product_id']);
         abort_if(! in_array($product->type, ['vps', 'dedicated_server']), 422, 'Only VPS and Dedicated Server products can be added to resellers.');

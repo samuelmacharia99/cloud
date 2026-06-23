@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\Service;
 use App\Models\User;
@@ -61,5 +62,45 @@ class ResellerScopeService
     public function managedCustomerIds(User $reseller): array
     {
         return $this->managedCustomersQuery($reseller)->pluck('id')->all();
+    }
+
+    /**
+     * Customer IDs for admin/reseller ownership checks: portal-assigned customers
+     * plus any legacy rows only linked via service.reseller_id.
+     *
+     * @return list<int>
+     */
+    public function allManagedCustomerIds(User $reseller): array
+    {
+        $assigned = $this->managedCustomersQuery($reseller)->pluck('id');
+
+        $viaServices = Service::query()
+            ->where('reseller_id', $reseller->id)
+            ->distinct()
+            ->pluck('user_id');
+
+        $viaDomains = Domain::query()
+            ->where('reseller_id', $reseller->id)
+            ->distinct()
+            ->pluck('user_id');
+
+        return $assigned
+            ->merge($viaServices)
+            ->merge($viaDomains)
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    public function resellerMayAssignResourceToOwner(User $reseller, int $ownerId): bool
+    {
+        if ($ownerId === $reseller->id) {
+            return true;
+        }
+
+        $customer = User::query()->find($ownerId);
+
+        return $customer instanceof User && $this->ownsCustomer($reseller, $customer);
     }
 }
