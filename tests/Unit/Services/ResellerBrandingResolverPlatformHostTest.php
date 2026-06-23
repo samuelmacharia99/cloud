@@ -16,34 +16,38 @@ class ResellerBrandingResolverPlatformHostTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_platform_host_matches_site_url_even_when_app_url_differs(): void
+    public function test_platform_host_matches_site_url_and_app_url(): void
     {
-        config(['app.url' => 'https://talksasa.com']);
+        config(['app.url' => 'https://servers.talksasa.com']);
 
         $setting = Mockery::mock('alias:'.Setting::class);
         $setting->shouldReceive('getValue')
-            ->with('site_url', 'https://talksasa.com')
-            ->andReturn('https://servers.talksasa.com');
+            ->with('site_url', 'https://servers.talksasa.com')
+            ->andReturn('https://talksasa.com');
+        $setting->shouldReceive('getValue')
+            ->with('site_url', '')
+            ->andReturn('https://talksasa.com');
 
         $resolver = new ResellerBrandingResolver;
 
-        $this->assertSame('https://servers.talksasa.com', $resolver->platformBaseUrl());
+        $this->assertSame('https://talksasa.com', $resolver->platformBaseUrl());
+        $this->assertSame('https://servers.talksasa.com', $resolver->publicApiBaseUrl());
         $this->assertTrue($resolver->isPlatformHost('servers.talksasa.com'));
         $this->assertTrue($resolver->isPlatformHost('talksasa.com'));
         $this->assertFalse($resolver->isPlatformHost('billing.reseller.test'));
     }
 
-    public function test_platform_base_url_normalizes_missing_scheme(): void
+    public function test_public_api_base_url_falls_back_to_site_url_when_app_url_missing(): void
     {
-        config(['app.url' => 'http://localhost']);
+        config(['app.url' => '']);
 
         $setting = Mockery::mock('alias:'.Setting::class);
         $setting->shouldReceive('getValue')
-            ->with('site_url', 'http://localhost')
+            ->with('site_url', '')
             ->andReturn('servers.talksasa.com');
 
         $resolver = new ResellerBrandingResolver;
 
-        $this->assertSame('https://servers.talksasa.com', $resolver->platformBaseUrl());
+        $this->assertSame('https://servers.talksasa.com', $resolver->publicApiBaseUrl());
     }
 }

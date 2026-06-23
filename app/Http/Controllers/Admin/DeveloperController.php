@@ -23,12 +23,15 @@ class DeveloperController extends Controller
     {
         $platformHosts = $this->brandingResolver->platformHosts();
         $requestHost = $this->brandingResolver->normalizeHost(request()->getHost());
+        $portalUrl = $this->brandingResolver->platformBaseUrl();
 
         return view('admin.developers.index', [
             'apiEnabled' => $this->publicApi->isEnabled(),
             'publicApiSettings' => $this->publicApi->settings(),
             'apiBaseUrl' => $this->publicApi->apiBaseUrl(),
             'checkoutUrl' => $this->publicApi->checkoutUrl(),
+            'portalUrl' => $portalUrl,
+            'portalUrlDiffers' => strtolower($portalUrl) !== strtolower($this->brandingResolver->publicApiBaseUrl()),
             'platformHosts' => $platformHosts,
             'requestHost' => $requestHost,
             'hostRecognized' => $this->brandingResolver->isPlatformHost($requestHost),

@@ -98,8 +98,8 @@ class PlatformPublicApiTest extends TestCase
 
     public function test_platform_api_works_on_site_url_host_when_app_url_differs(): void
     {
-        config(['app.url' => 'https://talksasa.com']);
-        Setting::setValue('site_url', 'https://servers.talksasa.com');
+        config(['app.url' => 'https://servers.talksasa.com']);
+        Setting::setValue('site_url', 'https://talksasa.com');
 
         Product::create([
             'name' => 'Cloud VPS',

@@ -89,7 +89,10 @@
                 <h3 class="text-sm font-semibold text-slate-900 dark:text-white">API credentials</h3>
                 <div>
                     <label class="text-xs font-semibold uppercase tracking-wide text-slate-500">Base URL</label>
-                    <p class="text-xs text-slate-500 mt-1">Built from your <a href="{{ route('admin.settings.index') }}" class="underline">Application URL</a> setting plus <code class="text-xs">/api/v1/public</code>.</p>
+                    <p class="text-xs text-slate-500 mt-1">Served from your deployment URL (<code class="text-xs">APP_URL</code>). Use allowed origins below for your marketing site (e.g. <code class="text-xs">https://www.talksasa.com</code>).</p>
+                    @if($portalUrlDiffers)
+                        <p class="text-xs text-slate-500 mt-1">Application URL in <a href="{{ route('admin.settings.index') }}" class="underline">Settings</a> is <code class="text-xs">{{ $portalUrl }}</code> (branding/links). API calls still go to this base URL.</p>
+                    @endif
                     <div class="mt-1.5 flex items-center gap-2">
                         <code class="flex-1 text-sm px-3 py-2.5 rounded-lg bg-slate-100 dark:bg-slate-800 font-mono break-all">{{ $apiBase }}</code>
                         <button type="button" @click="copy(@js($apiBase), 'base')" class="shrink-0 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800" x-text="copied === 'base' ? 'Copied' : 'Copy'"></button>

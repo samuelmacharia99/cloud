@@ -216,17 +216,28 @@ class ResellerBrandingResolver
 
     public function platformBaseUrl(): string
     {
-        $url = trim((string) Setting::getValue('site_url', config('app.url')));
+        return $this->normalizeBaseUrl(trim((string) Setting::getValue('site_url', config('app.url'))))
+            ?: $this->normalizeBaseUrl((string) config('app.url'));
+    }
 
-        if ($url === '') {
-            $url = (string) config('app.url');
+    /**
+     * Base URL for the public website API and guest checkout (where this app is deployed).
+     * Prefers APP_URL over site_url because site_url may point at a marketing domain.
+     */
+    public function publicApiBaseUrl(): string
+    {
+        $appUrl = $this->normalizeBaseUrl((string) config('app.url'));
+        $siteUrl = $this->normalizeBaseUrl(trim((string) Setting::getValue('site_url', '')));
+
+        if ($appUrl !== '') {
+            return $appUrl;
         }
 
-        if ($url !== '' && ! preg_match('#^https?://#i', $url)) {
-            $url = 'https://'.$url;
+        if ($siteUrl !== '') {
+            return $siteUrl;
         }
 
-        return rtrim($url, '/');
+        return 'https://localhost';
     }
 
     /**
@@ -236,8 +247,11 @@ class ResellerBrandingResolver
     {
         $hosts = [];
 
-        foreach ([$this->platformBaseUrl(), (string) config('app.url')] as $url) {
-            $host = $this->normalizeHost(parse_url($url, PHP_URL_HOST) ?: '');
+        foreach ([
+            trim((string) Setting::getValue('site_url', '')),
+            (string) config('app.url'),
+        ] as $url) {
+            $host = $this->normalizeHost(parse_url($this->normalizeBaseUrl($url), PHP_URL_HOST) ?: '');
 
             if ($host !== '') {
                 $hosts[$host] = true;
@@ -263,5 +277,20 @@ class ResellerBrandingResolver
         if ($domain) {
             Cache::forget(self::CACHE_KEY_PREFIX.$this->normalizeHost($domain));
         }
+    }
+
+    private function normalizeBaseUrl(string $url): string
+    {
+        $url = trim($url);
+
+        if ($url === '') {
+            return '';
+        }
+
+        if (! preg_match('#^https?://#i', $url)) {
+            $url = 'https://'.$url;
+        }
+
+        return rtrim($url, '/');
     }
 }

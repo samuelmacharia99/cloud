@@ -49,12 +49,12 @@ class PlatformPublicApiService
 
     public function apiBaseUrl(): string
     {
-        return $this->brandingResolver->platformBaseUrl().'/api/v1/public';
+        return $this->brandingResolver->publicApiBaseUrl().'/api/v1/public';
     }
 
     public function checkoutUrl(): string
     {
-        return $this->brandingResolver->platformBaseUrl().'/domain-checkout';
+        return $this->brandingResolver->publicApiBaseUrl().'/domain-checkout';
     }
 
     /**
@@ -313,7 +313,7 @@ class PlatformPublicApiService
         }
 
         $normalized = strtolower(rtrim(trim($origin), '/'));
-        $platformOrigin = strtolower($this->brandingResolver->platformBaseUrl());
+        $platformOrigin = strtolower($this->brandingResolver->publicApiBaseUrl());
 
         if ($normalized === $platformOrigin) {
             return true;
