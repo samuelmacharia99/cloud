@@ -879,7 +879,7 @@
                     </button>
                 </div>
 
-                @if (($upgradeOptions ?? collect())->isEmpty())
+                @if (($planChangeOptions ?? collect())->isEmpty())
                     <div class="p-6 space-y-4">
                         <p class="text-sm text-slate-600 dark:text-slate-400">
                             No higher plans are available on this DirectAdmin server for this service.
@@ -892,8 +892,9 @@
                         </form>
                     </div>
                 @else
-                    <form method="POST" action="{{ route('admin.services.upgrade-hosting', $service) }}" class="p-6 space-y-5">
+                    <form method="POST" action="{{ route('admin.services.upgrade-hosting', $service) }}" class="p-6 space-y-5" id="admin-plan-change-form">
                         @csrf
+                        <input type="hidden" name="reseller_product_id" id="admin_reseller_product_id" value="">
 
                         @if (!empty($enforcementInsight['needs_upgrade']) || ($hasStaleOverlimitFlags ?? false))
                             <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
@@ -907,28 +908,40 @@
                         @endif
 
                         <div class="space-y-3">
-                            @foreach ($upgradeOptions as $product)
+                            @foreach ($planChangeOptions as $option)
                                 @php
-                                    $package = $product->directAdminPackage;
-                                    $isRecommended = $recommendedUpgrade && $recommendedUpgrade->id === $product->id;
+                                    $product = $option['product'];
+                                    $isRecommended = $recommendedOption
+                                        && (int) ($recommendedOption['reseller_product_id'] ?? 0) === (int) ($option['reseller_product_id'] ?? 0)
+                                        && (int) $recommendedOption['product']->id === (int) $product->id;
                                     $cycle = $service->billing_cycle ?? 'monthly';
                                     $upgradeService = app(\App\Services\Customer\CustomerHostingUpgradeService::class);
-                                    $displayPrice = $upgradeService->displayPriceForCycle($service->user, $product, $cycle);
+                                    $displayPrice = $upgradeService->displayPriceForPlanOption($service->user, $option, $cycle);
+                                    $badge = match ($option['change_type']) {
+                                        'downgrade' => 'Downgrade',
+                                        'lateral' => 'Same tier',
+                                        default => 'Upgrade',
+                                    };
                                 @endphp
                                 <label class="flex items-start gap-3 p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 cursor-pointer has-[:checked]:ring-2 has-[:checked]:ring-emerald-500 {{ $isRecommended ? 'ring-2 ring-amber-400' : '' }}">
-                                    <input type="radio" name="product_id" value="{{ $product->id }}" class="mt-1" required @checked($isRecommended)>
+                                    <input type="radio" name="product_id" value="{{ $product->id }}" class="mt-1 admin-plan-option-radio" required
+                                        data-reseller-product-id="{{ $option['reseller_product_id'] ?? '' }}"
+                                        @checked($isRecommended)>
                                     <div class="flex-1">
                                         <div class="flex items-center gap-2 flex-wrap">
-                                            <p class="font-semibold text-slate-900 dark:text-white">{{ $product->name }}</p>
+                                            <p class="font-semibold text-slate-900 dark:text-white">{{ $option['name'] }}</p>
+                                            <span class="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">{{ $badge }}</span>
                                             @if ($isRecommended)
                                                 <span class="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">Recommended</span>
                                             @endif
                                         </div>
                                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                                             {{ $currencyCode }} {{ number_format($displayPrice, 0) }}/{{ $cycle === 'annual' ? 'yr' : 'mo' }}
-                                            @if ($package)
-                                                · {{ rtrim(rtrim(number_format($package->disk_quota, 2), '0'), '.') }} GB disk
-                                                · {{ $package->num_databases }} {{ \Illuminate\Support\Str::plural('database', $package->num_databases) }}
+                                            @if ($option['disk_quota'])
+                                                · {{ rtrim(rtrim(number_format($option['disk_quota'], 2), '0'), '.') }} GB disk
+                                            @endif
+                                            @if ($option['num_databases'])
+                                                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', $option['num_databases']) }}
                                             @endif
                                         </p>
                                     </div>
@@ -959,10 +972,23 @@
                             </button>
                             <button type="submit"
                                     class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
-                                Apply Upgrade
+                                Apply Plan Change
                             </button>
                         </div>
                     </form>
+                    <script>
+                        const adminResellerProductInput = document.getElementById('admin_reseller_product_id');
+                        const syncAdminResellerProductId = () => {
+                            const selected = document.querySelector('.admin-plan-option-radio:checked');
+                            if (adminResellerProductInput) {
+                                adminResellerProductInput.value = selected?.dataset.resellerProductId || '';
+                            }
+                        };
+                        document.querySelectorAll('.admin-plan-option-radio').forEach((radio) => {
+                            radio.addEventListener('change', syncAdminResellerProductId);
+                        });
+                        syncAdminResellerProductId();
+                    </script>
                 @endif
             </div>
         </div>

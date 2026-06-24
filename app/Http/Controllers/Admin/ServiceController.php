@@ -213,11 +213,13 @@ class ServiceController extends Controller
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
 
         $hostingUpgradeService = app(CustomerHostingUpgradeService::class);
-        $upgradeOptions = $service->isSharedHosting()
-            ? $hostingUpgradeService->upgradeOptionsForService($service)
+        $planChangeOptions = $service->isSharedHosting()
+            ? $hostingUpgradeService->planChangeOptionsForService($service)
             : collect();
-        $recommendedUpgrade = $upgradeOptions->isNotEmpty()
-            ? $hostingUpgradeService->recommendedUpgrade(
+        $upgradeOptions = $planChangeOptions
+            ->filter(fn (array $option) => in_array($option['change_type'], ['upgrade', 'lateral'], true));
+        $recommendedOption = $planChangeOptions->isNotEmpty()
+            ? $hostingUpgradeService->recommendedPlanOption(
                 $service,
                 $service->user,
                 $enforcementInsight['primary_metric'] ?? null,
@@ -236,7 +238,8 @@ class ServiceController extends Controller
             'liveStatus',
             'enforcementInsight',
             'upgradeOptions',
-            'recommendedUpgrade',
+            'planChangeOptions',
+            'recommendedOption',
             'daLivePackage',
             'hasStaleOverlimitFlags',
         ));
@@ -488,8 +491,11 @@ class ServiceController extends Controller
         if ($applyHostingPackageChange && $targetProduct) {
             try {
                 $upgradeService = app(CustomerHostingUpgradeService::class);
-                $upgradeService->assertValidUpgradeTarget($service, $targetProduct);
-                $upgradeService->applyUpgrade($service->fresh(), $targetProduct);
+                $option = $upgradeService->findPlanChangeOption($service, $targetProduct->id);
+                if (! $option) {
+                    throw new \InvalidArgumentException('Selected plan is not available for this service on its current server.');
+                }
+                $upgradeService->applyPlanChange($service->fresh(), $targetProduct, $option['listing'] ?? null);
             } catch (\InvalidArgumentException $e) {
                 $message = $e->getMessage();
 
@@ -536,6 +542,7 @@ class ServiceController extends Controller
     {
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
+            'reseller_product_id' => 'nullable|exists:reseller_products,id',
             'billing_action' => 'nullable|in:apply_only,create_invoice',
         ]);
 
@@ -549,13 +556,17 @@ class ServiceController extends Controller
 
         $targetProduct = Product::with('directAdminPackage')->findOrFail($validated['product_id']);
         $upgradeService = app(CustomerHostingUpgradeService::class);
+        $listingId = isset($validated['reseller_product_id']) ? (int) $validated['reseller_product_id'] : null;
+        $option = $upgradeService->findPlanChangeOption($service, $targetProduct->id, $listingId);
 
         try {
-            $upgradeService->assertValidUpgradeTarget($service, $targetProduct);
+            if (! $option) {
+                throw new \InvalidArgumentException('Selected plan is not available for this service on its current server.');
+            }
 
             if (($validated['billing_action'] ?? 'apply_only') === 'create_invoice') {
                 $service->loadMissing('user');
-                $invoice = $upgradeService->createUpgradeInvoice($service, $service->user, $targetProduct);
+                $invoice = $upgradeService->createPlanChangeInvoice($service, $service->user, $option);
 
                 AdminActivityService::log(
                     'service.hosting_upgrade_invoice',
@@ -568,16 +579,16 @@ class ServiceController extends Controller
                     ->with('success', "Upgrade invoice {$invoice->invoice_number} created. Apply the plan now or wait for payment.");
             }
 
-            $upgradeService->applyUpgrade($service->fresh(), $targetProduct);
+            $upgradeService->applyPlanChange($service->fresh(), $targetProduct, $option['listing'] ?? null);
 
             AdminActivityService::log(
                 'service.hosting_upgrade',
-                "Upgraded service #{$service->id} to {$targetProduct->name} on DirectAdmin",
+                "Changed service #{$service->id} to {$option['name']} on DirectAdmin",
                 $service,
                 ['target_product_id' => $targetProduct->id],
             );
 
-            return back()->with('success', "Hosting plan upgraded to {$targetProduct->name} on DirectAdmin.");
+            return back()->with('success', "Hosting plan changed to {$option['name']} on DirectAdmin.");
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         } catch (\Throwable $e) {

@@ -16,6 +16,8 @@ class ResellerPackageSubscriptionService
 
     public const UPGRADE_META = '[upgrade:1]';
 
+    public const DOWNGRADE_META = '[downgrade:1]';
+
     public const ACTIVATED_META = '[activated:1]';
 
     public function packageIdFromInvoice(Invoice $invoice): ?int
@@ -35,6 +37,26 @@ class ResellerPackageSubscriptionService
     public function isUpgradeInvoice(Invoice $invoice): bool
     {
         return str_contains($invoice->notes ?? '', self::UPGRADE_META);
+    }
+
+    public function isDowngradeInvoice(Invoice $invoice): bool
+    {
+        return str_contains($invoice->notes ?? '', self::DOWNGRADE_META);
+    }
+
+    public function isPackageDowngrade(User $user, ResellerPackage $package): bool
+    {
+        $current = $user->resellerPackage;
+
+        if (! $current || ! $user->reseller_package_id || $current->id === $package->id) {
+            return false;
+        }
+
+        if ($current->billing_cycle !== $package->billing_cycle) {
+            return false;
+        }
+
+        return (float) $package->price < (float) $current->price;
     }
 
     public function isPackageUpgrade(User $user, ResellerPackage $package): bool
@@ -99,6 +121,7 @@ class ResellerPackageSubscriptionService
     public function createSubscriptionInvoice(User $user, ResellerPackage $package, bool $renewal = false): Invoice
     {
         $isUpgrade = ! $renewal && $this->isPackageUpgrade($user, $package);
+        $isDowngrade = ! $renewal && $this->isPackageDowngrade($user, $package);
         $schedule = app(InvoiceGenerationScheduleService::class);
 
         if ($isUpgrade) {
@@ -114,6 +137,16 @@ class ResellerPackageSubscriptionService
             $amounts = $this->calculateAmounts($quote['amount']);
             $dueDate = now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
             $notes = trim($label.' '.self::UPGRADE_META.' '.self::FROM_PACKAGE_META_PREFIX.$current->id.'] '.self::PACKAGE_META_PREFIX.$package->id.']');
+        } elseif ($isDowngrade) {
+            $current = $user->resellerPackage;
+            $label = sprintf(
+                'Reseller Package Downgrade: %s → %s (no charge, limits apply immediately)',
+                $current->name,
+                $package->name,
+            );
+            $amounts = $this->calculateAmounts(0);
+            $dueDate = now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
+            $notes = trim($label.' '.self::DOWNGRADE_META.' '.self::FROM_PACKAGE_META_PREFIX.$current->id.'] '.self::PACKAGE_META_PREFIX.$package->id.']');
         } else {
             $label = $renewal
                 ? "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})"
@@ -168,7 +201,7 @@ class ResellerPackageSubscriptionService
     /**
      * Preview package expiry after a successful renewal payment.
      */
-    public function previewRenewalExpiry(User $user): ?\Carbon\Carbon
+    public function previewRenewalExpiry(User $user): ?Carbon
     {
         $package = $user->resellerPackage;
         if (! $package) {
@@ -269,6 +302,8 @@ class ResellerPackageSubscriptionService
             $this->extendSubscription($user, $package);
         } elseif ($this->isUpgradeInvoice($invoice)) {
             $this->applyUpgrade($user, $package);
+        } elseif ($this->isDowngradeInvoice($invoice)) {
+            $this->applyDowngrade($user, $package);
         } else {
             $this->activateSubscription($user, $package);
         }
@@ -293,6 +328,11 @@ class ResellerPackageSubscriptionService
         }
 
         $user->update($updates);
+    }
+
+    public function applyDowngrade(User $user, ResellerPackage $package): void
+    {
+        $this->applyUpgrade($user, $package);
     }
 
     public function activateSubscription(User $user, ResellerPackage $package): void

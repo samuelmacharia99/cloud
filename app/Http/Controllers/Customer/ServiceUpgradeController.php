@@ -16,11 +16,12 @@ class ServiceUpgradeController extends Controller
     {
         $this->authorize('view', $service);
 
-        $options = $upgrades->upgradeOptions($service, auth()->user());
+        $customer = auth()->user();
+        $planOptions = $upgrades->planChangeOptions($service, $customer);
         $insight = app(ServiceEnforcementInsightService::class)->forService($service->load('product.directAdminPackage'));
-        $recommendedUpgrade = $upgrades->recommendedUpgrade(
+        $recommendedOption = $upgrades->recommendedPlanOption(
             $service,
-            auth()->user(),
+            $customer,
             $insight['primary_metric'] ?? null,
         );
 
@@ -28,9 +29,10 @@ class ServiceUpgradeController extends Controller
 
         return view('customer.services.upgrade', [
             'service' => $service->load('product.directAdminPackage'),
-            'upgradeOptions' => $options,
+            'planOptions' => $planOptions,
+            'planChangeEmptyReason' => $upgrades->planChangeEmptyReason($service, $customer),
             'packageUsageInsight' => $insight,
-            'recommendedUpgrade' => $recommendedUpgrade,
+            'recommendedOption' => $recommendedOption,
             'billingCycle' => $billingCycle,
             'upgrades' => $upgrades,
         ]);
@@ -42,21 +44,34 @@ class ServiceUpgradeController extends Controller
 
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
+            'reseller_product_id' => 'nullable|exists:reseller_products,id',
         ]);
 
         $targetProduct = Product::findOrFail($validated['product_id']);
+        $resellerProductId = isset($validated['reseller_product_id'])
+            ? (int) $validated['reseller_product_id']
+            : null;
 
         try {
-            $invoice = $upgrades->createUpgradeInvoice($service, auth()->user(), $targetProduct);
+            $invoice = $upgrades->createUpgradeInvoice(
+                $service,
+                auth()->user(),
+                $targetProduct,
+                $resellerProductId,
+            );
             $settlement->applyAvailableCredits($invoice);
 
             if ($invoice->fresh()->isFullyPaid() && $settlement->settleFromCredits($invoice->fresh())) {
                 return redirect()->route('customer.services.show', $service)
-                    ->with('success', 'Plan upgraded successfully using account credit.');
+                    ->with('success', 'Hosting plan changed successfully using account credit.');
             }
 
+            $message = $invoice->total > 0
+                ? 'Plan change invoice created. Complete payment to apply your new plan.'
+                : 'Confirm the free plan change by completing the invoice (no charge).';
+
             return redirect()->route('customer.payment.select-method', $invoice)
-                ->with('success', 'Upgrade invoice created. Complete payment to activate your new plan.');
+                ->with('success', $message);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }

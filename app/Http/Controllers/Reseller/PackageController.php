@@ -44,10 +44,13 @@ class PackageController extends Controller
         }
 
         $upgradeQuotes = [];
+        $downgradePackages = [];
         if ($user->resellerPackage) {
             foreach ($packages as $pkg) {
                 if ($this->subscriptions->isPackageUpgrade($user, $pkg)) {
                     $upgradeQuotes[$pkg->id] = $this->subscriptions->upgradeQuote($user, $pkg);
+                } elseif ($this->subscriptions->isPackageDowngrade($user, $pkg)) {
+                    $downgradePackages[$pkg->id] = true;
                 }
             }
         }
@@ -64,6 +67,7 @@ class PackageController extends Controller
             'renewalTotal',
             'renewalExtendsTo',
             'upgradeQuotes',
+            'downgradePackages',
         ));
     }
 
@@ -120,12 +124,13 @@ class PackageController extends Controller
             return back()->with('error', 'This package is not available.');
         }
 
-        if ($user->resellerPackage && $package->price < $user->resellerPackage->price) {
-            return back()->with('error', 'You cannot downgrade to a lower-tier package.');
-        }
-
         if ($user->reseller_package_id === $package->id) {
             return back()->with('info', 'You are already subscribed to this package.');
+        }
+
+        if ($user->resellerPackage
+            && $user->resellerPackage->billing_cycle !== $package->billing_cycle) {
+            return back()->with('error', 'Choose a plan with the same billing cycle as your current plan.');
         }
 
         $existingInvoice = $this->subscriptions->pendingSubscriptionInvoice($user, $package);

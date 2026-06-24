@@ -263,10 +263,13 @@
                             </button>
                         </form>
                     @endif
-                @elseif ($user->resellerPackage && $package->price < $user->resellerPackage->price)
-                    <button disabled class="w-full px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 rounded-lg text-sm font-medium cursor-not-allowed">
-                        Cannot Downgrade
-                    </button>
+                @elseif ($downgradePackages[$package->id] ?? false)
+                    <form action="{{ route('reseller.packages.subscribe', $package) }}" method="POST" data-confirm="Switch to this lower plan at no charge? Your renewal date stays the same. Make sure you are within the new plan limits." data-confirm-title="Confirm downgrade">
+                        @csrf
+                        <button type="submit" class="w-full px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors">
+                            Switch to this plan
+                        </button>
+                    </form>
                 @else
                     @php
                         $quote = $upgradeQuotes[$package->id] ?? null;

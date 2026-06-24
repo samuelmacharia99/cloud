@@ -81,6 +81,18 @@ class CustomerHostingUpgradeServiceTest extends TestCase
         $this->assertSame(15000.0, $method->invoke($service, $user, $product, 'annual'));
     }
 
+    public function test_resolve_change_type_labels_upgrades_and_downgrades(): void
+    {
+        $service = $this->makeService();
+        $method = (new \ReflectionClass(CustomerHostingUpgradeService::class))
+            ->getMethod('resolveChangeType');
+        $method->setAccessible(true);
+
+        $this->assertSame('upgrade', $method->invoke($service, 100.0, 1, 200.0, 1));
+        $this->assertSame('downgrade', $method->invoke($service, 200.0, 2, 100.0, 1));
+        $this->assertSame('lateral', $method->invoke($service, 100.0, 1, 100.0, 1));
+    }
+
     public function test_clear_package_limit_enforcement_meta_removes_stale_flags(): void
     {
         $service = $this->makeService();
