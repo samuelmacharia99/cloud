@@ -54,7 +54,11 @@ class CustomerInvoiceController extends Controller
             ? $customers->firstWhere('id', (int) $request->customer)
             : null;
 
-        return view('reseller.customer-invoices.create', compact('customers', 'selectedCustomer'));
+        $defaultLineItems = [
+            ['description' => '', 'quantity' => 1, 'unit_price' => 0],
+        ];
+
+        return view('reseller.customer-invoices.create', compact('customers', 'selectedCustomer', 'defaultLineItems'));
     }
 
     public function store(Request $request): RedirectResponse

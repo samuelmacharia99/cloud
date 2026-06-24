@@ -75,7 +75,7 @@
 
 <script>
 function invoiceForm() {
-    const oldItems = @json(old('items', [['description' => '', 'quantity' => 1, 'unit_price' => 0]]));
+    const oldItems = @json(old('items', $defaultLineItems));
     return {
         items: oldItems.length ? oldItems : [{ description: '', quantity: 1, unit_price: 0 }],
         addItem() { this.items.push({ description: '', quantity: 1, unit_price: 0 }); },
