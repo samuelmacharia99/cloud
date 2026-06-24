@@ -198,6 +198,7 @@ class NodeController extends Controller
 
         if ($node->type === 'directadmin') {
             $packages = $node->directAdminPackages()
+                ->where('is_active', true)
                 ->orderBy('disk_quota')
                 ->orderBy('name')
                 ->get();
