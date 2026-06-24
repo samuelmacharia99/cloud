@@ -6,9 +6,12 @@ use App\Models\DirectAdminPackage;
 use App\Models\Product;
 use App\Models\User;
 use App\Services\Customer\CustomerHostingUpgradeService;
+use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerEnforcementService;
 use PHPUnit\Framework\TestCase;
 
 class CustomerHostingUpgradeServiceTest extends TestCase
@@ -18,6 +21,7 @@ class CustomerHostingUpgradeServiceTest extends TestCase
         return new CustomerHostingUpgradeService(
             $this->createMock(DirectAdminSetupService::class),
             new ResellerCustomerCatalogService,
+            $this->createMock(ResellerDirectAdminService::class),
             $this->createMock(NotificationService::class),
         );
     }
@@ -75,5 +79,25 @@ class CustomerHostingUpgradeServiceTest extends TestCase
 
         $this->assertSame(1500.0, $method->invoke($service, $user, $product, 'monthly'));
         $this->assertSame(15000.0, $method->invoke($service, $user, $product, 'annual'));
+    }
+
+    public function test_clear_package_limit_enforcement_meta_removes_stale_flags(): void
+    {
+        $service = $this->makeService();
+        $meta = [
+            ServicePackageUsageService::META_KEY => ['needs_upgrade' => true],
+            'package_overlimit_metrics' => ['database'],
+            'package_overlimit_at' => now()->toIso8601String(),
+            ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_PACKAGE_OVERQUOTA,
+            'package' => 'silver',
+        ];
+
+        $cleared = $service->clearPackageLimitEnforcementMeta($meta);
+
+        $this->assertArrayNotHasKey('package_overlimit_metrics', $cleared);
+        $this->assertArrayNotHasKey('package_overlimit_at', $cleared);
+        $this->assertArrayNotHasKey(ServicePackageUsageService::META_KEY, $cleared);
+        $this->assertArrayNotHasKey(ResellerEnforcementService::META_SUSPENSION_REASON, $cleared);
+        $this->assertSame('silver', $cleared['package']);
     }
 }

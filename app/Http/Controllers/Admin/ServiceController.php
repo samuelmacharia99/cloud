@@ -14,6 +14,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\AdminActivityService;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\EmailDeliveryService;
 use App\Services\Hosting\ServicePackageUsageService;
@@ -211,7 +212,33 @@ class ServiceController extends Controller
         $currencyCode = Setting::getValue('currency', 'KES');
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
 
-        return view('admin.services.show', compact('service', 'sameTypeProducts', 'currencyCode', 'liveStatus', 'enforcementInsight'));
+        $hostingUpgradeService = app(CustomerHostingUpgradeService::class);
+        $upgradeOptions = $service->isSharedHosting()
+            ? $hostingUpgradeService->upgradeOptionsForService($service)
+            : collect();
+        $recommendedUpgrade = $upgradeOptions->isNotEmpty()
+            ? $hostingUpgradeService->recommendedUpgrade(
+                $service,
+                $service->user,
+                $enforcementInsight['primary_metric'] ?? null,
+            )
+            : null;
+
+        $daLivePackage = $service->service_meta['directadmin_account']['package'] ?? null;
+        $hasStaleOverlimitFlags = ! empty($service->service_meta['package_overlimit_metrics'])
+            && $service->status->value === 'active';
+
+        return view('admin.services.show', compact(
+            'service',
+            'sameTypeProducts',
+            'currencyCode',
+            'liveStatus',
+            'enforcementInsight',
+            'upgradeOptions',
+            'recommendedUpgrade',
+            'daLivePackage',
+            'hasStaleOverlimitFlags',
+        ));
     }
 
     public function provision(Service $service)
@@ -459,7 +486,19 @@ class ServiceController extends Controller
 
         if ($applyHostingPackageChange && $targetProduct) {
             try {
-                app(CustomerHostingUpgradeService::class)->applyUpgrade($service->fresh(), $targetProduct);
+                $upgradeService = app(CustomerHostingUpgradeService::class);
+                $upgradeService->assertValidUpgradeTarget($service, $targetProduct);
+                $upgradeService->applyUpgrade($service->fresh(), $targetProduct);
+            } catch (\InvalidArgumentException $e) {
+                $message = $e->getMessage();
+
+                if ($returnToCustomer) {
+                    return redirect()
+                        ->route('admin.customers.show', ['customer' => $service->user_id, 'tab' => 'services'])
+                        ->with('error', $message);
+                }
+
+                return back()->with('error', $message);
             } catch (\Throwable $e) {
                 Log::warning('Service updated but hosting package change failed', [
                     'service_id' => $service->id,
@@ -490,6 +529,87 @@ class ServiceController extends Controller
         }
 
         return back()->with('success', $successMessage);
+    }
+
+    public function upgradeHosting(Request $request, Service $service)
+    {
+        $validated = $request->validate([
+            'product_id' => 'required|exists:products,id',
+            'billing_action' => 'nullable|in:apply_only,create_invoice',
+        ]);
+
+        $targetProduct = Product::with('directAdminPackage')->findOrFail($validated['product_id']);
+        $upgradeService = app(CustomerHostingUpgradeService::class);
+
+        try {
+            $upgradeService->assertValidUpgradeTarget($service, $targetProduct);
+
+            if (($validated['billing_action'] ?? 'apply_only') === 'create_invoice') {
+                $service->loadMissing('user');
+                $invoice = $upgradeService->createUpgradeInvoice($service, $service->user, $targetProduct);
+
+                AdminActivityService::log(
+                    'service.hosting_upgrade_invoice',
+                    "Created hosting upgrade invoice {$invoice->invoice_number} for service #{$service->id}",
+                    $service,
+                    ['target_product_id' => $targetProduct->id],
+                );
+
+                return redirect()->route('admin.invoices.show', $invoice)
+                    ->with('success', "Upgrade invoice {$invoice->invoice_number} created. Apply the plan now or wait for payment.");
+            }
+
+            $upgradeService->applyUpgrade($service->fresh(), $targetProduct);
+
+            AdminActivityService::log(
+                'service.hosting_upgrade',
+                "Upgraded service #{$service->id} to {$targetProduct->name} on DirectAdmin",
+                $service,
+                ['target_product_id' => $targetProduct->id],
+            );
+
+            return back()->with('success', "Hosting plan upgraded to {$targetProduct->name} on DirectAdmin.");
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::warning('Admin hosting upgrade failed', [
+                'service_id' => $service->id,
+                'target_product_id' => $targetProduct->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Hosting upgrade failed: '.$e->getMessage());
+        }
+    }
+
+    public function reconcileHostingPackage(Service $service)
+    {
+        if (! $service->isSharedHosting()) {
+            return back()->with('error', 'Only shared hosting services can be reconciled with DirectAdmin.');
+        }
+
+        try {
+            $result = app(CustomerHostingUpgradeService::class)->reconcilePackageState($service->fresh());
+
+            $message = $result['cleared_stale_flags']
+                ? 'DirectAdmin usage refreshed and stale over-limit flags cleared.'
+                : 'DirectAdmin usage refreshed.';
+
+            if ($result['directadmin_package'] && $result['platform_product']
+                && strcasecmp((string) $result['directadmin_package'], (string) $result['platform_product']) !== 0) {
+                $message .= ' Warning: DirectAdmin reports package "'.$result['directadmin_package']
+                    .'" but the platform product is "'.$result['platform_product'].'". Use Upgrade Hosting to align them.';
+            }
+
+            return back()->with($result['cleared_stale_flags'] ? 'success' : 'info', $message);
+        } catch (\Throwable $e) {
+            Log::warning('Hosting package reconcile failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Could not refresh hosting package state: '.$e->getMessage());
+        }
     }
 
     public function destroy(Service $service)

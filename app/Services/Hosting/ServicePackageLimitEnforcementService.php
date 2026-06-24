@@ -239,6 +239,31 @@ class ServicePackageLimitEnforcementService
         ]);
     }
 
+    public function tryRestoreFromPackageOverlimit(Service $service): bool
+    {
+        $reason = $service->service_meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null;
+
+        if (! in_array($reason, [
+            ResellerEnforcementService::REASON_PACKAGE_OVERQUOTA,
+            ResellerEnforcementService::REASON_DISK_OVERQUOTA,
+        ], true)) {
+            return false;
+        }
+
+        if ($service->status !== ServiceStatus::Suspended) {
+            return false;
+        }
+
+        $snapshot = $this->usage->fetchLiveUsage($service) ?? $this->usage->snapshotFromMeta($service);
+        if ($snapshot === null || $this->metricsOverLimit($snapshot) !== []) {
+            return false;
+        }
+
+        $this->restoreFromPackageOverlimit($service);
+
+        return true;
+    }
+
     protected function restoreFromPackageOverlimit(Service $service): void
     {
         $meta = $service->service_meta ?? [];

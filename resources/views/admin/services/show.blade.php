@@ -13,6 +13,7 @@
 @section('content')
 <div class="space-y-6" x-data="{
     editDetailsModal: false,
+    upgradeHostingModal: false,
     suspendModal: false,
     testConnectionModal: false,
     testConnectionLoading: false,
@@ -42,6 +43,53 @@
         }
     }
 }">
+    @if (session('success'))
+        <div class="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+            {{ session('success') }}
+        </div>
+    @endif
+    @if (session('error'))
+        <div class="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-900 dark:text-red-100">
+            {{ session('error') }}
+        </div>
+    @endif
+    @if (session('info'))
+        <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 px-4 py-3 text-sm text-blue-900 dark:text-blue-100">
+            {{ session('info') }}
+        </div>
+    @endif
+
+    @if ($hasStaleOverlimitFlags ?? false)
+        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+                <p class="text-sm font-semibold text-amber-950 dark:text-amber-100">Stale package limit flags</p>
+                <p class="text-sm text-amber-900 dark:text-amber-200 mt-1">
+                    This service still has old over-limit markers in metadata
+                    @if (!empty($service->service_meta['package_overlimit_metrics']))
+                        ({{ implode(', ', $service->service_meta['package_overlimit_metrics']) }})
+                    @endif
+                    even though it is active. Refresh usage from DirectAdmin to clear them.
+                </p>
+            </div>
+            <form method="POST" action="{{ route('admin.services.reconcile-hosting', $service) }}" class="shrink-0">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition">
+                    Refresh from DirectAdmin
+                </button>
+            </form>
+        </div>
+    @endif
+
+    @if ($service->isSharedHosting() && ($daLivePackage ?? null) && strcasecmp($daLivePackage, $service->product->name) !== 0)
+        <div class="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 px-5 py-4">
+            <p class="text-sm font-semibold text-orange-950 dark:text-orange-100">DirectAdmin package mismatch</p>
+            <p class="text-sm text-orange-900 dark:text-orange-200 mt-1">
+                DirectAdmin reports <strong>{{ $daLivePackage }}</strong> but the platform product is <strong>{{ $service->product->name }}</strong>.
+                Use <strong>Upgrade Hosting</strong> to align the live package with the platform plan.
+            </p>
+        </div>
+    @endif
+
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <div class="flex items-start justify-between">
@@ -88,6 +136,12 @@
 
             <!-- Action buttons -->
             <div class="flex items-center gap-2 flex-wrap">
+                @if ($service->isSharedHosting() && ($service->external_reference || filled($service->service_meta['username'] ?? null)))
+                    <button type="button" @click="upgradeHostingModal = true" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
+                        Upgrade Hosting
+                    </button>
+                @endif
+
                 @if (in_array($service->status->value, ['pending', 'provisioning']))
                     <form method="POST" action="{{ route('admin.services.provision', $service) }}" class="inline">
                         @csrf
@@ -639,22 +693,28 @@
                     </select>
                 </div>
 
-                <!-- Hosting Package -->
-                <div>
-                    <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Hosting Package</label>
-                    <select id="product_id" name="product_id"
-                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                        @foreach($sameTypeProducts as $product)
-                            <option value="{{ $product->id }}" @selected($service->product_id === $product->id)>
-                                {{ $product->name }}
-                                @if($product->monthly_price)
-                                    — KES {{ number_format($product->monthly_price, 2) }}/mo
-                                @endif
-                            </option>
-                        @endforeach
-                    </select>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Only packages of the same type ({{ ucfirst(str_replace('_', ' ', $service->product->type)) }}) are shown.</p>
-                </div>
+                @if ($service->isSharedHosting())
+                    <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                        Current plan: <strong class="text-slate-900 dark:text-white">{{ $service->product->name }}</strong>.
+                        To change the hosting package on DirectAdmin, use <button type="button" @click="editDetailsModal = false; upgradeHostingModal = true" class="text-emerald-600 dark:text-emerald-400 font-medium hover:underline">Upgrade Hosting</button>.
+                    </div>
+                @else
+                    <!-- Product (non-hosting) -->
+                    <div>
+                        <label for="product_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Product</label>
+                        <select id="product_id" name="product_id"
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            @foreach($sameTypeProducts as $product)
+                                <option value="{{ $product->id }}" @selected($service->product_id === $product->id)>
+                                    {{ $product->name }}
+                                    @if($product->monthly_price)
+                                        — KES {{ number_format($product->monthly_price, 2) }}/mo
+                                    @endif
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
                 <!-- Custom Price -->
                 <div>
@@ -797,5 +857,115 @@
             </form>
         </div>
     </div>
+
+    @if ($service->isSharedHosting())
+        <!-- Upgrade Hosting Modal -->
+        <div x-show="upgradeHostingModal" x-transition
+             class="fixed inset-0 bg-black/50 z-50 flex items-end"
+             @click.self="upgradeHostingModal = false">
+            <div class="bg-white dark:bg-slate-900 w-full max-w-2xl mx-auto rounded-t-2xl shadow-2xl overflow-y-auto max-h-[90vh]">
+                <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-10">
+                    <div>
+                        <h2 class="text-xl font-bold text-slate-900 dark:text-white">Upgrade Hosting</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                            Current plan: <strong>{{ $service->product->name }}</strong>
+                            @if ($service->node)
+                                on {{ $service->node->name }}
+                            @endif
+                        </p>
+                    </div>
+                    <button @click="upgradeHostingModal = false" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+
+                @if (($upgradeOptions ?? collect())->isEmpty())
+                    <div class="p-6 space-y-4">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                            No higher plans are available on this DirectAdmin server for this service.
+                        </p>
+                        <form method="POST" action="{{ route('admin.services.reconcile-hosting', $service) }}">
+                            @csrf
+                            <button type="submit" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                Refresh usage from DirectAdmin
+                            </button>
+                        </form>
+                    </div>
+                @else
+                    <form method="POST" action="{{ route('admin.services.upgrade-hosting', $service) }}" class="p-6 space-y-5">
+                        @csrf
+
+                        @if (!empty($enforcementInsight['needs_upgrade']) || ($hasStaleOverlimitFlags ?? false))
+                            <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                                @if (!empty($enforcementInsight['database']['percent']) && !($enforcementInsight['database']['unlimited'] ?? false))
+                                    Databases: {{ $enforcementInsight['database']['used'] ?? '?' }}/{{ $enforcementInsight['database']['limit'] ?? '?' }}
+                                @endif
+                                @if (!empty($enforcementInsight['disk']['percent']) && !($enforcementInsight['disk']['unlimited'] ?? false))
+                                    <span class="block mt-1">Storage: {{ $enforcementInsight['disk']['percent'] }}% used</span>
+                                @endif
+                            </div>
+                        @endif
+
+                        <div class="space-y-3">
+                            @foreach ($upgradeOptions as $product)
+                                @php
+                                    $package = $product->directAdminPackage;
+                                    $isRecommended = $recommendedUpgrade && $recommendedUpgrade->id === $product->id;
+                                    $cycle = $service->billing_cycle ?? 'monthly';
+                                    $upgradeService = app(\App\Services\Customer\CustomerHostingUpgradeService::class);
+                                    $displayPrice = $upgradeService->displayPriceForCycle($service->user, $product, $cycle);
+                                @endphp
+                                <label class="flex items-start gap-3 p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 cursor-pointer has-[:checked]:ring-2 has-[:checked]:ring-emerald-500 {{ $isRecommended ? 'ring-2 ring-amber-400' : '' }}">
+                                    <input type="radio" name="product_id" value="{{ $product->id }}" class="mt-1" required @checked($isRecommended)>
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <p class="font-semibold text-slate-900 dark:text-white">{{ $product->name }}</p>
+                                            @if ($isRecommended)
+                                                <span class="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">Recommended</span>
+                                            @endif
+                                        </div>
+                                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                            {{ $currencyCode }} {{ number_format($displayPrice, 0) }}/{{ $cycle === 'annual' ? 'yr' : 'mo' }}
+                                            @if ($package)
+                                                · {{ rtrim(rtrim(number_format($package->disk_quota, 2), '0'), '.') }} GB disk
+                                                · {{ $package->num_databases }} {{ \Illuminate\Support\Str::plural('database', $package->num_databases) }}
+                                            @endif
+                                        </p>
+                                    </div>
+                                </label>
+                            @endforeach
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-medium text-slate-900 dark:text-white mb-2">Billing</p>
+                            <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 mb-2">
+                                <input type="radio" name="billing_action" value="apply_only" checked class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                Apply on DirectAdmin now (no invoice)
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                                <input type="radio" name="billing_action" value="create_invoice" class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+                                Create prorated upgrade invoice for the customer
+                            </label>
+                        </div>
+
+                        <p class="text-xs text-slate-500 dark:text-slate-400">
+                            The upgrade syncs the target package on DirectAdmin, updates platform limits, refreshes usage, and clears stale over-limit flags.
+                        </p>
+
+                        <div class="flex gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                            <button type="button" @click="upgradeHostingModal = false"
+                                    class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition">
+                                Cancel
+                            </button>
+                            <button type="submit"
+                                    class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
+                                Apply Upgrade
+                            </button>
+                        </div>
+                    </form>
+                @endif
+            </div>
+        </div>
+    @endif
 </div>
 @endsection

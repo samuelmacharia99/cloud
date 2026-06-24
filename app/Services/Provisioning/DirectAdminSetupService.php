@@ -148,6 +148,14 @@ class DirectAdminSetupService
             return;
         }
 
+        $this->ensurePackageOnServer($directAdmin, $package, $ownerResellerUsername);
+    }
+
+    public function ensurePackageOnServer(
+        DirectAdminService $directAdmin,
+        DirectAdminPackage $package,
+        ?string $ownerResellerUsername = null,
+    ): void {
         $result = $directAdmin->ensureUserPackage(
             $package,
             filled($ownerResellerUsername) ? $ownerResellerUsername : null,

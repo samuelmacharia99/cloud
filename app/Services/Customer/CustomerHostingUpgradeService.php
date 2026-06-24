@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Enums\ServiceStatus;
 use App\Models\DirectAdminPackage;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
@@ -9,11 +10,13 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Hosting\ServicePackageLimitEnforcementService;
 use App\Services\Hosting\ServicePackageUsageService;
 use App\Services\NotificationService;
-use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerEnforcementService;
 use App\Services\TaxService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +27,7 @@ class CustomerHostingUpgradeService
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
         private ResellerCustomerCatalogService $catalog,
+        private ResellerDirectAdminService $resellerDirectAdmin,
         private NotificationService $notifications,
     ) {}
 
@@ -36,11 +40,30 @@ class CustomerHostingUpgradeService
             return collect();
         }
 
+        return $this->upgradeOptionsForService($service);
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function upgradeOptionsForService(Service $service): Collection
+    {
+        $service->loadMissing('product.directAdminPackage', 'node', 'user');
+
         if ($service->product?->type !== 'shared_hosting') {
             return collect();
         }
 
         if (! in_array($service->status->value, ['active', 'suspended'], true)) {
+            return collect();
+        }
+
+        if (! $service->node_id) {
+            return collect();
+        }
+
+        $customer = $service->user;
+        if (! $customer) {
             return collect();
         }
 
@@ -53,7 +76,7 @@ class CustomerHostingUpgradeService
             ->where('is_active', true)
             ->where('type', 'shared_hosting')
             ->where('id', '!=', $service->product_id)
-            ->whereHas('directAdminPackage')
+            ->whereHas('directAdminPackage', fn ($package) => $package->where('node_id', $service->node_id))
             ->with('directAdminPackage')
             ->orderBy('monthly_price');
 
@@ -76,6 +99,15 @@ class CustomerHostingUpgradeService
 
             return true;
         })->values();
+    }
+
+    public function assertValidUpgradeTarget(Service $service, Product $targetProduct): void
+    {
+        $options = $this->upgradeOptionsForService($service);
+
+        if (! $options->contains('id', $targetProduct->id)) {
+            throw new \InvalidArgumentException('Selected plan is not a valid upgrade for this service on its current server.');
+        }
     }
 
     public function recommendedUpgrade(Service $service, User $customer, ?string $limitingMetric = null): ?Product
@@ -193,10 +225,15 @@ class CustomerHostingUpgradeService
             throw new \RuntimeException('Service is not on a DirectAdmin node.');
         }
 
+        $targetProduct->loadMissing('directAdminPackage');
         $package = $targetProduct->directAdminPackage;
 
         if (! $package) {
             throw new \RuntimeException('Target product has no DirectAdmin package.');
+        }
+
+        if ((int) $package->node_id !== (int) $service->node_id) {
+            throw new \RuntimeException('Target plan is not available on this service\'s DirectAdmin server.');
         }
 
         $previousProduct = $service->product;
@@ -211,10 +248,13 @@ class CustomerHostingUpgradeService
             throw new \RuntimeException('Hosting username not found on service.');
         }
 
-        $directAdmin = new DirectAdminService($service->node);
+        $directAdmin = $this->resellerDirectAdmin->directAdminForService($service);
+        if (! $directAdmin) {
+            throw new \RuntimeException('DirectAdmin API is not configured for this service.');
+        }
 
-        $ownerReseller = $service->reseller?->directadmin_username;
-        $this->directAdminSetup->ensurePackageLimitsOnServer($directAdmin, $service, $ownerReseller);
+        $ownerReseller = $this->resellerDirectAdmin->impersonationUsernameForService($service);
+        $this->directAdminSetup->ensurePackageOnServer($directAdmin, $package, $ownerReseller);
 
         $result = $directAdmin->changeUserPackage($username, $package->package_key);
 
@@ -222,21 +262,81 @@ class CustomerHostingUpgradeService
             throw new \RuntimeException($result['message']);
         }
 
-        unset($meta[ServicePackageUsageService::META_KEY]);
+        $wasPackageSuspended = in_array(
+            $meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null,
+            [
+                ResellerEnforcementService::REASON_PACKAGE_OVERQUOTA,
+                ResellerEnforcementService::REASON_DISK_OVERQUOTA,
+            ],
+            true,
+        );
+
+        $meta = $this->clearPackageLimitEnforcementMeta($meta);
+        $meta['package'] = $package->package_key;
+        $meta['package_name'] = $package->name;
 
         $service->update([
             'product_id' => $targetProduct->id,
-            'service_meta' => array_merge($meta, [
-                'package' => $package->package_key,
-                'package_name' => $package->name,
-            ]),
+            'service_meta' => $meta,
         ]);
 
+        $fresh = $service->fresh(['user', 'product', 'node']);
+        $this->refreshUsageAfterUpgrade($fresh, $wasPackageSuspended);
+
         $this->notifications->notifyHostingUpgradeCompleted(
-            $service->fresh(['user', 'product']),
+            $fresh,
             $previousProduct,
             $targetProduct,
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     * @return array<string, mixed>
+     */
+    public function clearPackageLimitEnforcementMeta(array $meta): array
+    {
+        unset(
+            $meta[ServicePackageUsageService::META_KEY],
+            $meta['package_overlimit_metrics'],
+            $meta['package_overlimit_at'],
+            $meta['disk_used_mb'],
+            $meta['disk_limit_mb'],
+            $meta['disk_suspended_at'],
+        );
+
+        if (in_array($meta[ResellerEnforcementService::META_SUSPENSION_REASON] ?? null, [
+            ResellerEnforcementService::REASON_PACKAGE_OVERQUOTA,
+            ResellerEnforcementService::REASON_DISK_OVERQUOTA,
+        ], true)) {
+            unset($meta[ResellerEnforcementService::META_SUSPENSION_REASON]);
+        }
+
+        return $meta;
+    }
+
+    private function refreshUsageAfterUpgrade(Service $service, bool $wasPackageSuspended): void
+    {
+        $usage = app(ServicePackageUsageService::class);
+        $snapshot = $usage->syncFromDirectAdmin($service);
+
+        if ($snapshot === null || ! $wasPackageSuspended || $service->status !== ServiceStatus::Suspended) {
+            return;
+        }
+
+        $enforcement = app(ServicePackageLimitEnforcementService::class);
+        if ($enforcement->metricsOverLimit($snapshot) !== []) {
+            return;
+        }
+
+        try {
+            $enforcement->tryRestoreFromPackageOverlimit($service->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('Hosting upgrade completed but automatic unsuspend failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function displayPriceForCycle(User $customer, Product $product, string $cycle): float
@@ -345,5 +445,44 @@ class CustomerHostingUpgradeService
         $cycleDays = $cycle === 'annual' ? 365 : 30;
 
         return round($diff * ($daysRemaining / $cycleDays), 2);
+    }
+
+    /**
+     * Refresh live DirectAdmin usage and clear stale over-limit flags when usage is healthy.
+     *
+     * @return array{
+     *     snapshot: ?array<string, mixed>,
+     *     cleared_stale_flags: bool,
+     *     directadmin_package: ?string,
+     *     platform_product: ?string
+     * }
+     */
+    public function reconcilePackageState(Service $service): array
+    {
+        $service->loadMissing('product', 'node');
+        $usage = app(ServicePackageUsageService::class);
+        $enforcement = app(ServicePackageLimitEnforcementService::class);
+
+        $snapshot = $usage->syncFromDirectAdmin($service);
+        $clearedStale = false;
+
+        $meta = $service->fresh()->service_meta ?? [];
+        if (! empty($meta['package_overlimit_metrics'])
+            && $snapshot !== null
+            && $enforcement->metricsOverLimit($snapshot) === []) {
+            $service->update(['service_meta' => $this->clearPackageLimitEnforcementMeta($meta)]);
+            $clearedStale = true;
+            $service->refresh();
+            $enforcement->tryRestoreFromPackageOverlimit($service);
+        }
+
+        $freshMeta = $service->fresh()->service_meta ?? [];
+
+        return [
+            'snapshot' => $snapshot,
+            'cleared_stale_flags' => $clearedStale,
+            'directadmin_package' => $freshMeta['directadmin_account']['package'] ?? ($freshMeta['package_name'] ?? null),
+            'platform_product' => $service->product?->name,
+        ];
     }
 }

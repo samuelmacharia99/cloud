@@ -1184,7 +1184,7 @@
                                 <option :value="String(product.id)" x-text="productLabel(product)"></option>
                             </template>
                         </select>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">For shared hosting, the DirectAdmin package is updated on the server when you save.</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Billing and dates only. To change a shared hosting plan on DirectAdmin, open the service and use <strong>Upgrade Hosting</strong>.</p>
                     </div>
 
                     <div>

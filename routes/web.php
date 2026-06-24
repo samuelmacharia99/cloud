@@ -311,6 +311,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/refresh-status', [ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
         Route::post('admin/services/{service}/test-directadmin', [ServiceController::class, 'testDirectAdminConnection'])->name('admin.services.test-directadmin');
         Route::post('admin/services/{service}/resend-credentials', [ServiceController::class, 'resendCredentials'])->name('admin.services.resend-credentials');
+        Route::post('admin/services/{service}/upgrade-hosting', [ServiceController::class, 'upgradeHosting'])->name('admin.services.upgrade-hosting');
+        Route::post('admin/services/{service}/reconcile-hosting', [ServiceController::class, 'reconcileHostingPackage'])->name('admin.services.reconcile-hosting');
 
         // Container management
         Route::resource('admin/container-templates', ContainerTemplateController::class)->names('admin.container-templates');
