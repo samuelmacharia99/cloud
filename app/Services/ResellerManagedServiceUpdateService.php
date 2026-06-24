@@ -70,8 +70,12 @@ class ResellerManagedServiceUpdateService
 
         if ($isDirectAdmin) {
             if (! empty($validated['username'])) {
-                $meta['username'] = $validated['username'];
-                $updates['external_reference'] = $validated['username'];
+                $username = (string) $validated['username'];
+                $meta['username'] = $username;
+                $resolved = Service::resolveExternalReferenceForAssignment($username, $service->id);
+                if ($service->external_reference !== $resolved) {
+                    $updates['external_reference'] = $resolved;
+                }
             }
             if (! empty($validated['password'])) {
                 $meta['password'] = $validated['password'];

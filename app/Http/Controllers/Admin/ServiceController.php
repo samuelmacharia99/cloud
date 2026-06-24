@@ -412,9 +412,12 @@ class ServiceController extends Controller
             $meta = is_array($service->service_meta) ? $service->service_meta : ($service->service_meta ?? []);
 
             if (! empty($validated['username'])) {
-                $meta['username'] = $validated['username'];
-                // Also set external_reference for DirectAdmin operations
-                $validated['external_reference'] = $validated['username'];
+                $username = (string) $validated['username'];
+                $meta['username'] = $username;
+                $resolved = Service::resolveExternalReferenceForAssignment($username, $service->id);
+                if ($service->external_reference !== $resolved) {
+                    $validated['external_reference'] = $resolved;
+                }
             }
             if (! empty($validated['password'])) {
                 $meta['password'] = $validated['password'];

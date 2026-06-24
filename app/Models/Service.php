@@ -169,6 +169,44 @@ class Service extends Model
         return $this->provisioning_driver_key ?: $this->product?->provisioning_driver_key;
     }
 
+    /**
+     * Resolve a DirectAdmin/hosting username for external_reference assignment.
+     * Reclaims the reference from terminal duplicate services when safe.
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function resolveExternalReferenceForAssignment(string $username, int $serviceId): string
+    {
+        $username = trim($username);
+
+        if ($username === '') {
+            throw new \InvalidArgumentException('Hosting username is required.');
+        }
+
+        $conflict = static::query()
+            ->where('external_reference', $username)
+            ->where('id', '!=', $serviceId)
+            ->first();
+
+        if (! $conflict) {
+            return $username;
+        }
+
+        $status = $conflict->status instanceof ServiceStatus
+            ? $conflict->status
+            : ServiceStatus::tryFrom((string) $conflict->status);
+
+        if ($status?->isTerminal()) {
+            $conflict->update(['external_reference' => null]);
+
+            return $username;
+        }
+
+        throw new \InvalidArgumentException(
+            "Hosting username \"{$username}\" is already linked to service #{$conflict->id} ({$conflict->name})."
+        );
+    }
+
     public function isSharedHosting(): bool
     {
         return $this->product?->type === 'shared_hosting'
