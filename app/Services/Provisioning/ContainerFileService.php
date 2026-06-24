@@ -260,6 +260,75 @@ class ContainerFileService
     }
 
     /**
+     * Rename a file or directory (same parent directory).
+     *
+     * @return array{path: string}
+     */
+    public function rename(
+        Service $service,
+        ContainerDeployment $deployment,
+        string $relPath,
+        string $newName,
+        User $user,
+        string $ip
+    ): array {
+        $newName = trim($newName);
+        if ($newName === '' || $newName === '.' || $newName === '..' || str_contains($newName, '/') || str_contains($newName, "\0")) {
+            throw new \InvalidArgumentException('Invalid name.');
+        }
+
+        $absPath = $this->resolveAndGuardPath($deployment, $relPath);
+        $parentRel = dirname($relPath);
+        if ($parentRel === '.') {
+            $parentRel = '/';
+        }
+        $newRelPath = $this->joinRelativePath($parentRel, $newName);
+        $newAbsPath = $this->resolveAndGuardPath($deployment, $newRelPath);
+
+        if (basename($relPath) === $newName) {
+            return ['path' => $relPath];
+        }
+
+        if (! $this->pathExists($absPath)) {
+            throw new \InvalidArgumentException('Path not found.');
+        }
+
+        if ($this->pathExists($newAbsPath)) {
+            throw new \InvalidArgumentException('A file or folder with that name already exists.');
+        }
+
+        $this->auditLog($service, $deployment, $user, 'rename', $relPath, $ip, [
+            'new_path' => $newRelPath,
+            'new_name' => $newName,
+        ]);
+
+        $this->ssh->rename($absPath, $newAbsPath);
+
+        return ['path' => $newRelPath];
+    }
+
+    /**
+     * Create an empty text file.
+     */
+    public function createEmptyFile(Service $service, ContainerDeployment $deployment, string $relPath, User $user, string $ip): void
+    {
+        $name = basename(trim($relPath, '/'));
+        if ($name === '' || $name === '.' || $name === '..') {
+            throw new \InvalidArgumentException('Invalid file name.');
+        }
+
+        $absPath = $this->resolveAndGuardPath($deployment, $relPath);
+
+        if ($this->pathExists($absPath)) {
+            throw new \InvalidArgumentException('A file or folder with that name already exists.');
+        }
+
+        $this->auditLog($service, $deployment, $user, 'create', $relPath, $ip);
+
+        $this->ssh->upload('', $absPath);
+    }
+
+    /**
      * Create directory
      */
     public function mkdir(Service $service, ContainerDeployment $deployment, string $relPath, User $user, string $ip): void
@@ -436,5 +505,22 @@ class ContainerFileService
         }
 
         return in_array(strtolower($name), $extensions, true);
+    }
+
+    private function joinRelativePath(string $parent, string $name): string
+    {
+        if ($parent === '/' || $parent === '') {
+            return '/'.$name;
+        }
+
+        return rtrim($parent, '/').'/'.$name;
+    }
+
+    private function pathExists(string $absPath): bool
+    {
+        $pathArg = escapeshellarg($absPath);
+        $result = trim($this->ssh->exec("[ -e {$pathArg} ] && echo yes || echo no", 10));
+
+        return $result === 'yes';
     }
 }

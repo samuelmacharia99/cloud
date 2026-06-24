@@ -5,9 +5,9 @@ namespace App\Services\SSH;
 use App\Exceptions\SSH\SSHCommandException;
 use App\Exceptions\SSH\SSHConnectionException;
 use App\Models\Node;
+use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\Net\SFTP;
 use phpseclib3\Net\SSH2;
-use phpseclib3\Crypt\PublicKeyLoader;
 
 /**
  * Production-grade SSH service wrapper
@@ -16,9 +16,13 @@ use phpseclib3\Crypt\PublicKeyLoader;
 class SSHService
 {
     private ?SSH2 $ssh = null;
+
     private ?SFTP $sftp = null;
+
     private Node $node;
+
     private bool $connected = false;
+
     private int $timeout = 30; // default connection timeout
 
     public function __construct(Node $node)
@@ -73,7 +77,7 @@ class SSHService
                     $authenticated = @$this->ssh->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
                     throw new \Exception(
-                        'SSH key format invalid: ' . $e->getMessage()
+                        'SSH key format invalid: '.$e->getMessage()
                     );
                 }
             }
@@ -108,7 +112,7 @@ class SSHService
                 throw new SSHCommandException(
                     $command,
                     $output,
-                    "Command exited with status " . $this->ssh->getExitStatus()
+                    'Command exited with status '.$this->ssh->getExitStatus()
                 );
             }
 
@@ -151,7 +155,7 @@ class SSHService
             @$this->sftp->chmod(0644, $remotePath);
         } catch (\Exception $e) {
             throw new \RuntimeException(
-                "Failed to upload {$remotePath}: " . $e->getMessage(),
+                "Failed to upload {$remotePath}: ".$e->getMessage(),
                 0,
                 $e
             );
@@ -170,13 +174,13 @@ class SSHService
 
             $content = $this->sftp->get($remotePath);
             if ($content === false) {
-                throw new \Exception("File not found or read failed");
+                throw new \Exception('File not found or read failed');
             }
 
             return $content;
         } catch (\Exception $e) {
             throw new \RuntimeException(
-                "Failed to download {$remotePath}: " . $e->getMessage(),
+                "Failed to download {$remotePath}: ".$e->getMessage(),
                 0,
                 $e
             );
@@ -217,6 +221,33 @@ class SSHService
     }
 
     /**
+     * Rename a remote file or directory
+     */
+    public function rename(string $from, string $to): void
+    {
+        $this->ensureConnected();
+
+        try {
+            $this->initSFTP();
+
+            $parent = dirname($to);
+            if ($parent !== '/' && $parent !== '.') {
+                $this->mkdirp($parent);
+            }
+
+            if (! $this->sftp->rename($from, $to)) {
+                throw new \Exception("Rename failed from {$from} to {$to}");
+            }
+        } catch (\Exception $e) {
+            throw new \RuntimeException(
+                "Failed to rename {$from}: ".$e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
      * Delete a remote file
      */
     public function deleteFile(string $remotePath): void
@@ -228,7 +259,7 @@ class SSHService
             @$this->sftp->delete($remotePath);
         } catch (\Exception $e) {
             throw new \RuntimeException(
-                "Failed to delete {$remotePath}: " . $e->getMessage(),
+                "Failed to delete {$remotePath}: ".$e->getMessage(),
                 0,
                 $e
             );
@@ -244,10 +275,10 @@ class SSHService
 
         try {
             // Use exec for recursive deletion - safer than SFTP
-            $this->exec("rm -rf " . escapeshellarg($remotePath));
+            $this->exec('rm -rf '.escapeshellarg($remotePath));
         } catch (\Exception $e) {
             throw new \RuntimeException(
-                "Failed to delete directory {$remotePath}: " . $e->getMessage(),
+                "Failed to delete directory {$remotePath}: ".$e->getMessage(),
                 0,
                 $e
             );
@@ -295,13 +326,14 @@ class SSHService
                 if ($typeSort !== 0) {
                     return $typeSort;
                 }
+
                 return strcmp($a['name'], $b['name']);
             });
 
             return $entries;
         } catch (\Exception $e) {
             throw new \RuntimeException(
-                "Failed to list directory {$path}: " . $e->getMessage(),
+                "Failed to list directory {$path}: ".$e->getMessage(),
                 0,
                 $e
             );
@@ -334,7 +366,7 @@ class SSHService
                     $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
                 } catch (\Exception $e) {
                     throw new \Exception(
-                        'SFTP key format invalid: ' . $e->getMessage()
+                        'SFTP key format invalid: '.$e->getMessage()
                     );
                 }
             }

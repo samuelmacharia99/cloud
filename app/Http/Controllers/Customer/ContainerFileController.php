@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\CreateContainerDirectoryRequest;
+use App\Http\Requests\Customer\CreateContainerFileRequest;
 use App\Http\Requests\Customer\DeleteContainerPathRequest;
+use App\Http\Requests\Customer\RenameContainerPathRequest;
 use App\Http\Requests\Customer\SaveContainerFileContentRequest;
 use App\Http\Requests\Customer\UploadContainerFileRequest;
 use App\Models\Service;
@@ -302,6 +304,88 @@ class ContainerFileController extends Controller
             \Log::error("Failed to create directory for service {$service->id}: ".$e->getMessage());
 
             return response()->json(['error' => 'Failed to create directory: '.$e->getMessage()], 500);
+        }
+    }
+
+    public function createFile(Service $service, CreateContainerFileRequest $request): JsonResponse
+    {
+        $this->authorize('manageFiles', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['error' => 'Container not deployed yet'], 400);
+        }
+
+        $path = $request->input('path');
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $fileService = new ContainerFileService($ssh);
+
+            $fileService->createEmptyFile(
+                $service,
+                $deployment,
+                $path,
+                auth()->user(),
+                $request->ip()
+            );
+
+            return response()->json([
+                'success' => true,
+                'path' => $path,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            \Log::error("Failed to create container file for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to create file: '.$e->getMessage()], 500);
+        }
+    }
+
+    public function rename(Service $service, RenameContainerPathRequest $request): JsonResponse
+    {
+        $this->authorize('manageFiles', $service);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['error' => 'Container not deployed yet'], 400);
+        }
+
+        $path = $request->input('path');
+        $name = $request->input('name');
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $fileService = new ContainerFileService($ssh);
+
+            $result = $fileService->rename(
+                $service,
+                $deployment,
+                $path,
+                $name,
+                auth()->user(),
+                $request->ip()
+            );
+
+            return response()->json([
+                'success' => true,
+                'path' => $result['path'],
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        } catch (\Exception $e) {
+            \Log::error("Failed to rename container path for service {$service->id}: ".$e->getMessage());
+
+            return response()->json(['error' => 'Failed to rename: '.$e->getMessage()], 500);
         }
     }
 }

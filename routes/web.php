@@ -645,6 +645,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('my/services/{service}/container/files/upload', [ContainerFileController::class, 'upload'])->middleware('throttle:10,1')->name('customer.services.container.files.upload');
             Route::delete('my/services/{service}/container/files', [ContainerFileController::class, 'delete'])->name('customer.services.container.files.delete');
             Route::post('my/services/{service}/container/files/mkdir', [ContainerFileController::class, 'mkdir'])->name('customer.services.container.files.mkdir');
+            Route::post('my/services/{service}/container/files/create', [ContainerFileController::class, 'createFile'])->name('customer.services.container.files.create');
+            Route::patch('my/services/{service}/container/files/rename', [ContainerFileController::class, 'rename'])->name('customer.services.container.files.rename');
         });
 
         // Container terminal (throttled separately)

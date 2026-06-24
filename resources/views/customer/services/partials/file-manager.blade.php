@@ -1,5 +1,6 @@
 @php($containerUploadMaxMb = (int) config('security.container_file_upload.max_size_mb', 100))
 @php($editorMaxKb = (int) round(((int) config('containers.file_editor.max_bytes', 524288)) / 1024))
+@php($filesTabActive = request('tab') === 'files')
 
 <div class="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
     <div x-data="fileManager()" class="border border-gray-200 dark:border-slate-700 rounded-lg">
@@ -24,11 +25,17 @@
             </div>
 
             <div class="flex items-center gap-2 flex-wrap">
+                <button @click="newFile()" class="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-sm font-medium">
+                    📄 New File
+                </button>
                 <button @click="newFolder()" class="px-3 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 rounded hover:bg-blue-100 dark:hover:bg-blue-900/50 text-sm font-medium">
                     ➕ New Folder
                 </button>
                 <button @click="$refs.fileInput.click()" class="px-3 py-2 bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-300 rounded hover:bg-green-100 dark:hover:bg-green-900/50 text-sm font-medium">
                     ⬆️ Upload
+                </button>
+                <button @click="loadDirectory()" :disabled="loading" class="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 text-slate-600 dark:text-slate-300 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-sm font-medium disabled:opacity-50">
+                    ↻ Refresh
                 </button>
                 <input type="file" x-ref="fileInput" @change="handleFileSelect" class="hidden" multiple>
                 <span class="text-xs text-slate-500 dark:text-slate-400">Max {{ $containerUploadMaxMb }} MB upload · {{ $editorMaxKb }} KB editor limit</span>
@@ -84,6 +91,7 @@
                                         <span x-text="formatDate(entry.modified)"></span>
                                     </td>
                                     <td class="px-4 py-3 text-right whitespace-nowrap space-x-2">
+                                        <button @click="renameEntry(entry.name)" class="text-slate-600 dark:text-slate-400 hover:underline text-sm">Rename</button>
                                         <button x-show="entry.type !== 'dir' && entry.viewable" @click="openViewer(entry.name)" class="text-slate-600 dark:text-slate-400 hover:underline text-sm">View</button>
                                         <button x-show="entry.type !== 'dir' && entry.editable" @click="openEditor(entry.name)" class="text-blue-600 dark:text-blue-400 hover:underline text-sm">Edit</button>
                                         <button x-show="entry.type !== 'dir'" @click="downloadFile(entry.name)" class="text-slate-600 dark:text-slate-400 hover:underline text-sm">Download</button>
@@ -158,7 +166,7 @@ function fileManager() {
     return {
         maxUploadBytes: {{ $containerUploadMaxMb }} * 1024 * 1024,
         maxUploadMb: {{ $containerUploadMaxMb }},
-        open: false,
+        open: @json($filesTabActive),
         loading: false,
         uploading: false,
         uploadProgress: 0,
@@ -326,7 +334,7 @@ function fileManager() {
             const name = prompt('Folder name:');
             if (!name) return;
 
-            const path = this.joinPath(this.currentPath, name);
+            const path = this.joinPath(this.currentPath, name.trim());
 
             try {
                 const response = await fetch(`{{ route('customer.services.container.files.mkdir', $service->id) }}`, {
@@ -343,6 +351,84 @@ function fileManager() {
                     throw new Error(data.error || 'Failed to create folder');
                 }
 
+                this.loadDirectory();
+            } catch (err) {
+                this.error = err.message;
+            }
+        },
+
+        async newFile() {
+            const name = prompt('File name (e.g. index.html, .env, script.php):');
+            if (!name) return;
+
+            const trimmed = name.trim();
+            if (!trimmed || trimmed.includes('/') || trimmed.includes('\\')) {
+                this.error = 'File name cannot include path separators.';
+                return;
+            }
+
+            const path = this.joinPath(this.currentPath, trimmed);
+
+            try {
+                const response = await fetch(`{{ route('customer.services.container.files.create', $service->id) }}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify({ path }),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to create file');
+                }
+
+                await this.loadDirectory();
+
+                const created = this.entries.find((entry) => entry.name === trimmed);
+                if (created?.editable) {
+                    await this.openEditor(trimmed);
+                }
+            } catch (err) {
+                this.error = err.message;
+            }
+        },
+
+        async renameEntry(name) {
+            const newName = prompt('Rename to:', name);
+            if (!newName) return;
+
+            const trimmed = newName.trim();
+            if (!trimmed || trimmed.includes('/') || trimmed.includes('\\')) {
+                this.error = 'Name cannot include path separators.';
+                return;
+            }
+
+            if (trimmed === name) {
+                return;
+            }
+
+            const path = this.joinPath(this.currentPath, name);
+
+            try {
+                const response = await fetch(`{{ route('customer.services.container.files.rename', $service->id) }}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                    },
+                    body: JSON.stringify({ path, name: trimmed }),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to rename');
+                }
+
+                this.selected.delete(name);
                 this.loadDirectory();
             } catch (err) {
                 this.error = err.message;
