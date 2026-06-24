@@ -118,9 +118,8 @@ class NodeController extends Controller
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
             $validated['ssh_port'] = $validated['da_port'];
-            // DirectAdmin API endpoints are accessed directly on the control panel port (e.g., https://hostname:2222/CMD_SELECT_USERS)
-            // Do NOT add /api suffix - DirectAdmin doesn't use /api in the path
-            $validated['api_url'] = "https://{$validated['hostname']}:{$validated['da_port']}";
+            $validated['api_url'] = $this->directAdminApiUrl($validated['hostname'], $validated['da_port']);
+            $this->normalizeNameserverFields($validated);
         } elseif ($type === 'container_host') {
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
@@ -343,18 +342,22 @@ class NodeController extends Controller
 
     public function update(Request $request, Node $node)
     {
+        $nodeType = $request->input('type', $node->type);
+        $hardwareMin = $nodeType === 'directadmin' ? 0 : 1;
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'hostname' => 'required|string|unique:nodes,hostname,'.$node->id,
             'ip_address' => 'required|ip|unique:nodes,ip_address,'.$node->id,
             'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
             'status' => 'required|in:online,offline,degraded,maintenance',
-            'cpu_cores' => 'required|integer|min:1',
-            'ram_gb' => 'required|integer|min:1',
-            'storage_gb' => 'required|integer|min:1',
+            'cpu_cores' => 'required|integer|min:'.$hardwareMin,
+            'ram_gb' => 'required|integer|min:'.$hardwareMin,
+            'storage_gb' => 'required|integer|min:'.$hardwareMin,
             'region' => 'nullable|string|max:50',
             'datacenter' => 'nullable|string|max:255',
-            'ssh_port' => 'required|string|max:10',
+            'ssh_port' => $nodeType === 'directadmin' ? 'nullable|string|max:10' : 'required|string|max:10',
+            'da_port' => $nodeType === 'directadmin' ? 'required|string|max:10' : 'nullable|string|max:10',
             'ssh_username' => 'nullable|string|max:100',
             'ssh_password' => 'nullable|string',
             'api_url' => 'nullable|url',
@@ -372,23 +375,23 @@ class NodeController extends Controller
 
         $validated['verify_ssl'] = $request->has('verify_ssl');
         $validated['is_active'] = $request->has('is_active');
+        $this->stripBlankCredentialFields($validated);
 
-        if (($validated['type'] ?? $node->type) === 'directadmin') {
+        if ($nodeType === 'directadmin') {
             $request->validate([
                 'nameserver_1' => 'required|string|max:255',
                 'nameserver_2' => 'nullable|string|max:255',
                 'nameserver_3' => 'nullable|string|max:255',
                 'nameserver_4' => 'nullable|string|max:255',
             ]);
-            $validated['nameserver_1'] = trim((string) $request->input('nameserver_1'));
-            $validated['nameserver_2'] = $request->filled('nameserver_2') ? trim((string) $request->input('nameserver_2')) : null;
-            $validated['nameserver_3'] = $request->filled('nameserver_3') ? trim((string) $request->input('nameserver_3')) : null;
-            $validated['nameserver_4'] = $request->filled('nameserver_4') ? trim((string) $request->input('nameserver_4')) : null;
-        } elseif (($validated['type'] ?? $node->type) === 'container_host') {
-            $validated['nameserver_1'] = $request->filled('nameserver_1') ? trim((string) $request->input('nameserver_1')) : null;
-            $validated['nameserver_2'] = $request->filled('nameserver_2') ? trim((string) $request->input('nameserver_2')) : null;
-            $validated['nameserver_3'] = $request->filled('nameserver_3') ? trim((string) $request->input('nameserver_3')) : null;
-            $validated['nameserver_4'] = $request->filled('nameserver_4') ? trim((string) $request->input('nameserver_4')) : null;
+
+            $port = (string) $request->input('da_port');
+            $validated['da_port'] = $port;
+            $validated['ssh_port'] = $port;
+            $validated['api_url'] = $this->directAdminApiUrl($validated['hostname'], $port);
+            $this->normalizeNameserverFields($validated);
+        } elseif ($nodeType === 'container_host') {
+            $this->normalizeNameserverFields($validated);
         }
 
         $node->update($validated);
@@ -953,5 +956,38 @@ class NodeController extends Controller
                 ];
             }),
         ]);
+    }
+
+    private function directAdminApiUrl(string $hostname, string $port): string
+    {
+        return 'https://'.trim($hostname).':'.trim($port);
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function normalizeNameserverFields(array &$validated): void
+    {
+        foreach (['nameserver_1', 'nameserver_2', 'nameserver_3', 'nameserver_4'] as $field) {
+            if (! array_key_exists($field, $validated)) {
+                continue;
+            }
+
+            $validated[$field] = filled($validated[$field])
+                ? trim((string) $validated[$field])
+                : null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function stripBlankCredentialFields(array &$validated): void
+    {
+        foreach (['ssh_password', 'da_login_key', 'api_token'] as $field) {
+            if (array_key_exists($field, $validated) && blank($validated[$field])) {
+                unset($validated[$field]);
+            }
+        }
     }
 }

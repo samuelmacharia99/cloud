@@ -13,6 +13,10 @@
 @endsection
 
 @section('content')
+@php
+    $isDirectAdmin = old('type', $node->type) === 'directadmin';
+    $hardwareMin = $isDirectAdmin ? 0 : 1;
+@endphp
 <div class="space-y-6">
     <!-- Header -->
     <div>
@@ -115,7 +119,7 @@
                     <!-- CPU Cores -->
                     <div>
                         <label for="cpu_cores" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">CPU Cores</label>
-                        <input type="number" id="cpu_cores" name="cpu_cores" value="{{ old('cpu_cores', $node->cpu_cores) }}" placeholder="8" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('cpu_cores') border-red-500 @enderror" required>
+                        <input type="number" id="cpu_cores" name="cpu_cores" value="{{ old('cpu_cores', $node->cpu_cores) }}" placeholder="{{ $isDirectAdmin ? '0' : '8' }}" min="{{ $hardwareMin }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('cpu_cores') border-red-500 @enderror" required>
                         @error('cpu_cores')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
@@ -124,7 +128,7 @@
                     <!-- RAM GB -->
                     <div>
                         <label for="ram_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">RAM (GB)</label>
-                        <input type="number" id="ram_gb" name="ram_gb" value="{{ old('ram_gb', $node->ram_gb) }}" placeholder="32" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_gb') border-red-500 @enderror" required>
+                        <input type="number" id="ram_gb" name="ram_gb" value="{{ old('ram_gb', $node->ram_gb) }}" placeholder="{{ $isDirectAdmin ? '0' : '32' }}" min="{{ $hardwareMin }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ram_gb') border-red-500 @enderror" required>
                         @error('ram_gb')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
@@ -133,7 +137,7 @@
                     <!-- Storage GB -->
                     <div>
                         <label for="storage_gb" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Storage (GB)</label>
-                        <input type="number" id="storage_gb" name="storage_gb" value="{{ old('storage_gb', $node->storage_gb) }}" placeholder="500" min="1" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('storage_gb') border-red-500 @enderror" required>
+                        <input type="number" id="storage_gb" name="storage_gb" value="{{ old('storage_gb', $node->storage_gb) }}" placeholder="{{ $isDirectAdmin ? '0' : '500' }}" min="{{ $hardwareMin }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('storage_gb') border-red-500 @enderror" required>
                         @error('storage_gb')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
@@ -160,6 +164,17 @@
                 @endif
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    @if($isDirectAdmin)
+                    <!-- DirectAdmin Port -->
+                    <div>
+                        <label for="da_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Port</label>
+                        <input type="text" id="da_port" name="da_port" value="{{ old('da_port', $node->da_port ?? $node->ssh_port ?? '2222') }}" placeholder="2222" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('da_port') border-red-500 @enderror" required>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Control panel and API port (typically 2222). API URL is rebuilt automatically from hostname and this port.</p>
+                        @error('da_port')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+                    @else
                     <!-- SSH Port -->
                     <div>
                         <label for="ssh_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Port</label>
@@ -168,6 +183,7 @@
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
+                    @endif
 
                     <!-- SSH Username (for container/database servers and DirectAdmin) -->
                     @if(in_array($node->type, ['container_host', 'database_server', 'directadmin']))
@@ -194,6 +210,7 @@
                     </div>
                     @endif
 
+                    @unless($isDirectAdmin)
                     <!-- API URL -->
                     <div>
                         <label for="api_url" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">API URL <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
@@ -202,6 +219,7 @@
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
+                    @endunless
 
                     <!-- API Token -->
                     <div>
