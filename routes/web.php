@@ -631,6 +631,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('my/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('customer.services.container.laravel-setup');
         Route::post('my/services/{service}/container/git-repository', [App\Http\Controllers\Customer\ContainerController::class, 'updateGitRepository'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.git-repository.update');
         Route::post('my/services/{service}/container/git-repository/pull', [App\Http\Controllers\Customer\ContainerController::class, 'pullGitRepository'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.git-repository.pull');
+        Route::get('my/services/{service}/container/git-repository/status', [App\Http\Controllers\Customer\ContainerController::class, 'gitPullStatus'])->name('customer.services.container.git-repository.status');
         Route::post('my/services/{service}/container/stop', [App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');

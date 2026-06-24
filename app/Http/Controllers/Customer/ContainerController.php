@@ -7,7 +7,9 @@ use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Jobs\InitializeContainerAppJob;
+use App\Jobs\PullContainerGitRepositoryJob;
 use App\Models\ContainerBackup;
+use App\Models\ContainerGitPull;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
 use App\Models\ContainerMetric;
@@ -380,37 +382,96 @@ class ContainerController extends Controller
         Service $service,
         PullContainerGitRepositoryRequest $request,
         ContainerGitRepositoryService $gitRepositoryService
-    ): RedirectResponse {
+    ): RedirectResponse|\Illuminate\Http\JsonResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
         if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
+            }
+
             return back()->withErrors(['error' => 'Git repository pulls are not supported for this container type.']);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment || $deployment->status !== 'running') {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Start the container before pulling code from Git.'], 400);
+            }
+
             return back()->withErrors(['error' => 'Start the container before pulling code from Git.']);
         }
 
         try {
-            $result = $gitRepositoryService->pull(
+            $pull = $gitRepositoryService->requestPull(
                 $service,
-                $deployment,
+                auth()->user(),
                 $request->boolean('replace_existing'),
                 $request->boolean('run_composer', true),
                 $request->boolean('run_migrations', true),
             );
 
+            PullContainerGitRepositoryJob::dispatch($pull->id)->afterResponse();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Git pull started. Progress updates appear below.',
+                    'pull' => $this->formatGitPull($pull),
+                ]);
+            }
+
             return redirect()
                 ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
-                ->with('success', $result['message']);
-        } catch (\InvalidArgumentException $e) {
+                ->with('success', 'Git pull started. Progress updates appear below.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => $e->getMessage()], 422);
+            }
+
             return back()->withErrors(['error' => $e->getMessage()]);
         } catch (\Exception $e) {
             \Log::error("Failed to pull Git repository for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Failed to pull repository: '.$e->getMessage()]);
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Failed to start Git pull: '.$e->getMessage()], 500);
+            }
+
+            return back()->withErrors(['error' => 'Failed to start Git pull: '.$e->getMessage()]);
         }
+    }
+
+    public function gitPullStatus(Service $service, ContainerGitRepositoryService $gitRepositoryService): \Illuminate\Http\JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
+        }
+
+        $latest = $gitRepositoryService->latestPull($service);
+        $settings = $gitRepositoryService->repositorySettings($service);
+
+        return response()->json([
+            'repository' => $settings,
+            'pull' => $latest ? $this->formatGitPull($latest) : null,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function formatGitPull(ContainerGitPull $pull): array
+    {
+        return [
+            'id' => $pull->id,
+            'status' => $pull->status,
+            'steps' => $pull->steps,
+            'log' => $pull->log,
+            'error_message' => $pull->error_message,
+            'commit' => $pull->commit,
+            'started_at' => $pull->started_at?->toIso8601String(),
+            'completed_at' => $pull->completed_at?->toIso8601String(),
+        ];
     }
 
     private function reconcileStuckProvisioningState(Service $service, $deployment, ?array $status): void
