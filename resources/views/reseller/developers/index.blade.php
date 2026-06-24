@@ -277,7 +277,7 @@
                         <code class="ml-2 text-sm font-mono">/services</code>
                     </div>
                     <div class="p-5 space-y-3">
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Returns active, orderable items from your catalog with monthly/yearly retail prices.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Returns active, orderable items from your catalog with monthly/yearly retail prices. VPS and dedicated server products include a <code class="text-xs">configuration</code> object (specs, datacenter locations, IP options, operating systems).</p>
                         @include('reseller.developers.partials.code-block', ['id' => 'services-req', 'code' => "GET {$apiBase}/services"])
                     </div>
                 </div>
@@ -296,9 +296,17 @@
                             'items' => [
                                 ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
                                 ['type' => 'service', 'reseller_product_id' => 12, 'billing_cycle' => 'annual'],
+                                [
+                                    'type' => 'service',
+                                    'reseller_product_id' => 18,
+                                    'billing_cycle' => 'monthly',
+                                    'location_key' => 'usa',
+                                    'ip_count' => 2,
+                                    'operating_system' => 'ubuntu-24.04',
+                                ],
                             ],
                         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
-                        <p class="text-sm text-slate-500">Response includes <code class="text-xs">checkout_url</code> → <code class="text-xs">{{ $checkout }}</code></p>
+                        <p class="text-sm text-slate-500">Response includes <code class="text-xs">checkout_url</code> → <code class="text-xs">{{ $checkout }}</code>. For VPS/dedicated servers, pass <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code> from <code class="text-xs">GET /services</code>.</p>
                     </div>
                 </div>
             </section>

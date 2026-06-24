@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\DomainExtension;
 use App\Models\Product;
+use App\Models\ResellerPackage;
 use App\Models\Setting;
 use Illuminate\Support\Collection;
 
@@ -12,6 +13,7 @@ class PlatformPublicApiService
     public function __construct(
         private DomainAvailabilityService $availability,
         private ResellerBrandingResolver $brandingResolver,
+        private PublicApiCatalogSerializer $catalogSerializer,
     ) {}
 
     public function isEnabled(): bool
@@ -164,19 +166,27 @@ class PlatformPublicApiService
             ->orderBy('order')
             ->orderBy('name')
             ->get()
-            ->map(fn (Product $product) => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'description' => $product->description,
-                'type' => $product->type,
-                'category' => $product->category,
-                'monthly_price' => (float) ($product->monthly_price ?? 0),
-                'yearly_price' => $product->yearly_price !== null ? (float) $product->yearly_price : null,
-                'setup_fee' => (float) ($product->setup_fee ?? 0),
-                'currency' => 'KES',
-                'billing_cycles' => ['monthly', 'quarterly', 'semi-annual', 'annual'],
-                'features' => $product->features ?? [],
-            ])
+            ->map(fn (Product $product) => $this->catalogSerializer->formatPlatformProduct($product))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listResellerPackages(?string $billingCycle = null): array
+    {
+        $query = ResellerPackage::query()
+            ->where('active', true)
+            ->orderBy('price');
+
+        if ($billingCycle !== null && $billingCycle !== '') {
+            $query->where('billing_cycle', $billingCycle);
+        }
+
+        return $query
+            ->get()
+            ->map(fn (ResellerPackage $package) => $this->catalogSerializer->formatResellerPackage($package))
             ->values()
             ->all();
     }
@@ -208,6 +218,16 @@ class PlatformPublicApiService
 
             if (in_array($type, ['service', 'product'], true)) {
                 $line = $this->buildServiceCartItem($item);
+
+                if ($line !== null) {
+                    $cart[] = $line;
+                }
+
+                continue;
+            }
+
+            if ($type === 'reseller_package') {
+                $line = $this->buildResellerPackageCartItem($item);
 
                 if ($line !== null) {
                     $cart[] = $line;
@@ -281,10 +301,43 @@ class PlatformPublicApiService
             return null;
         }
 
-        return [
+        $serverFields = $this->catalogSerializer->serverCartFields($product, $item);
+        if ($serverFields === null) {
+            return null;
+        }
+
+        return array_merge([
             'type' => 'product',
             'product_id' => $product->id,
             'billing_cycle' => $billingCycle,
+        ], $serverFields);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function buildResellerPackageCartItem(array $item): ?array
+    {
+        $package = ResellerPackage::query()
+            ->where('id', $item['reseller_package_id'] ?? $item['id'] ?? null)
+            ->where('active', true)
+            ->first();
+
+        if (! $package) {
+            return null;
+        }
+
+        $amounts = app(ResellerPackageSubscriptionService::class)->calculateAmounts((float) $package->price);
+
+        return [
+            'type' => 'reseller_package',
+            'reseller_package_id' => $package->id,
+            'billing_cycle' => $package->billing_cycle,
+            'price' => (float) $package->price,
+            'subtotal' => $amounts['subtotal'],
+            'tax' => $amounts['tax'],
+            'total' => $amounts['total'],
         ];
     }
 

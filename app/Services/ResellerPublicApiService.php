@@ -13,6 +13,7 @@ class ResellerPublicApiService
     public function __construct(
         private DomainAvailabilityService $availability,
         private ResellerBrandingResolver $brandingResolver,
+        private PublicApiCatalogSerializer $catalogSerializer,
     ) {}
 
     public function isEnabled(User $reseller): bool
@@ -186,18 +187,7 @@ class ResellerPublicApiService
             ->orderBy('name')
             ->get()
             ->filter(fn (ResellerProduct $product) => $product->isOrderable())
-            ->map(fn (ResellerProduct $product) => [
-                'id' => $product->id,
-                'name' => $product->name,
-                'description' => $product->description,
-                'type' => $product->type ?? $product->adminProduct?->type,
-                'monthly_price' => (float) ($product->monthly_price ?? 0),
-                'yearly_price' => $product->yearly_price !== null ? (float) $product->yearly_price : null,
-                'setup_fee' => (float) ($product->setup_fee ?? 0),
-                'currency' => 'KES',
-                'billing_cycles' => ['monthly', 'quarterly', 'semi-annual', 'annual'],
-                'features' => $product->features ?? [],
-            ])
+            ->map(fn (ResellerProduct $product) => $this->catalogSerializer->formatResellerProduct($product))
             ->values()
             ->all();
     }
@@ -304,12 +294,22 @@ class ResellerPublicApiService
             return null;
         }
 
-        return [
+        $adminProduct = $listing->adminProduct;
+        if (! $adminProduct) {
+            return null;
+        }
+
+        $serverFields = $this->catalogSerializer->serverCartFields($adminProduct, $item, $listing);
+        if ($serverFields === null) {
+            return null;
+        }
+
+        return array_merge([
             'type' => 'reseller_product',
             'reseller_product_id' => $listing->id,
             'reseller_id' => $reseller->id,
             'billing_cycle' => $billingCycle,
-        ];
+        ], $serverFields);
     }
 
     /**

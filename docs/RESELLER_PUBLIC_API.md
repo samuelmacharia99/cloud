@@ -18,6 +18,7 @@ Super admins can enable the same API on the **main platform domain** (e.g. `serv
 - Generate a platform API token (admin bearer auth)
 - List **retail domain pricing** for enabled TLDs with admin retail tiers
 - List **active platform products** from Admin → Products
+- List **reseller hosting plans** (monthly/annual tiers for becoming a reseller)
 - Cart → `domain-checkout` for guest account creation
 
 Base URL: `https://{platform-domain}/api/v1/public`
@@ -121,6 +122,13 @@ List sellable TLDs and retail prices (no availability check).
 
 List active, orderable catalog items.
 
+For **VPS** and **dedicated server** products, each service includes a `configuration` object:
+
+- `specs` / `spec_lines` — hardware summary
+- `locations[]` — datacenter options with per-location `prices` (monthly, quarterly, semi-annual, annual, setup_fee)
+- `ip_options[]` — additional IP pricing
+- `operating_systems[]` — allowed OS keys for cart/checkout
+
 ```json
 {
   "success": true,
@@ -138,10 +146,89 @@ List active, orderable catalog items.
       "currency": "KES",
       "billing_cycles": ["monthly", "quarterly", "semi-annual", "annual"],
       "features": ["5GB SSD", "Free SSL"]
+    },
+    {
+      "id": 18,
+      "name": "Cloud VPS 4GB",
+      "type": "vps",
+      "monthly_price": 2500,
+      "yearly_price": 25000,
+      "setup_fee": 0,
+      "currency": "KES",
+      "billing_cycles": ["monthly", "quarterly", "semi-annual", "annual"],
+      "configuration": {
+        "specs": { "cpu_cores": 2, "ram_gb": 4, "storage_gb": 80 },
+        "spec_lines": ["2 CPU Cores", "4 GB RAM", "80 GB NVMe Storage"],
+        "locations": [
+          {
+            "key": "usa",
+            "name": "United States",
+            "city": "New York",
+            "prices": {
+              "monthly": 2800,
+              "quarterly": 8400,
+              "semi-annual": 16800,
+              "annual": 28000,
+              "setup_fee": 0,
+              "currency": "KES"
+            }
+          }
+        ],
+        "ip_options": [
+          { "ip_count": 1, "monthly_addon": 0, "setup_addon": 0, "label": "1 IP" },
+          { "ip_count": 2, "monthly_addon": 200, "setup_addon": 50, "label": "2 IPs (+200/mo)" }
+        ],
+        "operating_systems": [
+          { "key": "ubuntu-24.04", "label": "Ubuntu 24.04 LTS (Noble Numbat)" }
+        ],
+        "max_ip_count": 8
+      }
     }
   ]
 }
 ```
+
+---
+
+### `GET /reseller-packages` (platform host only)
+
+List active reseller subscription plans configured under **Admin → Reseller Packages**.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `cycle` | No | `monthly` or `annually` |
+
+```json
+{
+  "success": true,
+  "currency": "KES",
+  "checkout_url": "https://servers.talksasa.com/domain-checkout",
+  "packages": [
+    {
+      "id": 2,
+      "name": "Starter Reseller",
+      "description": "Launch your hosting brand",
+      "billing_cycle": "monthly",
+      "price": 4999,
+      "subtotal": 4999,
+      "tax": 0,
+      "total": 4999,
+      "currency": "KES",
+      "max_services": 50,
+      "max_users": 100,
+      "disk_pool_gb": 500,
+      "disk_overage_rate": 0,
+      "features": [
+        "Up to 100 customers",
+        "Up to 50 active services",
+        "500 GB disk pool"
+      ]
+    }
+  ]
+}
+```
+
+Not available on reseller branding domains (404).
 
 ---
 
@@ -163,6 +250,14 @@ Validate items, store them in a server session, and return a **checkout deep lin
       "type": "service",
       "reseller_product_id": 12,
       "billing_cycle": "annual"
+    },
+    {
+      "type": "service",
+      "reseller_product_id": 18,
+      "billing_cycle": "monthly",
+      "location_key": "usa",
+      "ip_count": 2,
+      "operating_system": "ubuntu-24.04"
     }
   ]
 }
@@ -172,6 +267,8 @@ Validate items, store them in a server session, and return a **checkout deep lin
 |-----------|--------|
 | `domain` | `full_domain`, optional `years` |
 | `service` | `reseller_product_id` (or `id`), `billing_cycle` |
+| `service` (VPS / dedicated) | above plus `location_key`, `ip_count`, `operating_system` (from `GET /services` → `configuration`) |
+| `reseller_package` | `reseller_package_id` (platform host only; must be the only cart item) |
 
 Domains must be **available** and priced. Services must be active in your catalog.
 

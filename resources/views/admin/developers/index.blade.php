@@ -163,7 +163,7 @@
     <div class="flex flex-col xl:flex-row gap-8">
         <nav class="xl:w-56 shrink-0">
             <div class="xl:sticky xl:top-24 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-1">
-                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'cart' => 'Checkout', 'examples' => 'Examples', 'errors' => 'Errors'] as $id => $label)
+                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'reseller-packages' => 'Reseller plans', 'cart' => 'Checkout', 'examples' => 'Examples', 'errors' => 'Errors'] as $id => $label)
                     <button type="button" @click="scrollTo('{{ $id }}')" :class="active === '{{ $id }}' ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition">{{ $label }}</button>
                 @endforeach
             </div>
@@ -206,8 +206,21 @@
                         <code class="ml-2 text-sm font-mono">/services</code>
                     </div>
                     <div class="p-5 space-y-2">
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Lists all active platform products with retail pricing.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Lists all active platform products with retail pricing. VPS and dedicated server products include a <code class="text-xs">configuration</code> object with specs, datacenter locations (regional pricing), IP options, and allowed operating systems.</p>
                         @include('reseller.developers.partials.code-block', ['id' => 'sv', 'code' => "GET {$apiBase}/services"])
+                    </div>
+                </div>
+            </section>
+
+            <section id="reseller-packages" class="scroll-mt-24">
+                <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+                    <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
+                        <span class="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">GET</span>
+                        <code class="ml-2 text-sm font-mono">/reseller-packages?cycle=monthly</code>
+                    </div>
+                    <div class="p-5 space-y-2">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Lists active platform reseller plans (monthly or annually). Each package includes limits, tax-inclusive totals, and feature summary. Platform host only.</p>
+                        @include('reseller.developers.partials.code-block', ['id' => 'rp', 'code' => "GET {$apiBase}/reseller-packages?cycle=monthly"])
                     </div>
                 </div>
             </section>
@@ -218,9 +231,18 @@
                     'items' => [
                         ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
                         ['type' => 'service', 'product_id' => 3, 'billing_cycle' => 'annual'],
+                        ['type' => 'reseller_package', 'reseller_package_id' => 2],
+                        [
+                            'type' => 'service',
+                            'product_id' => 12,
+                            'billing_cycle' => 'monthly',
+                            'location_key' => 'usa',
+                            'ip_count' => 2,
+                            'operating_system' => 'ubuntu-24.04',
+                        ],
                     ],
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
-                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code></p>
+                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code>. For VPS/dedicated servers, include <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code>. Reseller plans use <code class="text-xs">type: reseller_package</code> and must be checked out alone.</p>
             </section>
 
             <section id="examples" class="scroll-mt-24">
@@ -246,7 +268,7 @@ function developerDocs() {
             try { await navigator.clipboard.writeText(text); this.copied = key; setTimeout(() => { if (this.copied === key) this.copied = null; }, 2000); } catch (e) { alert('Copy failed'); }
         },
         init() {
-            ['overview','auth','domains','services','cart','examples','errors'].forEach(id => {
+            ['overview','auth','domains','services','reseller-packages','cart','examples','errors'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) new IntersectionObserver((entries) => { entries.forEach(e => { if (e.isIntersecting) this.active = e.target.id; }); }, { rootMargin: '-20% 0px -60% 0px' }).observe(el);
             });

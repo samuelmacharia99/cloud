@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ResellerDomainOrder;
+use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
@@ -26,6 +27,7 @@ use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerNameserverService;
+use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerPublicApiService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
@@ -110,6 +112,12 @@ class CheckoutController extends Controller
                 }
             } elseif ($item['type'] === 'reseller_product') {
                 $prepared = $this->prepareResellerProductCartItem($item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
+            } elseif ($item['type'] === 'reseller_package') {
+                $prepared = $this->prepareResellerPackageCartItem($item);
                 if ($prepared === null) {
                     continue;
                 }
@@ -783,6 +791,12 @@ class CheckoutController extends Controller
                     continue;
                 }
                 $item = $prepared;
+            } elseif ($item['type'] === 'reseller_package') {
+                $prepared = $this->prepareResellerPackageCartItem($item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
             } elseif ($item['type'] === 'domain') {
                 $extension = DomainExtension::where('extension', $item['extension'])->first();
                 if (! $extension) {
@@ -896,6 +910,15 @@ class CheckoutController extends Controller
     private function processCheckout(User $user, array $cart, ?Request $request = null)
     {
         try {
+            $resellerPackageItem = $this->findResellerPackageCartItem($cart);
+            if ($resellerPackageItem !== null) {
+                if (count($cart) > 1) {
+                    throw new \InvalidArgumentException('Reseller package checkout cannot be combined with other items.');
+                }
+
+                return $this->processResellerPackageCheckout($user, $resellerPackageItem);
+            }
+
             if (app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
                 app(ResellerCheckoutGuardService::class)->assertCheckoutAllowed($user);
             }
@@ -1302,6 +1325,102 @@ class CheckoutController extends Controller
         }
 
         return app('currentReseller');
+    }
+
+    /**
+     * @param  array<string, mixed>  $cart
+     * @return array<string, mixed>|null
+     */
+    private function findResellerPackageCartItem(array $cart): ?array
+    {
+        foreach ($cart as $item) {
+            if (($item['type'] ?? null) === 'reseller_package') {
+                return $item;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function prepareResellerPackageCartItem(array $item): ?array
+    {
+        if ($this->checkoutReseller() !== null) {
+            return null;
+        }
+
+        $package = ResellerPackage::query()
+            ->where('id', $item['reseller_package_id'] ?? null)
+            ->where('active', true)
+            ->first();
+
+        if (! $package) {
+            return null;
+        }
+
+        $amounts = app(ResellerPackageSubscriptionService::class)->calculateAmounts((float) $package->price);
+
+        return array_merge($item, [
+            'type' => 'reseller_package',
+            'reseller_package_id' => $package->id,
+            'name' => $package->name,
+            'description' => $package->description ?: 'Reseller hosting plan',
+            'billing_cycle' => $package->billing_cycle,
+            'unit_price' => $amounts['subtotal'],
+            'amount' => $amounts['total'],
+        ]);
+    }
+
+    private function processResellerPackageCheckout(User $user, array $item)
+    {
+        $package = ResellerPackage::query()
+            ->where('id', $item['reseller_package_id'] ?? null)
+            ->where('active', true)
+            ->first();
+
+        if (! $package) {
+            return back()->with('error', 'This reseller package is no longer available.');
+        }
+
+        if ($user->reseller_package_id === $package->id) {
+            return back()->with('info', 'You are already subscribed to this package.');
+        }
+
+        if ($user->resellerPackage && (float) $package->price < (float) $user->resellerPackage->price) {
+            return back()->with('error', 'You cannot downgrade to a lower-tier reseller package.');
+        }
+
+        if (! $user->is_reseller) {
+            $user->is_reseller = true;
+            $user->save();
+        }
+
+        $subscriptions = app(ResellerPackageSubscriptionService::class);
+        $pending = $subscriptions->pendingSubscriptionInvoice($user, $package);
+
+        if ($pending) {
+            session()->forget(self::CART_SESSION_KEY);
+
+            return redirect()
+                ->route('reseller.payment.select-method', $pending)
+                ->with('info', 'Complete payment for invoice #'.$pending->invoice_number.' to activate this plan.');
+        }
+
+        $invoice = $subscriptions->createSubscriptionInvoice($user, $package);
+        session()->forget(self::CART_SESSION_KEY);
+
+        if ($invoice->isPaid()) {
+            return redirect()
+                ->route('reseller.packages.index')
+                ->with('success', 'Your reseller plan is now active.');
+        }
+
+        return redirect()
+            ->route('reseller.payment.select-method', $invoice)
+            ->with('success', 'Invoice #'.$invoice->invoice_number.' created. Complete payment to activate your reseller plan.');
     }
 
     private function resellerDomainInvoiceItemFields(User $user, Domain $domain, Invoice $invoice, array $item): array

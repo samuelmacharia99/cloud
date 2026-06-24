@@ -80,6 +80,18 @@ class PublicWebsiteApiContext
     }
 
     /**
+     * @return list<array<string, mixed>>
+     */
+    public function listResellerPackages(?string $billingCycle = null): array
+    {
+        if (! $this->isPlatform()) {
+            return [];
+        }
+
+        return app(PlatformPublicApiService::class)->listResellerPackages($billingCycle);
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $items
      * @return list<array<string, mixed>>
      */

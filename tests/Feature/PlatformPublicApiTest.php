@@ -6,6 +6,7 @@ use App\Http\Controllers\Customer\CheckoutController;
 use App\Models\DomainExtension;
 use App\Models\DomainPricing;
 use App\Models\Product;
+use App\Models\ResellerPackage;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
@@ -93,7 +94,172 @@ class PlatformPublicApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonCount(1, 'services')
-            ->assertJsonPath('services.0.name', 'Starter Hosting');
+            ->assertJsonPath('services.0.name', 'Starter Hosting')
+            ->assertJsonMissingPath('services.0.configuration');
+    }
+
+    public function test_platform_services_include_vps_configuration(): void
+    {
+        Product::create([
+            'name' => 'Cloud VPS',
+            'slug' => 'cloud-vps',
+            'type' => 'vps',
+            'monthly_price' => 1000,
+            'yearly_price' => 12000,
+            'setup_fee' => 50,
+            'is_active' => true,
+            'resource_limits' => [
+                'cpu_cores' => 2,
+                'ram_gb' => 4,
+                'storage_gb' => 80,
+                'locations' => [
+                    [
+                        'key' => 'usa',
+                        'name' => 'United States',
+                        'monthly_surcharge' => 300,
+                        'yearly_surcharge' => 3600,
+                        'setup_surcharge' => 0,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->getJson('https://platform.example.test/api/v1/public/services');
+
+        $response->assertOk()
+            ->assertJsonPath('services.0.configuration.specs.cpu_cores', 2)
+            ->assertJsonPath('services.0.configuration.locations.0.key', 'usa')
+            ->assertJsonPath('services.0.configuration.locations.0.prices.monthly', 1300);
+    }
+
+    public function test_platform_cart_accepts_configured_vps_item(): void
+    {
+        $product = Product::create([
+            'name' => 'Cloud VPS',
+            'slug' => 'cloud-vps-cart',
+            'type' => 'vps',
+            'monthly_price' => 1000,
+            'yearly_price' => 12000,
+            'setup_fee' => 50,
+            'is_active' => true,
+            'resource_limits' => [
+                'cpu_cores' => 2,
+                'ram_gb' => 4,
+                'storage_gb' => 80,
+                'locations' => [
+                    [
+                        'key' => 'usa',
+                        'name' => 'United States',
+                        'monthly_surcharge' => 300,
+                        'yearly_surcharge' => 3600,
+                        'setup_surcharge' => 0,
+                    ],
+                ],
+            ],
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'service',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'location_key' => 'usa',
+                    'ip_count' => 1,
+                    'operating_system' => 'ubuntu-24.04',
+                ]],
+            ]);
+
+        $response->assertOk();
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $item = array_values($cart)[0];
+        $this->assertSame('product', $item['type']);
+        $this->assertSame('usa', $item['location_key']);
+        $this->assertSame('ubuntu-24.04', $item['operating_system']);
+    }
+
+    public function test_platform_cart_rejects_vps_without_operating_system(): void
+    {
+        $product = Product::create([
+            'name' => 'Cloud VPS',
+            'slug' => 'cloud-vps-invalid',
+            'type' => 'vps',
+            'monthly_price' => 1000,
+            'yearly_price' => 12000,
+            'is_active' => true,
+            'resource_limits' => [
+                'cpu_cores' => 2,
+                'locations' => [
+                    ['key' => 'usa', 'name' => 'United States', 'monthly_surcharge' => 0],
+                ],
+            ],
+        ]);
+
+        $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'service',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'location_key' => 'usa',
+                    'ip_count' => 1,
+                ]],
+            ])
+            ->assertStatus(422);
+    }
+
+    public function test_platform_reseller_packages_lists_active_plans(): void
+    {
+        ResellerPackage::create([
+            'name' => 'Starter Reseller',
+            'description' => 'Launch your brand',
+            'billing_cycle' => 'monthly',
+            'storage_space' => 500,
+            'max_services' => 50,
+            'disk_pool_gb' => 500,
+            'max_users' => 100,
+            'price' => 4999,
+            'active' => true,
+        ]);
+
+        $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->getJson('https://platform.example.test/api/v1/public/reseller-packages?cycle=monthly')
+            ->assertOk()
+            ->assertJsonPath('packages.0.name', 'Starter Reseller')
+            ->assertJsonPath('packages.0.max_users', 100);
+    }
+
+    public function test_platform_cart_accepts_reseller_package(): void
+    {
+        $package = ResellerPackage::create([
+            'name' => 'Growth Reseller',
+            'billing_cycle' => 'monthly',
+            'storage_space' => 1000,
+            'max_services' => 100,
+            'disk_pool_gb' => 1000,
+            'max_users' => 250,
+            'price' => 9999,
+            'active' => true,
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'reseller_package',
+                    'reseller_package_id' => $package->id,
+                ]],
+            ]);
+
+        $response->assertOk();
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $item = array_values($cart)[0];
+        $this->assertSame('reseller_package', $item['type']);
+        $this->assertSame($package->id, $item['reseller_package_id']);
     }
 
     public function test_platform_api_works_on_site_url_host_when_app_url_differs(): void

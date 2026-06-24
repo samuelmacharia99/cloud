@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\SettingController;
 use App\Http\Controllers\Admin\SmsController;
 use App\Http\Controllers\Admin\SmsTemplateController;
 use App\Http\Controllers\Admin\TicketController;
+use App\Http\Controllers\Api\V1\ResellerPublic\ResellerPackageCatalogController;
 use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
@@ -134,6 +135,8 @@ Route::prefix('api/v1/public')
             ->name('reseller.public.api.domains.extensions');
         Route::get('services', [App\Http\Controllers\Api\V1\ResellerPublic\CatalogController::class, 'index'])
             ->name('reseller.public.api.services');
+        Route::get('reseller-packages', [ResellerPackageCatalogController::class, 'index'])
+            ->name('reseller.public.api.reseller-packages');
         Route::post('cart', [App\Http\Controllers\Api\V1\ResellerPublic\CartController::class, 'store'])
             ->name('reseller.public.api.cart');
     });
