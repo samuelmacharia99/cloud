@@ -77,6 +77,24 @@ class ContainerController extends Controller
         );
         $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50);
 
+        $latestBackup = null;
+        $domainCount = 0;
+        $domainsMissingSsl = 0;
+
+        if ($deployment) {
+            $deployment->loadMissing('domains');
+
+            $latestBackup = $deployment->backups()
+                ->where('status', 'completed')
+                ->orderByDesc('created_at')
+                ->first();
+
+            $domainCount = $deployment->domains->count();
+            $domainsMissingSsl = $deployment->domains
+                ->filter(fn ($domain) => $domain->status === 'active' && ! $domain->ssl_enabled)
+                ->count();
+        }
+
         return view('customer.services.container', compact(
             'service',
             'deployment',
@@ -88,6 +106,9 @@ class ContainerController extends Controller
             'gitRepository',
             'containerLimits',
             'dbImportMaxMb',
+            'latestBackup',
+            'domainCount',
+            'domainsMissingSsl',
         ));
     }
 

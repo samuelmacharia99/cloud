@@ -40,52 +40,6 @@
                     </a>
                 </div>
             </div>
-
-            <!-- Quick Stats Row -->
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
-                <div class="text-center">
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">CPU</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ rtrim(rtrim(number_format($containerLimits['cpu'], 1, '.', ''), '0'), '.') }}</p>
-                    <p class="text-xs text-slate-500 dark:text-slate-500">cores</p>
-                </div>
-                <div class="text-center">
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Memory</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $containerLimits['memory_mb'] }}</p>
-                    <p class="text-xs text-slate-500 dark:text-slate-500">MB</p>
-                </div>
-                <div class="text-center">
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Storage</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ rtrim(rtrim(number_format($containerLimits['disk_gb'], 1, '.', ''), '0'), '.') }}</p>
-                    <p class="text-xs text-slate-500 dark:text-slate-500">GB</p>
-                </div>
-                <div class="text-center">
-                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Uptime</p>
-                    @if ($deployment?->deployed_at && $deployment->status === 'running')
-                        <p id="uptime-counter" class="text-2xl font-bold text-slate-900 dark:text-white">—</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-500">live</p>
-                        <script>
-                            (function() {
-                                const deployedAt = {{ $deployment->deployed_at->timestamp }};
-                                const el = document.getElementById('uptime-counter');
-                                function update() {
-                                    const s = Math.floor(Date.now() / 1000) - deployedAt;
-                                    const d = Math.floor(s / 86400);
-                                    const h = Math.floor((s % 86400) / 3600);
-                                    const m = Math.floor((s % 3600) / 60);
-                                    el.textContent = d > 0 ? `${d}d ${h}h` : (h > 0 ? `${h}h ${m}m` : `${m}m`);
-                                }
-                                update();
-                                setInterval(update, 30000);
-                            })();
-                        </script>
-                    @elseif ($deployment?->deployed_at)
-                        <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ $deployment->deployed_at->diffForHumans(null, true, true) }}</p>
-                        <p class="text-xs text-slate-500 dark:text-slate-500">since deploy</p>
-                    @else
-                        <p class="text-sm text-slate-500">Not deployed</p>
-                    @endif
-                </div>
-            </div>
         </div>
 
         <!-- Alerts -->
@@ -118,28 +72,33 @@
                 $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
             @endphp
             <!-- Tab Navigation -->
-            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8" x-data="{
-                activeTab: @js($initialTab),
-                setTab(tab) {
-                    this.activeTab = tab;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('tab', tab);
-                    history.replaceState({}, '', url);
-                }
-            }">
-                <div class="border-b border-slate-200 dark:border-slate-700">
-                    <nav class="flex flex-wrap" role="tablist">
-                        <button @click="setTab('overview')" :class="activeTab === 'overview' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📊 Overview</button>
-                        <button @click="setTab('files')" :class="activeTab === 'files' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📁 Files</button>
-                        <button @click="setTab('terminal')" :class="activeTab === 'terminal' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">⌨️ Terminal</button>
-                        <button @click="setTab('backups')" :class="activeTab === 'backups' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">💾 Backups</button>
-                        <button @click="setTab('domains')" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🌐 Domains</button>
-                        <button @click="setTab('database')" :class="activeTab === 'database' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🗄️ Database</button>
+            <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8 pb-20 md:pb-0" x-data="containerTabs(@js($initialTab))" x-init="init()" @container-set-tab.window="setTab($event.detail)">
+                <div class="border-b border-slate-200 dark:border-slate-700 px-4 pt-4">
+                    <label class="md:hidden block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Section</label>
+                    <select :value="activeTab" @change="setTab($event.target.value)" class="md:hidden w-full mb-4 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm">
+                        <option value="overview">Overview</option>
+                        <option value="logs">Logs</option>
+                        <option value="files">Files</option>
+                        <option value="terminal">Terminal</option>
+                        <option value="database">Database</option>
                         @if (!empty($supportsGitRepository))
-                            <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">🐙 GitHub</button>
+                            <option value="github">GitHub</option>
                         @endif
-                        <button @click="setTab('logs')" :class="activeTab === 'logs' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📋 Logs</button>
-                        <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-6 py-4 font-medium transition" role="tab">📖 Documentation</button>
+                        <option value="domains">Domains</option>
+                        <option value="backups">Backups</option>
+                        <option value="documentation">Documentation</option>
+                    </select>
+
+                    <nav class="hidden md:flex flex-wrap gap-x-1" role="tablist">
+                        @foreach ([['overview', 'Overview'], ['logs', 'Logs'], ['files', 'Files'], ['terminal', 'Terminal'], ['database', 'Database']] as [$tabKey, $tabLabel])
+                            <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                        @endforeach
+                        @if (!empty($supportsGitRepository))
+                            <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">GitHub</button>
+                        @endif
+                        @foreach ([['domains', 'Domains'], ['backups', 'Backups'], ['documentation', 'Docs']] as [$tabKey, $tabLabel])
+                            <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                        @endforeach
                     </nav>
                 </div>
 
@@ -148,78 +107,97 @@
                     <!-- Overview Tab -->
                     <div x-show="activeTab === 'overview'" class="space-y-8">
                         <!-- Quick Actions -->
-                        <div class="flex gap-3 flex-wrap">
+                        <div class="flex gap-3 flex-wrap items-center">
                             @if ($deployment->isRunning())
-                                <form method="POST" action="{{ route('customer.services.container.stop', $service) }}" style="display:inline;">
+                                <form method="POST" action="{{ route('customer.services.container.stop', $service) }}" style="display:inline;" data-confirm="Stop this container? Your app will be unavailable until you start it again." data-confirm-title="Stop container">
                                     @csrf
-                                    <button type="submit" class="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition">
-                                        ⏹️ Stop
+                                    <button type="submit" class="px-5 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition">
+                                        Stop
                                     </button>
                                 </form>
 
-                                <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" style="display:inline;">
+                                <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" style="display:inline;" data-confirm="Restart the container? There will be brief downtime." data-confirm-title="Restart container">
                                     @csrf
-                                    <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                        🔄 Restart
+                                    <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                                        Restart
                                     </button>
                                 </form>
                             @elseif (in_array($deployment->status, ['stopped', 'failed']))
                                 <form method="POST" action="{{ route('customer.services.container.start', $service) }}" style="display:inline;">
                                     @csrf
-                                    <button type="submit" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
-                                        ▶️ Start
+                                    <button type="submit" class="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
+                                        Start
                                     </button>
                                 </form>
                             @endif
 
-                            <a href="{{ $deployment->getAccessUrl() }}" target="_blank" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition">
-                                🔗 Visit Service
-                            </a>
+                            @if ($deployment->isRunning())
+                                <a href="{{ $deployment->getAccessUrl() }}" target="_blank" rel="noopener" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition">
+                                    Visit service
+                                </a>
+                            @else
+                                <span class="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg font-medium cursor-not-allowed" title="Start the container to visit your app">
+                                    Visit service
+                                </span>
+                            @endif
 
-                            <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" class="inline-flex flex-col sm:flex-row sm:items-center gap-2" id="redeploy-form">
-                                @csrf
-                                <label class="inline-flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 px-2">
-                                    <input type="checkbox" name="reset_database" value="1" id="reset-database-checkbox" @checked(config('containers.redeploy.reset_database_default', false)) class="rounded border-slate-300 dark:border-slate-600">
-                                    Reset database (deletes all DB data)
-                                </label>
-                                <button
-                                    type="button"
-                                    class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition"
-                                    onclick="confirmRedeploy(document.getElementById('redeploy-form'))"
-                                    title="Recreates containers; keeps /app files unless you reset the database"
-                                >
-                                    ♻️ Redeploy Stack
+                            <div class="relative" x-data="{ open: false }">
+                                <button type="button" @click="open = !open" class="px-5 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600">
+                                    Advanced ▾
                                 </button>
-                            </form>
+                                <div x-show="open" @click.outside="open = false" x-cloak class="absolute left-0 mt-2 z-20 w-72 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg p-4 space-y-3">
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Recreates the container runtime. Files in <code class="font-mono">/app</code> are kept unless you reset the database.</p>
+                                    <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" id="redeploy-form">
+                                        @csrf
+                                        <label class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 mb-3">
+                                            <input type="checkbox" name="reset_database" value="1" id="reset-database-checkbox" @checked(config('containers.redeploy.reset_database_default', false)) class="rounded border-slate-300 dark:border-slate-600 mt-0.5">
+                                            <span>Reset database (deletes all DB data)</span>
+                                        </label>
+                                        <button
+                                            type="button"
+                                            class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition text-sm"
+                                            onclick="confirmRedeploy(document.getElementById('redeploy-form'))"
+                                        >
+                                            Redeploy stack
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
                         </div>
+
+                        @include('customer.services.partials.overview-quick-links')
 
                         @if (!empty($isLaravelTemplate))
                             @include('customer.services.partials.laravel-setup')
                         @endif
 
-                        <!-- Stats Dashboard -->
                         @include('customer.services.partials.enhanced-stats')
                     </div>
 
                     <!-- Files Tab -->
-                    <div x-show="activeTab === 'files'">
-                        @include('customer.services.partials.file-manager')
-                    </div>
+                    <template x-if="hasVisited('files')">
+                        <div x-show="activeTab === 'files'">
+                            @include('customer.services.partials.file-manager')
+                        </div>
+                    </template>
 
                     <!-- Terminal Tab -->
-                    <div x-show="activeTab === 'terminal'">
-                        @include('customer.services.partials.terminal')
-                    </div>
+                    <template x-if="hasVisited('terminal')">
+                        <div x-show="activeTab === 'terminal'">
+                            @include('customer.services.partials.terminal')
+                        </div>
+                    </template>
 
                     <!-- Backups Tab -->
-                    <div x-show="activeTab === 'backups'">
+                    <template x-if="hasVisited('backups')">
+                        <div x-show="activeTab === 'backups'">
                         <div class="space-y-6">
                             <div class="flex items-center justify-between">
                                 <h3 class="text-xl font-bold text-slate-900 dark:text-white">Container Backups</h3>
                                 <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;">
                                     @csrf
                                     <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
-                                        ✨ Create Backup
+                                        Create backup
                                     </button>
                                 </form>
                             </div>
@@ -244,14 +222,14 @@
                                             </div>
                                             <div class="flex gap-2">
                                                 @if ($backup->status === 'completed')
-                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;">
+                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;" data-confirm="Restore this backup? Current container data will be replaced." data-confirm-title="Restore backup">
                                                         @csrf
                                                         <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                                                             Restore
                                                         </button>
                                                     </form>
                                                 @endif
-                                                <form method="POST" action="{{ route('customer.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;">
+                                                <form method="POST" action="{{ route('customer.services.container.backups.delete', [$service, $backup]) }}" style="display:inline;" data-confirm="Delete this backup permanently?" data-confirm-title="Delete backup">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
@@ -268,10 +246,12 @@
                                 </div>
                             @endif
                         </div>
-                    </div>
+                        </div>
+                    </template>
 
                     <!-- Domains Tab -->
-                    <div x-show="activeTab === 'domains'">
+                    <template x-if="hasVisited('domains')">
+                        <div x-show="activeTab === 'domains'">
                         <div class="space-y-6">
                             <div class="flex items-center justify-between">
                                 <h3 class="text-xl font-bold text-slate-900 dark:text-white">Custom Domains</h3>
@@ -359,10 +339,12 @@
                                 </button>
                             </form>
                         </div>
-                    </div>
+                        </div>
+                    </template>
 
                     <!-- Database Tab -->
-                    <div x-show="activeTab === 'database'">
+                    <template x-if="hasVisited('database')">
+                        <div x-show="activeTab === 'database'">
                         <div class="space-y-6">
                             @if(empty($databaseConsoleEnabled))
                                 <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600">
@@ -480,31 +462,55 @@
                                 </div>
                             @endif
                         </div>
-                    </div>
+                        </div>
+                    </template>
 
                     @if (!empty($supportsGitRepository))
                         <!-- GitHub Tab -->
-                        <div x-show="activeTab === 'github'">
-                            @include('customer.services.partials.git-repository')
-                        </div>
+                        <template x-if="hasVisited('github')">
+                            <div x-show="activeTab === 'github'">
+                                @include('customer.services.partials.git-repository')
+                            </div>
+                        </template>
                     @endif
 
                     <!-- Logs Tab -->
-                    <div x-show="activeTab === 'logs'">
-                        <div class="space-y-4">
-                            <button @click="fetchLogs()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                                📜 Load Logs
-                            </button>
-                            <div id="logs-content" class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-96">
-                                <p class="text-slate-500">Click "Load Logs" to fetch container logs</p>
+                    <template x-if="hasVisited('logs')">
+                        <div x-show="activeTab === 'logs'">
+                            <div class="space-y-4">
+                                <div class="flex items-center gap-3">
+                                    <button type="button" @click="loadFullLogs()" :disabled="logsLoading" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
+                                        <span x-text="logsLoading ? 'Loading…' : 'Refresh logs'"></span>
+                                    </button>
+                                    <span class="text-sm text-slate-500 dark:text-slate-400">Container stdout/stderr</span>
+                                </div>
+                                <pre class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[32rem] whitespace-pre-wrap" x-text="fullLogs || 'Loading logs…'"></pre>
                             </div>
                         </div>
-                    </div>
+                    </template>
 
                     <!-- Documentation Tab -->
-                    <div x-show="activeTab === 'documentation'">
-                        @include('customer.services.partials.documentation')
-                    </div>
+                    <template x-if="hasVisited('documentation')">
+                        <div x-show="activeTab === 'documentation'">
+                            @include('customer.services.partials.documentation')
+                        </div>
+                    </template>
+                </div>
+
+                <!-- Mobile sticky actions -->
+                <div class="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 flex gap-2 justify-center shadow-lg">
+                    @if ($deployment->isRunning())
+                        <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" data-confirm="Restart the container? There will be brief downtime." data-confirm-title="Restart container">
+                            @csrf
+                            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">Restart</button>
+                        </form>
+                        <a href="{{ $deployment->getAccessUrl() }}" target="_blank" rel="noopener" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Visit</a>
+                    @elseif (in_array($deployment->status, ['stopped', 'failed']))
+                        <form method="POST" action="{{ route('customer.services.container.start', $service) }}">
+                            @csrf
+                            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium">Start</button>
+                        </form>
+                    @endif
                 </div>
             </div>
         @else
@@ -577,6 +583,59 @@
 </div>
 
 <script>
+function containerTabs(initialTab) {
+    return {
+        activeTab: initialTab,
+        visitedTabs: [initialTab],
+        fullLogs: '',
+        logsLoading: false,
+
+        init() {
+            if (this.activeTab === 'logs') {
+                this.loadFullLogs();
+            }
+        },
+
+        setTab(tab) {
+            if (!this.visitedTabs.includes(tab)) {
+                this.visitedTabs.push(tab);
+            }
+            this.activeTab = tab;
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tab);
+            history.replaceState({}, '', url);
+            if (tab === 'logs') {
+                this.$nextTick(() => this.loadFullLogs());
+            }
+        },
+
+        hasVisited(tab) {
+            return this.visitedTabs.includes(tab);
+        },
+
+        async loadFullLogs() {
+            this.logsLoading = true;
+            this.fullLogs = 'Loading logs…';
+
+            try {
+                const response = await fetch('{{ route("customer.services.container.logs", $service) }}');
+                const data = await response.json();
+
+                if (data.error) {
+                    this.fullLogs = `Error: ${data.error}`;
+                } else {
+                    this.fullLogs = data.logs || 'No logs available';
+                }
+            } catch (error) {
+                this.fullLogs = 'Failed to fetch logs';
+                console.error('Error:', error);
+            } finally {
+                this.logsLoading = false;
+            }
+        },
+    };
+}
+
 async function confirmRedeploy(form) {
     const resetDb = form.querySelector('input[name="reset_database"]')?.checked;
     let message = 'Redeploy stack now? This recreates the container runtime and keeps /app files.';
@@ -591,25 +650,6 @@ async function confirmRedeploy(form) {
     if (accepted) {
         form.submit();
     }
-}
-
-function fetchLogs() {
-    const logsContent = document.getElementById('logs-content');
-    logsContent.innerHTML = '<p class="text-slate-500">Loading logs...</p>';
-
-    fetch('{{ route("customer.services.container.logs", $service) }}')
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                logsContent.innerHTML = '<p class="text-red-400">Error: ' + data.error + '</p>';
-            } else {
-                logsContent.textContent = data.logs || 'No logs available';
-            }
-        })
-        .catch(error => {
-            logsContent.innerHTML = '<p class="text-red-400">Failed to fetch logs</p>';
-            console.error('Error:', error);
-        });
 }
 
 async function runDatabaseQuery(format = 'text') {
