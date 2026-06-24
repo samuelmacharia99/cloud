@@ -209,8 +209,43 @@ class Service extends Model
 
     public function isSharedHosting(): bool
     {
-        return $this->product?->type === 'shared_hosting'
-            && $this->provisioningDriver() === 'directadmin';
+        if ($this->product?->type !== 'shared_hosting') {
+            return false;
+        }
+
+        if ($this->provisioningDriver() === 'directadmin') {
+            return true;
+        }
+
+        $meta = $this->service_meta ?? [];
+
+        if (filled($this->external_reference) || filled($meta['username'] ?? null)) {
+            return true;
+        }
+
+        if ($this->node_id) {
+            if ($this->relationLoaded('node')) {
+                return $this->node?->type === 'directadmin';
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Backfill provisioning_driver_key for legacy shared hosting accounts on DirectAdmin.
+     */
+    public function normalizeDirectAdminProvisioning(): bool
+    {
+        if (! $this->isSharedHosting() || $this->provisioning_driver_key === 'directadmin') {
+            return false;
+        }
+
+        $this->update(['provisioning_driver_key' => 'directadmin']);
+
+        return true;
     }
 
     public function isContainerHosting(): bool

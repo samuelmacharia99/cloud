@@ -225,7 +225,8 @@ class ServiceController extends Controller
             : null;
 
         $daLivePackage = $service->service_meta['directadmin_account']['package'] ?? null;
-        $hasStaleOverlimitFlags = ! empty($service->service_meta['package_overlimit_metrics'])
+        $hasStaleOverlimitFlags = $service->isSharedHosting()
+            && ! empty($service->service_meta['package_overlimit_metrics'])
             && $service->status->value === 'active';
 
         return view('admin.services.show', compact(
@@ -538,6 +539,14 @@ class ServiceController extends Controller
             'billing_action' => 'nullable|in:apply_only,create_invoice',
         ]);
 
+        $service->loadMissing('product', 'node');
+
+        if (! $service->isSharedHosting()) {
+            return back()->with('error', 'Only shared hosting services can be upgraded on DirectAdmin.');
+        }
+
+        $service->normalizeDirectAdminProvisioning();
+
         $targetProduct = Product::with('directAdminPackage')->findOrFail($validated['product_id']);
         $upgradeService = app(CustomerHostingUpgradeService::class);
 
@@ -584,9 +593,13 @@ class ServiceController extends Controller
 
     public function reconcileHostingPackage(Service $service)
     {
+        $service->loadMissing('product', 'node');
+
         if (! $service->isSharedHosting()) {
             return back()->with('error', 'Only shared hosting services can be reconciled with DirectAdmin.');
         }
+
+        $service->normalizeDirectAdminProvisioning();
 
         try {
             $result = app(CustomerHostingUpgradeService::class)->reconcilePackageState($service->fresh());
