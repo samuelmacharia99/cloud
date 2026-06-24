@@ -46,7 +46,7 @@ class AdminDirectAdminNodeTest extends TestCase
         $this->assertSame(0, $node->ram_gb);
         $this->assertSame(0, $node->storage_gb);
         $this->assertSame('2222', $node->da_port);
-        $this->assertSame('2222', $node->ssh_port);
+        $this->assertSame('22', $node->ssh_port);
         $this->assertSame('https://da-east.example.com:2222', $node->api_url);
         $this->assertSame('ns1.example.com', $node->nameserver_1);
         $this->assertSame('ns2.example.com', $node->nameserver_2);
@@ -79,6 +79,7 @@ class AdminDirectAdminNodeTest extends TestCase
             'ram_gb' => 0,
             'storage_gb' => 0,
             'da_port' => '3333',
+            'ssh_port' => '22',
             'ssh_username' => 'root',
             'ssh_password' => '',
             'da_admin_username' => 'admin2',
@@ -101,7 +102,7 @@ class AdminDirectAdminNodeTest extends TestCase
         $this->assertSame('10.0.0.12', $node->ip_address);
         $this->assertSame('online', $node->status);
         $this->assertSame('3333', $node->da_port);
-        $this->assertSame('3333', $node->ssh_port);
+        $this->assertSame('22', $node->ssh_port);
         $this->assertSame('https://da-new.example.com:3333', $node->api_url);
         $this->assertSame('ns1.new.com', $node->nameserver_1);
         $this->assertSame('ns2.new.com', $node->nameserver_2);

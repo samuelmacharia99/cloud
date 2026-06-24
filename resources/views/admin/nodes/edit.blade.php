@@ -16,6 +16,12 @@
 @php
     $isDirectAdmin = old('type', $node->type) === 'directadmin';
     $hardwareMin = $isDirectAdmin ? 0 : 1;
+    $sshPortDefault = '22';
+    if ($isDirectAdmin && $node->ssh_port && $node->da_port && (string) $node->ssh_port === (string) $node->da_port) {
+        $sshPortDefault = '22';
+    } elseif ($node->ssh_port) {
+        $sshPortDefault = (string) $node->ssh_port;
+    }
 @endphp
 <div class="space-y-6">
     <!-- Header -->
@@ -168,9 +174,19 @@
                     <!-- DirectAdmin Port -->
                     <div>
                         <label for="da_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">DirectAdmin Port</label>
-                        <input type="text" id="da_port" name="da_port" value="{{ old('da_port', $node->da_port ?? $node->ssh_port ?? '2222') }}" placeholder="2222" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('da_port') border-red-500 @enderror" required>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Control panel and API port (typically 2222). API URL is rebuilt automatically from hostname and this port.</p>
+                        <input type="text" id="da_port" name="da_port" value="{{ old('da_port', $node->da_port ?? '2222') }}" placeholder="2222" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('da_port') border-red-500 @enderror" required>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Control panel and API port (typically 2222). Not used for SSH health checks.</p>
                         @error('da_port')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <!-- SSH Port -->
+                    <div>
+                        <label for="ssh_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Port</label>
+                        <input type="text" id="ssh_port" name="ssh_port" value="{{ old('ssh_port', $sshPortDefault) }}" placeholder="22" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_port') border-red-500 @enderror" required>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">SSH port for health monitoring (typically 22). Separate from the DirectAdmin panel port.</p>
+                        @error('ssh_port')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
@@ -221,6 +237,7 @@
                     </div>
                     @endunless
 
+                    @unless($isDirectAdmin)
                     <!-- API Token -->
                     <div>
                         <label for="api_token" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">API Token <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
@@ -229,6 +246,7 @@
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
                     </div>
+                    @endunless
 
                     <!-- Verify SSL -->
                     <div class="flex items-end">

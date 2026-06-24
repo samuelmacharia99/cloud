@@ -109,6 +109,16 @@
                         </p>
                     </div>
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- SSH Port -->
+                        <div>
+                            <label for="ssh_port" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Port</label>
+                            <input type="text" id="ssh_port" name="ssh_port" value="{{ old('ssh_port', '22') }}" placeholder="22" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('ssh_port') border-red-500 @enderror">
+                            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Port for SSH health monitoring (typically 22). Not the DirectAdmin panel port above.</p>
+                            @error('ssh_port')
+                                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                            @enderror
+                        </div>
+
                         <!-- SSH Username -->
                         <div>
                             <label for="ssh_username" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">SSH Username</label>

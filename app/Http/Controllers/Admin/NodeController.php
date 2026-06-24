@@ -100,6 +100,7 @@ class NodeController extends Controller
                 'ip_address' => 'required|ip|unique:nodes,ip_address',
                 'type' => 'required|in:directadmin',
                 'da_port' => 'required|string|max:10',
+                'ssh_port' => 'nullable|string|max:10',
                 'ssh_username' => 'nullable|string|max:100',
                 'ssh_password' => 'nullable|string',
                 'da_admin_username' => 'required|string|max:255',
@@ -117,7 +118,7 @@ class NodeController extends Controller
             $validated['cpu_cores'] = 0;
             $validated['ram_gb'] = 0;
             $validated['storage_gb'] = 0;
-            $validated['ssh_port'] = $validated['da_port'];
+            $validated['ssh_port'] = filled($validated['ssh_port'] ?? null) ? (string) $validated['ssh_port'] : '22';
             $validated['api_url'] = $this->directAdminApiUrl($validated['hostname'], $validated['da_port']);
             $this->normalizeNameserverFields($validated);
         } elseif ($type === 'container_host') {
@@ -356,7 +357,7 @@ class NodeController extends Controller
             'storage_gb' => 'required|integer|min:'.$hardwareMin,
             'region' => 'nullable|string|max:50',
             'datacenter' => 'nullable|string|max:255',
-            'ssh_port' => $nodeType === 'directadmin' ? 'nullable|string|max:10' : 'required|string|max:10',
+            'ssh_port' => 'required|string|max:10',
             'da_port' => $nodeType === 'directadmin' ? 'required|string|max:10' : 'nullable|string|max:10',
             'ssh_username' => 'nullable|string|max:100',
             'ssh_password' => 'nullable|string',
@@ -387,7 +388,6 @@ class NodeController extends Controller
 
             $port = (string) $request->input('da_port');
             $validated['da_port'] = $port;
-            $validated['ssh_port'] = $port;
             $validated['api_url'] = $this->directAdminApiUrl($validated['hostname'], $port);
             $this->normalizeNameserverFields($validated);
         } elseif ($nodeType === 'container_host') {
@@ -687,8 +687,8 @@ class NodeController extends Controller
             return back()->with('error', 'SSH username is not configured. Please edit the node and set the SSH username.');
         }
 
-        if (! $node->ssh_password && ! $node->da_login_key) {
-            return back()->with('error', 'SSH credentials are not configured. Please edit the node and set either an SSH password or login key.');
+        if (! $node->ssh_password) {
+            return back()->with('error', 'SSH password is not configured. Please edit the node and set the SSH password (root login on port '.$node->ssh_port.').');
         }
 
         try {
@@ -701,7 +701,10 @@ class NodeController extends Controller
             // Test 2: Collect system metrics
             $uptime = $ssh->exec('uptime -p', 5);
             $freeOutput = $ssh->exec('free -b | grep Mem', 5);
-            $dfOutput = $ssh->exec('df /opt/talksasa/containers -B1 | tail -1', 5);
+            $diskPath = $node->type === 'directadmin'
+                ? '/'
+                : '/opt/talksasa/containers';
+            $dfOutput = $ssh->exec("df {$diskPath} -B1 2>/dev/null | tail -1 || df / -B1 | tail -1", 5);
             $cpuOutput = $ssh->exec('grep -c ^processor /proc/cpuinfo', 5);
             $loadOutput = $ssh->exec('cat /proc/loadavg | awk \'{print $1, $2, $3}\'', 5);
 
