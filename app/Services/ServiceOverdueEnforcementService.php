@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
 use App\Models\Invoice;
 use App\Models\Service;
@@ -70,7 +71,7 @@ class ServiceOverdueEnforcementService
     }
 
     /**
-     * Suspended services whose linked billing invoice has been paid.
+     * Suspended services that may be eligible for billing unsuspend (final check via canAutoUnsuspendForPaidInvoice).
      *
      * @return Builder<Service>
      */
@@ -86,7 +87,9 @@ class ServiceOverdueEnforcementService
             ->where(function (Builder $query) {
                 $query->whereHas('invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q))
                     ->orWhereHas('invoiceItems.invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q));
-            });
+            })
+            ->whereDoesntHave('invoice', fn (Builder $q) => $this->applyOpenBillingInvoiceConstraint($q))
+            ->whereDoesntHave('invoiceItems.invoice', fn (Builder $q) => $this->applyOpenBillingInvoiceConstraint($q));
     }
 
     public function shouldSuspendForOverdueInvoice(Service $service): bool
@@ -239,7 +242,13 @@ class ServiceOverdueEnforcementService
     private function applyPaidBillingInvoiceConstraint(Builder $query): void
     {
         $this->applyBillingInvoiceScope($query);
-        $query->where('status', 'paid');
+        $query->where('status', InvoiceStatus::Paid);
+    }
+
+    private function applyOpenBillingInvoiceConstraint(Builder $query): void
+    {
+        $this->applyBillingInvoiceScope($query);
+        $query->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::Overdue]);
     }
 
     private function applyUnpaidOnOrBeforeConstraint(Builder $query, string $cutoffDate): void
@@ -252,7 +261,7 @@ class ServiceOverdueEnforcementService
     private function serviceMatchesOverduePastGrace(Service $service, Carbon $graceCutoff): bool
     {
         foreach ($this->billingInvoicesForService($service) as $invoice) {
-            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+            if ($this->invoiceIsOpenForBilling($invoice)
                 && $invoice->due_date?->lt($graceCutoff)) {
                 return true;
             }
@@ -268,13 +277,18 @@ class ServiceOverdueEnforcementService
                 continue;
             }
 
-            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+            if ($this->invoiceIsOpenForBilling($invoice)
                 && $invoice->due_date->copy()->startOfDay()->lte($reference)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private function invoiceIsOpenForBilling(Invoice $invoice): bool
+    {
+        return in_array($invoice->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true);
     }
 
     /**
@@ -295,7 +309,7 @@ class ServiceOverdueEnforcementService
     private function serviceMatchesUnpaidDueOn(Service $service, string $dueDate): bool
     {
         foreach ($this->billingInvoicesForService($service) as $invoice) {
-            if (in_array($invoice->status, ['unpaid', 'overdue'], true)
+            if ($this->invoiceIsOpenForBilling($invoice)
                 && $invoice->due_date?->toDateString() === $dueDate) {
                 return true;
             }

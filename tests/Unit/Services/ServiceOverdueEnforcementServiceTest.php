@@ -277,6 +277,63 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_unsuspend_query_excludes_service_with_unpaid_renewal_and_paid_history(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-25 08:00:05'));
+
+        $customer = User::factory()->create();
+        $product = Product::factory()->create();
+
+        $paidInvoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'paid',
+            'due_date' => Carbon::parse('2026-05-25'),
+        ]);
+
+        $unpaidRenewal = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'due_date' => Carbon::parse('2026-06-25'),
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'invoice_id' => $unpaidRenewal->id,
+            'service_meta' => [
+                ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_INVOICE_OVERDUE,
+            ],
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $paidInvoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Previous period',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $unpaidRenewal->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Renewal',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        $matches = $this->enforcement->suspendedServicesWithPaidBillingInvoiceQuery()->get();
+
+        $this->assertFalse($matches->contains('id', $service->id));
+        $this->assertFalse($this->enforcement->canAutoUnsuspendForPaidInvoice($service));
+
+        Carbon::setTestNow();
+    }
+
     public function test_can_auto_unsuspend_after_all_billing_invoices_are_paid(): void
     {
         $customer = User::factory()->create();

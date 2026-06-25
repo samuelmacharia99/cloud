@@ -363,6 +363,27 @@ class Service extends Model
         return $query->where('status', ServiceStatus::Active);
     }
 
+    /**
+     * Extend the billing period from the current next due date (or today if overdue).
+     */
+    public function calculateNextDueDateAfterRenewal(?\Carbon\Carbon $reference = null): \Carbon\Carbon
+    {
+        $reference = ($reference ?? now())->copy()->startOfDay();
+        $base = $this->next_due_date?->copy()->startOfDay() ?? $reference;
+
+        if ($base->lessThan($reference)) {
+            $base = $reference;
+        }
+
+        return match ($this->billing_cycle) {
+            'monthly' => $base->copy()->addMonth(),
+            'quarterly' => $base->copy()->addMonths(3),
+            'semi-annual' => $base->copy()->addMonths(6),
+            'annual', 'yearly' => $base->copy()->addYear(),
+            default => $base->copy()->addMonth(),
+        };
+    }
+
     public function scopeSuspended($query)
     {
         return $query->where('status', ServiceStatus::Suspended);

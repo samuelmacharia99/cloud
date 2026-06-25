@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Http\Controllers\Controller;
@@ -11,10 +12,8 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
 use App\Services\AdminActivityService;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\NotificationService;
-use App\Services\Provisioning\InvoiceProvisioningService;
-use App\Services\Provisioning\ProvisioningService;
-use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Http\Request;
 
 class PaymentController extends Controller
@@ -118,7 +117,7 @@ class PaymentController extends Controller
                 'payment_id' => $payment->id,
                 'invoice_id' => $payment->invoice_id,
             ]);
-            $this->updateInvoiceStatus($payment->invoice);
+            $this->updateInvoiceStatus($payment->invoice->fresh(), $payment);
         }
 
         return redirect()
@@ -190,6 +189,8 @@ class PaymentController extends Controller
                 'reversed_by_admin_name' => auth()->user()->name,
             ]);
             $this->handlePaymentReversal($payment);
+        } elseif ($payment->invoice && $payment->status->isCompleted() && $oldStatus !== PaymentStatus::Completed) {
+            $this->updateInvoiceStatus($payment->invoice->fresh(), $payment);
         }
 
         return redirect()
@@ -208,71 +209,35 @@ class PaymentController extends Controller
     }
 
     /**
-     * Update invoice status based on payments.
+     * Reconcile invoice after a payment is recorded or approved.
      */
-    private function updateInvoiceStatus(Invoice $invoice): void
+    private function updateInvoiceStatus(Invoice $invoice, ?Payment $triggerPayment = null): void
     {
-        $amountPaid = $invoice->payments()
-            ->where('status', PaymentStatus::Completed->value)
-            ->sum('amount');
+        $invoice->refresh();
 
-        $wasUnpaid = $invoice->status !== 'paid';
-
-        if ($amountPaid >= $invoice->total) {
-            $invoice->update(['status' => 'paid']);
-
-            // Auto-provision services if invoice just became paid
-            if ($wasUnpaid) {
-                $this->provisionServices($invoice);
-                $this->unsuspendServices($invoice);
+        if (! $invoice->isFullyPaid()) {
+            if ($invoice->getAmountPaid() > 0 && ! $invoice->isPaid()) {
+                $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
             }
-        } elseif ($amountPaid > 0) {
-            $invoice->update(['status' => 'unpaid']);
+
+            return;
         }
-    }
 
-    /**
-     * Provision all pending services linked to an invoice.
-     */
-    private function provisionServices(Invoice $invoice): void
-    {
-        app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
-    }
+        if ($triggerPayment && $triggerPayment->status->isCompleted()) {
+            app(InvoiceSettlementService::class)->settleFromPayment($triggerPayment->fresh(['invoice']));
 
-    /**
-     * Unsuspend suspended services linked to a paid invoice.
-     */
-    private function unsuspendServices(Invoice $invoice): void
-    {
-        try {
-            $provisioningService = app(ProvisioningService::class);
-            $notificationService = app(NotificationService::class);
-            $enforcement = app(ServiceOverdueEnforcementService::class);
-            $services = $enforcement->suspendedServicesForPaidInvoice($invoice);
+            return;
+        }
 
-            foreach ($services as $service) {
-                if (! $enforcement->canAutoUnsuspendForPaidInvoice($service)) {
-                    continue;
-                }
+        $latestPayment = $invoice->payments()
+            ->where('status', PaymentStatus::Completed->value)
+            ->latest('id')
+            ->first();
 
-                try {
-                    $enforcement->clearInvoiceSuspensionMeta($service);
-                    $provisioningService->unsuspend($service->fresh());
-                    $notificationService->notifyServiceUnsuspended($service->fresh());
-
-                    \Log::info('Service unsuspended - invoice paid', [
-                        'service_id' => $service->id,
-                        'invoice_id' => $invoice->id,
-                    ]);
-                } catch (\Exception $e) {
-                    \Log::error("Failed to unsuspend service {$service->id}: {$e->getMessage()}");
-                }
-            }
-        } catch (\Exception $e) {
-            \Log::error('Service unsuspension trigger failed', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
+        if ($latestPayment) {
+            app(InvoiceSettlementService::class)->settleFromPayment($latestPayment);
+        } elseif (! $invoice->isPaid()) {
+            app(InvoiceSettlementService::class)->settleFromCredits($invoice);
         }
     }
 
@@ -281,8 +246,19 @@ class PaymentController extends Controller
      */
     private function handlePaymentReversal(Payment $payment): void
     {
-        if ($payment->invoice) {
-            $this->updateInvoiceStatus($payment->invoice);
+        if (! $payment->invoice) {
+            return;
+        }
+
+        $invoice = $payment->invoice->fresh();
+        $amountPaid = $invoice->payments()
+            ->where('status', PaymentStatus::Completed->value)
+            ->sum('amount');
+
+        if ($amountPaid >= $invoice->total) {
+            $this->updateInvoiceStatus($invoice);
+        } else {
+            $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
         }
     }
 
@@ -343,7 +319,7 @@ class PaymentController extends Controller
                     'invoice_number' => $payment->invoice->invoice_number,
                 ]);
 
-                $this->updateInvoiceStatus($payment->invoice);
+                $this->updateInvoiceStatus($payment->invoice->fresh(), $payment);
 
                 \Log::info('Invoice status updated after payment approval', [
                     'payment_id' => $payment->id,

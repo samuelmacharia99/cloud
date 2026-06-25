@@ -15,6 +15,7 @@ use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ServiceOverdueEnforcementService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class InvoiceSettlementService
@@ -59,18 +60,21 @@ class InvoiceSettlementService
             return false;
         }
 
+        $wasAlreadyPaid = $invoice->isPaid();
         $this->markInvoiceAsPaid($invoice);
 
-        try {
-            app(NotificationService::class)->notifyPaymentReceived($invoice->fresh());
-        } catch (\Throwable $e) {
-            Log::error('Failed to send payment received notification after credit settlement', [
-                'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        if (! $wasAlreadyPaid) {
+            try {
+                app(NotificationService::class)->notifyPaymentReceived($invoice->fresh());
+            } catch (\Throwable $e) {
+                Log::error('Failed to send payment received notification after credit settlement', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
-        $this->finalizePaidInvoice($invoice->fresh());
+            $this->finalizePaidInvoice($invoice->fresh());
+        }
 
         return true;
     }
@@ -87,6 +91,12 @@ class InvoiceSettlementService
             return;
         }
 
+        $invoice->refresh();
+
+        if (! $invoice->isFullyPaid()) {
+            return;
+        }
+
         if ($payment->isOverpayment()) {
             $payment->createCreditFromOverpayment();
 
@@ -97,18 +107,21 @@ class InvoiceSettlementService
             ]);
         }
 
+        $wasAlreadyPaid = $invoice->isPaid();
         $this->markInvoiceAsPaid($invoice);
 
-        try {
-            app(NotificationService::class)->notifyPaymentReceived($payment);
-        } catch (\Throwable $e) {
-            Log::error('Failed to send payment received notification', [
-                'payment_id' => $payment->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        if (! $wasAlreadyPaid) {
+            try {
+                app(NotificationService::class)->notifyPaymentReceived($payment);
+            } catch (\Throwable $e) {
+                Log::error('Failed to send payment received notification', [
+                    'payment_id' => $payment->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
-        $this->finalizePaidInvoice($invoice->fresh());
+            $this->finalizePaidInvoice($invoice->fresh());
+        }
     }
 
     /**
@@ -198,22 +211,22 @@ class InvoiceSettlementService
 
     private function advanceRenewalBillingDates(Invoice $invoice): void
     {
-        try {
-            $services = Service::query()
-                ->where('invoice_id', $invoice->id)
-                ->whereIn('status', ['active', 'suspended'])
-                ->get();
+        if (! $this->shouldAdvanceRenewalBillingDates($invoice)) {
+            return;
+        }
 
-            foreach ($services as $service) {
-                $newDueDate = match ($service->billing_cycle) {
-                    'monthly' => now()->addMonth(),
-                    'quarterly' => now()->addMonths(3),
-                    'semi-annual' => now()->addMonths(6),
-                    'annual' => now()->addYear(),
-                    default => now()->addMonth(),
-                };
+        try {
+            foreach ($this->renewalServicesForInvoice($invoice) as $service) {
+                $newDueDate = $service->calculateNextDueDateAfterRenewal($invoice->paid_date);
 
                 $service->update(['next_due_date' => $newDueDate]);
+
+                Log::info('Service billing period advanced after invoice payment', [
+                    'service_id' => $service->id,
+                    'invoice_id' => $invoice->id,
+                    'billing_cycle' => $service->billing_cycle,
+                    'next_due_date' => $newDueDate->toDateString(),
+                ]);
             }
         } catch (\Throwable $e) {
             Log::error('Failed to advance service billing dates', [
@@ -221,6 +234,50 @@ class InvoiceSettlementService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function shouldAdvanceRenewalBillingDates(Invoice $invoice): bool
+    {
+        if ($invoice->type === 'reseller_subscription') {
+            return false;
+        }
+
+        $invoice->loadMissing('order', 'items');
+
+        if ($invoice->order instanceof Order) {
+            return false;
+        }
+
+        return ! $invoice->items->contains(function ($item) {
+            $options = is_array($item->custom_options) ? $item->custom_options : [];
+
+            return ! empty($options['hosting_upgrade']) || ! empty($options['hosting_plan_change']);
+        });
+    }
+
+    /**
+     * @return Collection<int, Service>
+     */
+    private function renewalServicesForInvoice(Invoice $invoice): Collection
+    {
+        $invoice->loadMissing('items');
+
+        $serviceIds = $invoice->items
+            ->whereNotNull('service_id')
+            ->pluck('service_id');
+
+        return Service::query()
+            ->whereIn('status', ['active', 'suspended'])
+            ->where(function ($query) use ($invoice, $serviceIds) {
+                $query->where('invoice_id', $invoice->id);
+
+                if ($serviceIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $serviceIds);
+                }
+            })
+            ->get()
+            ->unique('id')
+            ->values();
     }
 
     private function processResellerDomainOrders(Invoice $invoice): void

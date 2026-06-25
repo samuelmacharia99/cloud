@@ -10,9 +10,9 @@ use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\InvoicePdfService;
 use App\Services\NotificationService;
-use App\Services\Provisioning\InvoiceProvisioningService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -165,12 +165,6 @@ class InvoiceController extends Controller
                     'notes' => 'Marked as paid by admin',
                 ]);
 
-                // Update invoice status
-                $invoice->update([
-                    'status' => 'paid',
-                    'paid_date' => $request->input('paid_date', now()),
-                ]);
-
                 \Log::info('Invoice marked as paid by admin', [
                     'invoice_id' => $invoice->id,
                     'invoice_number' => $invoice->invoice_number,
@@ -181,17 +175,15 @@ class InvoiceController extends Controller
 
             $invoice->refresh();
 
-            try {
-                $result = $this->provisionServices($invoice);
-                \Log::info('Provisioning attempted after admin mark-as-paid', [
-                    'invoice_id' => $invoice->id,
-                    'result' => $result,
-                ]);
-            } catch (\Throwable $e) {
-                \Log::error('Provisioning after admin mark-as-paid failed', [
-                    'invoice_id' => $invoice->id,
-                    'error' => $e->getMessage(),
-                ]);
+            $payment = Payment::where('invoice_id', $invoice->id)
+                ->where('transaction_reference', 'Manual payment - Admin marked as paid')
+                ->latest('id')
+                ->first();
+
+            if ($payment) {
+                app(InvoiceSettlementService::class)->settleFromPayment($payment);
+            } else {
+                app(InvoiceSettlementService::class)->settleFromCredits($invoice);
             }
 
             return redirect()->back()
@@ -253,18 +245,8 @@ class InvoiceController extends Controller
             $invoice->refresh();
             $remaining = $invoice->getAmountRemaining();
 
-            if ($remaining <= 0) {
-                $invoice->update([
-                    'status' => InvoiceStatus::Paid->value,
-                    'paid_date' => $invoice->paid_date ?? now(),
-                ]);
-
-                \Log::info('Invoice marked as paid', [
-                    'invoice_id' => $invoice->id,
-                    'amount_paid' => $invoice->getAmountPaid(),
-                    'wallet_applied' => $invoice->wallet_amount_applied,
-                    'invoice_total' => $invoice->total,
-                ]);
+            if ($invoice->isFullyPaid()) {
+                app(InvoiceSettlementService::class)->settleFromPayment($payment);
             } elseif ($remaining > 0 && in_array($invoice->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)) {
                 $invoice->update(['status' => InvoiceStatus::Unpaid->value]);
 
@@ -273,32 +255,6 @@ class InvoiceController extends Controller
                     'remaining' => $remaining,
                     'invoice_total' => $invoice->total,
                 ]);
-            }
-
-            $invoice->refresh();
-
-            if ($invoice->isFullyPaid()) {
-                try {
-                    $result = $this->provisionServices($invoice);
-                    \Log::info('Provisioning attempted after admin payment', [
-                        'invoice_id' => $invoice->id,
-                        'result' => $result,
-                    ]);
-                } catch (\Throwable $e) {
-                    \Log::error('Provisioning after admin payment failed', [
-                        'invoice_id' => $invoice->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-
-                try {
-                    $this->notificationService->notifyPaymentReceived($payment);
-                } catch (\Throwable $e) {
-                    \Log::error('Payment notification failed after admin payment', [
-                        'invoice_id' => $invoice->id,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
             }
 
             return redirect()->route('admin.invoices.show', $invoice)
@@ -314,13 +270,5 @@ class InvoiceController extends Controller
             return redirect()->route('admin.invoices.show', $invoice)
                 ->with('error', 'Failed to record payment. '.$e->getMessage());
         }
-    }
-
-    /**
-     * @return array{provisioned: int, failed: array<int>, skipped: bool}
-     */
-    private function provisionServices(Invoice $invoice): array
-    {
-        return app(InvoiceProvisioningService::class)->provisionPendingServicesForInvoice($invoice);
     }
 }

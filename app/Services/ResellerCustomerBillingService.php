@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -243,39 +244,17 @@ class ResellerCustomerBillingService
     private function applyPaymentSideEffects(User $reseller, Invoice $invoice, Payment $payment): void
     {
         $invoice->refresh();
-        $wasUnpaid = ! $invoice->isPaid();
 
-        if ($invoice->getAmountRemaining() <= 0) {
-            $invoice->update([
-                'status' => InvoiceStatus::Paid->value,
-                'paid_date' => $invoice->paid_date ?? now(),
-            ]);
+        if ($invoice->getAmountRemaining() > 0) {
+            return;
+        }
 
-            if ($wasUnpaid) {
-                try {
-                    $this->provisioning->provisionPendingServicesForInvoice($invoice->fresh());
-                } catch (\Throwable $e) {
-                    report($e);
-                }
+        app(InvoiceSettlementService::class)->settleFromPayment($payment);
 
-                try {
-                    app('domain-push-service')->handlePaidDomainInvoice($invoice->fresh(['items', 'user']));
-                } catch (\Throwable $e) {
-                    report($e);
-                }
-
-                try {
-                    $this->notifications->notifyPaymentReceived($payment);
-                } catch (\Throwable $e) {
-                    report($e);
-                }
-
-                try {
-                    $this->margins->recordFromPayment($reseller, $payment);
-                } catch (\Throwable $e) {
-                    report($e);
-                }
-            }
+        try {
+            $this->margins->recordFromPayment($reseller, $payment);
+        } catch (\Throwable $e) {
+            report($e);
         }
     }
 }
