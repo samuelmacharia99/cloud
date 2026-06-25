@@ -257,11 +257,11 @@
                                 <h3 class="text-xl font-bold text-slate-900 dark:text-white">Custom Domains</h3>
                             </div>
 
-                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
                                 <p class="text-sm text-blue-800 dark:text-blue-200">
                                     <strong>DNS setup:</strong> Point your domain's A record to
                                     <code class="font-mono">{{ $deployment->node->ip_address }}</code>
-                                    before binding or updating a domain.
+                                    before binding — or use <strong>managed DNS</strong> when you registered the domain with Talksasa (A records are created automatically on bind).
                                 </p>
                             </div>
 
@@ -290,6 +290,13 @@
                                                             @endif
                                                             @if ($domain->error_message)
                                                                 <span class="text-xs text-red-600 dark:text-red-400">{{ $domain->error_message }}</span>
+                                                            @endif
+                                                            @php
+                                                                $platformDomain = app(\App\Services\Dns\DomainCloudflareDnsService::class)
+                                                                    ->resolvePlatformDomainForHostname(auth()->id(), $domain->domain);
+                                                            @endphp
+                                                            @if($platformDomain?->cloudflare_dns_enabled)
+                                                                <a href="{{ route('customer.domains.dns.index', $platformDomain) }}" class="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline">Manage DNS →</a>
                                                             @endif
                                                         </div>
                                                     </div>

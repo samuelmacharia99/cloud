@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\ServiceStatus;
 use App\Models\Domain;
 use App\Models\Service;
+use App\Services\Dns\DomainCloudflareDnsService;
 use Illuminate\Support\Carbon;
 
 class DomainActivationService
@@ -26,6 +27,8 @@ class DomainActivationService
         }
 
         if ($domain->status === 'active' && $domain->registered_at && $domain->expires_at?->isFuture()) {
+            app(DomainCloudflareDnsService::class)->provisionFromServiceMeta($domain, $meta);
+
             return;
         }
 
@@ -45,6 +48,7 @@ class DomainActivationService
         ]);
 
         $this->syncLinkedServices($domain);
+        app(DomainCloudflareDnsService::class)->provisionFromServiceMeta($domain->fresh(), $meta);
     }
 
     /**

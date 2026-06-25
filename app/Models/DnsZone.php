@@ -13,6 +13,8 @@ class DnsZone extends Model
         'domain_id',
         'name',
         'status',
+        'provider',
+        'external_zone_id',
     ];
 
     public function domain()

@@ -104,6 +104,10 @@ class ResellerNameserverService
      */
     public function resolveForCustomerItem(User $customer, array $item): array
     {
+        if (! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable()) {
+            return app(\App\Services\Dns\DomainCloudflareDnsService::class)->nameserversForRegistration();
+        }
+
         $reseller = $this->resellerForCustomer($customer);
 
         if ($reseller) {

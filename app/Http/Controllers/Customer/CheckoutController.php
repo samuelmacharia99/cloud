@@ -437,6 +437,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
+                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -448,6 +449,7 @@ class CheckoutController extends Controller
                             'nameserver_2' => $resolvedNs['ns2'],
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
+                            'cloudflare_dns_enabled' => $cloudflareDns,
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -501,6 +503,7 @@ class CheckoutController extends Controller
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
                                 'nameservers' => $resolvedNs,
+                                'cloudflare_dns' => $cloudflareDns,
                             ],
                         ]);
 
@@ -1141,6 +1144,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
+                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -1152,6 +1156,7 @@ class CheckoutController extends Controller
                             'nameserver_2' => $resolvedNs['ns2'],
                             'nameserver_3' => $resolvedNs['ns3'],
                             'nameserver_4' => $resolvedNs['ns4'],
+                            'cloudflare_dns_enabled' => $cloudflareDns,
                         ]);
 
                         $domainsCreatedByCartKey[$item['key']] = $domain->id;
@@ -1205,6 +1210,7 @@ class CheckoutController extends Controller
                                 'extension' => $item['extension'],
                                 'years' => $item['years'],
                                 'nameservers' => $resolvedNs,
+                                'cloudflare_dns' => $cloudflareDns,
                             ],
                         ]);
 

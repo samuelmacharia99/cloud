@@ -1393,6 +1393,7 @@
                     </div>
                 </form>
 
+                @include('admin.settings.partials.cloudflare-dns-card')
                 @include('admin.settings.partials.node-nameservers-card')
             </div>
 

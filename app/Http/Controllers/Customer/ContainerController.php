@@ -17,6 +17,7 @@ use App\Models\DatabaseTemplate;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
+use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
@@ -1270,19 +1271,32 @@ class ContainerController extends Controller
                 return $this->domainsTabRedirect($service)->withErrors(['error' => 'Container not deployed yet']);
             }
 
+            $hostname = strtolower($request->domain);
+            $nodeIp = $deployment->node->ip_address;
             $nginxService = new NginxProxyService;
-            $dnsCorrect = $nginxService->checkDns($request->domain, $deployment->node->ip_address);
+
+            $platformDomain = app(DomainCloudflareDnsService::class)
+                ->resolvePlatformDomainForHostname($service->user_id, $hostname);
+
+            if ($platformDomain) {
+                app(DomainCloudflareDnsService::class)->upsertARecord($platformDomain, $hostname, $nodeIp);
+            }
+
+            $dnsCorrect = $nginxService->checkDns($hostname, $nodeIp);
 
             $domain = ContainerDomain::create([
                 'container_deployment_id' => $deployment->id,
-                'domain' => strtolower($request->domain),
+                'domain' => $hostname,
                 'status' => 'pending',
             ]);
 
             $nginxService->bind($domain);
 
             $message = "Domain {$domain->domain} bound successfully";
-            $message .= $this->appendAutoSslMessage($nginxService, $domain, $service, $dnsCorrect, $deployment->node->ip_address);
+            if ($platformDomain) {
+                $message .= '. DNS A record updated via managed DNS.';
+            }
+            $message .= $this->appendAutoSslMessage($nginxService, $domain, $service, $dnsCorrect, $nodeIp);
 
             return $this->domainsTabRedirect($service)->with('success', $message);
         } catch (\Exception $e) {

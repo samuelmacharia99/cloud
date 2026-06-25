@@ -241,7 +241,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/settings/paypal/connect/callback', [SettingController::class, 'payPalConnectCallback'])->name('admin.settings.paypal.connect.callback');
         Route::post('admin/settings/paypal/disconnect', [SettingController::class, 'disconnectPayPal'])->name('admin.settings.paypal.disconnect');
         Route::post('admin/settings/paypal/refresh', [SettingController::class, 'refreshPayPalConnection'])->name('admin.settings.paypal.refresh');
-        Route::post('admin/settings/test-mpesa', [SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
+        Route::post('admin/settings/test-cloudflare', [SettingController::class, 'testCloudflare'])->name('admin.settings.test-cloudflare');
         Route::post('admin/settings/test-paypal', [SettingController::class, 'testPayPal'])->name('admin.settings.test-paypal');
         Route::post('admin/settings/register-mpesa-urls', [SettingController::class, 'registerMpesaUrls'])->name('admin.settings.register-mpesa-urls');
         Route::post('admin/settings/simulate-mpesa-payment', [SettingController::class, 'simulateMpesaPayment'])->name('admin.settings.simulate-mpesa-payment');
@@ -581,12 +581,12 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         // DNS management
         Route::get('/my/domains/{domain}/dns', [DnsController::class, 'index'])->name('customer.domains.dns.index');
+        Route::post('/my/domains/{domain}/dns/provision', [DnsController::class, 'provision'])->name('customer.domains.dns.provision');
         Route::get('/my/domains/{domain}/dns/nameservers', [DnsController::class, 'nameservers'])->name('customer.domains.dns.nameservers');
         Route::post('/my/domains/{domain}/dns/nameservers', [DnsController::class, 'updateNameservers'])->name('customer.domains.dns.update-nameservers');
-        Route::get('/my/domains/{domain}/dns/records', [DnsController::class, 'records'])->name('customer.domains.dns.records');
         Route::post('/my/domains/{domain}/dns/records', [DnsController::class, 'addRecord'])->name('customer.domains.dns.add-record');
-        Route::patch('/my/domains/{domain}/dns/records/{record}', [DnsController::class, 'updateRecord'])->name('customer.domains.dns.update-record');
-        Route::delete('/my/domains/{domain}/dns/records/{record}', [DnsController::class, 'deleteRecord'])->name('customer.domains.dns.delete-record');
+        Route::patch('/my/domains/{domain}/dns/records/{recordId}', [DnsController::class, 'updateRecord'])->name('customer.domains.dns.update-record');
+        Route::delete('/my/domains/{domain}/dns/records/{recordId}', [DnsController::class, 'deleteRecord'])->name('customer.domains.dns.delete-record');
 
         Route::get('/domains/search', [DomainSearchController::class, 'search'])->name('domains.search');
 
@@ -597,6 +597,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/cart/clear', [App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
         Route::post('/cart/check-domain', [App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
         Route::post('/cart/{key}/nameservers', [App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
+        Route::post('/cart/{key}/cloudflare-dns', [App\Http\Controllers\Customer\CartController::class, 'updateCloudflareDns'])->name('customer.cart.cloudflare-dns');
         Route::get('/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
 
         // Checkout

@@ -65,6 +65,8 @@ class SettingController extends Controller
             'reseller_suspend_on_overdue', 'reseller_cascade_suspend_on_overdue',
             'reseller_suspend_excess_services', 'reseller_enforce_limits_on_provision',
             'suspend_on_disk_overquota', 'disk_overquota_threshold_percent',
+            'cloudflare_enabled', 'cloudflare_api_token', 'cloudflare_account_id',
+            'cloudflare_branded_ns1', 'cloudflare_branded_ns2', 'cloudflare_branded_ns3', 'cloudflare_branded_ns4',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
@@ -187,7 +189,7 @@ class SettingController extends Controller
         'primary_', 'company_', 'footer_', 'notify_', 'email_', 'cron_',
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
-        'reseller_', 'service_', 'currency', 'telegram_',
+        'reseller_', 'service_', 'currency', 'telegram_', 'cloudflare_',
     ];
 
     public function update(Request $request)
@@ -211,7 +213,7 @@ class SettingController extends Controller
             'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret', 'mpesa_callback_token',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
             'paypal_client_secret', 'paypal_partner_client_secret', 'recaptcha_secret_key',
-            'telegram_bot_token',
+            'telegram_bot_token', 'cloudflare_api_token',
         ];
 
         foreach ($settings as $key => $value) {
@@ -691,6 +693,13 @@ class SettingController extends Controller
         $result = $mpesaService->testConnection();
 
         return response()->json($result);
+    }
+
+    public function testCloudflare(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        return response()->json(app(\App\Services\Dns\CloudflareDnsService::class)->testConnection());
     }
 
     public function testPayPal(Request $request)

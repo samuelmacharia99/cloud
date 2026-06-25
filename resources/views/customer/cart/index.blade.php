@@ -91,7 +91,23 @@
                                     </tr>
                                     @if($item['type'] === 'domain')
                                     <tr class="bg-slate-50/50 dark:bg-slate-800/50">
-                                        <td colspan="4" class="px-6 pb-5 pt-0">
+                                        <td colspan="4" class="px-6 pb-5 pt-0 space-y-3">
+                                            @if($cloudflareDnsAvailable ?? false)
+                                                <div x-data="cloudflareDnsOption('{{ $item['key'] }}', {{ Js::from($item['cloudflare_dns'] ?? true) }}, {{ Js::from($cloudflareNameservers) }})" class="border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 bg-indigo-50/50 dark:bg-indigo-950/20 mt-1">
+                                                    <label class="flex items-start gap-3 cursor-pointer">
+                                                        <input type="checkbox" class="mt-1 rounded text-indigo-600" :checked="enabled" @change="toggle($event.target.checked)">
+                                                        <div>
+                                                            <p class="text-sm font-semibold text-slate-900 dark:text-white">Include managed DNS (Cloudflare)</p>
+                                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Manage A, CNAME, MX, and TXT records from your account — ideal for container hosting and domain-only setups.</p>
+                                                            <p x-show="enabled" class="text-xs font-mono text-indigo-700 dark:text-indigo-300 mt-2">
+                                                                <template x-if="nameservers.ns1"><span x-text="nameservers.ns1"></span></template>
+                                                                <template x-if="nameservers.ns2"><span class="ml-2" x-text="nameservers.ns2"></span></template>
+                                                            </p>
+                                                            <p x-show="message" class="text-xs mt-2" :class="error ? 'text-red-600' : 'text-emerald-600'" x-text="message"></p>
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            @endif
                                             <div x-data="nameserverConfig(
                                                 '{{ $item['key'] }}',
                                                 {{ Js::from($item['nameservers'] ?? []) }},
@@ -246,6 +262,39 @@
 </div>
 
 <script>
+function cloudflareDnsOption(cartKey, initialEnabled, nameservers) {
+    return {
+        cartKey,
+        enabled: initialEnabled,
+        nameservers: nameservers || {},
+        message: '',
+        error: false,
+        async toggle(checked) {
+            this.message = '';
+            this.error = false;
+            try {
+                const res = await fetch(`/cart/${this.cartKey}/cloudflare-dns`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ enabled: checked }),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) throw new Error(data.message || 'Failed to update DNS option');
+                this.enabled = checked;
+                this.message = data.message;
+            } catch (e) {
+                this.error = true;
+                this.message = e.message;
+                this.enabled = !checked;
+            }
+        },
+    };
+}
+
 function nameserverConfig(cartKey, stored, defaults) {
     const usingDefault = stored.use_default !== false;
     return {

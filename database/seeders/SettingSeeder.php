@@ -156,6 +156,15 @@ class SettingSeeder extends Seeder
             ['key' => 'directadmin_api_password', 'value' => '', 'description' => 'DirectAdmin admin password'],
             ['key' => 'directadmin_default_package', 'value' => 'default', 'description' => 'Default DirectAdmin package for hosting accounts'],
 
+            // Cloudflare DNS
+            ['key' => 'cloudflare_enabled', 'value' => 'false', 'description' => 'Enable Cloudflare managed DNS for customers'],
+            ['key' => 'cloudflare_api_token', 'value' => '', 'description' => 'Cloudflare API token'],
+            ['key' => 'cloudflare_account_id', 'value' => '', 'description' => 'Cloudflare account ID'],
+            ['key' => 'cloudflare_branded_ns1', 'value' => '', 'description' => 'Cloudflare branded nameserver 1'],
+            ['key' => 'cloudflare_branded_ns2', 'value' => '', 'description' => 'Cloudflare branded nameserver 2'],
+            ['key' => 'cloudflare_branded_ns3', 'value' => '', 'description' => 'Cloudflare branded nameserver 3'],
+            ['key' => 'cloudflare_branded_ns4', 'value' => '', 'description' => 'Cloudflare branded nameserver 4'],
+
             // Domain nameserver settings
             ['key' => 'domain_ns1', 'value' => 'ns1.talksasa.cloud', 'description' => 'Default nameserver 1 for domain registrations'],
             ['key' => 'domain_ns2', 'value' => 'ns2.talksasa.cloud', 'description' => 'Default nameserver 2 for domain registrations'],

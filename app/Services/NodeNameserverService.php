@@ -50,6 +50,13 @@ class NodeNameserverService
      */
     public function forDomain(Domain $domain): array
     {
+        if ($domain->cloudflare_dns_enabled) {
+            $fromCloudflare = app(\App\Services\Dns\DomainCloudflareDnsService::class)->nameserversForRegistration();
+            if ($fromCloudflare['ns1'] !== '') {
+                return $this->ensureMinimumNameservers($fromCloudflare);
+            }
+        }
+
         $service = $this->findLinkedHostingService($domain);
         $nodeId = $this->resolveNodeId($service);
 
