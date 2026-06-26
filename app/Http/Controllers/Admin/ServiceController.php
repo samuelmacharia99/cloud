@@ -24,6 +24,7 @@ use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerEnforcementService;
 use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
+use App\Services\ServiceInfrastructureProbeService;
 use App\Services\ServiceStatusSyncService;
 use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
@@ -232,6 +233,8 @@ class ServiceController extends Controller
             && ! empty($service->service_meta['package_overlimit_metrics'])
             && $service->status->value === 'active';
 
+        $infrastructureAbsent = app(ServiceInfrastructureProbeService::class)->infrastructureAlreadyAbsent($service);
+
         return view('admin.services.show', compact(
             'service',
             'sameTypeProducts',
@@ -243,6 +246,7 @@ class ServiceController extends Controller
             'recommendedOption',
             'daLivePackage',
             'hasStaleOverlimitFlags',
+            'infrastructureAbsent',
         ));
     }
 
@@ -637,10 +641,10 @@ class ServiceController extends Controller
         }
     }
 
-    public function destroy(Service $service, ServiceDeletionService $deletion)
+    public function destroy(Request $request, Service $service, ServiceDeletionService $deletion)
     {
         try {
-            $deletion->delete($service);
+            $deletion->delete($service, skipProvisioning: $request->boolean('force'));
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }

@@ -10,6 +10,7 @@ class ServiceDeletionService
 {
     public function __construct(
         private ProvisioningService $provisioning,
+        private ServiceInfrastructureProbeService $probe,
     ) {}
 
     /**
@@ -17,9 +18,11 @@ class ServiceDeletionService
      *
      * @throws \RuntimeException when live infrastructure cannot be cleaned up
      */
-    public function delete(Service $service): void
+    public function delete(Service $service, bool $skipProvisioning = false): void
     {
-        if ($this->requiresInfrastructureCleanup($service)) {
+        $infrastructureAbsent = $this->probe->infrastructureAlreadyAbsent($service);
+
+        if ($this->requiresInfrastructureCleanup($service) && ! $skipProvisioning && ! $infrastructureAbsent) {
             $alreadyInactive = in_array($service->status->value, ['terminated', 'cancelled'], true);
 
             try {
@@ -33,10 +36,16 @@ class ServiceDeletionService
 
                 if (! $alreadyInactive) {
                     throw new \RuntimeException(
-                        'Could not deprovision service infrastructure. Terminate the service first or fix the host connection, then delete.'
+                        'Could not deprovision service infrastructure. Terminate the service first, use force delete, or fix the host connection.'
                     );
                 }
             }
+        } elseif ($infrastructureAbsent || $skipProvisioning) {
+            Log::info('Service delete: skipping infrastructure cleanup', [
+                'service_id' => $service->id,
+                'infrastructure_absent' => $infrastructureAbsent,
+                'force' => $skipProvisioning,
+            ]);
         }
 
         $service->fresh()->delete();

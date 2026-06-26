@@ -183,9 +183,51 @@
                         </button>
                     </form>
                 @endif
+
+                <form
+                    method="POST"
+                    action="{{ route('admin.services.destroy', $service) }}"
+                    class="inline"
+                    data-confirm="{{ ($infrastructureAbsent ?? false)
+                        ? 'Delete this service record? DirectAdmin reports no hosting account — only the platform record will be removed.'
+                        : 'Delete service #' . $service->id . '? This removes the record and attempts to deprovision infrastructure.' }}"
+                >
+                    @csrf
+                    @method('DELETE')
+                    @if ($infrastructureAbsent ?? false)
+                        <input type="hidden" name="force" value="1">
+                    @endif
+                    <button type="submit" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-medium rounded-lg transition text-sm">
+                        {{ ($infrastructureAbsent ?? false) ? 'Delete record' : 'Delete' }}
+                    </button>
+                </form>
+
+                @if (! ($infrastructureAbsent ?? false) && $service->supportsLiveStatusProbe())
+                    <form
+                        method="POST"
+                        action="{{ route('admin.services.destroy', $service) }}"
+                        class="inline"
+                        data-confirm="Force delete without contacting DirectAdmin/container host? Use only if the account is already gone or the API is broken."
+                    >
+                        @csrf
+                        @method('DELETE')
+                        <input type="hidden" name="force" value="1">
+                        <button type="submit" class="px-4 py-2 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40 font-medium rounded-lg transition text-sm">
+                            Force delete
+                        </button>
+                    </form>
+                @endif
             </div>
         </div>
     </div>
+
+    @if ($infrastructureAbsent ?? false)
+        <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            <strong>Hosting account not found on the server.</strong>
+            Terminate and delete will remove only the platform record — no DirectAdmin API call is made.
+            Use <strong>Delete record</strong> to clear this orphaned service.
+        </div>
+    @endif
 
     <!-- Content Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

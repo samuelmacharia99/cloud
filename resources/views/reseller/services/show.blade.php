@@ -27,10 +27,21 @@
                 <form method="POST" action="{{ route('reseller.services.terminate', $service) }}" onsubmit="return confirm('Terminate permanently?');">@csrf<button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Terminate</button></form>
             @endif
             @if ($canDelete ?? false)
-                <form method="POST" action="{{ route('reseller.services.destroy', $service) }}" data-confirm="Delete this service record? Provisioned resources will be removed when possible.">
+                <form
+                    method="POST"
+                    action="{{ route('reseller.services.destroy', $service) }}"
+                    data-confirm="{{ ($infrastructureAbsent ?? false)
+                        ? 'Delete this service record? No hosting account was found on the server.'
+                        : 'Delete this service record? Provisioned resources will be removed when possible.' }}"
+                >
                     @csrf
                     @method('DELETE')
-                    <button type="submit" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm">Delete</button>
+                    @if ($infrastructureAbsent ?? false)
+                        <input type="hidden" name="force" value="1">
+                    @endif
+                    <button type="submit" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm">
+                        {{ ($infrastructureAbsent ?? false) ? 'Delete record' : 'Delete' }}
+                    </button>
                 </form>
             @endif
         </div>

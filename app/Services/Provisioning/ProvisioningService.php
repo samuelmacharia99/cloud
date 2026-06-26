@@ -12,6 +12,7 @@ use App\Services\DomainTransferService;
 use App\Services\NotificationService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerEnforcementService;
+use App\Services\ServiceInfrastructureProbeService;
 
 class ProvisioningService
 {
@@ -183,21 +184,31 @@ class ProvisioningService
     {
         try {
             $driver = $service->provisioning_driver_key ?: $service->product->provisioning_driver_key;
+            $username = $service->external_reference ?? ($service->service_meta['username'] ?? null);
+            $probe = app(ServiceInfrastructureProbeService::class);
 
-            if ($driver === 'directadmin' && $service->external_reference) {
-                $node = $this->resolveDirectAdminNode($service);
-                if (! $node) {
-                    throw new \Exception('Service has no DirectAdmin node assigned');
-                }
+            if ($driver === 'directadmin' && $username) {
+                if ($probe->directAdminAccountMissing($service)) {
+                    \Log::info("DirectAdmin account already absent for service {$service->id} — skipping terminate API call", [
+                        'username' => $username,
+                    ]);
+                } else {
+                    $node = $this->resolveDirectAdminNode($service);
+                    if (! $node) {
+                        throw new \Exception('Service has no DirectAdmin node assigned');
+                    }
 
-                $daService = new DirectAdminService($node);
-                $terminated = $daService->terminateAccount($service);
-                if (! $terminated) {
-                    throw new \Exception('DirectAdmin API failed to terminate account');
+                    $daService = new DirectAdminService($node);
+                    $terminated = $daService->terminateAccount($service);
+                    if (! $terminated) {
+                        throw new \Exception('DirectAdmin API failed to terminate account');
+                    }
                 }
-            } elseif ($driver === 'container') {
+            } elseif ($driver === 'container' && ! $probe->containerWorkloadAbsent($service)) {
                 $containerService = new ContainerDeploymentService;
                 $containerService->terminate($service);
+            } elseif ($driver === 'container') {
+                \Log::info("Container workload already absent for service {$service->id} — skipping terminate API call");
             }
 
             // Update status if not already updated by driver

@@ -10,6 +10,7 @@ use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerScopeService;
 use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
+use App\Services\ServiceInfrastructureProbeService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -53,6 +54,7 @@ class ManagedServiceController extends Controller
 
         $managementLinks = $this->managementLinks($service);
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
+        $infrastructureAbsent = app(ServiceInfrastructureProbeService::class)->infrastructureAlreadyAbsent($service);
 
         return view('reseller.services.show', [
             'service' => $service,
@@ -62,6 +64,7 @@ class ManagedServiceController extends Controller
             'canDelete' => $actions['canDelete'],
             'managementLinks' => $managementLinks,
             'enforcementInsight' => $enforcementInsight,
+            'infrastructureAbsent' => $infrastructureAbsent,
         ]);
     }
 
@@ -151,7 +154,7 @@ class ManagedServiceController extends Controller
         }
     }
 
-    public function destroy(Service $service, ServiceDeletionService $deletion): RedirectResponse
+    public function destroy(Request $request, Service $service, ServiceDeletionService $deletion): RedirectResponse
     {
         $this->ensureManaged($service);
 
@@ -159,7 +162,7 @@ class ManagedServiceController extends Controller
         $serviceId = $service->id;
 
         try {
-            $deletion->delete($service);
+            $deletion->delete($service, skipProvisioning: $request->boolean('force'));
         } catch (\RuntimeException $e) {
             return back()->with('error', $e->getMessage());
         }

@@ -51,8 +51,15 @@
             <form method="POST" action="{{ route('admin.services.destroy', $service) }}" data-confirm="Delete service #{{ $service->id }}? This cannot be undone.">
                 @csrf
                 @method('DELETE')
+                @php
+                    $rowInfrastructureAbsent = $service->live_status === 'terminated'
+                        && str_contains(strtolower((string) ($service->live_status_label ?? '')), 'not found');
+                @endphp
+                @if ($rowInfrastructureAbsent)
+                    <input type="hidden" name="force" value="1">
+                @endif
                 <button type="submit" class="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40">
-                    Delete
+                    {{ $rowInfrastructureAbsent ? 'Delete record' : 'Delete' }}
                 </button>
             </form>
         </div>
