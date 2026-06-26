@@ -54,7 +54,7 @@
         @foreach($products as $product)
         <button
             type="button"
-            @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }})"
+            @click="selectProduct({{ $product->id }}, {{ $product->reseller_product_id ?? 'null' }}, @js($product->name), {{ $product->monthly_price * ($currency?->exchange_rate ?? 1) }}, {{ ($product->yearly_price ?? ($product->monthly_price * 12)) * ($currency?->exchange_rate ?? 1) }})"
             class="relative group overflow-hidden rounded-xl border-2 transition-all duration-300 p-6 text-left hover:shadow-lg"
             :class="selectedProductId === {{ $product->id }}
                 ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-lg'
@@ -141,9 +141,9 @@
                     <label class="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Billing Cycle</label>
                     <select x-model="cycle" @change="updatePrice()" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
                         <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly (Save 2%)</option>
-                        <option value="semi-annual">Semi-Annual (Save 5%)</option>
-                        <option value="annual">Annual (Save 8%)</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="semi-annual">Semi-Annual</option>
+                        <option value="annual">Annual</option>
                     </select>
                 </div>
 
@@ -152,9 +152,6 @@
                     <p class="text-xs text-blue-700 dark:text-blue-400 mb-1">Total Amount Due</p>
                     <p class="text-3xl font-bold text-blue-600 dark:text-blue-400" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></p>
                     <p class="text-sm text-blue-700 dark:text-blue-300 mt-2" x-text="getPricingLabel()"></p>
-                    <template x-if="discountAmount > 0">
-                        <p class="text-sm text-green-700 dark:text-green-400 mt-1 font-semibold">You save <span x-text="currencySymbol + ' ' + formatPrice(discountAmount)"></span></p>
-                    </template>
                 </div>
             </div>
 
@@ -166,12 +163,8 @@
                 </div>
                 <template x-if="billingMonths > 1">
                     <div class="flex justify-between text-sm">
-                        <span class="text-slate-600 dark:text-slate-400" x-text="`${billingMonths} months × base price`"></span>
-                        <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(basePrice * billingMonths)"></span>
-                    </div>
-                    <div class="flex justify-between text-sm border-t border-slate-200 dark:border-slate-700 pt-2">
-                        <span class="text-slate-600 dark:text-slate-400">Discount Applied</span>
-                        <span class="font-semibold text-green-700 dark:text-green-400" x-text="`-${currencySymbol} ${formatPrice(discountAmount)}`"></span>
+                        <span class="text-slate-600 dark:text-slate-400" x-text="cycle === 'annual' ? 'Annual price' : `${billingMonths} months × base price`"></span>
+                        <span class="font-semibold text-slate-900 dark:text-white" x-text="currencySymbol + ' ' + formatPrice(calculatedPrice)"></span>
                     </div>
                 </template>
                 <div class="flex justify-between text-base font-bold border-t border-slate-300 dark:border-slate-600 pt-2 mt-2">
@@ -219,40 +212,39 @@ function packageConfigurator(currencyCode, currencySymbol, exchangeRate) {
         cycle: 'monthly',
         version: '{{ $language->versions[0] ?? '' }}',
         basePrice: 0,
+        yearlyPrice: 0,
         calculatedPrice: 0,
-        discountAmount: 0,
         billingMonths: 1,
 
         // Select a product
-        selectProduct(productId, resellerProductId, productName, productPrice) {
+        selectProduct(productId, resellerProductId, productName, productPrice, yearlyPrice) {
             this.selectedProductId = productId;
             this.selectedResellerProductId = resellerProductId;
             this.selectedProductName = productName;
             this.selectedProductPrice = productPrice;
             this.basePrice = productPrice;
+            this.yearlyPrice = yearlyPrice;
             this.cycle = 'monthly'; // Reset to monthly when selecting new product
             this.updatePrice();
         },
 
-        // Update price based on billing cycle
+        // Update price based on billing cycle (matches backend priceForBillingCycle)
         updatePrice() {
-            const discounts = {
-                'monthly': { months: 1, rate: 0 },
-                'quarterly': { months: 3, rate: 0.02 },
-                'semi-annual': { months: 6, rate: 0.05 },
-                'annual': { months: 12, rate: 0.08 }
+            const cycles = {
+                'monthly': { months: 1 },
+                'quarterly': { months: 3 },
+                'semi-annual': { months: 6 },
+                'annual': { months: 12 }
             };
 
-            const config = discounts[this.cycle] || discounts['monthly'];
+            const config = cycles[this.cycle] || cycles['monthly'];
             this.billingMonths = config.months;
 
-            // Calculate subtotal (months × base price)
-            const subtotal = this.basePrice * config.months;
-
-            // Apply discount
-            const discount = subtotal * config.rate;
-            this.discountAmount = discount;
-            this.calculatedPrice = subtotal - discount;
+            if (this.cycle === 'annual') {
+                this.calculatedPrice = this.yearlyPrice;
+            } else {
+                this.calculatedPrice = this.basePrice * config.months;
+            }
         },
 
         // Format price with thousands separator
