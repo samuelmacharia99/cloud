@@ -116,6 +116,11 @@ List sellable TLDs and retail prices (no availability check).
 |-----------|----------|-------------|
 | `period` | No | Years (default `1`) |
 
+Each extension includes:
+
+- `price` — registration retail for the period
+- `transfer_price` — inbound transfer retail (null when not configured)
+
 ---
 
 ### `GET /services`
@@ -247,6 +252,13 @@ Validate items, store them in a server session, and return a **checkout deep lin
       "years": 1
     },
     {
+      "type": "domain_transfer",
+      "full_domain": "legacy.com",
+      "epp_code": "AUTH-12345",
+      "old_registrar": "Previous Registrar Ltd",
+      "old_registrar_url": "https://registrar.example"
+    },
+    {
       "type": "service",
       "reseller_product_id": 12,
       "billing_cycle": "annual"
@@ -266,11 +278,12 @@ Validate items, store them in a server session, and return a **checkout deep lin
 | Item type | Fields |
 |-----------|--------|
 | `domain` | `full_domain`, optional `years` |
+| `domain_transfer` | `full_domain`, `epp_code`, `old_registrar`, optional `old_registrar_url` |
 | `service` | `reseller_product_id` (or `id`), `billing_cycle` |
 | `service` (VPS / dedicated) | above plus `location_key`, `ip_count`, `operating_system` (from `GET /services` → `configuration`) |
 | `reseller_package` | `reseller_package_id` (platform host only; must be the only cart item) |
 
-Domains must be **available** and priced. Services must be active in your catalog.
+Domains must be **available** and priced for registration. Transfers require a configured **transfer price** for the TLD. Services must be active in your catalog.
 
 **Response**
 

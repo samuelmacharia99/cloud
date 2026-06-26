@@ -13,6 +13,43 @@ class PublicApiCatalogSerializer
     ) {}
 
     /**
+     * @param  iterable<string>  $allowedExtensions
+     * @return array{name: string, extension: string, full_domain: string}|null
+     */
+    public function parseTransferDomain(string $fullDomain, iterable $allowedExtensions): ?array
+    {
+        $fullDomain = strtolower(trim(str_replace(['www.', 'https://', 'http://'], '', $fullDomain)));
+
+        if ($fullDomain === '' || ! str_contains($fullDomain, '.')) {
+            return null;
+        }
+
+        $extensions = collect($allowedExtensions)
+            ->sortByDesc(fn (string $extension) => strlen($extension))
+            ->values();
+
+        foreach ($extensions as $extension) {
+            if (! str_ends_with($fullDomain, $extension)) {
+                continue;
+            }
+
+            $name = substr($fullDomain, 0, -strlen($extension));
+
+            if ($name === '' || ! preg_match('/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/', $name)) {
+                continue;
+            }
+
+            return [
+                'name' => $name,
+                'extension' => $extension,
+                'full_domain' => $name.$extension,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function formatPlatformProduct(Product $product): array

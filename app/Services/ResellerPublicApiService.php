@@ -95,6 +95,29 @@ class ResellerPublicApiService
         return $pricing ? (float) $pricing->retail_price : null;
     }
 
+    public function transferRetailPrice(User $reseller, DomainExtension $extension): ?float
+    {
+        $registrationRetail = $this->retailPrice($reseller, $extension, 1);
+
+        if ($registrationRetail === null) {
+            return null;
+        }
+
+        $platformTransfer = (float) ($extension->transfer_price ?? 0);
+
+        if ($platformTransfer <= 0) {
+            return null;
+        }
+
+        $platformRegistration = (float) ($extension->getRetailPricing(1)?->price ?? 0);
+
+        if ($platformRegistration <= 0) {
+            return $registrationRetail;
+        }
+
+        return round($platformTransfer * ($registrationRetail / $platformRegistration), 2);
+    }
+
     /**
      * @return array{success: bool, query: string, period_years: int, currency: string, results: list<array<string, mixed>>}
      */
@@ -167,6 +190,7 @@ class ResellerPublicApiService
                     'description' => $extension->description,
                     'period_years' => $periodYears,
                     'price' => $price,
+                    'transfer_price' => $this->transferRetailPrice($reseller, $extension),
                     'currency' => 'KES',
                 ];
             })
@@ -209,6 +233,16 @@ class ResellerPublicApiService
 
             if ($type === 'domain') {
                 $line = $this->buildDomainCartItem($reseller, $item);
+
+                if ($line !== null) {
+                    $cart[] = $line;
+                }
+
+                continue;
+            }
+
+            if ($type === 'domain_transfer') {
+                $line = $this->buildDomainTransferCartItem($reseller, $item);
 
                 if ($line !== null) {
                     $cart[] = $line;
@@ -268,6 +302,55 @@ class ResellerPublicApiService
             'full_domain' => $check['full_domain'],
             'years' => $years,
             'price' => $price,
+            'reseller_id' => $reseller->id,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function buildDomainTransferCartItem(User $reseller, array $item): ?array
+    {
+        $fullDomain = strtolower(trim((string) ($item['full_domain'] ?? '')));
+        $eppCode = trim((string) ($item['epp_code'] ?? ''));
+        $oldRegistrar = trim((string) ($item['old_registrar'] ?? ''));
+
+        if ($fullDomain === '' || strlen($eppCode) < 5 || strlen($oldRegistrar) < 2) {
+            return null;
+        }
+
+        $allowed = $this->enabledExtensions($reseller, 1)->pluck('extension')->all();
+        $parsed = $this->catalogSerializer->parseTransferDomain($fullDomain, $allowed);
+
+        if ($parsed === null) {
+            return null;
+        }
+
+        $extension = DomainExtension::where('extension', $parsed['extension'])->first();
+
+        if (! $extension) {
+            return null;
+        }
+
+        $price = $this->transferRetailPrice($reseller, $extension);
+
+        if ($price === null) {
+            return null;
+        }
+
+        $oldRegistrarUrl = trim((string) ($item['old_registrar_url'] ?? ''));
+
+        return [
+            'type' => 'domain_transfer',
+            'domain' => $parsed['name'],
+            'extension' => $parsed['extension'],
+            'full_domain' => $parsed['full_domain'],
+            'years' => 1,
+            'price' => $price,
+            'epp_code' => $eppCode,
+            'old_registrar' => $oldRegistrar,
+            'old_registrar_url' => $oldRegistrarUrl !== '' ? $oldRegistrarUrl : null,
             'reseller_id' => $reseller->id,
         ];
     }

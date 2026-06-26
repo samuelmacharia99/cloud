@@ -195,7 +195,7 @@
                         <span class="text-xs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">GET</span>
                         <code class="ml-2 text-sm font-mono">/domains/extensions</code>
                     </div>
-                    <div class="p-5">@include('reseller.developers.partials.code-block', ['id' => 'de', 'code' => "GET {$apiBase}/domains/extensions?period=1"])</div>
+                    <div class="p-5">@include('reseller.developers.partials.code-block', ['id' => 'de', 'code' => "GET {$apiBase}/domains/extensions?period=1\n\n// Each extension includes registration price and transfer_price (KES)"])</div>
                 </div>
             </section>
 
@@ -230,6 +230,13 @@
                 @include('reseller.developers.partials.code-block', ['id' => 'cart', 'code' => json_encode([
                     'items' => [
                         ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
+                        [
+                            'type' => 'domain_transfer',
+                            'full_domain' => 'legacy.com',
+                            'epp_code' => 'AUTH-12345',
+                            'old_registrar' => 'Previous Registrar Ltd',
+                            'old_registrar_url' => 'https://registrar.example',
+                        ],
                         ['type' => 'service', 'product_id' => 3, 'billing_cycle' => 'annual'],
                         ['type' => 'reseller_package', 'reseller_package_id' => 2],
                         [
@@ -242,7 +249,7 @@
                         ],
                     ],
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
-                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code>. For VPS/dedicated servers, include <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code>. Reseller plans use <code class="text-xs">type: reseller_package</code> and must be checked out alone.</p>
+                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code>. Domain transfers use <code class="text-xs">type: domain_transfer</code> with EPP code and current registrar. For VPS/dedicated servers, include <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code>. Reseller plans use <code class="text-xs">type: reseller_package</code> and must be checked out alone.</p>
             </section>
 
             <section id="examples" class="scroll-mt-24">

@@ -315,6 +315,48 @@ class PlatformPublicApiTest extends TestCase
         $response->assertSessionHas('platform_api_plain_token', $plainText);
     }
 
+    public function test_platform_extensions_include_transfer_price(): void
+    {
+        $ext = $this->seedDomain('.com', 1999);
+        $ext->update(['transfer_price' => 1499]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->getJson('https://platform.example.test/api/v1/public/domains/extensions?period=1');
+
+        $response->assertOk()
+            ->assertJsonPath('extensions.0.extension', '.com')
+            ->assertJsonPath('extensions.0.price', 1999)
+            ->assertJsonPath('extensions.0.transfer_price', 1499);
+    }
+
+    public function test_platform_cart_accepts_domain_transfer(): void
+    {
+        $ext = $this->seedDomain('.com', 1999);
+        $ext->update(['transfer_price' => 1499]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'domain_transfer',
+                    'full_domain' => 'legacy.com',
+                    'epp_code' => 'AUTH-12345',
+                    'old_registrar' => 'Old Registrar',
+                ]],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('item_count', 1);
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $item = array_values($cart)[0];
+        $this->assertSame('domain_transfer', $item['type']);
+        $this->assertSame('legacy', $item['domain']);
+        $this->assertSame('.com', $item['extension']);
+        $this->assertSame(1499.0, (float) $item['price']);
+        $this->assertSame('AUTH-12345', $item['epp_code']);
+    }
+
     public function test_platform_cart_prepares_checkout_session(): void
     {
         $this->seedDomain('.com', 1500);

@@ -18,9 +18,12 @@ class CartController extends Controller
     {
         $validated = $request->validate([
             'items' => 'required|array|min:1|max:10',
-            'items.*.type' => 'required|string|in:domain,service,reseller_product,product,reseller_package',
-            'items.*.full_domain' => 'required_if:items.*.type,domain|nullable|string|max:253',
+            'items.*.type' => 'required|string|in:domain,domain_transfer,service,reseller_product,product,reseller_package',
+            'items.*.full_domain' => 'required_unless:items.*.type,service,product,reseller_product,reseller_package|nullable|string|max:253',
             'items.*.years' => 'nullable|integer|min:1|max:10',
+            'items.*.epp_code' => 'required_if:items.*.type,domain_transfer|nullable|string|min:5|max:255',
+            'items.*.old_registrar' => 'required_if:items.*.type,domain_transfer|nullable|string|min:2|max:255',
+            'items.*.old_registrar_url' => 'nullable|url|max:255',
             'items.*.id' => 'nullable|integer',
             'items.*.product_id' => 'nullable|integer',
             'items.*.reseller_product_id' => 'nullable|integer',

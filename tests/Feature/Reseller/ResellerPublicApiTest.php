@@ -190,6 +190,47 @@ class ResellerPublicApiTest extends TestCase
             ->assertJsonPath('services.0.monthly_price', 500);
     }
 
+    public function test_extensions_include_transfer_price(): void
+    {
+        $reseller = $this->createReseller();
+        $com = $this->seedExtension('.com', 1000, 1500);
+        $com->update(['transfer_price' => 1200]);
+        $this->enableResellerRetail($reseller, $com, 1999);
+
+        $response = $this->onResellerHost('/api/v1/public/domains/extensions?period=1');
+
+        $response->assertOk()
+            ->assertJsonPath('extensions.0.extension', '.com')
+            ->assertJsonPath('extensions.0.price', 1999)
+            ->assertJsonPath('extensions.0.transfer_price', 1599.2);
+    }
+
+    public function test_cart_accepts_domain_transfer(): void
+    {
+        $reseller = $this->createReseller();
+        $com = $this->seedExtension('.com', 1000, 1500);
+        $com->update(['transfer_price' => 1200]);
+        $this->enableResellerRetail($reseller, $com, 1999);
+
+        $response = $this->postOnResellerHost('/api/v1/public/cart', [
+            'items' => [[
+                'type' => 'domain_transfer',
+                'full_domain' => 'legacy.com',
+                'epp_code' => 'AUTH-12345',
+                'old_registrar' => 'Old Registrar',
+            ]],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('item_count', 1);
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $item = array_values($cart)[0];
+        $this->assertSame('domain_transfer', $item['type']);
+        $this->assertSame(1599.2, (float) $item['price']);
+        $this->assertSame($reseller->id, $item['reseller_id']);
+    }
+
     public function test_cart_prepares_session_and_returns_checkout_url(): void
     {
         $reseller = $this->createReseller();

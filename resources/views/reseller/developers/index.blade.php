@@ -264,7 +264,7 @@
                         <code class="ml-2 text-sm font-mono">/domains/extensions</code>
                     </div>
                     <div class="p-5">
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">List sellable TLDs and prices without running availability checks.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">List sellable TLDs and prices without running availability checks. Each row includes <code class="text-xs">transfer_price</code> for inbound transfers.</p>
                         @include('reseller.developers.partials.code-block', ['id' => 'domains-ext', 'code' => "GET {$apiBase}/domains/extensions?period=1"])
                     </div>
                 </div>
@@ -295,6 +295,12 @@
                         @include('reseller.developers.partials.code-block', ['id' => 'cart-body', 'code' => json_encode([
                             'items' => [
                                 ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
+                                [
+                                    'type' => 'domain_transfer',
+                                    'full_domain' => 'legacy.com',
+                                    'epp_code' => 'AUTH-12345',
+                                    'old_registrar' => 'Previous Registrar Ltd',
+                                ],
                                 ['type' => 'service', 'reseller_product_id' => 12, 'billing_cycle' => 'annual'],
                                 [
                                     'type' => 'service',

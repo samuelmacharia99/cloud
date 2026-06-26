@@ -20,6 +20,8 @@ use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
+use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\DomainTransferService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerCheckoutGuardService;
@@ -137,6 +139,12 @@ class CheckoutController extends Controller
                 $item['amount'] = $item['unit_price'];
                 $item['name'] = "{$item['domain']}{$item['extension']}";
                 $item['description'] = "Domain registration for {$item['years']} year(s)";
+            } elseif ($item['type'] === 'domain_transfer') {
+                $prepared = $this->prepareDomainTransferCartItem($user, $item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
             }
 
             $subtotal += $item['amount'];
@@ -261,6 +269,12 @@ class CheckoutController extends Controller
 
                         $item['unit_price'] = $price;
                         $item['amount'] = $item['unit_price'];
+                    } elseif ($item['type'] === 'domain_transfer') {
+                        $prepared = $this->prepareDomainTransferCartItem($user, $item);
+                        if ($prepared === null) {
+                            continue;
+                        }
+                        $item = $prepared;
                     }
 
                     $subtotal += $item['amount'];
@@ -437,7 +451,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
-                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable();
+                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(DomainCloudflareDnsService::class)->isAvailable();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -517,6 +531,8 @@ class CheckoutController extends Controller
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
                         ], $this->resellerDomainInvoiceItemFields($user, $domain, $invoice, $item)));
+                    } elseif ($item['type'] === 'domain_transfer') {
+                        $this->createDomainTransferCheckoutLine($user, $invoice, $item);
                     }
                 }
 
@@ -814,6 +830,12 @@ class CheckoutController extends Controller
                 $item['unit_price'] = $price;
                 $item['amount'] = $item['unit_price'];
                 $item['name'] = "{$item['domain']}{$item['extension']}";
+            } elseif ($item['type'] === 'domain_transfer') {
+                $prepared = $this->prepareDomainTransferCartItem($user, $item);
+                if ($prepared === null) {
+                    continue;
+                }
+                $item = $prepared;
             }
 
             $subtotal += $item['amount'];
@@ -974,6 +996,12 @@ class CheckoutController extends Controller
 
                         $item['unit_price'] = $price;
                         $item['amount'] = $item['unit_price'];
+                    } elseif ($item['type'] === 'domain_transfer') {
+                        $prepared = $this->prepareDomainTransferCartItem($user, $item);
+                        if ($prepared === null) {
+                            continue;
+                        }
+                        $item = $prepared;
                     }
 
                     $subtotal += $item['amount'];
@@ -1144,7 +1172,7 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
-                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable();
+                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(DomainCloudflareDnsService::class)->isAvailable();
 
                         // Create Domain
                         $domain = Domain::create([
@@ -1224,6 +1252,8 @@ class CheckoutController extends Controller
                             'unit_price' => $item['unit_price'],
                             'amount' => $item['amount'],
                         ], $this->resellerDomainInvoiceItemFields($user, $domain, $invoice, $item)));
+                    } elseif ($item['type'] === 'domain_transfer') {
+                        $this->createDomainTransferCheckoutLine($user, $invoice, $item);
                     }
                 }
 
@@ -1322,6 +1352,101 @@ class CheckoutController extends Controller
         }
 
         return app(ResellerCustomerCatalogService::class)->domainRegistrationPrice($user, $extension, $years);
+    }
+
+    private function domainTransferPrice(?User $user, DomainExtension $extension): ?float
+    {
+        $hostReseller = $this->checkoutReseller();
+
+        if ($hostReseller && ($user === null || $user->reseller_id === $hostReseller->id)) {
+            return app(ResellerPublicApiService::class)->transferRetailPrice($hostReseller, $extension);
+        }
+
+        return app(ResellerCustomerCatalogService::class)->domainTransferPrice($user ?? new User, $extension);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function prepareDomainTransferCartItem(?User $user, array $item): ?array
+    {
+        $extension = DomainExtension::where('extension', $item['extension'] ?? '')->first();
+
+        if (! $extension) {
+            return null;
+        }
+
+        $price = $this->domainTransferPrice($user, $extension);
+
+        if ($price === null || $price <= 0) {
+            return null;
+        }
+
+        $item['unit_price'] = $price;
+        $item['amount'] = $price;
+        $item['name'] = ($item['domain'] ?? '').($item['extension'] ?? '');
+        $item['description'] = 'Domain transfer';
+
+        return $item;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function createDomainTransferCheckoutLine(User $user, Invoice $invoice, array $item): void
+    {
+        $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
+
+        $domain = DomainTransferService::createTransferRequest(
+            $user,
+            (string) $item['domain'],
+            (string) $item['extension'],
+            (string) $item['epp_code'],
+            (string) $item['old_registrar'],
+            $item['old_registrar_url'] ?? null,
+        );
+
+        $domain->update([
+            'nameserver_1' => $resolvedNs['ns1'],
+            'nameserver_2' => $resolvedNs['ns2'],
+            'nameserver_3' => $resolvedNs['ns3'],
+            'nameserver_4' => $resolvedNs['ns4'],
+        ]);
+
+        $invoiceItemData = [
+            'invoice_id' => $invoice->id,
+            'domain_id' => $domain->id,
+            'product_type' => 'Domain',
+            'description' => "Domain Transfer: {$item['domain']}{$item['extension']}",
+            'quantity' => 1,
+            'unit_price' => $item['unit_price'],
+            'amount' => $item['amount'],
+            'custom_options' => [
+                'type' => 'domain_transfer',
+                'domain_id' => $domain->id,
+            ],
+        ];
+
+        if ($user->reseller_id) {
+            $domainOrder = app(ResellerDomainOrderService::class)->createForTransferCheckout(
+                $user,
+                $domain,
+                $invoice,
+                (string) $item['domain'],
+                (string) $item['extension'],
+                (float) $item['amount'],
+            );
+
+            if ($domainOrder) {
+                $invoiceItemData = array_merge(
+                    $invoiceItemData,
+                    app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder),
+                );
+            }
+        }
+
+        InvoiceItem::create($invoiceItemData);
     }
 
     private function checkoutReseller(): ?User

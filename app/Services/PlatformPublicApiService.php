@@ -79,6 +79,13 @@ class PlatformPublicApiService
         return $pricing && $pricing->enabled ? (float) $pricing->price : null;
     }
 
+    public function transferPrice(DomainExtension $extension): ?float
+    {
+        $price = (float) ($extension->transfer_price ?? 0);
+
+        return $price > 0 ? $price : null;
+    }
+
     /**
      * @return array{success: bool, query: string, period_years: int, currency: string, results: list<array<string, mixed>>}
      */
@@ -149,6 +156,7 @@ class PlatformPublicApiService
                     'description' => $extension->description,
                     'period_years' => $periodYears,
                     'price' => $this->retailPrice($extension, $periodYears),
+                    'transfer_price' => $this->transferPrice($extension),
                     'currency' => 'KES',
                 ];
             })
@@ -208,6 +216,16 @@ class PlatformPublicApiService
 
             if ($type === 'domain') {
                 $line = $this->buildDomainCartItem($item);
+
+                if ($line !== null) {
+                    $cart[] = $line;
+                }
+
+                continue;
+            }
+
+            if ($type === 'domain_transfer') {
+                $line = $this->buildDomainTransferCartItem($item);
 
                 if ($line !== null) {
                     $cart[] = $line;
@@ -277,6 +295,54 @@ class PlatformPublicApiService
             'full_domain' => $check['full_domain'],
             'years' => $years,
             'price' => $price,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    private function buildDomainTransferCartItem(array $item): ?array
+    {
+        $fullDomain = strtolower(trim((string) ($item['full_domain'] ?? '')));
+        $eppCode = trim((string) ($item['epp_code'] ?? ''));
+        $oldRegistrar = trim((string) ($item['old_registrar'] ?? ''));
+
+        if ($fullDomain === '' || strlen($eppCode) < 5 || strlen($oldRegistrar) < 2) {
+            return null;
+        }
+
+        $allowed = $this->enabledExtensions(1)->pluck('extension')->all();
+        $parsed = $this->catalogSerializer->parseTransferDomain($fullDomain, $allowed);
+
+        if ($parsed === null) {
+            return null;
+        }
+
+        $extension = DomainExtension::where('extension', $parsed['extension'])->first();
+
+        if (! $extension) {
+            return null;
+        }
+
+        $price = $this->transferPrice($extension);
+
+        if ($price === null) {
+            return null;
+        }
+
+        $oldRegistrarUrl = trim((string) ($item['old_registrar_url'] ?? ''));
+
+        return [
+            'type' => 'domain_transfer',
+            'domain' => $parsed['name'],
+            'extension' => $parsed['extension'],
+            'full_domain' => $parsed['full_domain'],
+            'years' => 1,
+            'price' => $price,
+            'epp_code' => $eppCode,
+            'old_registrar' => $oldRegistrar,
+            'old_registrar_url' => $oldRegistrarUrl !== '' ? $oldRegistrarUrl : null,
         ];
     }
 

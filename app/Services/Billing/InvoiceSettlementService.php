@@ -238,6 +238,14 @@ class InvoiceSettlementService
 
     private function shouldAdvanceRenewalBillingDates(Invoice $invoice): bool
     {
+        return $this->qualifiesForRenewalBillingAdvance($invoice);
+    }
+
+    /**
+     * Whether paying this invoice should extend linked services' next_due_date.
+     */
+    public function qualifiesForRenewalBillingAdvance(Invoice $invoice): bool
+    {
         if ($invoice->type === 'reseller_subscription') {
             return false;
         }
