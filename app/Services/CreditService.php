@@ -209,6 +209,89 @@ class CreditService
     }
 
     /**
+     * Deduct available credit from a user (FIFO — expiring credits first).
+     *
+     * @return array{deducted: float, credits: list<array{credit_id: int, amount: float}>}
+     */
+    public static function deductFromUser(User $user, float $amount, string $reason): array
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Amount must be positive.');
+        }
+
+        $available = self::getAvailableBalance($user);
+        if ($amount > $available) {
+            throw new \InvalidArgumentException('Insufficient credit balance.');
+        }
+
+        $remaining = $amount;
+        $affected = [];
+
+        $credits = Credit::forUser($user)
+            ->active()
+            ->orderByRaw('expires_at IS NULL')
+            ->orderBy('expires_at')
+            ->orderBy('created_at')
+            ->get();
+
+        foreach ($credits as $credit) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $creditAvailable = $credit->getAvailableBalance();
+            if ($creditAvailable <= 0) {
+                continue;
+            }
+
+            $deduct = min($creditAvailable, $remaining);
+            self::deductFromCredit($credit, $deduct, $reason);
+            $affected[] = ['credit_id' => $credit->id, 'amount' => $deduct];
+            $remaining -= $deduct;
+        }
+
+        return ['deducted' => $amount, 'credits' => $affected];
+    }
+
+    /**
+     * Deduct from a single credit's available balance.
+     */
+    public static function deductFromCredit(Credit $credit, float $amount, string $reason): void
+    {
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Amount must be positive.');
+        }
+
+        $available = $credit->getAvailableBalance();
+        if ($amount > $available) {
+            throw new \InvalidArgumentException('Amount exceeds available balance on this credit.');
+        }
+
+        $totalApplied = (float) ($credit->appliedToInvoices()->sum('amount_applied') ?? 0);
+        $newAmount = round((float) $credit->amount - $amount, 2);
+
+        $noteLine = sprintf(
+            'Admin deduction of KES %s on %s: %s',
+            number_format($amount, 2),
+            now()->format('Y-m-d H:i'),
+            $reason
+        );
+        $notes = trim(($credit->notes ?? '')."\n".$noteLine);
+
+        $updates = [
+            'amount' => $newAmount,
+            'notes' => $notes,
+        ];
+
+        $remainingAvailable = $newAmount - $totalApplied;
+        if ($remainingAvailable <= 0) {
+            $updates['status'] = $newAmount <= 0 ? 'refunded' : 'applied';
+        }
+
+        $credit->update($updates);
+    }
+
+    /**
      * Expire old credits
      */
     public static function expireOldCredits(): int

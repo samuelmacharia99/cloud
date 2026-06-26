@@ -170,6 +170,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/customers/{customer}/transfer-preview', [CustomerController::class, 'transferPreview'])->name('admin.customers.transfer-preview');
         Route::post('admin/customers/{customer}/transfer-to-reseller', [CustomerController::class, 'transferToReseller'])->name('admin.customers.transfer-to-reseller');
         Route::post('admin/customers/{customer}/credits', [CustomerController::class, 'addCredit'])->name('admin.customers.add-credit');
+        Route::post('admin/customers/{customer}/credits/remove', [CustomerController::class, 'removeCredit'])->name('admin.customers.remove-credit');
+        Route::post('admin/customers/{customer}/credits/{credit}/revoke', [CustomerController::class, 'revokeCredit'])->name('admin.customers.revoke-credit');
         Route::post('admin/products/{product}/duplicate', [ProductController::class, 'duplicate'])->name('admin.products.duplicate');
         Route::resource('admin/products', ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', InvoiceController::class)->names('admin.invoices');

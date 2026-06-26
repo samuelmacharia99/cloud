@@ -276,6 +276,109 @@ class CustomerController extends Controller
             ->with('success', 'KES '.number_format($validated['amount'], 2).' credit added successfully.');
     }
 
+    public function removeCredit(Request $request, User $customer)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        if ($customer->is_reseller) {
+            return redirect()->route('admin.resellers.show', $customer)
+                ->with('error', 'Use the reseller profile to manage this account.');
+        }
+
+        $validated = $request->validate([
+            'remove_amount' => 'required|numeric|min:0.01',
+            'remove_notes' => 'required|string|min:5|max:500',
+        ]);
+
+        $available = CreditService::getAvailableBalance($customer);
+        if ((float) $validated['remove_amount'] > $available) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+                ->withErrors([
+                    'remove_amount' => 'Cannot remove more than the available balance (KES '.number_format($available, 2).').',
+                ])
+                ->withInput();
+        }
+
+        try {
+            CreditService::deductFromUser(
+                $customer,
+                (float) $validated['remove_amount'],
+                $validated['remove_notes'],
+            );
+        } catch (\InvalidArgumentException $exception) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+                ->with('error', $exception->getMessage())
+                ->withInput();
+        }
+
+        AdminActivityService::log(
+            'credit.deduct',
+            'Removed KES '.number_format($validated['remove_amount'], 2)." credit from {$customer->name}",
+            $customer,
+        );
+
+        return redirect()
+            ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+            ->with('success', 'KES '.number_format($validated['remove_amount'], 2).' credit removed successfully.');
+    }
+
+    public function revokeCredit(Request $request, User $customer, Credit $credit)
+    {
+        if ($customer->is_admin) {
+            abort(404);
+        }
+
+        if ($customer->is_reseller) {
+            return redirect()->route('admin.resellers.show', $customer)
+                ->with('error', 'Use the reseller profile to manage this account.');
+        }
+
+        if ($credit->user_id !== $customer->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'amount' => 'nullable|numeric|min:0.01',
+            'notes' => 'required|string|min:5|max:500',
+        ]);
+
+        $available = $credit->getAvailableBalance();
+        if ($available <= 0) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+                ->with('error', 'This credit has no available balance to remove.');
+        }
+
+        $amount = isset($validated['amount']) ? (float) $validated['amount'] : $available;
+        if ($amount > $available) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+                ->with('error', 'Cannot remove more than the available balance on this credit.');
+        }
+
+        try {
+            CreditService::deductFromCredit($credit, $amount, $validated['notes']);
+        } catch (\InvalidArgumentException $exception) {
+            return redirect()
+                ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+                ->with('error', $exception->getMessage());
+        }
+
+        AdminActivityService::log(
+            'credit.deduct',
+            'Removed KES '.number_format($amount, 2)." from credit #{$credit->id} for {$customer->name}",
+            $credit,
+        );
+
+        return redirect()
+            ->route('admin.customers.show', ['customer' => $customer, 'tab' => 'credits'])
+            ->with('success', 'KES '.number_format($amount, 2).' credit removed successfully.');
+    }
+
     public function edit(User $customer)
     {
         if ($customer->is_admin) {
