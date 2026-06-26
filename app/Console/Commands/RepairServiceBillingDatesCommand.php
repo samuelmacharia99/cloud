@@ -14,7 +14,8 @@ class RepairServiceBillingDatesCommand extends Command
     protected $signature = 'billing:repair-service-dates
                             {--execute : Apply fixes (default is dry-run report only)}
                             {--cancel-duplicates : Cancel duplicate open renewal invoices for the same period}
-                            {--unsuspend : Unsuspend services that qualify after repair}';
+                            {--unsuspend : Unsuspend services that qualify after repair}
+                            {--fix-links : Cancel open renewal invoices linked on service.invoice_id and relink to last paid renewal}';
 
     protected $description = 'Backfill next_due_date for services whose paid renewal invoices did not advance billing';
 
@@ -27,25 +28,63 @@ class RepairServiceBillingDatesCommand extends Command
         $dryRun = ! $this->option('execute');
         $cancelDuplicates = (bool) $this->option('cancel-duplicates');
         $unsuspend = (bool) $this->option('unsuspend');
+        $fixLinks = (bool) $this->option('fix-links');
 
         if ($dryRun) {
             $this->warn('Dry run — pass --execute to apply changes.');
         }
 
+        $repaired = 0;
+        $cancelled = 0;
+        $unsuspended = 0;
+        $linked = 0;
+
+        if ($fixLinks) {
+            $mislinked = $repair->findMislinkedRenewalServices();
+            $this->info("Found {$mislinked->count()} service(s) with open renewal invoice links to fix:");
+            $this->newLine();
+
+            foreach ($mislinked as $row) {
+                $service = $row['service'];
+                $anchor = $row['anchor_invoice'];
+                $open = $row['open_invoice'];
+
+                $this->line(sprintf(
+                    'Service #%d (%s) — open %s (%s) → paid anchor %s',
+                    $service->id,
+                    $service->name,
+                    $open->invoice_number,
+                    $open->status->value,
+                    $anchor->invoice_number,
+                ));
+
+                if (! $dryRun) {
+                    $result = $repair->repairMislinkedService($service, $anchor, $open);
+                    $linked++;
+                    $cancelled += count($result['cancelled_invoice_ids']);
+                }
+            }
+
+            $this->newLine();
+        }
+
         $affected = $repair->findAffected();
 
-        if ($affected->isEmpty()) {
+        if ($affected->isEmpty() && ! $fixLinks) {
             $this->info('No services found with stale next_due_date after paid renewal invoices.');
+
+            if ($unsuspend && ! $dryRun) {
+                $unsuspended = $this->unsuspendEligibleServices($enforcement, $provisioning, $notifications);
+                $this->info("Unsuspended {$unsuspended} service(s).");
+            }
 
             return self::SUCCESS;
         }
 
-        $this->info("Found {$affected->count()} service(s) to repair:");
-        $this->newLine();
-
-        $repaired = 0;
-        $cancelled = 0;
-        $unsuspended = 0;
+        if ($affected->isNotEmpty()) {
+            $this->info("Found {$affected->count()} service(s) to repair:");
+            $this->newLine();
+        }
 
         foreach ($affected as $row) {
             $service = $row['service'];
@@ -97,13 +136,53 @@ class RepairServiceBillingDatesCommand extends Command
 
         $this->newLine();
 
+        if ($unsuspend && ! $dryRun) {
+            $unsuspended += $this->unsuspendEligibleServices($enforcement, $provisioning, $notifications);
+        }
+
         if ($dryRun) {
-            $this->info("Would repair {$affected->count()} service(s)".($cancelDuplicates ? " and cancel {$cancelled} duplicate invoice(s)" : '').'.');
-            $this->line('Run with --execute'.($cancelDuplicates ? '' : ' --cancel-duplicates').($unsuspend ? ' --unsuspend' : '').' to apply.');
+            $parts = [];
+            if ($affected->isNotEmpty()) {
+                $parts[] = "repair {$affected->count()} service(s)";
+            }
+            if ($fixLinks) {
+                $parts[] = 'fix mislinked renewal invoices';
+            }
+            $this->info('Would '.implode(' and ', $parts ?: ['make no changes']).($cancelDuplicates ? " and cancel {$cancelled} duplicate invoice(s)" : '').'.');
+            $this->line('Run with --execute'.($cancelDuplicates ? '' : ' --cancel-duplicates').($fixLinks ? ' --fix-links' : '').($unsuspend ? ' --unsuspend' : '').' to apply.');
         } else {
-            $this->info("Repaired {$repaired} service(s), cancelled {$cancelled} duplicate invoice(s), unsuspended {$unsuspended} service(s).");
+            $this->info("Repaired {$repaired} service(s), fixed {$linked} invoice link(s), cancelled {$cancelled} duplicate invoice(s), unsuspended {$unsuspended} service(s).");
         }
 
         return self::SUCCESS;
+    }
+
+    private function unsuspendEligibleServices(
+        ServiceOverdueEnforcementService $enforcement,
+        ProvisioningService $provisioning,
+        NotificationService $notifications,
+    ): int {
+        $count = 0;
+
+        foreach ($enforcement->suspendedServicesWithPaidBillingInvoiceQuery()->get() as $service) {
+            if (! $enforcement->canAutoUnsuspendForPaidInvoice($service)) {
+                continue;
+            }
+
+            try {
+                $enforcement->clearInvoiceSuspensionMeta($service);
+                $provisioning->unsuspend($service->fresh());
+                $notifications->notifyServiceUnsuspended($service->fresh());
+                $count++;
+                $this->line("Unsuspended service #{$service->id} ({$service->name})");
+            } catch (\Throwable $e) {
+                Log::error('Failed to unsuspend service after billing repair', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
     }
 }

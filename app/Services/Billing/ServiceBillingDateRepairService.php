@@ -68,7 +68,7 @@ class ServiceBillingDateRepairService
                     'anchor_invoice' => $anchor,
                     'current_next_due_date' => $service->next_due_date->toDateString(),
                     'expected_next_due_date' => $expected->toDateString(),
-                    'duplicate_invoices' => $this->duplicateOpenRenewalInvoices($service, $anchor),
+                    'duplicate_invoices' => $this->openErroneousRenewalInvoices($service, $anchor),
                 ];
             })
             ->filter()
@@ -88,7 +88,7 @@ class ServiceBillingDateRepairService
         $cancelledIds = [];
 
         if ($dryRun) {
-            foreach ($this->duplicateOpenRenewalInvoices($service, $anchorInvoice) as $duplicate) {
+            foreach ($this->openErroneousRenewalInvoices($service, $anchorInvoice) as $duplicate) {
                 if ($cancelDuplicates) {
                     $cancelledIds[] = $duplicate->id;
                 }
@@ -100,7 +100,7 @@ class ServiceBillingDateRepairService
         $service->update(['next_due_date' => $expected]);
 
         if ($cancelDuplicates) {
-            foreach ($this->duplicateOpenRenewalInvoices($service, $anchorInvoice) as $duplicate) {
+            foreach ($this->openErroneousRenewalInvoices($service, $anchorInvoice) as $duplicate) {
                 $duplicate->update([
                     'status' => InvoiceStatus::Cancelled,
                     'notes' => trim(($duplicate->notes ?? '')."\nCancelled: duplicate renewal after paid invoice #{$anchorInvoice->invoice_number}."),
@@ -109,11 +109,22 @@ class ServiceBillingDateRepairService
             }
         }
 
-        if ($service->invoice_id && in_array($service->invoice_id, $cancelledIds, true)) {
-            $service->update(['invoice_id' => $anchorInvoice->id]);
-        }
+        $this->relinkServiceToPaidInvoice($service->fresh(), $anchorInvoice, $cancelledIds);
 
         return ['updated' => true, 'cancelled_invoice_ids' => $cancelledIds];
+    }
+
+    public function relinkServiceToPaidInvoice(Service $service, Invoice $anchorInvoice, array $cancelledInvoiceIds = []): void
+    {
+        $current = $service->invoice_id ? Invoice::find($service->invoice_id) : null;
+
+        $shouldRelink = $current === null
+            || in_array($current->id, $cancelledInvoiceIds, true)
+            || in_array($current->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue, InvoiceStatus::Draft], true);
+
+        if ($shouldRelink) {
+            $service->update(['invoice_id' => $anchorInvoice->id]);
+        }
     }
 
     public function expectedNextDueDate(Service $service, Invoice $anchorInvoice): Carbon
@@ -126,7 +137,46 @@ class ServiceBillingDateRepairService
     }
 
     /**
-     * Open auto-renewal invoices for the same billing period as a paid renewal.
+     * Open auto-renewal invoices that should not remain after a paid renewal for this period.
+     *
+     * @return Collection<int, Invoice>
+     */
+    public function openErroneousRenewalInvoices(Service $service, Invoice $paidAnchor): Collection
+    {
+        if (! $paidAnchor->due_date) {
+            return collect();
+        }
+
+        $periodDue = $paidAnchor->due_date->toDateString();
+
+        $fromLineItems = $this->duplicateOpenRenewalInvoices($service, $paidAnchor);
+
+        $fromServiceLink = collect();
+
+        if ($service->invoice_id && $service->invoice_id !== $paidAnchor->id) {
+            $linked = Invoice::query()
+                ->whereKey($service->invoice_id)
+                ->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::Overdue, InvoiceStatus::Draft])
+                ->where(function ($query) {
+                    $query->where('notes', 'like', '%Auto-generated renewal invoice%')
+                        ->orWhere('notes', 'like', '%Manual renewal%');
+                })
+                ->whereDate('due_date', '<=', $periodDue)
+                ->first();
+
+            if ($linked) {
+                $fromServiceLink->push($linked);
+            }
+        }
+
+        return $fromLineItems
+            ->merge($fromServiceLink)
+            ->unique('id')
+            ->values();
+    }
+
+    /**
+     * Open auto-renewal invoices for the same billing period as a paid renewal (line items).
      *
      * @return Collection<int, Invoice>
      */
@@ -165,5 +215,92 @@ class ServiceBillingDateRepairService
             ->whereHas('items', fn ($query) => $query->whereNotNull('service_id'))
             ->with(['items.service', 'order'])
             ->orderByDesc('due_date');
+    }
+
+    /**
+     * Services whose invoice_id still points at an open auto-renewal despite a paid renewal existing.
+     *
+     * @return Collection<int, array{service: Service, anchor_invoice: Invoice, open_invoice: Invoice}>
+     */
+    public function findMislinkedRenewalServices(): Collection
+    {
+        $results = [];
+
+        Service::query()
+            ->whereIn('status', [ServiceStatus::Active, ServiceStatus::Suspended])
+            ->whereNotNull('invoice_id')
+            ->with('invoice')
+            ->chunkById(100, function ($services) use (&$results) {
+                foreach ($services as $service) {
+                    $open = $service->invoice;
+
+                    if (! $open || ! in_array($open->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue, InvoiceStatus::Draft], true)) {
+                        continue;
+                    }
+
+                    if (! $this->isRenewalInvoiceNotes($open->notes)) {
+                        continue;
+                    }
+
+                    $anchor = $this->latestPaidRenewalInvoiceForService($service);
+
+                    if (! $anchor || $anchor->id === $open->id) {
+                        continue;
+                    }
+
+                    $results[] = [
+                        'service' => $service,
+                        'anchor_invoice' => $anchor,
+                        'open_invoice' => $open,
+                    ];
+                }
+            });
+
+        return collect($results);
+    }
+
+    /**
+     * @return array{cancelled_invoice_ids: list<int>}
+     */
+    public function repairMislinkedService(Service $service, Invoice $anchorInvoice, Invoice $openInvoice): array
+    {
+        $openInvoice->update([
+            'status' => InvoiceStatus::Cancelled,
+            'notes' => trim(($openInvoice->notes ?? '')."\nCancelled: duplicate renewal after paid invoice #{$anchorInvoice->invoice_number}."),
+        ]);
+
+        $this->relinkServiceToPaidInvoice($service->fresh(), $anchorInvoice, [$openInvoice->id]);
+
+        return ['cancelled_invoice_ids' => [$openInvoice->id]];
+    }
+
+    private function latestPaidRenewalInvoiceForService(Service $service): ?Invoice
+    {
+        return Invoice::query()
+            ->where('status', InvoiceStatus::Paid)
+            ->where(function ($query) {
+                $query->whereNull('type')
+                    ->orWhere('type', '!=', 'reseller_subscription');
+            })
+            ->where(function ($query) {
+                $query->where('notes', 'like', '%Auto-generated renewal invoice%')
+                    ->orWhere('notes', 'like', '%Manual renewal%');
+            })
+            ->where(function ($query) use ($service) {
+                $query->whereHas('items', fn ($q) => $q->where('service_id', $service->id))
+                    ->orWhere('id', $service->invoice_id);
+            })
+            ->orderByDesc('due_date')
+            ->first();
+    }
+
+    private function isRenewalInvoiceNotes(?string $notes): bool
+    {
+        if ($notes === null || $notes === '') {
+            return false;
+        }
+
+        return str_contains($notes, 'Auto-generated renewal invoice')
+            || str_contains($notes, 'Manual renewal');
     }
 }
