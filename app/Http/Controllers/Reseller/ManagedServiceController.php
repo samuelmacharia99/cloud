@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerManagedServiceUpdateService;
 use App\Services\ResellerScopeService;
+use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -48,21 +49,37 @@ class ManagedServiceController extends Controller
         $this->ensureManaged($service);
         $service->load(['user', 'product', 'containerDeployment', 'invoice']);
 
-        $canSuspend = $service->status === ServiceStatus::Active;
-        $canUnsuspend = $service->status === ServiceStatus::Suspended;
-        $canTerminate = ! in_array($service->status->value ?? $service->status, ['terminated', 'cancelled'], true);
+        $actions = $this->serviceActionFlags($service);
 
         $managementLinks = $this->managementLinks($service);
         $enforcementInsight = app(ServiceEnforcementInsightService::class)->forService($service);
 
-        return view('reseller.services.show', compact(
-            'service',
-            'canSuspend',
-            'canUnsuspend',
-            'canTerminate',
-            'managementLinks',
-            'enforcementInsight',
-        ));
+        return view('reseller.services.show', [
+            'service' => $service,
+            'canSuspend' => $actions['canSuspend'],
+            'canUnsuspend' => $actions['canUnsuspend'],
+            'canTerminate' => $actions['canTerminate'],
+            'canDelete' => $actions['canDelete'],
+            'managementLinks' => $managementLinks,
+            'enforcementInsight' => $enforcementInsight,
+        ]);
+    }
+
+    /**
+     * @return array{canSuspend: bool, canUnsuspend: bool, canTerminate: bool, canDelete: bool}
+     */
+    private function serviceActionFlags(Service $service): array
+    {
+        $status = $service->status instanceof ServiceStatus
+            ? $service->status->value
+            : (string) $service->status;
+
+        return [
+            'canSuspend' => in_array($status, ['active', 'pending', 'provisioning', 'failed'], true),
+            'canUnsuspend' => $status === 'suspended',
+            'canTerminate' => ! in_array($status, ['terminated', 'cancelled'], true),
+            'canDelete' => true,
+        ];
     }
 
     /**
@@ -87,6 +104,10 @@ class ManagedServiceController extends Controller
     {
         $this->ensureManaged($service);
 
+        if (! $this->serviceActionFlags($service)['canSuspend']) {
+            return back()->with('error', 'This service cannot be suspended in its current state.');
+        }
+
         try {
             $provisioning->suspend($service);
 
@@ -99,6 +120,10 @@ class ManagedServiceController extends Controller
     public function unsuspend(Service $service, ProvisioningService $provisioning): RedirectResponse
     {
         $this->ensureManaged($service);
+
+        if (! $this->serviceActionFlags($service)['canUnsuspend']) {
+            return back()->with('error', 'This service is not suspended.');
+        }
 
         try {
             $provisioning->unsuspend($service);
@@ -124,6 +149,30 @@ class ManagedServiceController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Termination failed: '.$e->getMessage());
         }
+    }
+
+    public function destroy(Service $service, ServiceDeletionService $deletion): RedirectResponse
+    {
+        $this->ensureManaged($service);
+
+        $customerId = $service->user_id;
+        $serviceId = $service->id;
+
+        try {
+            $deletion->delete($service);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        if ($customerId) {
+            return redirect()
+                ->route('reseller.customers.show', ['customer' => $customerId, 'tab' => 'services'])
+                ->with('success', "Service #{$serviceId} deleted.");
+        }
+
+        return redirect()
+            ->route('reseller.services.index')
+            ->with('success', "Service #{$serviceId} deleted.");
     }
 
     public function update(Request $request, Service $service, ResellerManagedServiceUpdateService $updater): RedirectResponse

@@ -11,8 +11,10 @@ use App\Mail\ResellerCustomerAssignedMail;
 use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\Payment;
+use App\Models\Product;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerPackage;
+use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\Ticket;
@@ -267,6 +269,56 @@ class CustomerResellerTransferTest extends TestCase
         $this->assertSame(InvoiceStatus::Unpaid, $invoice->status);
 
         Mail::assertNothingSent();
+    }
+
+    public function test_platform_to_reseller_transfer_maps_closest_catalog_plan(): void
+    {
+        Mail::fake();
+
+        $admin = $this->createAdmin();
+        $reseller = $this->createReseller();
+
+        $product = Product::create([
+            'name' => 'Platform Bronze',
+            'slug' => 'platform-bronze-'.uniqid(),
+            'type' => 'vps',
+            'monthly_price' => 2000,
+            'yearly_price' => 20000,
+            'order' => 2,
+            'is_active' => true,
+        ]);
+
+        $listing = ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'product_id' => $product->id,
+            'name' => 'Reseller VPS Bronze',
+            'type' => 'vps',
+            'monthly_price' => 2500,
+            'yearly_price' => 25000,
+            'is_active' => true,
+        ]);
+
+        $customer = User::factory()->create(['reseller_id' => null]);
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'reseller_id' => null,
+            'product_id' => $product->id,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.customers.transfer-to-reseller', $customer), [
+                'target_reseller_id' => $reseller->id,
+            ])
+            ->assertRedirect(route('admin.customers.index'))
+            ->assertSessionHas('success');
+
+        $service->refresh();
+
+        $this->assertSame($reseller->id, $customer->fresh()->reseller_id);
+        $this->assertSame($reseller->id, $service->reseller_id);
+        $this->assertSame($listing->id, (int) ($service->service_meta['reseller_product_id'] ?? 0));
+        $this->assertSame($product->id, $service->product_id);
     }
 
     public function test_cannot_transfer_platform_customer_to_platform_again(): void

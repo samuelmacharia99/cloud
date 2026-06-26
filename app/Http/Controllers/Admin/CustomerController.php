@@ -1176,6 +1176,10 @@ class CustomerController extends Controller
                 $flash .= ' Some DirectAdmin accounts could not be moved: '.implode(' ', $result['da_warnings']);
             }
 
+            if (! empty($result['catalog_warnings'])) {
+                $flash .= ' Catalog mapping warnings: '.implode(' ', $result['catalog_warnings']);
+            }
+
             return redirect()->route('admin.customers.index')->with('success', $flash);
         } catch (\InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());

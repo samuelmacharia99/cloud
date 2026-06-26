@@ -12,13 +12,26 @@
         </div>
         <div class="flex flex-wrap gap-2">
             @if ($canSuspend ?? false)
-                <form method="POST" action="{{ route('reseller.services.suspend', $service) }}" onsubmit="return confirm('Suspend this service?');">@csrf<button type="submit" class="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm">Suspend</button></form>
+                <form method="POST" action="{{ route('reseller.services.suspend', $service) }}" data-confirm="Suspend this service? The customer may lose access until you unsuspend it.">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm">Suspend</button>
+                </form>
             @endif
             @if ($canUnsuspend ?? false)
-                <form method="POST" action="{{ route('reseller.services.unsuspend', $service) }}">@csrf<button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm">Unsuspend</button></form>
+                <form method="POST" action="{{ route('reseller.services.unsuspend', $service) }}" data-confirm="Unsuspend this service and restore customer access?">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm">Unsuspend</button>
+                </form>
             @endif
             @if ($canTerminate ?? false)
                 <form method="POST" action="{{ route('reseller.services.terminate', $service) }}" onsubmit="return confirm('Terminate permanently?');">@csrf<button type="submit" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm">Terminate</button></form>
+            @endif
+            @if ($canDelete ?? false)
+                <form method="POST" action="{{ route('reseller.services.destroy', $service) }}" data-confirm="Delete this service record? Provisioned resources will be removed when possible.">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-sm">Delete</button>
+                </form>
             @endif
         </div>
     </div>

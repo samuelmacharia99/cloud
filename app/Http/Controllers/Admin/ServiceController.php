@@ -22,6 +22,7 @@ use App\Services\NotificationService;
 use App\Services\Provisioning\DirectAdminService;
 use App\Services\Provisioning\ProvisioningService;
 use App\Services\ResellerEnforcementService;
+use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\ServiceStatusSyncService;
 use App\Services\TaxService;
@@ -636,40 +637,16 @@ class ServiceController extends Controller
         }
     }
 
-    public function destroy(Service $service)
+    public function destroy(Service $service, ServiceDeletionService $deletion)
     {
-        if ($this->serviceRequiresInfrastructureCleanup($service)) {
-            $alreadyInactive = in_array($service->status->value, ['terminated', 'cancelled'], true);
-
-            try {
-                app(ProvisioningService::class)->terminate($service->fresh());
-            } catch (\Throwable $e) {
-                Log::warning('Admin service delete: infrastructure cleanup failed', [
-                    'service_id' => $service->id,
-                    'status' => $service->status->value,
-                    'error' => $e->getMessage(),
-                ]);
-
-                if (! $alreadyInactive) {
-                    return back()->with(
-                        'error',
-                        'Could not deprovision service infrastructure. Use Terminate first or fix the host connection, then delete.'
-                    );
-                }
-            }
+        try {
+            $deletion->delete($service);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
         }
-
-        $service->fresh()->delete();
 
         return redirect()->route('admin.services.index')
             ->with('success', "Service #{$service->id} deleted.");
-    }
-
-    private function serviceRequiresInfrastructureCleanup(Service $service): bool
-    {
-        $driver = $service->provisioning_driver_key ?: $service->product?->provisioning_driver_key;
-
-        return in_array($driver, ['container', 'directadmin'], true);
     }
 
     public function refreshStatus(Service $service, ServiceStatusSyncService $syncService)

@@ -25,6 +25,7 @@ class CustomerResellerTransferService
         private ResellerBrandingResolver $brandingResolver,
         private ResellerMailService $resellerMail,
         private EmailDeliveryService $emailDelivery,
+        private ResellerServiceCatalogMatchService $catalogMatcher,
     ) {}
 
     /**
@@ -36,7 +37,8 @@ class CustomerResellerTransferService
      *     warnings: list<string>,
      *     blockers: list<string>,
      *     will_cancel_invoices: bool,
-     *     will_send_customer_email: bool
+     *     will_send_customer_email: bool,
+     *     service_mappings: list<array{service_id: int, service_name: string, from_product: ?string, to_listing: ?string, match_type: ?string}>
      * }
      */
     public function preview(User $customer, ?User $targetReseller): array
@@ -76,6 +78,10 @@ class CustomerResellerTransferService
             }
         }
 
+        $serviceMappings = $targetReseller
+            ? $this->previewServiceCatalogMappings($customer, $targetReseller, $warnings)
+            : [];
+
         return [
             'customer' => [
                 'id' => $customer->id,
@@ -105,6 +111,7 @@ class CustomerResellerTransferService
             'blockers' => $blockers,
             'will_cancel_invoices' => $targetReseller !== null && $openInvoices->isNotEmpty(),
             'will_send_customer_email' => $targetReseller !== null,
+            'service_mappings' => $serviceMappings,
         ];
     }
 
@@ -118,7 +125,8 @@ class CustomerResellerTransferService
      *     cancelled_invoices: int,
      *     da_warnings: list<string>,
      *     email_sent: bool,
-     *     reseller_email_sent: bool
+     *     reseller_email_sent: bool,
+     *     catalog_warnings: list<string>
      * }
      */
     public function transfer(User $customer, ?User $targetReseller): array
@@ -130,6 +138,7 @@ class CustomerResellerTransferService
         $newResellerId = $targetReseller?->id;
 
         $cancelledInvoices = 0;
+        $catalogWarnings = [];
 
         DB::transaction(function () use ($customer, $newResellerId, $targetReseller, &$cancelledInvoices) {
             if ($targetReseller !== null) {
@@ -152,6 +161,12 @@ class CustomerResellerTransferService
 
             $this->syncOpenTickets($customer, $newResellerId);
         });
+
+        if ($targetReseller !== null) {
+            $catalogWarnings = $this->assignResellerCatalogToServices($customer, $targetReseller);
+        } else {
+            $this->clearResellerCatalogFromServices($customer);
+        }
 
         $daWarnings = $this->syncDirectAdminHostingAccounts($customer, $targetReseller);
 
@@ -183,6 +198,7 @@ class CustomerResellerTransferService
                 'to_reseller_id' => $newResellerId,
                 'cancelled_invoices' => $cancelledInvoices,
                 'da_warnings' => $daWarnings,
+                'catalog_warnings' => $catalogWarnings,
                 'customer_email_sent' => $emailSent,
                 'reseller_email_sent' => $resellerEmailSent,
             ],
@@ -193,6 +209,7 @@ class CustomerResellerTransferService
             'to_reseller' => $toLabel,
             'cancelled_invoices' => $cancelledInvoices,
             'da_warnings' => $daWarnings,
+            'catalog_warnings' => $catalogWarnings,
             'email_sent' => $emailSent,
             'reseller_email_sent' => $resellerEmailSent,
         ];
@@ -337,6 +354,68 @@ class CustomerResellerTransferService
         }
 
         return $warnings;
+    }
+
+    /**
+     * @param  list<string>  $warnings
+     * @return list<array{service_id: int, service_name: string, from_product: ?string, to_listing: ?string, match_type: ?string}>
+     */
+    private function previewServiceCatalogMappings(User $customer, User $targetReseller, array &$warnings): array
+    {
+        $mappings = [];
+
+        foreach (Service::query()->where('user_id', $customer->id)->with('product')->get() as $service) {
+            $match = $this->catalogMatcher->closestMatch($targetReseller, $service);
+
+            if (! $match) {
+                $warnings[] = "Service #{$service->id} ({$service->name}): no matching catalog plan on {$targetReseller->name}.";
+
+                $mappings[] = [
+                    'service_id' => $service->id,
+                    'service_name' => $service->name,
+                    'from_product' => $service->product?->name,
+                    'to_listing' => null,
+                    'match_type' => null,
+                ];
+
+                continue;
+            }
+
+            $mappings[] = [
+                'service_id' => $service->id,
+                'service_name' => $service->name,
+                'from_product' => $service->product?->name,
+                'to_listing' => $match['listing']->name,
+                'match_type' => $match['match_type'],
+            ];
+        }
+
+        return $mappings;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function assignResellerCatalogToServices(User $customer, User $targetReseller): array
+    {
+        $warnings = [];
+
+        foreach (Service::query()->where('user_id', $customer->id)->with('product')->get() as $service) {
+            $match = $this->catalogMatcher->applyMatch($targetReseller, $service);
+
+            if (! $match) {
+                $warnings[] = "Service #{$service->id} ({$service->name}): could not map to a reseller catalog plan.";
+            }
+        }
+
+        return $warnings;
+    }
+
+    private function clearResellerCatalogFromServices(User $customer): void
+    {
+        foreach (Service::query()->where('user_id', $customer->id)->get() as $service) {
+            $this->catalogMatcher->clearResellerCatalogAssignment($service);
+        }
     }
 
     private function sendCustomerTransferEmail(User $customer): bool

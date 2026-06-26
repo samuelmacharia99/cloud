@@ -297,6 +297,26 @@
                                                             </div>
                                                         </template>
 
+                                                        <template x-if="transferPreview.service_mappings && transferPreview.service_mappings.length > 0 && targetResellerId !== 'platform'">
+                                                            <div class="p-3 rounded-lg bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
+                                                                <p class="font-medium text-purple-900 dark:text-purple-200 mb-1">Service catalog mapping</p>
+                                                                <ul class="text-purple-800 dark:text-purple-300 text-xs space-y-1">
+                                                                    <template x-for="row in transferPreview.service_mappings" :key="row.service_id">
+                                                                        <li>
+                                                                            <span x-text="'#' + row.service_id + ' ' + row.service_name"></span>
+                                                                            <span class="text-purple-600 dark:text-purple-400"> → </span>
+                                                                            <template x-if="row.to_listing">
+                                                                                <span x-text="row.to_listing + ' (' + row.match_type + ')'"></span>
+                                                                            </template>
+                                                                            <template x-if="!row.to_listing">
+                                                                                <span class="text-red-600 dark:text-red-400">No matching plan</span>
+                                                                            </template>
+                                                                        </li>
+                                                                    </template>
+                                                                </ul>
+                                                            </div>
+                                                        </template>
+
                                                         <template x-if="transferPreview.warnings && transferPreview.warnings.length > 0">
                                                             <div class="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
                                                                 <p class="font-medium text-amber-900 dark:text-amber-200 mb-1">Warnings</p>

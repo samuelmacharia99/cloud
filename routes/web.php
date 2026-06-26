@@ -396,6 +396,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/services/{service}/suspend', [ManagedServiceController::class, 'suspend'])->name('reseller.services.suspend');
         Route::post('reseller/services/{service}/unsuspend', [ManagedServiceController::class, 'unsuspend'])->name('reseller.services.unsuspend');
         Route::post('reseller/services/{service}/terminate', [ManagedServiceController::class, 'terminate'])->name('reseller.services.terminate');
+        Route::delete('reseller/services/{service}', [ManagedServiceController::class, 'destroy'])->name('reseller.services.destroy');
 
         Route::get('reseller/reports', [ReportsController::class, 'index'])->name('reseller.reports.index');
         Route::get('reseller/reports/export/customers', [ReportsController::class, 'exportCustomers'])->name('reseller.reports.export.customers');

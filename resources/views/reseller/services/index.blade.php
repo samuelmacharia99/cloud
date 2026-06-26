@@ -41,7 +41,7 @@
                             <td class="px-6 py-4 text-sm">{{ $service->user?->name }}</td>
                             <td class="px-6 py-4"><x-status-badge :status="$service->status" type="service" /></td>
                             <td class="px-6 py-4 text-right">
-                                <a href="{{ route('reseller.services.show', $service) }}" class="text-purple-600 text-sm font-medium">View</a>
+                                @include('reseller.services.partials.row-actions', ['service' => $service])
                             </td>
                         </tr>
                     @endforeach
