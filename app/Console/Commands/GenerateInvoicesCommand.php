@@ -6,12 +6,12 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\ContainerOverageBillingService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\NotificationService;
 use App\Services\TaxService;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class GenerateInvoicesCommand extends BaseCronCommand
 {
@@ -22,9 +22,9 @@ class GenerateInvoicesCommand extends BaseCronCommand
     protected function handleCron(): string
     {
         $schedule = app(InvoiceGenerationScheduleService::class);
+        $invoiceNumbers = app(InvoiceNumberService::class);
 
         $invoiceDueDays = (int) Setting::getValue('invoice_due_days', 14);
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
         $services = $schedule->servicesDueForRenewalInvoiceQuery()->get();
 
         $count = 0;
@@ -33,54 +33,60 @@ class GenerateInvoicesCommand extends BaseCronCommand
                 continue;
             }
 
-            DB::transaction(function () use ($service, $prefix, $invoiceDueDays, &$count) {
-                $year = now()->format('Y');
-                $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
-                $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
+            try {
+                $invoiceNumbers->createWithUniqueNumber(function (string $number) use (
+                    $service,
+                    $invoiceDueDays,
+                    &$count,
+                ) {
+                    $service->loadMissing('user');
+                    $price = $this->getPriceForCycle($service);
+                    $taxBreakdown = TaxService::calculateForUser($price, $service->user);
 
-                $service->loadMissing('user');
-                $price = $this->getPriceForCycle($service);
-                $taxBreakdown = TaxService::calculateForUser($price, $service->user);
+                    $serviceDueDate = $service->next_due_date
+                        ? Carbon::parse($service->next_due_date)->toDateString()
+                        : now()->addDays($invoiceDueDays)->toDateString();
 
-                $serviceDueDate = $service->next_due_date
-                    ? Carbon::parse($service->next_due_date)->toDateString()
-                    : now()->addDays($invoiceDueDays)->toDateString();
+                    $invoice = Invoice::create([
+                        'user_id' => $service->user_id,
+                        'invoice_number' => $number,
+                        'status' => 'unpaid',
+                        'due_date' => $serviceDueDate,
+                        'subtotal' => $taxBreakdown['subtotal'],
+                        'tax' => $taxBreakdown['tax'],
+                        'total' => $taxBreakdown['total'],
+                        'notes' => 'Auto-generated renewal invoice.',
+                    ]);
 
-                $invoice = Invoice::create([
-                    'user_id' => $service->user_id,
-                    'invoice_number' => $number,
-                    'status' => 'unpaid',
-                    'due_date' => $serviceDueDate,
-                    'subtotal' => $taxBreakdown['subtotal'],
-                    'tax' => $taxBreakdown['tax'],
-                    'total' => $taxBreakdown['total'],
-                    'notes' => 'Auto-generated renewal invoice.',
-                ]);
+                    InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'service_id' => $service->id,
+                        'product_id' => $service->product_id,
+                        'description' => $service->product->name.' — '.ucfirst($service->billing_cycle),
+                        'quantity' => 1,
+                        'unit_price' => $price,
+                        'amount' => $price,
+                    ]);
 
-                InvoiceItem::create([
-                    'invoice_id' => $invoice->id,
-                    'service_id' => $service->id,
-                    'product_id' => $service->product_id,
-                    'description' => $service->product->name.' — '.ucfirst($service->billing_cycle),
-                    'quantity' => 1,
-                    'unit_price' => $price,
-                    'amount' => $price,
-                ]);
+                    if ($service->product->overage_enabled && $service->containerDeployment) {
+                        app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
+                            $invoice,
+                            $service,
+                        );
+                    }
 
-                if ($service->product->overage_enabled && $service->containerDeployment) {
-                    app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
-                        $invoice,
-                        $service,
-                    );
-                }
+                    // Link invoice only; next_due_date advances when payment is completed.
+                    $service->update(['invoice_id' => $invoice->id]);
 
-                // Link invoice only; next_due_date advances when payment is completed.
-                $service->update(['invoice_id' => $invoice->id]);
+                    app(NotificationService::class)->notifyInvoiceGenerated($invoice);
 
-                app(NotificationService::class)->notifyInvoiceGenerated($invoice);
+                    $count++;
 
-                $count++;
-            });
+                    return $invoice;
+                });
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         $monthly = $schedule->monthlyServiceAdvanceDays();

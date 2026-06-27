@@ -110,7 +110,19 @@ class CustomerInvoiceController extends Controller
             abort(403);
         }
 
-        return view('reseller.customer-invoices.edit', compact('invoice'));
+        $defaultLineItems = $invoice->items->map(function ($item) {
+            return [
+                'description' => $item->description,
+                'quantity' => (float) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+            ];
+        })->values()->all();
+
+        if ($defaultLineItems === []) {
+            $defaultLineItems = [['description' => '', 'quantity' => 1, 'unit_price' => 0]];
+        }
+
+        return view('reseller.customer-invoices.edit', compact('invoice', 'defaultLineItems'));
     }
 
     public function update(Request $request, Invoice $invoice): RedirectResponse

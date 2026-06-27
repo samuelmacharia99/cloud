@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\ContainerOverageBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
@@ -83,15 +84,17 @@ class GenerateInvoicesByDateCommand extends Command
             return 0;
         }
 
-        $prefix = Setting::getValue('invoice_prefix', 'INV');
+        $invoiceNumbers = app(InvoiceNumberService::class);
         $count = 0;
         foreach ($services as $service) {
             try {
-                DB::transaction(function () use ($service, $prefix, $date, $sendNotifications, &$count, $schedule) {
-                    $year = $date->format('Y');
-                    $sequence = Invoice::whereYear('created_at', $year)->count() + 1;
-                    $number = $prefix.'-'.$year.'-'.str_pad($sequence, 5, '0', STR_PAD_LEFT);
-
+                $invoiceNumbers->createWithUniqueNumber(function (string $number) use (
+                    $service,
+                    $date,
+                    $sendNotifications,
+                    &$count,
+                    $schedule,
+                ) {
                     $price = $this->getPriceForCycle($service);
                     $service->loadMissing('user');
                     $taxBreakdown = TaxService::calculateForUser($price, $service->user);

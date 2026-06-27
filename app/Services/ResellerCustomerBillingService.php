@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use Illuminate\Support\Facades\DB;
@@ -197,10 +198,7 @@ class ResellerCustomerBillingService
             ]);
             $invoice = $existing;
         } else {
-            $prefix = Setting::getValue('invoice_prefix', 'INV');
-            $year = now()->format('Y');
-            $count = Invoice::whereYear('created_at', $year)->count() + 1;
-            $invoiceNumber = "{$prefix}-{$year}-".str_pad((string) $count, 5, '0', STR_PAD_LEFT);
+            $invoiceNumber = app(InvoiceNumberService::class)->nextYearly();
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,

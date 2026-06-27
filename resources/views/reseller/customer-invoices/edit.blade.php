@@ -67,9 +67,7 @@
 
 <script>
 function invoiceForm() {
-    const oldItems = @json(old('items', $invoice->items->map(function ($i) {
-        return ['description' => $i->description, 'quantity' => (float) $i->quantity, 'unit_price' => (float) $i->unit_price];
-    })->values()->all()));
+    const oldItems = @json(old('items', $defaultLineItems));
     return {
         items: oldItems.length ? oldItems : [{ description: '', quantity: 1, unit_price: 0 }],
         addItem() { this.items.push({ description: '', quantity: 1, unit_price: 0 }); },
