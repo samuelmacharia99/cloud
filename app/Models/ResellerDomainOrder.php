@@ -222,11 +222,21 @@ class ResellerDomainOrder extends Model
             return false;
         }
 
-        if ($domain->status === 'active' && $domain->registrar_external_id) {
+        if ($domain->registrar_external_id && in_array($domain->status, ['pending', 'active'], true)) {
             return false;
         }
 
         return true;
+    }
+
+    public function hasPendingRegistrarSubmission(): bool
+    {
+        $domain = $this->relationLoaded('domain') ? $this->domain : $this->domain()->first();
+
+        return $domain
+            && $domain->registrar_external_id
+            && $domain->status === 'pending'
+            && $this->status === 'pushed';
     }
 
     public function canAdminDelete(): bool

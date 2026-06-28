@@ -305,7 +305,7 @@ class TelegramMonitorBridge
 
     public function resellerDomainOrder(ResellerDomainOrder $order, string $stage, string $paymentMethod = 'awaiting payment'): void
     {
-        $order->loadMissing('reseller', 'customer');
+        $order->loadMissing('reseller', 'customer', 'domain');
 
         $paymentLabel = ucfirst(str_replace('_', ' ', $paymentMethod));
         $typeLabel = $order->isTransfer() ? 'Transfer' : 'Registration';
@@ -367,12 +367,14 @@ class TelegramMonitorBridge
             'placed' => [
                 'A platform customer started a domain '.($order->order_type?->value ?? 'registration').' for '.$order->fullDomainName().'.',
                 $paymentLabel === 'Awaiting payment'
-                    ? 'Customer must pay their invoice. After payment the order moves to Ready for registrar.'
-                    : 'Confirm payment, then use Push to registrar at Openprovider.',
+                    ? 'Customer must pay their invoice. Registration at Openprovider runs automatically after payment.'
+                    : 'Payment received — registering at Openprovider automatically.',
             ],
             'customer_paid', 'pushed' => [
                 'Customer paid Talksasa directly for '.$order->fullDomainName().'. No reseller wallet is involved.',
-                'Open Admin → Domain orders → Push to registrar. Ensure Openprovider balance and contracts are in place.',
+                $order->hasPendingRegistrarSubmission()
+                    ? 'Submitted to Openprovider — awaiting registry activation (no admin action needed).'
+                    : 'Registering at Openprovider automatically. Admin action is only needed if this fails.',
             ],
             'provisioned', 'completed' => [
                 'Domain '.$order->fullDomainName().' was registered successfully for platform customer '.$order->customer?->name.'.',
@@ -380,7 +382,7 @@ class TelegramMonitorBridge
             ],
             'failed' => [
                 'Registrar rejected or failed registration for '.$order->fullDomainName().'.',
-                'Check failure reason on the order, fix Openprovider settings, then retry Push to registrar.',
+                'Top up Openprovider balance or fix settings, then retry Push to registrar in Admin → Domain orders.',
             ],
             default => [
                 'Platform domain order update for '.$order->fullDomainName().' (stage: '.$stage.').',
@@ -398,11 +400,15 @@ class TelegramMonitorBridge
             return match ($stage) {
                 'placed' => [
                     'Reseller '.$order->reseller?->name.' ordered '.$order->fullDomainName().' for their own account.',
-                    'Reseller will pay wholesale and push to admin when ready.',
+                    $paymentLabel === 'Awaiting payment'
+                        ? 'Reseller must pay wholesale — Openprovider registration runs automatically after payment.'
+                        : 'Payment received — registering at Openprovider automatically.',
                 ],
                 'pushed' => [
-                    'Reseller pushed '.$order->fullDomainName().' for registrar fulfillment.',
-                    'Admin: Push to registrar at Openprovider.',
+                    'Reseller paid wholesale for '.$order->fullDomainName().'.',
+                    $order->hasPendingRegistrarSubmission()
+                        ? 'Submitted to Openprovider — awaiting registry activation (no admin action needed).'
+                        : 'Registering at Openprovider automatically. Admin action is only needed if this fails.',
                 ],
                 default => [
                     'Reseller self-order update for '.$order->fullDomainName().'.',
@@ -421,8 +427,10 @@ class TelegramMonitorBridge
                 'No admin action until the reseller pushes — watch for a pushed notification.',
             ],
             'pushed' => [
-                'Reseller '.$order->reseller?->name.' pushed '.$order->fullDomainName().' for customer '.$order->customer?->name.'. Wholesale is on file.',
-                'Admin: Push to registrar at Openprovider to complete registration.',
+                'Reseller '.$order->reseller?->name.' paid wholesale for '.$order->fullDomainName().' (customer '.$order->customer?->name.').',
+                $order->hasPendingRegistrarSubmission()
+                    ? 'Submitted to Openprovider — awaiting registry activation (no admin action needed).'
+                    : 'Registering at Openprovider automatically. Admin action is only needed if this fails.',
             ],
             'provisioned', 'completed' => [
                 'Domain '.$order->fullDomainName().' completed for reseller customer '.$order->customer?->name.'.',
@@ -430,7 +438,7 @@ class TelegramMonitorBridge
             ],
             'failed' => [
                 'Registrar failed for '.$order->fullDomainName().' (reseller '.$order->reseller?->name.').',
-                'Fix Openprovider issue and retry Push to registrar, or mark failed and notify reseller.',
+                'Top up Openprovider balance or fix settings, then retry Push to registrar in Admin → Domain orders.',
             ],
             default => [
                 'Reseller domain order update for '.$order->fullDomainName().'.',

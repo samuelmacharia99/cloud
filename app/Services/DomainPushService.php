@@ -234,6 +234,8 @@ class DomainPushService
             $this->markCustomerOrderSubmitted($order);
             $this->notificationService->sendDomainPushedNotification($order);
         });
+
+        $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));
     }
 
     public function pushAfterWholesalePaidViaInvoice(ResellerDomainOrder $order): void
@@ -251,6 +253,8 @@ class DomainPushService
             $this->markCustomerOrderSubmitted($order);
             $this->notificationService->sendDomainPushedNotification($order);
         });
+
+        $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));
     }
 
     public function pushAfterPlatformCustomerPaid(ResellerDomainOrder $order): void
@@ -271,6 +275,8 @@ class DomainPushService
 
             $this->markCustomerOrderSubmitted($order);
         });
+
+        $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));
     }
 
     /** @deprecated Use pushAfterWholesalePaidViaInvoice() */
@@ -387,6 +393,23 @@ class DomainPushService
 
         foreach ($services as $service) {
             $service->update(['status' => ServiceStatus::Provisioning->value]);
+        }
+    }
+
+    protected function attemptAutoRegistrarFulfillment(ResellerDomainOrder $order): void
+    {
+        if (! $order->isRegistration() || ($order->push_mode ?? 'auto') !== 'auto') {
+            return;
+        }
+
+        if ($order->status !== 'pushed') {
+            return;
+        }
+
+        try {
+            app(RegistrarFulfillmentService::class)->attemptAutoFulfillment($order);
+        } catch (\Throwable $e) {
+            report($e);
         }
     }
 
@@ -542,6 +565,29 @@ class DomainPushService
             ->where('domain_id', $domain->id)
             ->whereIn('status', ['queued', 'pushed'])
             ->each(fn (ResellerDomainOrder $order) => $this->failOrder($order, $reason));
+    }
+
+    public function failRegistrarSubmissionsForDomain(Domain $domain, string $reason): void
+    {
+        ResellerDomainOrder::query()
+            ->where('domain_id', $domain->id)
+            ->whereIn('status', ['queued', 'pushed'])
+            ->each(fn (ResellerDomainOrder $order) => $this->failRegistrarSubmission($order, $reason));
+    }
+
+    public function failRegistrarSubmission(ResellerDomainOrder $order, string $reason): void
+    {
+        $this->db->transaction(function () use ($order, $reason) {
+            $order->update([
+                'status' => 'failed',
+                'failed_at' => now(),
+                'failure_reason' => $reason,
+                'retry_count' => $order->retry_count + 1,
+            ]);
+
+            $this->notificationService->sendDomainFailedNotification($order);
+            app(NotificationService::class)->notifyAdminResellerDomainOrder($order->fresh(['reseller', 'customer']), 'failed');
+        });
     }
 
     public function failOrder(ResellerDomainOrder $order, string $reason): void

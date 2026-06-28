@@ -28,7 +28,27 @@ class RegistrarFulfillmentService
 
     public function fulfillOrder(ResellerDomainOrder $order): void
     {
-        $this->runOrderFulfillment($order, manual: false);
+        $this->attemptAutoFulfillment($order);
+    }
+
+    /**
+     * Submit a paid registration to the API registrar when push_mode is auto.
+     *
+     * @return array{success: bool, message: string}
+     */
+    public function attemptAutoFulfillment(ResellerDomainOrder $order): array
+    {
+        $order->refresh();
+
+        if ($order->status !== 'pushed' || ($order->push_mode ?? 'auto') !== 'auto') {
+            return ['success' => false, 'message' => 'Order not eligible for automatic registrar fulfillment.'];
+        }
+
+        if ($order->isTransfer()) {
+            return ['success' => false, 'message' => 'Transfers are fulfilled separately.'];
+        }
+
+        return $this->runOrderFulfillment($order, manual: false);
     }
 
     /**
@@ -82,11 +102,15 @@ class RegistrarFulfillmentService
         $driver = $this->operationsDriver($registrar);
 
         if (! $driver) {
+            $message = 'No API registrar is configured for this TLD.';
+
             if ($manual) {
-                return ['success' => false, 'message' => 'No API registrar is configured for this TLD.'];
+                return ['success' => false, 'message' => $message];
             }
 
-            return ['success' => false, 'message' => ''];
+            $this->failRegistrarSubmission($order, $message);
+
+            return ['success' => false, 'message' => $message];
         }
 
         $resolvedNameservers = $this->nameserverService->forDomain($domain);
@@ -156,13 +180,18 @@ class RegistrarFulfillmentService
 
             Log::error('Registrar fulfillment failed', $context);
 
-            app(DomainPushService::class)->failOrder($order->fresh(), $e->getMessage());
+            $this->failRegistrarSubmission($order->fresh(), $e->getMessage());
 
             return [
                 'success' => false,
                 'message' => $e->getMessage(),
             ];
         }
+    }
+
+    private function failRegistrarSubmission(ResellerDomainOrder $order, string $reason): void
+    {
+        app(DomainPushService::class)->failRegistrarSubmission($order, $reason);
     }
 
     public function fulfillStandaloneTransfer(Domain $domain): void
@@ -303,7 +332,7 @@ class RegistrarFulfillmentService
         }
 
         if ($status === 'FAI' && ! $domain->isTransfer()) {
-            app(DomainPushService::class)->failOrdersForDomain(
+            app(DomainPushService::class)->failRegistrarSubmissionsForDomain(
                 $domain->fresh(),
                 'Registrar reported registration failure.',
             );
@@ -323,7 +352,7 @@ class RegistrarFulfillmentService
             if ($order->isTransfer()) {
                 DomainTransferService::failTransfer($domain, $message);
             } else {
-                app(DomainPushService::class)->failOrder($order, $message);
+                $this->failRegistrarSubmission($order, $message);
             }
 
             return;

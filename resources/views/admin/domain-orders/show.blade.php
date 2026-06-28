@@ -306,7 +306,7 @@
     <div class="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 text-sm text-amber-900 dark:text-amber-200">
         @if($order->isPlatformOrder())
             @if($order->hasPaidCustomerInvoice())
-                <strong>Customer paid</strong> — this is a direct platform order (no reseller). Use <strong>Prepare for registrar</strong>, then <strong>Push to registrar</strong> at Openprovider.
+                <strong>Customer paid</strong> — registration at Openprovider runs automatically after payment.
             @else
                 <strong>Queued</strong> — waiting for the customer to pay their domain invoice.
             @endif
@@ -321,11 +321,11 @@
     @if($order->status === 'pushed' || $order->status === 'failed')
     <div class="bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 rounded-2xl p-4 text-sm text-violet-900 dark:text-violet-200">
         @if($order->status === 'failed')
-            <strong>Failed</strong> — registrar submission did not complete. Top up Openprovider balance, verify contact handles, then use <strong>Push to registrar</strong> to retry.
-        @elseif($order->isPlatformOrder())
-            <strong>Ready for registrar</strong> — customer paid Talksasa directly. Use <strong>Push to registrar</strong> to register or transfer at Openprovider.
+            <strong>Registrar submission failed</strong> — {{ $order->failure_reason ?? 'See logs for details.' }} Top up Openprovider balance, verify contact handles and nameservers, then use <strong>Push to registrar</strong> to retry.
+        @elseif($order->hasPendingRegistrarSubmission())
+            <strong>Submitted to Openprovider</strong> — awaiting registry activation. The order will complete automatically when the domain becomes active (sync cron). No admin action needed unless this stalls.
         @else
-            <strong>Pushed</strong> — reseller submitted this order. Use <strong>Push to registrar</strong> to register or transfer at Openprovider (e.g. after topping up balance).
+            <strong>Processing</strong> — wholesale payment is confirmed. Registration at Openprovider runs automatically; use <strong>Push to registrar</strong> only if automatic submission failed.
         @endif
     </div>
     @endif
@@ -345,12 +345,12 @@
             </form>
             @endif
             @if($order->canAdminPushToRegistrar())
-            <form method="POST" action="{{ route('admin.domain-orders.push-registrar', $order) }}" data-confirm="Submit this domain to the API registrar now?@if($order->status === 'failed') This retries a failed submission.@endif">
+            <form method="POST" action="{{ route('admin.domain-orders.push-registrar', $order) }}" data-confirm="Submit this domain to the API registrar now?@if($order->status === 'failed') This retries a failed automatic submission.@endif">
                 @csrf
                 <input type="hidden" name="stay_on_detail" value="1">
-                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition" title="Register or transfer at Openprovider">
+                <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition" title="Retry registration at Openprovider after a failed automatic submission">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
-                    Push to registrar
+                    Retry at registrar
                 </button>
             </form>
             @endif
