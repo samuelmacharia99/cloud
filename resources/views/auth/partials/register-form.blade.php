@@ -29,11 +29,14 @@
         }
     }"
     x-init="@if ($errors->any()) $nextTick(() => document.querySelector('.auth-field-error, .auth-input-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' })) @endif"
-    class="space-y-7"
+    class="space-y-5 sm:space-y-7 min-w-0"
 >
-    <div class="space-y-3 mb-2">
-        <h1 class="text-4xl font-bold tracking-tight">Create your account</h1>
-        <p class="text-base text-slate-600 dark:text-slate-400 font-medium">Enter your details below. We will email you a verification code.</p>
+    <div class="space-y-2 mb-1 min-w-0">
+        <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight leading-tight">Create your account</h1>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-full">
+            Fill in your details below.<br class="sm:hidden">
+            <span class="sm:ml-0">We'll email you a verification code.</span>
+        </p>
     </div>
 
     @if ($errors->any())
@@ -51,7 +54,7 @@
         id="register-form"
         method="POST"
         action="{{ route('register') }}"
-        class="space-y-5"
+        class="space-y-4 sm:space-y-5 min-w-0"
         data-form-version="2026-06-28"
         novalidate
     >
@@ -165,7 +168,7 @@
             </div>
 
             <div class="space-y-2">
-                <div class="flex items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <label for="register-password" class="block text-sm font-semibold text-slate-900 dark:text-white">
                         Password <span class="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
                     </label>
@@ -173,7 +176,7 @@
                         type="button"
                         @click="generatePassword()"
                         :disabled="generatingPassword"
-                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 disabled:opacity-50 transition"
+                        class="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 disabled:opacity-50 transition"
                     >
                         <span x-text="generatingPassword ? 'Generating…' : 'Generate password'"></span>
                     </button>
@@ -198,7 +201,7 @@
                         <span x-show="showPassword" x-cloak>Hide</span>
                     </button>
                 </div>
-                <p class="text-xs text-slate-500 dark:text-slate-400">
+                <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                     At least {{ $passwordMinLength }} characters with uppercase, lowercase, numbers, and symbols.
                 </p>
                 @error('password')
