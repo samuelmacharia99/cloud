@@ -9,6 +9,7 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Route;
 
 class DomainExpiryMail extends Mailable implements ShouldQueue
 {
@@ -34,6 +35,9 @@ class DomainExpiryMail extends Mailable implements ShouldQueue
             with: [
                 'domain' => $this->domain,
                 'daysUntilExpiry' => $this->daysUntilExpiry,
+                'renewUrl' => Route::has('customer.domains.index')
+                    ? route('customer.domains.index')
+                    : url('/my/domains'),
             ],
         );
     }

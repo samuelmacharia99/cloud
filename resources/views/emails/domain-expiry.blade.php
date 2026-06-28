@@ -36,7 +36,7 @@
 <p>Renewing your domain on time ensures uninterrupted service and protects your online presence. We offer convenient renewal options.</p>
 
 <p>
-    <a href="{{ route('customer.domains.index') }}" class="cta-button">Renew Domain Now</a>
+    <a href="{{ $renewUrl ?? url('/my/domains') }}" class="cta-button">Renew Domain Now</a>
 </p>
 
 <div class="alert alert-info">
