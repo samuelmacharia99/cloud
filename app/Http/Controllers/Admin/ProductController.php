@@ -92,6 +92,11 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
+        if (! $product->canBeDeleted()) {
+            return redirect()->route('admin.products.index')
+                ->with('error', $product->deletionBlockedMessage());
+        }
+
         $product->delete();
 
         return redirect()->route('admin.products.index')

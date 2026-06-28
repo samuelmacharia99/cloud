@@ -85,6 +85,60 @@ class Product extends Model
         return $this->hasMany(InvoiceItem::class);
     }
 
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    /**
+     * Whether this product can be permanently removed from the catalog.
+     */
+    public function canBeDeleted(): bool
+    {
+        return $this->deletionBlockers() === [];
+    }
+
+    /**
+     * @return list<string> Human-readable reasons deletion is blocked.
+     */
+    public function deletionBlockers(): array
+    {
+        if ($this->slug === \App\Services\ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
+            return ['This is a system product used for reseller DirectAdmin provisioning and cannot be deleted. Deactivate it instead if needed.'];
+        }
+
+        $blockers = [];
+
+        $servicesCount = $this->services()->count();
+        if ($servicesCount > 0) {
+            $blockers[] = "It is linked to {$servicesCount} service(s).";
+        }
+
+        $invoiceItemsCount = $this->invoiceItems()->count();
+        if ($invoiceItemsCount > 0) {
+            $blockers[] = "It appears on {$invoiceItemsCount} invoice line item(s).";
+        }
+
+        $orderItemsCount = $this->orderItems()->count();
+        if ($orderItemsCount > 0) {
+            $blockers[] = "It appears on {$orderItemsCount} order line item(s).";
+        }
+
+        return $blockers;
+    }
+
+    public function deletionBlockedMessage(): string
+    {
+        $blockers = $this->deletionBlockers();
+
+        if ($blockers === []) {
+            return '';
+        }
+
+        return 'This product cannot be deleted. '.implode(' ', $blockers)
+            .' Deactivate the product instead to hide it from new orders.';
+    }
+
     public function containerTemplate()
     {
         return $this->belongsTo(ContainerTemplate::class);
