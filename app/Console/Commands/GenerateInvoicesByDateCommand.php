@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceNumberService;
+use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\ContainerOverageBillingService;
 use App\Services\DomainRenewalService;
 use App\Services\InvoiceGenerationScheduleService;
@@ -85,6 +86,7 @@ class GenerateInvoicesByDateCommand extends Command
         }
 
         $invoiceNumbers = app(InvoiceNumberService::class);
+        $renewalPricing = app(ServiceRenewalPricingService::class);
         $count = 0;
         foreach ($services as $service) {
             try {
@@ -94,8 +96,9 @@ class GenerateInvoicesByDateCommand extends Command
                     $sendNotifications,
                     &$count,
                     $schedule,
+                    $renewalPricing,
                 ) {
-                    $price = $this->getPriceForCycle($service);
+                    $price = $renewalPricing->unitPrice($service);
                     $service->loadMissing('user');
                     $taxBreakdown = TaxService::calculateForUser($price, $service->user);
                     $dueDate = $schedule->serviceInvoiceDueDate($service)->toDateString();
@@ -204,21 +207,6 @@ class GenerateInvoicesByDateCommand extends Command
         }
 
         return $count;
-    }
-
-    private function getPriceForCycle(Service $service): float
-    {
-        if ($service->custom_price !== null) {
-            return (float) $service->custom_price;
-        }
-
-        return match ($service->billing_cycle) {
-            'monthly' => (float) $service->product->monthly_price,
-            'quarterly' => (float) ($service->product->monthly_price * 3),
-            'semi-annual' => (float) ($service->product->monthly_price * 6),
-            'annual' => (float) $service->product->yearly_price ?: ($service->product->monthly_price * 12),
-            default => (float) $service->product->price,
-        };
     }
 
     private function getRenewalPrice(Domain $domain): float

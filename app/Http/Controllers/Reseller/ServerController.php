@@ -128,6 +128,7 @@ class ServerController extends Controller
                 'billing_cycle' => $validated['billing_cycle'],
                 'status' => ServiceStatus::Pending,
                 'next_due_date' => $this->getNextDueDate($validated['billing_cycle']),
+                'custom_price' => $price,
                 'provisioning_driver_key' => $product->provisioning_driver_key,
                 'service_meta' => [
                     'operating_system' => $validated['operating_system'],
