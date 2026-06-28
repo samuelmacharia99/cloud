@@ -15,7 +15,9 @@
             </div>
 
             <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Verify Your M-Pesa Payment</h1>
-            <p class="text-slate-600 dark:text-slate-400 mb-4">Invoice #{{ $invoice->invoice_number }} - KSH {{ number_format($invoice->total, 2) }}</p>
+            <p class="text-slate-600 dark:text-slate-400 mb-4">
+                Invoice #{{ $invoice->invoice_number }} — KSH {{ number_format($amountDue, 2) }}
+            </p>
 
             <div class="bg-purple-50 dark:bg-purple-950 border border-purple-200 dark:border-purple-800 rounded-lg p-4 mb-6">
                 <p class="text-sm text-purple-900 dark:text-purple-100 mb-2">
@@ -26,49 +28,8 @@
                 </p>
             </div>
 
-            <div x-data="{ checking: true, message: 'Waiting for payment confirmation...', completed: false, failed: false, checkoutRequestId: '{{ $checkoutRequestId }}' }"
-                 x-init="async function() {
-                     let attempts = 0;
-                     const maxAttempts = 120; // 2 minutes
-                     while (this.checking && attempts < maxAttempts) {
-                         try {
-                             const statusUrl = new URL('{{ route('reseller.payment.mpesa-status', $invoice) }}', window.location.origin);
-                             statusUrl.searchParams.set('checkout_request_id', this.checkoutRequestId);
-                             const res = await fetch(statusUrl.toString());
-                             const data = await res.json();
-
-                             if (data.status === 'completed') {
-                                 this.checking = false;
-                                 this.completed = true;
-                                 this.message = 'Payment successful! Redirecting...';
-                                 setTimeout(() => {
-                                     window.location.href = '{{ route('reseller.payment.success', $invoice) }}';
-                                 }, 2000);
-                             } else if (data.status === 'failed') {
-                                 this.checking = false;
-                                 this.failed = true;
-                                 this.message = data.message || 'Payment was cancelled or failed';
-                             } else if (data.status === 'error') {
-                                 this.checking = false;
-                                 this.failed = true;
-                                 this.message = 'Payment verification failed: ' + (data.message || 'Unknown error');
-                             }
-                         } catch (e) {
-                             console.error('Verification error:', e);
-                         }
-
-                         attempts++;
-                         await new Promise(r => setTimeout(r, 1000));
-                     }
-
-                     if (this.checking) {
-                         this.checking = false;
-                         this.message = 'Payment verification timed out. Please check your account.';
-                     }
-                 }()"
-                 class="space-y-4">
-
-                <div v-if="checking" class="flex justify-center gap-2 my-8">
+            <div x-data="resellerMpesaVerify()" x-init="init()" class="space-y-4">
+                <div x-show="checking" class="flex justify-center gap-2 my-8">
                     <div class="w-3 h-3 bg-purple-600 rounded-full animate-bounce" style="animation-delay: 0s;"></div>
                     <div class="w-3 h-3 bg-purple-600 rounded-full animate-bounce" style="animation-delay: 0.2s;"></div>
                     <div class="w-3 h-3 bg-purple-600 rounded-full animate-bounce" style="animation-delay: 0.4s;"></div>
@@ -81,7 +42,7 @@
                 }" class="text-sm font-medium" x-text="message">
                 </p>
 
-                <div v-if="!checking && !completed" class="flex gap-3 pt-4">
+                <div x-show="!checking && !completed" class="flex gap-3 pt-4">
                     <a href="{{ route('reseller.invoices.show', $invoice) }}" class="flex-1 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition text-center">
                         Back to Invoice
                     </a>
@@ -92,9 +53,71 @@
             </div>
 
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-6">
-                This page will automatically update when payment is received. You can close this window if needed.
+                Auto-checking every 5 seconds for up to 5 minutes. You can close this window — payment will still be recorded.
             </p>
         </div>
     </div>
 </div>
+
+<script>
+function resellerMpesaVerify() {
+    return {
+        checking: true,
+        message: 'Waiting for payment confirmation...',
+        completed: false,
+        failed: false,
+        checkoutRequestId: '{{ $checkoutRequestId }}',
+        checkInterval: 5,
+        maxAttempts: 60,
+        pollTimer: null,
+
+        init() {
+            this.poll();
+            this.pollTimer = setInterval(() => this.poll(), this.checkInterval * 1000);
+        },
+
+        async poll() {
+            if (!this.checking) {
+                return;
+            }
+
+            if (this.attempts >= this.maxAttempts) {
+                this.checking = false;
+                this.message = 'Verification timed out. If you completed payment, check your invoice in a few minutes.';
+                clearInterval(this.pollTimer);
+
+                return;
+            }
+
+            this.attempts = (this.attempts || 0) + 1;
+
+            try {
+                const statusUrl = new URL('{{ route('reseller.payment.mpesa-status', $invoice) }}', window.location.origin);
+                statusUrl.searchParams.set('checkout_request_id', this.checkoutRequestId);
+                const res = await fetch(statusUrl.toString());
+                const data = await res.json();
+
+                if (data.status === 'completed') {
+                    this.checking = false;
+                    this.completed = true;
+                    this.message = 'Payment successful! Redirecting...';
+                    clearInterval(this.pollTimer);
+                    setTimeout(() => {
+                        window.location.href = '{{ route('reseller.payment.success', $invoice) }}';
+                    }, 2000);
+                } else if (data.status === 'failed' || data.status === 'error') {
+                    this.checking = false;
+                    this.failed = true;
+                    this.message = data.message || 'Payment was cancelled or failed';
+                    clearInterval(this.pollTimer);
+                } else {
+                    this.message = data.message || 'Waiting for payment confirmation...';
+                }
+            } catch (e) {
+                console.error('Verification error:', e);
+            }
+        },
+    };
+}
+</script>
 @endsection

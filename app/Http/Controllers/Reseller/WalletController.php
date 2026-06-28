@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\NotificationService;
-use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\ResellerWalletService;
 use Illuminate\Http\Request;
@@ -47,7 +46,8 @@ class WalletController extends Controller
 
         try {
             if ($validated['payment_method'] === 'mpesa') {
-                $mpesa = new MpesaService;
+                // Wallet top-up is paid to the platform paybill.
+                $mpesa = PaymentGatewayFactory::make('mpesa');
                 $existing = $mpesa->findReusablePendingTopup(
                     $reseller,
                     'wallet_topup',
@@ -90,7 +90,7 @@ class WalletController extends Controller
             // Initiate payment based on method
             if ($validated['payment_method'] === 'mpesa') {
                 // Wallet top-up is paid to the platform, so always use platform M-Pesa credentials.
-                $mpesa = new MpesaService;
+                $mpesa = PaymentGatewayFactory::make('mpesa');
                 $result = $mpesa->initiateTopup(
                     $reseller,
                     $validated['amount'],
@@ -175,9 +175,8 @@ class WalletController extends Controller
             ]);
         }
 
-        // Check payment status via M-Pesa
-        // Wallet top-up verification should match the same platform M-Pesa account used at initiation.
-        $mpesa = new MpesaService;
+        // Wallet top-up verification uses platform M-Pesa (same as initiation).
+        $mpesa = PaymentGatewayFactory::make('mpesa');
         $result = $mpesa->verify($payment->transaction_reference);
 
         // If M-Pesa says payment succeeded, update our records and credit the wallet

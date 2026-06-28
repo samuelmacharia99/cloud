@@ -19,9 +19,12 @@
         const self = this;
         const startedAt = Date.now();
 
+        const pollIntervalMs = 5000;
+        const maxDurationMs = 300000;
+
         const interval = setInterval(async () => {
             try {
-                const response = await fetch(`{{ route('reseller.wallet.topup.status', '') }}/${invoiceId}`);
+                const response = await fetch(`{{ url('reseller/wallet/topup/status') }}/${invoiceId}`);
                 const data = await response.json();
 
                 if (data.status === 'completed') {
@@ -38,15 +41,15 @@
                     self.statusMessage = data.message || 'Transaction still processing on M-Pesa.';
                 }
 
-                if (Date.now() - startedAt > 180000) {
+                if (Date.now() - startedAt > maxDurationMs) {
                     clearInterval(interval);
                     self.checking = false;
-                    self.statusMessage = 'Still processing. You can click Verify Payment again in a moment.';
+                    self.statusMessage = 'Still processing. If you completed payment, your wallet will update shortly.';
                 }
             } catch (error) {
                 console.error('Error checking payment status:', error);
             }
-        }, 2000);
+        }, pollIntervalMs);
     }
 }" @click.outside="if (event.target.closest('.modal-form')) { return; } openTopupForm = false">
     <!-- Header -->

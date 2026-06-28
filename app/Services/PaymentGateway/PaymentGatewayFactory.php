@@ -4,6 +4,7 @@ namespace App\Services\PaymentGateway;
 
 use App\Enums\PaymentMethod;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\User;
 use App\Services\ResellerBrandingResolver;
 use Illuminate\Support\Facades\Log;
@@ -34,6 +35,33 @@ class PaymentGatewayFactory
         $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
 
         return self::make($method, $reseller);
+    }
+
+    /**
+     * Resolve the M-Pesa gateway that initiated a given payment (platform vs reseller).
+     */
+    public static function makeMpesaForPayment(Payment $payment): MpesaService
+    {
+        $payment->loadMissing('invoice.user', 'user');
+
+        if ($payment->payment_purpose === 'wallet_topup') {
+            return new MpesaService(null);
+        }
+
+        if ($payment->invoice) {
+            return self::makeForInvoice('mpesa', $payment->invoice);
+        }
+
+        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($payment->user);
+
+        return new MpesaService($reseller);
+    }
+
+    public static function makeMpesaForUser(?User $user): MpesaService
+    {
+        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+
+        return new MpesaService($reseller);
     }
 
     /**

@@ -276,6 +276,13 @@ class CronJobSeeder extends Seeder
                 'schedule' => '15 8 * * 0',
                 'enabled' => true,
             ],
+            [
+                'name' => 'Reconcile M-Pesa Payments',
+                'description' => 'Re-queries stuck M-Pesa STK payments and settles invoices paid but not marked paid.',
+                'command' => 'cron:reconcile-mpesa-payments',
+                'schedule' => '*/5 * * * *',
+                'enabled' => true,
+            ],
         ];
 
         foreach ($jobs as $job) {

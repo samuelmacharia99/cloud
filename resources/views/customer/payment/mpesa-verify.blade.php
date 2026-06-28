@@ -63,7 +63,7 @@
         <!-- Amount Due -->
         <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-6 mb-6 border border-slate-200 dark:border-slate-700">
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">Amount to Pay</p>
-            <p class="text-4xl font-bold text-slate-900 dark:text-white">Ksh {{ number_format($invoice->total, 0) }}</p>
+            <p class="text-4xl font-bold text-slate-900 dark:text-white">Ksh {{ number_format($amountRemaining ?? $invoice->getAmountRemaining(), 0) }}</p>
             <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Invoice: {{ $invoice->invoice_number }}</p>
         </div>
 

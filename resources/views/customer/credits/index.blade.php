@@ -11,10 +11,17 @@
     checking: false,
     async startStatusCheck() {
         this.checking = true;
+        this.loading = false;
+        this.statusMessage = 'Waiting for payment confirmation...';
         const invoiceId = this.invoiceId;
+        const self = this;
+        const startedAt = Date.now();
+        const pollIntervalMs = 5000;
+        const maxDurationMs = 300000;
+
         const interval = setInterval(async () => {
             try {
-                const response = await fetch(`{{ route('customer.credits.topup.status', '') }}/${invoiceId}`);
+                const response = await fetch(`{{ url('my/credits/topup/status') }}/${invoiceId}`);
                 const data = await response.json();
 
                 if (data.status === 'completed') {
@@ -24,12 +31,19 @@
                 } else if (data.status === 'failed') {
                     clearInterval(interval);
                     alert('Payment failed: ' + data.message);
+                    self.checking = false;
                     setTimeout(() => window.location.reload(), 500);
                 }
             } catch (error) {
                 console.error('Error checking payment status:', error);
             }
-        }, 2000);
+
+            if (Date.now() - startedAt > maxDurationMs) {
+                clearInterval(interval);
+                self.checking = false;
+                alert('Still processing. If you completed payment on your phone, credits will appear shortly.');
+            }
+        }, pollIntervalMs);
     }
 }" @click.outside="if (event.target.closest('.modal-form')) { return; } openTopupForm = false">
     <div class="flex flex-wrap items-start justify-between gap-4">

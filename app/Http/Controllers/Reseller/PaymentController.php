@@ -136,6 +136,7 @@ class PaymentController extends Controller
             return view('reseller.payment.verify-mpesa', [
                 'invoice' => $invoice,
                 'checkoutRequestId' => $checkoutRequestId,
+                'amountDue' => app(ResellerInvoicePaymentService::class)->amountDue($invoice),
             ]);
         } catch (\Exception $e) {
             \Log::error('verifyMpesa error', [

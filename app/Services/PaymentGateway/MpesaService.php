@@ -22,6 +22,9 @@ class MpesaService implements PaymentGatewayInterface
 {
     private const STK_SESSION_MINUTES = 5;
 
+    /** Accept M-Pesa amounts within this many KES of the expected STK amount. */
+    private const AMOUNT_TOLERANCE_KES = 1;
+
     protected ?string $consumerKey;
 
     protected ?string $consumerSecret;
@@ -118,6 +121,7 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $phone = $this->sanitizePhone($customerData['phone'] ?? '');
+            $this->assertValidMpesaPhone($phone);
             $settlement = app(InvoiceCurrencyService::class)->settlementAmount($invoice, 'KES');
             $chargeAmount = (float) ($customerData['charge_amount'] ?? $settlement['amount']);
 
@@ -428,26 +432,32 @@ class MpesaService implements PaymentGatewayInterface
                         }
                     }
 
-                    if ($mpesaAmount !== null && (int) ceil((float) $lockedPayment->amount) !== (int) $mpesaAmount) {
-                        Log::error('M-Pesa callback rejected: amount mismatch', [
+                    $expectedAmount = (int) ceil((float) $lockedPayment->amount);
+                    $receivedAmount = $mpesaAmount !== null ? (int) $mpesaAmount : null;
+                    $amountMismatch = $receivedAmount !== null
+                        && abs($expectedAmount - $receivedAmount) > self::AMOUNT_TOLERANCE_KES;
+
+                    if ($amountMismatch) {
+                        Log::error('M-Pesa callback rejected: amount mismatch beyond tolerance', [
                             'payment_id' => $lockedPayment->id,
-                            'expected' => (int) ceil((float) $lockedPayment->amount),
-                            'received' => (int) $mpesaAmount,
+                            'expected' => $expectedAmount,
+                            'received' => $receivedAmount,
+                            'tolerance' => self::AMOUNT_TOLERANCE_KES,
                         ]);
 
                         $lockedPayment->update([
                             'status' => PaymentStatus::Failed->value,
                             'notes' => json_encode([
                                 'result_code' => 'amount_mismatch',
-                                'expected_amount' => (int) ceil((float) $lockedPayment->amount),
-                                'received_amount' => (int) $mpesaAmount,
+                                'expected_amount' => $expectedAmount,
+                                'received_amount' => $receivedAmount,
                             ]),
                         ]);
 
                         $this->notifyPaymentFailed(
                             $lockedPayment,
                             'Payment amount does not match invoice total (expected '
-                            .(int) ceil((float) $lockedPayment->amount).', received '.(int) $mpesaAmount.').',
+                            .$expectedAmount.', received '.$receivedAmount.').',
                         );
 
                         return [
@@ -457,15 +467,27 @@ class MpesaService implements PaymentGatewayInterface
                         ];
                     }
 
+                    $callbackNotes = [
+                        'mpesa_receipt' => $mpesaReceipt,
+                        'mpesa_timestamp' => $mpesaTimestamp,
+                        'mpesa_phone' => $mpesaPhone,
+                        'mpesa_amount' => $mpesaAmount,
+                    ];
+
+                    if ($receivedAmount !== null && $receivedAmount !== $expectedAmount) {
+                        Log::warning('M-Pesa callback accepted with amount within tolerance', [
+                            'payment_id' => $lockedPayment->id,
+                            'expected' => $expectedAmount,
+                            'received' => $receivedAmount,
+                        ]);
+                        $callbackNotes['amount_within_tolerance'] = true;
+                        $callbackNotes['expected_amount'] = $expectedAmount;
+                    }
+
                     $lockedPayment->update([
                         'status' => PaymentStatus::Completed->value,
                         'paid_at' => now(),
-                        'notes' => json_encode([
-                            'mpesa_receipt' => $mpesaReceipt,
-                            'mpesa_timestamp' => $mpesaTimestamp,
-                            'mpesa_phone' => $mpesaPhone,
-                            'mpesa_amount' => $mpesaAmount,
-                        ]),
+                        'notes' => json_encode($callbackNotes),
                     ]);
 
                     if ($lockedPayment->payment_purpose === 'wallet_topup') {
@@ -600,6 +622,7 @@ class MpesaService implements PaymentGatewayInterface
             }
 
             $phone = $this->sanitizePhone($phone);
+            $this->assertValidMpesaPhone($phone);
 
             $existing = $this->findReusablePendingTopup($user, $paymentPurpose, $amount, $phone);
             if ($existing) {
@@ -1157,13 +1180,31 @@ class MpesaService implements PaymentGatewayInterface
 
         if (strlen($phone) === 9) {
             return '254'.$phone;
-        } elseif (strlen($phone) === 10 && substr($phone, 0, 1) === '0') {
+        }
+
+        if (strlen($phone) === 10 && str_starts_with($phone, '0')) {
             return '254'.substr($phone, 1);
-        } elseif (substr($phone, 0, 3) === '254') {
+        }
+
+        if (str_starts_with($phone, '254') && strlen($phone) === 12) {
             return $phone;
         }
 
-        return '254'.$phone;
+        return $phone;
+    }
+
+    private function assertValidMpesaPhone(string $phone): void
+    {
+        if (! $this->isValidMpesaPhone($phone)) {
+            throw new \InvalidArgumentException(
+                'Invalid M-Pesa phone number. Use a Kenyan mobile number like 0712345678.'
+            );
+        }
+    }
+
+    public function isValidMpesaPhone(string $phone): bool
+    {
+        return (bool) preg_match('/^254[17]\d{8}$/', $phone);
     }
 
     private function tokenCacheKey(): string

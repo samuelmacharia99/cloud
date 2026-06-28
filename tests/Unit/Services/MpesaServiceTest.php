@@ -301,4 +301,58 @@ class MpesaServiceTest extends TestCase
             'status' => 'failed',
         ]);
     }
+
+    public function test_initiate_rejects_invalid_phone_number(): void
+    {
+        $invoice = Invoice::factory()->create([
+            'user_id' => User::factory()->create()->id,
+            'status' => 'unpaid',
+            'total' => 1000,
+        ]);
+
+        $result = app(MpesaService::class)->initiate($invoice, ['phone' => '123']);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('Invalid M-Pesa phone number', $result['message']);
+        $this->assertDatabaseCount('payments', 0);
+    }
+
+    public function test_handle_callback_accepts_amount_within_tolerance(): void
+    {
+        $user = User::factory()->create();
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'unpaid',
+            'total' => 1500,
+        ]);
+
+        $payment = Payment::create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 1500.50,
+            'currency' => 'KES',
+            'payment_method' => 'mpesa',
+            'transaction_reference' => 'ws_CO_tolerance',
+            'status' => 'pending',
+        ]);
+
+        $result = app(MpesaService::class)->handleCallback([
+            'Body' => [
+                'stkCallback' => [
+                    'CheckoutRequestID' => 'ws_CO_tolerance',
+                    'ResultCode' => 0,
+                    'CallbackMetadata' => [
+                        'Item' => [
+                            ['Name' => 'Amount', 'Value' => 1501],
+                            ['Name' => 'MpesaReceiptNumber', 'Value' => 'ABC124'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($result['success']);
+        $payment->refresh();
+        $this->assertTrue($payment->isCompleted());
+    }
 }

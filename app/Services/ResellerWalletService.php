@@ -175,6 +175,16 @@ class ResellerWalletService
     public function processTopupPayment(Payment $payment): void
     {
         $transaction = $this->db->transaction(function () use ($payment) {
+            $existing = WalletTransaction::query()
+                ->where('reference_id', $payment->id)
+                ->where('reference_type', 'Payment')
+                ->where('type', 'deposit')
+                ->first();
+
+            if ($existing) {
+                return $existing;
+            }
+
             $reseller = $payment->user;
 
             $transaction = $this->credit(

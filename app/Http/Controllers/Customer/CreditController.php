@@ -9,7 +9,7 @@ use App\Models\Credit;
 use App\Models\Invoice;
 use App\Services\CreditService;
 use App\Services\CustomerCreditTopupService;
-use App\Services\PaymentGateway\MpesaService;
+use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -57,7 +57,7 @@ class CreditController extends Controller
 
         try {
             if ($validated['payment_method'] === 'mpesa') {
-                $mpesa = new MpesaService;
+                $mpesa = PaymentGatewayFactory::makeMpesaForUser($customer);
                 $existing = $mpesa->findReusablePendingTopup(
                     $customer,
                     'credit_topup',
@@ -84,7 +84,7 @@ class CreditController extends Controller
             ];
 
             if ($validated['payment_method'] === 'mpesa') {
-                $mpesa = new MpesaService;
+                $mpesa = PaymentGatewayFactory::makeMpesaForUser($customer);
                 $result = $mpesa->initiateTopup(
                     $customer,
                     (float) $validated['amount'],
@@ -166,10 +166,15 @@ class CreditController extends Controller
         }
 
         if ($payment->status === PaymentStatus::Failed) {
-            return response()->json(['status' => 'failed', 'message' => 'Payment failed']);
+            $notes = json_decode((string) $payment->notes, true) ?: [];
+
+            return response()->json([
+                'status' => 'failed',
+                'message' => $notes['result_desc'] ?? 'Payment failed',
+            ]);
         }
 
-        $mpesa = new MpesaService;
+        $mpesa = PaymentGatewayFactory::makeMpesaForPayment($payment);
         $result = $mpesa->verify($payment->transaction_reference);
 
         if ($result['status'] === 'completed' && $payment->status !== PaymentStatus::Completed) {
@@ -180,6 +185,21 @@ class CreditController extends Controller
             }
 
             $this->topupService->processTopupPayment($payment);
+        }
+
+        if ($result['status'] === 'failed' && $payment->status !== PaymentStatus::Failed) {
+            $payment->update([
+                'status' => PaymentStatus::Failed->value,
+                'notes' => json_encode([
+                    'result_desc' => $result['message'] ?? 'Payment failed',
+                    'result_code' => $result['response_code'] ?? null,
+                ]),
+            ]);
+
+            app(NotificationService::class)->notifyPaymentFailed(
+                $payment->fresh(['invoice.user']),
+                $result['message'] ?? 'Payment failed.',
+            );
         }
 
         return response()->json([

@@ -274,6 +274,7 @@ class PaymentController extends Controller
             return view('customer.payment.mpesa-verify', [
                 'invoice' => $invoice,
                 'checkout_request_id' => $checkoutRequestId,
+                'amountRemaining' => $invoice->getAmountRemaining(),
                 'message' => $result['message'] ?? 'Waiting for payment confirmation...',
             ]);
         } catch (\Exception $e) {
@@ -869,7 +870,7 @@ class PaymentController extends Controller
         }
 
         try {
-            $gateway = PaymentGatewayFactory::makeForInvoice('mpesa', $invoice);
+            $gateway = PaymentGatewayFactory::makeMpesaForPayment($payment);
             $result = $gateway->verify($checkoutRequestId);
 
             if ($result['success'] && $result['status'] === 'completed') {
