@@ -24,6 +24,7 @@ use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\TaxService;
 use App\Services\RegistrationContextService;
+use App\Services\UserCurrencyService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
