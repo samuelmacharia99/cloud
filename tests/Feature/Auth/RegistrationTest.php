@@ -23,6 +23,11 @@ class RegistrationTest extends TestCase
         $response = $this->get('/register');
 
         $response->assertStatus(200);
+        $response->assertSee('First name', false);
+        $response->assertSee('Last name', false);
+        $response->assertSee('name="first_name"', false);
+        $response->assertSee('name="last_name"', false);
+        $response->assertDontSee('name="name"', false);
     }
 
     public function test_new_users_can_register(): void
