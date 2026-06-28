@@ -23,11 +23,34 @@ class RegistrationTest extends TestCase
         $response = $this->get('/register');
 
         $response->assertStatus(200);
-        $response->assertSee('First name', false);
-        $response->assertSee('Last name', false);
+        $response->assertSee('id="register-first-name"', false);
+        $response->assertSee('id="register-last-name"', false);
         $response->assertSee('name="first_name"', false);
-        $response->assertSee('name="last_name"', false);
-        $response->assertDontSee('name="name"', false);
+        $response->assertSee('data-form-version="2026-06-28"', false);
+        $response->assertDontSee('Use your first and last name', false);
+    }
+
+    public function test_legacy_single_name_field_is_accepted_on_register(): void
+    {
+        Mail::fake();
+
+        $token = app(RegistrationGuardService::class)->makeFormToken();
+
+        $response = $this->post('/register', [
+            'name' => 'Jane Doe',
+            'country' => 'KE',
+            'email' => 'legacy-name@example.com',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+            'agree' => '1',
+            'registration_token' => $token,
+        ]);
+
+        $response->assertRedirect(route('verification.code.show'));
+
+        $user = User::where('email', 'legacy-name@example.com')->first();
+        $this->assertNotNull($user);
+        $this->assertSame('Jane Doe', $user->name);
     }
 
     public function test_new_users_can_register(): void

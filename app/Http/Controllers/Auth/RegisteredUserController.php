@@ -25,7 +25,7 @@ class RegisteredUserController extends Controller
             session(['registration_reseller_id' => (int) $request->query('reseller')]);
         }
 
-        return view('auth.register-premium', [
+        return view('auth.register', [
             'registrationToken' => $guard->makeFormToken(),
         ]);
     }

@@ -156,19 +156,36 @@
                                 @csrf
 
                                 <!-- Name -->
-                                <div>
-                                    <label for="name" class="block text-sm font-medium text-white mb-2">Full Name</label>
-                                    <input
-                                        type="text"
-                                        id="name"
-                                        name="name"
-                                        value="{{ old('name') }}"
-                                        class="input-dark w-full @error('name') border-red-500 @enderror"
-                                        required
-                                    >
-                                    @error('name')
-                                        <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
-                                    @enderror
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label for="checkout-first-name" class="block text-sm font-medium text-white mb-2">First name</label>
+                                        <input
+                                            type="text"
+                                            id="checkout-first-name"
+                                            name="first_name"
+                                            value="{{ old('first_name') }}"
+                                            class="input-dark w-full @error('first_name') border-red-500 @enderror"
+                                            required
+                                            autocomplete="given-name"
+                                        >
+                                        @error('first_name')
+                                            <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                                        @enderror
+                                    </div>
+                                    <div>
+                                        <label for="checkout-last-name" class="block text-sm font-medium text-white mb-2">Last name <span class="text-slate-400">(optional)</span></label>
+                                        <input
+                                            type="text"
+                                            id="checkout-last-name"
+                                            name="last_name"
+                                            value="{{ old('last_name') }}"
+                                            class="input-dark w-full @error('last_name') border-red-500 @enderror"
+                                            autocomplete="family-name"
+                                        >
+                                        @error('last_name')
+                                            <p class="mt-1 text-sm text-red-400">{{ $message }}</p>
+                                        @enderror
+                                    </div>
                                 </div>
 
                                 <x-country-select

@@ -888,19 +888,25 @@ class CheckoutController extends Controller
 
             // For unauthenticated users, validate and create account
             $request->validate([
-                'name' => 'required|string|max:255',
+                'first_name' => 'required|string|max:127',
+                'last_name' => 'nullable|string|max:127',
                 'country' => ['required', 'string', 'size:2', new ValidCountryCode],
                 'email' => 'required|email|unique:users,email',
                 'password' => 'required|string|min:8|confirmed',
                 'agree_terms' => 'required|accepted',
             ]);
 
+            $displayName = app(\App\Services\RegistrationGuardService::class)->buildDisplayName(
+                $request->input('first_name'),
+                $request->input('last_name'),
+            );
+
             // Create user account — do NOT auto-verify email; trigger normal verification flow
             $hostReseller = $this->checkoutReseller();
             $resellerId = $hostReseller?->id ?? session('registration_reseller_id');
 
             $user = User::create([
-                'name' => $request->name,
+                'name' => $displayName,
                 'country' => $request->country,
                 'email' => $request->email,
                 'password' => Hash::make($request->password),

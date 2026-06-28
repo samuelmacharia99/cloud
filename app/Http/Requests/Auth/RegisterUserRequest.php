@@ -16,6 +16,21 @@ class RegisterUserRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->filled('name') && ! $this->filled('first_name')) {
+            $name = trim(preg_replace('/\s+/u', ' ', (string) $this->input('name')) ?? '');
+
+            if ($name !== '') {
+                $parts = preg_split('/\s+/u', $name, 2) ?: [];
+                $this->merge([
+                    'first_name' => $parts[0] ?? '',
+                    'last_name' => $parts[1] ?? '',
+                ]);
+            }
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -27,6 +42,16 @@ class RegisterUserRequest extends FormRequest
             'password' => ['required', 'confirmed', SecurityService::getPasswordRule()],
             'agree' => ['required', 'accepted'],
             'registration_token' => ['required', 'string'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'first_name.required' => 'Please enter your first name.',
+            'country.required' => 'Please select your country.',
+            'email.unique' => 'An account with this email already exists. Try signing in instead.',
+            'agree.accepted' => 'You must agree to the Terms of Service and Privacy Policy.',
         ];
     }
 
