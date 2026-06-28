@@ -76,4 +76,13 @@ return [
     ],
 
     'check_mx_record' => false,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Platform (admin URL) signup
+    |--------------------------------------------------------------------------
+    | Customers registering on the main site /register (not a reseller invite
+    | or white-label domain) must provide a mobile number for SMS verification.
+    */
+    'require_phone_for_platform_signup' => env('REGISTRATION_REQUIRE_PHONE', true),
 ];

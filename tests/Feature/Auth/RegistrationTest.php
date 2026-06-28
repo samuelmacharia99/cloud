@@ -26,25 +26,35 @@ class RegistrationTest extends TestCase
         $response->assertSee('id="register-first-name"', false);
         $response->assertSee('id="register-last-name"', false);
         $response->assertSee('name="first_name"', false);
-        $response->assertSee('data-form-version="2026-06-28"', false);
+        $response->assertSee('data-form-version="2026-06-28-phone"', false);
+        $response->assertSee('id="register-phone"', false);
         $response->assertDontSee('Use your first and last name', false);
+    }
+
+    private function registrationPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'first_name' => 'Test',
+            'last_name' => 'User',
+            'country' => 'KE',
+            'email' => 'test@example.com',
+            'phone' => '0712345678',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+            'agree' => '1',
+            'registration_token' => app(RegistrationGuardService::class)->makeFormToken(),
+        ], $overrides);
     }
 
     public function test_legacy_single_name_field_is_accepted_on_register(): void
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
+        $payload = $this->registrationPayload(['email' => 'legacy-name@example.com']);
+        unset($payload['first_name'], $payload['last_name']);
+        $payload['name'] = 'Jane Doe';
 
-        $response = $this->post('/register', [
-            'name' => 'Jane Doe',
-            'country' => 'KE',
-            'email' => 'legacy-name@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        $response = $this->post('/register', $payload);
 
         $response->assertRedirect(route('verification.code.show'));
 
@@ -57,18 +67,9 @@ class RegistrationTest extends TestCase
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
-            'first_name' => 'Test',
-            'last_name' => 'User',
-            'country' => 'KE',
+        $response = $this->post('/register', $this->registrationPayload([
             'email' => 'test@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        ]));
 
         $response->assertRedirect(route('verification.code.show'));
         $this->assertGuest();
@@ -78,6 +79,7 @@ class RegistrationTest extends TestCase
         $this->assertNull($user->email_verified_at);
         $this->assertSame('inactive', $user->status);
         $this->assertSame('KE', $user->country);
+        $this->assertSame('254712345678', $user->phone);
     }
 
     public function test_signup_requires_all_critical_fields(): void
@@ -86,6 +88,7 @@ class RegistrationTest extends TestCase
             'first_name' => '',
             'last_name' => '',
             'email' => '',
+            'phone' => '',
             'password' => '',
             'password_confirmation' => '',
             'agree' => '',
@@ -97,6 +100,7 @@ class RegistrationTest extends TestCase
             'first_name',
             'country',
             'email',
+            'phone',
             'password',
             'agree',
             'registration_token',
@@ -107,17 +111,11 @@ class RegistrationTest extends TestCase
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
+        $response = $this->post('/register', $this->registrationPayload([
             'first_name' => 'Jane',
-            'country' => 'KE',
+            'last_name' => '',
             'email' => 'jane-only@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        ]));
 
         $response->assertRedirect(route('verification.code.show'));
 

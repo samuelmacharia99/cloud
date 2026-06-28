@@ -19,22 +19,28 @@ class RegistrationProtectionTest extends TestCase
         config(['registration.min_submit_seconds' => 0]);
     }
 
+    private function registrationPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+            'country' => 'KE',
+            'phone' => '0712345678',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+            'agree' => '1',
+            'registration_token' => app(RegistrationGuardService::class)->makeFormToken(),
+        ], $overrides);
+    }
+
     public function test_registration_creates_inactive_unverified_user(): void
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
-            'first_name' => 'Jane',
-            'last_name' => 'Doe',
+        $response = $this->post('/register', $this->registrationPayload([
             'country' => 'NG',
             'email' => 'jane@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        ]));
 
         $response->assertRedirect(route('verification.code.show'));
 
@@ -48,19 +54,10 @@ class RegistrationProtectionTest extends TestCase
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
-            'first_name' => 'Jane',
-            'last_name' => 'Doe',
-            'country' => 'KE',
+        $response = $this->post('/register', $this->registrationPayload([
             'email' => 'bot@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
             'contact_website' => 'https://spam.test',
-        ]);
+        ]));
 
         $response->assertRedirect(route('register'));
         $response->assertSessionHasErrors('email');
@@ -71,18 +68,9 @@ class RegistrationProtectionTest extends TestCase
     {
         Mail::fake();
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
-            'first_name' => 'Jane',
-            'last_name' => 'Doe',
-            'country' => 'KE',
+        $response = $this->post('/register', $this->registrationPayload([
             'email' => 'jane@yopmail.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        ]));
 
         $response->assertSessionHasErrors('email');
         $this->assertNull(User::where('email', 'jane@yopmail.com')->first());
@@ -96,18 +84,10 @@ class RegistrationProtectionTest extends TestCase
                 ->andThrow(new \RuntimeException('Could not deliver a verification code.'));
         });
 
-        $token = app(RegistrationGuardService::class)->makeFormToken();
-
-        $response = $this->post('/register', [
-            'first_name' => 'Jane',
-            'last_name' => 'Doe',
+        $response = $this->post('/register', $this->registrationPayload([
             'country' => 'NG',
             'email' => 'jane-persist@example.com',
-            'password' => 'Password1!',
-            'password_confirmation' => 'Password1!',
-            'agree' => '1',
-            'registration_token' => $token,
-        ]);
+        ]));
 
         $response->assertRedirect(route('verification.code.show'));
         $this->assertNotNull(User::where('email', 'jane-persist@example.com')->first());

@@ -23,7 +23,7 @@ use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminSetupService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\TaxService;
-use App\Services\UserCurrencyService;
+use App\Services\RegistrationContextService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -89,7 +89,11 @@ class CustomerController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
 
-        return view('admin.customers.index', compact('customers', 'resellers'));
+        return view('admin.customers.index', [
+            'customers' => $customers,
+            'resellers' => $resellers,
+            'platformRegistrationUrl' => app(RegistrationContextService::class)->platformRegistrationUrl(),
+        ]);
     }
 
     public function create()

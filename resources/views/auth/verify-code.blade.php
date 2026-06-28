@@ -6,12 +6,12 @@
 <div class="space-y-7">
     <!-- Header -->
     <div class="space-y-3">
-        <h1 class="text-4xl font-bold tracking-tight">Verify Your Email</h1>
-        <p class="text-base text-slate-600 dark:text-slate-400 font-medium">
+        <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight leading-tight">Verify your account</h1>
+        <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
             @if($email)
                 We sent a 6-digit code to <strong>{{ $email }}</strong>@if($phoneHint) and your phone ending in <strong>{{ $phoneHint }}</strong>@endif.
             @else
-                Enter the 6-digit verification code we sent you.
+                Enter the 6-digit verification code we sent by email@if($phoneHint) and SMS (phone ending in <strong>{{ $phoneHint }}</strong>)@endif.
             @endif
         </p>
         @if (session('message'))
@@ -71,7 +71,7 @@
 
         <!-- Submit Button -->
         <button type="submit" class="auth-btn-primary w-full">
-            Verify Email
+            Verify account
         </button>
     </form>
 

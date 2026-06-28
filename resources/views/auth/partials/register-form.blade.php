@@ -1,6 +1,7 @@
 {{-- Registration form v2026-06-28: first name required, last name optional --}}
 @php
     $passwordMinLength = config('security.password.min_length', 8);
+    $requiresPhone = $requiresPhone ?? false;
 @endphp
 
 <div
@@ -34,8 +35,13 @@
     <div class="space-y-2 mb-1 min-w-0">
         <h1 class="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight leading-tight">Create your account</h1>
         <p class="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-full">
-            Fill in your details below.<br class="sm:hidden">
-            <span class="sm:ml-0">We'll email you a verification code.</span>
+            @if ($requiresPhone)
+                Fill in your details below.<br class="sm:hidden">
+                <span class="sm:ml-0">We'll send a verification code by email and SMS.</span>
+            @else
+                Fill in your details below.<br class="sm:hidden">
+                <span class="sm:ml-0">We'll email you a verification code.</span>
+            @endif
         </p>
     </div>
 
@@ -55,7 +61,7 @@
         method="POST"
         action="{{ route('register') }}"
         class="space-y-4 sm:space-y-5 min-w-0"
-        data-form-version="2026-06-28"
+        data-form-version="2026-06-28-phone"
         novalidate
     >
         @csrf
@@ -166,6 +172,32 @@
                     <p class="mt-1 text-xs font-medium auth-input-error">{{ $message }}</p>
                 @enderror
             </div>
+
+            @if ($requiresPhone)
+                <div class="space-y-2">
+                    <label for="register-phone" class="block text-sm font-semibold text-slate-900 dark:text-white">
+                        Mobile number <span class="text-red-600 dark:text-red-400" aria-hidden="true">*</span>
+                    </label>
+                    <input
+                        type="tel"
+                        id="register-phone"
+                        name="phone"
+                        value="{{ old('phone') }}"
+                        required
+                        autocomplete="tel"
+                        inputmode="tel"
+                        placeholder="0712345678"
+                        class="auth-input"
+                        maxlength="20"
+                    />
+                    <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Used for SMS verification and M-Pesa payments. Kenyan numbers only.
+                    </p>
+                    @error('phone')
+                        <p class="mt-1 text-xs font-medium auth-input-error">{{ $message }}</p>
+                    @enderror
+                </div>
+            @endif
 
             <div class="space-y-2">
                 <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

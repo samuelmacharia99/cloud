@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\RegisterUserRequest;
 use App\Models\User;
 use App\Services\EmailVerificationService;
+use App\Services\RegistrationContextService;
 use App\Services\RegistrationGuardService;
 use App\Services\SecurityService;
 use App\Services\Telegram\TelegramMonitorBridge;
@@ -19,7 +20,7 @@ use Illuminate\View\View;
 
 class RegisteredUserController extends Controller
 {
-    public function create(Request $request, RegistrationGuardService $guard): View
+    public function create(Request $request, RegistrationGuardService $guard, RegistrationContextService $registrationContext): View
     {
         if ($request->hasValidSignature() && $request->query('reseller')) {
             session(['registration_reseller_id' => (int) $request->query('reseller')]);
@@ -27,6 +28,7 @@ class RegisteredUserController extends Controller
 
         return view('auth.register', [
             'registrationToken' => $guard->makeFormToken(),
+            'requiresPhone' => $registrationContext->requiresPhoneCapture($request),
         ]);
     }
 
@@ -66,6 +68,7 @@ class RegisteredUserController extends Controller
                     'company' => $validated['company'] ?? null,
                     'country' => $validated['country'],
                     'email' => $validated['email'],
+                    'phone' => $validated['phone'] ?? null,
                     'password' => Hash::make($validated['password']),
                     'email_verified_at' => null,
                     'status' => 'inactive',

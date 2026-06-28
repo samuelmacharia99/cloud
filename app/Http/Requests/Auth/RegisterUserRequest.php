@@ -2,8 +2,11 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Helpers\PhoneHelper;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
+use App\Rules\ValidKenyanMobilePhone;
+use App\Services\RegistrationContextService;
 use App\Services\RegistrationGuardService;
 use App\Services\SecurityService;
 use Illuminate\Foundation\Http\FormRequest;
@@ -29,11 +32,17 @@ class RegisterUserRequest extends FormRequest
                 ]);
             }
         }
+
+        if ($this->filled('phone')) {
+            $this->merge([
+                'phone' => PhoneHelper::normalize(trim((string) $this->input('phone'))),
+            ]);
+        }
     }
 
     public function rules(): array
     {
-        return [
+        $rules = [
             'first_name' => ['required', 'string', 'max:127'],
             'last_name' => ['nullable', 'string', 'max:127'],
             'country' => ['required', 'string', 'size:2', new ValidCountryCode],
@@ -43,12 +52,21 @@ class RegisterUserRequest extends FormRequest
             'agree' => ['required', 'accepted'],
             'registration_token' => ['required', 'string'],
         ];
+
+        if (app(RegistrationContextService::class)->requiresPhoneCapture($this)) {
+            $rules['phone'] = ['required', 'string', 'max:20', new ValidKenyanMobilePhone];
+        } else {
+            $rules['phone'] = ['nullable', 'prohibited'];
+        }
+
+        return $rules;
     }
 
     public function messages(): array
     {
         return [
             'first_name.required' => 'Please enter your first name.',
+            'phone.required' => 'Please enter your mobile number for SMS verification.',
             'country.required' => 'Please select your country.',
             'email.unique' => 'An account with this email already exists. Try signing in instead.',
             'agree.accepted' => 'You must agree to the Terms of Service and Privacy Policy.',
