@@ -3,109 +3,87 @@
 @section('title', 'Two-Factor Authentication')
 
 @section('content')
-<div class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
-    <div class="w-full max-w-md">
-        <!-- Card -->
-        <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-8">
-            <!-- Header -->
-            <div class="mb-8 text-center">
-                <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-                    </svg>
-                </div>
-                <h1 class="text-2xl font-bold text-slate-900 dark:text-white mb-2">Two-Factor Authentication</h1>
-                <p class="text-slate-600 dark:text-slate-400">Enter the 6-digit code sent to your phone</p>
-            </div>
-
-            <!-- Verification Code Form -->
-            <form method="POST" action="{{ route('auth.two-factor.verify-code') }}" class="space-y-6">
-                @csrf
-
-                <!-- Code Input -->
-                <div>
-                    <label for="code" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">
-                        Verification Code
-                    </label>
-                    <input
-                        type="text"
-                        id="code"
-                        name="code"
-                        maxlength="6"
-                        placeholder="000000"
-                        autocomplete="off"
-                        autofocus
-                        class="w-full px-4 py-3 text-center text-2xl tracking-widest rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition @error('code') border-red-500 focus:ring-red-500 @enderror"
-                        inputmode="numeric"
-                    >
-                    @error('code')
-                        <p class="mt-2 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Submit Button -->
-                <button
-                    type="submit"
-                    class="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition duration-200 ease-in-out transform hover:scale-105"
-                >
-                    Verify Code
-                </button>
-            </form>
-
-            <!-- Divider -->
-            <div class="my-6 flex items-center gap-4">
-                <div class="flex-1 h-px bg-slate-200 dark:bg-slate-700"></div>
-                <span class="text-sm text-slate-500 dark:text-slate-400">or</span>
-                <div class="flex-1 h-px bg-slate-200 dark:bg-slate-700"></div>
-            </div>
-
-            <!-- Recovery Code Form -->
-            <form method="POST" action="{{ route('auth.two-factor.use-recovery-code') }}" class="space-y-4">
-                @csrf
-
-                <!-- Recovery Code Input -->
-                <div>
-                    <label for="recovery_code" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">
-                        Recovery Code
-                    </label>
-                    <input
-                        type="text"
-                        id="recovery_code"
-                        name="recovery_code"
-                        placeholder="XXXXXXXX"
-                        autocomplete="off"
-                        class="w-full px-4 py-3 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition @error('recovery_code') border-red-500 focus:ring-red-500 @enderror"
-                    >
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">If you don't have access to your phone</p>
-                    @error('recovery_code')
-                        <p class="mt-2 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
-                    @enderror
-                </div>
-
-                <!-- Submit Button -->
-                <button
-                    type="submit"
-                    class="w-full px-4 py-3 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-medium rounded-lg transition"
-                >
-                    Use Recovery Code
-                </button>
-            </form>
-
-            <!-- Help Text -->
-            <div class="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                <p class="text-xs text-slate-600 dark:text-slate-400 text-center">
-                    Code expires in <strong>5 minutes</strong>. Didn't receive the code?
-                    <a href="{{ route('login') }}" class="text-blue-600 dark:text-blue-400 hover:underline font-medium">
-                        Try again
-                    </a>
-                </p>
-            </div>
+<div class="space-y-7">
+    <div class="space-y-3 text-center">
+        <div class="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center mx-auto">
+            <svg class="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+            </svg>
         </div>
-
-        <!-- Footer -->
-        <p class="text-center text-sm text-slate-400 mt-6">
-            Talksasa Cloud &copy; 2026
+        <h1 class="text-4xl font-bold tracking-tight">Two-Factor Authentication</h1>
+        <p class="text-base text-slate-600 dark:text-slate-400 font-medium">
+            Enter the 6-digit code sent to your phone
         </p>
     </div>
+
+    <form method="POST" action="{{ route('auth.two-factor.verify-code') }}" class="space-y-5">
+        @csrf
+
+        <div class="space-y-2.5">
+            <label for="code" class="block text-sm font-semibold text-slate-900 dark:text-white">
+                Verification Code
+            </label>
+            <input
+                type="text"
+                id="code"
+                name="code"
+                maxlength="6"
+                placeholder="000000"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                autofocus
+                class="auth-input text-center text-2xl tracking-widest font-mono"
+            />
+            @error('code')
+                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <button type="submit" class="auth-btn-primary w-full">
+            Verify Code
+        </button>
+    </form>
+
+    <div class="relative">
+        <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-slate-200 dark:border-slate-700/50"></div>
+        </div>
+        <div class="relative flex justify-center">
+            <span class="px-3 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-500 dark:text-slate-400">Or use a recovery code</span>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ route('auth.two-factor.use-recovery-code') }}" class="space-y-4">
+        @csrf
+
+        <div class="space-y-2.5">
+            <label for="recovery_code" class="block text-sm font-semibold text-slate-900 dark:text-white">
+                Recovery Code
+            </label>
+            <input
+                type="text"
+                id="recovery_code"
+                name="recovery_code"
+                placeholder="XXXXXXXX"
+                autocomplete="off"
+                class="auth-input font-mono uppercase"
+            />
+            <p class="text-xs text-slate-500 dark:text-slate-400">Use this if you don't have access to your phone</p>
+            @error('recovery_code')
+                <p class="mt-1.5 text-xs font-medium text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <button type="submit" class="auth-btn-secondary w-full">
+            Use Recovery Code
+        </button>
+    </form>
+
+    <p class="text-xs text-slate-500 dark:text-slate-400 text-center">
+        Code expires in <strong>5 minutes</strong>.
+        <a href="{{ route('login') }}" class="text-purple-600 dark:text-purple-400 hover:underline font-semibold">
+            Try again
+        </a>
+    </p>
 </div>
 @endsection

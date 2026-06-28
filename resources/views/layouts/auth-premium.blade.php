@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"
+      x-data="{ dark: localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches) }"
+      :class="{ 'dark': dark }">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -16,6 +18,15 @@
 
     <!-- Scripts & Styles -->
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script>
+        (function () {
+            const theme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (theme === 'dark' || (!theme && prefersDark)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <style>
@@ -72,6 +83,10 @@
             }
         }
 
+        html.dark .auth-panel {
+            background: #0f172a !important;
+        }
+
         /* HEADER */
         .auth-header {
             flex: 0 0 auto !important;
@@ -89,6 +104,10 @@
             .auth-header {
                 border-bottom-color: rgba(30, 41, 59, 0.5) !important;
             }
+        }
+
+        html.dark .auth-header {
+            border-bottom-color: rgba(30, 41, 59, 0.5) !important;
         }
 
         /* FORM CONTAINER - VERTICALLY CENTERED */
@@ -113,19 +132,18 @@
             width: 100% !important;
             max-width: 28rem !important;
             z-index: 10 !important;
-        }
-
-        .auth-form-container * {
-            color: inherit !important;
+            color: #1e293b !important;
         }
 
         .auth-form-container h1,
         .auth-form-container h2,
-        .auth-form-container p,
+        .auth-form-container h3,
         .auth-form-container label,
+        .auth-form-container p,
         .auth-form-container span,
-        .auth-form-container div {
+        .auth-form-container li {
             color: inherit !important;
+            font-family: inherit !important;
         }
 
         .auth-field-error,
@@ -173,6 +191,11 @@
                 background: #0f172a !important;
                 border-top-color: rgba(30, 41, 59, 0.5) !important;
             }
+        }
+
+        html.dark .auth-footer {
+            background: #0f172a !important;
+            border-top-color: rgba(30, 41, 59, 0.5) !important;
         }
 
         /* RIGHT PANEL - VISUAL */
@@ -247,7 +270,38 @@
             padding: 4rem !important;
         }
 
-        /* INPUT STYLES */
+        /* INPUT STYLES — explicit colors so inputs never inherit invisible text in dark mode */
+        .auth-form-container input.auth-input,
+        .auth-form-container textarea.auth-input,
+        .auth-form-container select.auth-input {
+            color: #1e293b !important;
+            -webkit-text-fill-color: #1e293b !important;
+            caret-color: #1e293b !important;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .auth-form-container input.auth-input,
+            .auth-form-container textarea.auth-input,
+            .auth-form-container select.auth-input {
+                color: #f8fafc !important;
+                -webkit-text-fill-color: #f8fafc !important;
+                caret-color: #f8fafc !important;
+            }
+        }
+
+        html.dark .auth-form-container input.auth-input,
+        html.dark .auth-form-container textarea.auth-input,
+        html.dark .auth-form-container select.auth-input {
+            color: #f8fafc !important;
+            -webkit-text-fill-color: #f8fafc !important;
+            caret-color: #f8fafc !important;
+        }
+
+        .auth-input.text-2xl {
+            font-size: 1.5rem !important;
+            line-height: 2rem !important;
+        }
+
         .auth-input {
             width: 100% !important;
             background: white !important;
@@ -312,10 +366,40 @@
 
         @media (prefers-color-scheme: dark) {
             .auth-input {
-                background: rgba(71, 85, 105, 0.3) !important;
-                border-color: rgba(51, 65, 85, 0.5) !important;
-                color: white !important;
+                background: rgba(30, 41, 59, 0.85) !important;
+                border-color: rgba(51, 65, 85, 0.8) !important;
+                color: #f8fafc !important;
+                -webkit-text-fill-color: #f8fafc !important;
+                caret-color: #f8fafc !important;
             }
+
+            .auth-input:-webkit-autofill,
+            .auth-input:-webkit-autofill:hover,
+            .auth-input:-webkit-autofill:focus,
+            .auth-input:-webkit-autofill:active {
+                -webkit-box-shadow: 0 0 0 30px rgb(30 41 59) inset !important;
+                box-shadow: 0 0 0 30px rgb(30 41 59) inset !important;
+                -webkit-text-fill-color: #f8fafc !important;
+                caret-color: #f8fafc !important;
+            }
+        }
+
+        html.dark .auth-input {
+            background: rgba(30, 41, 59, 0.85) !important;
+            border-color: rgba(51, 65, 85, 0.8) !important;
+            color: #f8fafc !important;
+            -webkit-text-fill-color: #f8fafc !important;
+            caret-color: #f8fafc !important;
+        }
+
+        html.dark .auth-input:-webkit-autofill,
+        html.dark .auth-input:-webkit-autofill:hover,
+        html.dark .auth-input:-webkit-autofill:focus,
+        html.dark .auth-input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px rgb(30 41 59) inset !important;
+            box-shadow: 0 0 0 30px rgb(30 41 59) inset !important;
+            -webkit-text-fill-color: #f8fafc !important;
+            caret-color: #f8fafc !important;
         }
 
         .auth-input::placeholder {
@@ -326,6 +410,10 @@
             .auth-input::placeholder {
                 color: #64748b !important;
             }
+        }
+
+        html.dark .auth-input::placeholder {
+            color: #64748b !important;
         }
 
         .auth-input:focus {
@@ -420,6 +508,12 @@
             }
         }
 
+        html.dark .auth-btn-secondary {
+            background: rgba(71, 85, 105, 0.3) !important;
+            border-color: rgba(51, 65, 85, 0.6) !important;
+            color: white !important;
+        }
+
         .auth-btn-secondary:hover {
             background: #f8fafc !important;
             border-color: #cbd5e1 !important;
@@ -436,26 +530,14 @@
             transform: scale(0.98) !important;
         }
 
-        /* Typography overrides */
-        .auth-form-container {
-            color: #1e293b !important;
-        }
-
         @media (prefers-color-scheme: dark) {
             .auth-form-container {
                 color: white !important;
             }
         }
 
-        .auth-form-container h1,
-        .auth-form-container h2,
-        .auth-form-container h3,
-        .auth-form-container label,
-        .auth-form-container p,
-        .auth-form-container span,
-        .auth-form-container div {
-            color: inherit !important;
-            font-family: inherit !important;
+        html.dark .auth-form-container {
+            color: white !important;
         }
 
         .auth-form-container a {
@@ -476,6 +558,14 @@
             .auth-form-container a:hover {
                 color: #c084fc !important;
             }
+        }
+
+        html.dark .auth-form-container a {
+            color: #d8b4fe !important;
+        }
+
+        html.dark .auth-form-container a:hover {
+            color: #c084fc !important;
         }
     </style>
 </head>
