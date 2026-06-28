@@ -3,6 +3,7 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use App\Services\RegistrationGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -25,7 +26,8 @@ class RegistrationProtectionTest extends TestCase
         $token = app(RegistrationGuardService::class)->makeFormToken();
 
         $response = $this->post('/register', [
-            'name' => 'Jane Doe',
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
             'country' => 'NG',
             'email' => 'jane@example.com',
             'password' => 'Password1!',
@@ -49,7 +51,8 @@ class RegistrationProtectionTest extends TestCase
         $token = app(RegistrationGuardService::class)->makeFormToken();
 
         $response = $this->post('/register', [
-            'name' => 'Jane Doe',
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
             'country' => 'KE',
             'email' => 'bot@example.com',
             'password' => 'Password1!',
@@ -59,7 +62,8 @@ class RegistrationProtectionTest extends TestCase
             'contact_website' => 'https://spam.test',
         ]);
 
-        $response->assertRedirect(route('verification.code.show'));
+        $response->assertRedirect(route('register'));
+        $response->assertSessionHasErrors('email');
         $this->assertNull(User::where('email', 'bot@example.com')->first());
     }
 
@@ -70,7 +74,8 @@ class RegistrationProtectionTest extends TestCase
         $token = app(RegistrationGuardService::class)->makeFormToken();
 
         $response = $this->post('/register', [
-            'name' => 'Jane Doe',
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
             'country' => 'KE',
             'email' => 'jane@yopmail.com',
             'password' => 'Password1!',
@@ -81,6 +86,31 @@ class RegistrationProtectionTest extends TestCase
 
         $response->assertSessionHasErrors('email');
         $this->assertNull(User::where('email', 'jane@yopmail.com')->first());
+    }
+
+    public function test_registration_keeps_user_when_verification_email_fails(): void
+    {
+        $this->mock(EmailVerificationService::class, function ($mock) {
+            $mock->shouldReceive('sendVerificationCode')
+                ->once()
+                ->andThrow(new \RuntimeException('Could not deliver a verification code.'));
+        });
+
+        $token = app(RegistrationGuardService::class)->makeFormToken();
+
+        $response = $this->post('/register', [
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+            'country' => 'NG',
+            'email' => 'jane-persist@example.com',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+            'agree' => '1',
+            'registration_token' => $token,
+        ]);
+
+        $response->assertRedirect(route('verification.code.show'));
+        $this->assertNotNull(User::where('email', 'jane-persist@example.com')->first());
     }
 
     public function test_unverified_user_cannot_log_in(): void

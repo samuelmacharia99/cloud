@@ -24,6 +24,7 @@ use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainTransferService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\EmailVerificationService;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
@@ -35,7 +36,6 @@ use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
-use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -914,10 +914,15 @@ class CheckoutController extends Controller
 
             app(UserCurrencyService::class)->syncFromCountry($user, true);
 
-            // Fire Registered event so the default email verification notification is sent
-            event(new Registered($user));
+            try {
+                app(EmailVerificationService::class)->sendVerificationCode($user);
+            } catch (\Throwable $e) {
+                \Log::warning('Checkout registration verification email failed', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
-            // Log the user in
             Auth::login($user);
 
             // Now process the order using the authenticated user

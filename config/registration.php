@@ -8,7 +8,7 @@ return [
   */
     'honeypot_field' => 'contact_website',
 
-    'min_submit_seconds' => 3,
+    'min_submit_seconds' => 2,
 
     'max_form_age_seconds' => 7200,
 
@@ -18,7 +18,7 @@ return [
     ],
 
     'name' => [
-        'require_two_words' => true,
+        'require_two_words' => false,
         'min_word_length' => 2,
         'max_single_word_length' => 24,
     ],

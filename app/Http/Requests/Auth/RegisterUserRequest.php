@@ -19,7 +19,8 @@ class RegisterUserRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:127'],
+            'last_name' => ['nullable', 'string', 'max:127'],
             'country' => ['required', 'string', 'size:2', new ValidCountryCode],
             'company' => ['nullable', 'string', 'max:255'],
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:'.User::class],
@@ -38,8 +39,13 @@ class RegisterUserRequest extends FormRequest
 
             $guard = app(RegistrationGuardService::class);
 
-            if ($message = $guard->validateHumanName((string) $this->input('name'))) {
-                $validator->errors()->add('name', $message);
+            if ($message = $guard->validateNamePart((string) $this->input('first_name'), 'first name')) {
+                $validator->errors()->add('first_name', $message);
+            }
+
+            $lastName = trim((string) $this->input('last_name', ''));
+            if ($lastName !== '' && ($message = $guard->validateNamePart($lastName, 'last name'))) {
+                $validator->errors()->add('last_name', $message);
             }
 
             if ($message = $guard->validateEmailDomain((string) $this->input('email'))) {

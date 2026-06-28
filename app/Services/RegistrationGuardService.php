@@ -47,14 +47,13 @@ class RegistrationGuardService
         return null;
     }
 
-    public function fakeSuccessRedirect(Request $request): RedirectResponse
+    public function rejectBotSubmission(Request $request): RedirectResponse
     {
-        $email = strtolower((string) $request->input('email', ''));
-
-        return redirect()
-            ->route('verification.code.show')
-            ->with('email', $email !== '' ? $email : null)
-            ->with('message', 'We sent a verification code to your email. Please enter it below.');
+        return back()
+            ->withInput($request->except('password', 'password_confirmation'))
+            ->withErrors([
+                'email' => 'Unable to complete registration. Please try again or contact support if this continues.',
+            ]);
     }
 
     public function enforceRateLimits(Request $request): void
@@ -85,6 +84,39 @@ class RegistrationGuardService
     public function makeFormToken(): string
     {
         return Crypt::encryptString((string) now()->timestamp);
+    }
+
+    public function buildDisplayName(string $firstName, ?string $lastName = null): string
+    {
+        $first = trim(preg_replace('/\s+/u', ' ', $firstName) ?? $firstName);
+        $last = trim(preg_replace('/\s+/u', ' ', (string) $lastName) ?? (string) $lastName);
+
+        return $last !== '' ? $first.' '.$last : $first;
+    }
+
+    public function validateNamePart(string $name, string $fieldLabel = 'name'): ?string
+    {
+        $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
+        if ($name === '') {
+            return "Please enter your {$fieldLabel}.";
+        }
+
+        if (! preg_match('/^[\p{L}\s\'\-\.]+$/u', $name)) {
+            return ucfirst($fieldLabel).' contains invalid characters.';
+        }
+
+        $minWord = (int) config('registration.name.min_word_length', 2);
+        foreach (preg_split('/\s+/u', $name) ?: [] as $part) {
+            if (mb_strlen($part) < $minWord) {
+                return 'Please enter a valid '.($fieldLabel === 'name' ? 'name' : $fieldLabel).'.';
+            }
+        }
+
+        if ($this->looksLikeRandomName($name)) {
+            return 'Please enter a valid '.($fieldLabel === 'name' ? 'name' : $fieldLabel).'.';
+        }
+
+        return null;
     }
 
     public function validateHumanName(string $name): ?string

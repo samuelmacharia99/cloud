@@ -33,6 +33,10 @@ class VerifyEmailController extends Controller
             event(new Verified($user));
         }
 
+        if ($user->status !== 'active') {
+            $user->update(['status' => 'active']);
+        }
+
         $record->delete();
 
         return redirect()->intended(route('dashboard', absolute: false).'?verified=1');

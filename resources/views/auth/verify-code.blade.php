@@ -23,8 +23,27 @@
     <form method="POST" action="{{ route('verification.code.verify') }}" class="space-y-5">
         @csrf
 
-        <!-- Email (Hidden) -->
+        <!-- Email -->
+        @if($email)
         <input type="hidden" name="email" value="{{ $email }}">
+        @else
+        <div class="space-y-2.5">
+            <label for="email" class="block text-sm font-semibold text-slate-900 dark:text-white">
+                Email address
+            </label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                value="{{ old('email') }}"
+                required
+                autofocus
+                autocomplete="email"
+                placeholder="me@company.com"
+                class="auth-input"
+            />
+        </div>
+        @endif
 
         <!-- Verification Code -->
         <div class="space-y-2.5">

@@ -46,9 +46,9 @@ class AuthEmailService
                 }
             }
 
-            Log::warning("{$context} email skipped — reseller SMTP not configured", ['user_id' => $user->id]);
-
-            return false;
+            Log::warning("{$context} email skipped — reseller SMTP not configured, trying platform SMTP", [
+                'user_id' => $user->id,
+            ]);
         }
 
         if (! $this->mailService->isConfigured()) {

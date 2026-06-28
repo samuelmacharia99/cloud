@@ -57,4 +57,13 @@ class RegistrationGuardServiceTest extends TestCase
 
         $this->assertNull(app(RegistrationGuardService::class)->submissionTimingError($request));
     }
+
+    public function test_build_display_name_uses_first_name_only_when_last_name_missing(): void
+    {
+        $guard = app(RegistrationGuardService::class);
+
+        $this->assertSame('Jane', $guard->buildDisplayName('Jane'));
+        $this->assertSame('Jane', $guard->buildDisplayName('Jane', ''));
+        $this->assertSame('Jane Doe', $guard->buildDisplayName('Jane', 'Doe'));
+    }
 }

@@ -42,22 +42,27 @@ class RegisteredUserController extends Controller
     public function store(RegisterUserRequest $request, RegistrationGuardService $guard): RedirectResponse
     {
         if ($guard->shouldRejectAsBot($request)) {
-            return $guard->fakeSuccessRedirect($request);
+            return $guard->rejectBotSubmission($request);
         }
 
         if ($timingError = $guard->submissionTimingError($request)) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
+                ->with('registrationToken', $guard->makeFormToken())
                 ->withErrors(['registration_token' => $timingError]);
         }
 
         $validated = $request->validated();
         $resellerId = session('registration_reseller_id');
+        $displayName = $guard->buildDisplayName(
+            $validated['first_name'],
+            $validated['last_name'] ?? null,
+        );
 
         try {
-            [$user, $delivery] = DB::transaction(function () use ($validated, $resellerId) {
+            $user = DB::transaction(function () use ($validated, $resellerId, $displayName) {
                 $user = User::create([
-                    'name' => $validated['name'],
+                    'name' => $displayName,
                     'company' => $validated['company'] ?? null,
                     'country' => $validated['country'],
                     'email' => $validated['email'],
@@ -68,19 +73,28 @@ class RegisteredUserController extends Controller
                 ]);
 
                 app(UserCurrencyService::class)->syncFromCountry($user, true);
-                $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
 
-                return [$user, $delivery];
+                return $user;
             });
         } catch (\Throwable $e) {
             return back()
                 ->withInput($request->except('password', 'password_confirmation'))
+                ->with('registrationToken', $guard->makeFormToken())
                 ->withErrors(['email' => $e->getMessage()]);
         }
 
         session()->forget('registration_reseller_id');
 
         app(TelegramMonitorBridge::class)->userRegistered($user);
+
+        try {
+            $delivery = app(EmailVerificationService::class)->sendVerificationCode($user);
+        } catch (\Throwable $e) {
+            return redirect()->route('verification.code.show')
+                ->with('email', $user->email)
+                ->withErrors(['email' => $e->getMessage()])
+                ->with('message', 'Your account was created, but we could not send a verification code. Use Resend below or contact support.');
+        }
 
         return redirect()->route('verification.code.show')
             ->with('email', $user->email)

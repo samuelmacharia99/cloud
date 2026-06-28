@@ -32,7 +32,8 @@ class RegistrationTest extends TestCase
         $token = app(RegistrationGuardService::class)->makeFormToken();
 
         $response = $this->post('/register', [
-            'name' => 'Test User',
+            'first_name' => 'Test',
+            'last_name' => 'User',
             'country' => 'KE',
             'email' => 'test@example.com',
             'password' => 'Password1!',
@@ -54,7 +55,8 @@ class RegistrationTest extends TestCase
     public function test_signup_requires_all_critical_fields(): void
     {
         $response = $this->from('/register')->post('/register', [
-            'name' => '',
+            'first_name' => '',
+            'last_name' => '',
             'email' => '',
             'password' => '',
             'password_confirmation' => '',
@@ -64,13 +66,36 @@ class RegistrationTest extends TestCase
 
         $response->assertRedirect('/register');
         $response->assertSessionHasErrors([
-            'name',
+            'first_name',
             'country',
             'email',
             'password',
             'agree',
             'registration_token',
         ]);
+    }
+
+    public function test_registration_accepts_first_name_without_last_name(): void
+    {
+        Mail::fake();
+
+        $token = app(RegistrationGuardService::class)->makeFormToken();
+
+        $response = $this->post('/register', [
+            'first_name' => 'Jane',
+            'country' => 'KE',
+            'email' => 'jane-only@example.com',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+            'agree' => '1',
+            'registration_token' => $token,
+        ]);
+
+        $response->assertRedirect(route('verification.code.show'));
+
+        $user = User::where('email', 'jane-only@example.com')->first();
+        $this->assertNotNull($user);
+        $this->assertSame('Jane', $user->name);
     }
 
     public function test_registration_password_generator_is_available_to_guests(): void
