@@ -181,4 +181,59 @@ class InvoiceSettlementRenewalBillingTest extends TestCase
 
         $this->assertSame('2026-03-31', $service->next_due_date->toDateString());
     }
+
+    public function test_renewal_with_upgrade_invoice_advances_next_due_date(): void
+    {
+        Carbon::setTestNow('2026-03-25 10:00:00');
+
+        $user = User::factory()->customer()->create();
+        $bronze = Product::factory()->create(['monthly_price' => 1000]);
+        $silver = Product::factory()->create(['monthly_price' => 2000]);
+
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $bronze->id,
+            'status' => ServiceStatus::Active,
+            'billing_cycle' => 'monthly',
+            'next_due_date' => '2026-03-31',
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => InvoiceStatus::Unpaid,
+            'total' => 2000,
+            'subtotal' => 2000,
+            'tax' => 0,
+            'notes' => 'Renewal with upgrade — Bronze → Silver (Monthly)',
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'product_id' => $silver->id,
+            'description' => 'Silver — Monthly renewal (plan upgrade)',
+            'amount' => 2000,
+            'unit_price' => 2000,
+            'quantity' => 1,
+            'custom_options' => [
+                'hosting_renewal_upgrade' => true,
+                'hosting_upgrade' => true,
+                'hosting_plan_change' => true,
+                'to_product_id' => $silver->id,
+            ],
+        ]);
+
+        $payment = Payment::factory()->create([
+            'user_id' => $user->id,
+            'invoice_id' => $invoice->id,
+            'amount' => 2000,
+            'status' => PaymentStatus::Completed,
+        ]);
+
+        app(InvoiceSettlementService::class)->settleFromPayment($payment);
+
+        $service->refresh();
+
+        $this->assertSame('2026-04-30', $service->next_due_date->toDateString());
+    }
 }

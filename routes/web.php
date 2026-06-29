@@ -511,7 +511,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/services', [App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
-        Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew');
+        Route::get('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renewForm'])->name('customer.services.renew');
+        Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew.store');
         Route::get('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'show'])->name('customer.services.upgrade');
         Route::post('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'store'])->name('customer.services.upgrade.store');
 

@@ -259,6 +259,10 @@ class InvoiceSettlementService
         return ! $invoice->items->contains(function ($item) {
             $options = is_array($item->custom_options) ? $item->custom_options : [];
 
+            if (! empty($options['hosting_renewal_upgrade'])) {
+                return false;
+            }
+
             return ! empty($options['hosting_upgrade']) || ! empty($options['hosting_plan_change']);
         });
     }

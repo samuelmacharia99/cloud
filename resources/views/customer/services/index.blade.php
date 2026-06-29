@@ -59,11 +59,9 @@
                             {{ $payInvoice ? 'Pay invoice' : 'Manage' }}
                         </a>
                         @if($canRenew)
-                            <form method="POST" action="{{ route('customer.services.renew', $service) }}" class="flex-1"
-                                data-confirm="Generate a renewal invoice for {{ addslashes($service->product->name) }}?">
-                                @csrf
-                                <button type="submit" class="btn-primary w-full btn-sm">Renew</button>
-                            </form>
+                            <a href="{{ route('customer.services.renew', $service) }}" class="btn-primary flex-1 btn-sm text-center">
+                                Renew
+                            </a>
                         @else
                             <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed" title="Renewal unavailable">Renew</button>
                         @endif

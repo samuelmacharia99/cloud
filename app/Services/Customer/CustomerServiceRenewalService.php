@@ -1,0 +1,278 @@
+<?php
+
+namespace App\Services\Customer;
+
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Product;
+use App\Models\ResellerProduct;
+use App\Models\Service;
+use App\Models\Setting;
+use App\Models\User;
+use App\Services\NotificationService;
+use App\Services\TaxService;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+
+class CustomerServiceRenewalService
+{
+    public function __construct(
+        private CustomerHostingUpgradeService $hostingUpgrades,
+        private NotificationService $notifications,
+    ) {}
+
+    public function findOutstandingRenewalInvoice(Service $service): ?Invoice
+    {
+        return InvoiceItem::query()
+            ->where('service_id', $service->id)
+            ->whereHas('invoice', function ($query) {
+                $query->whereIn('status', ['draft', 'unpaid'])
+                    ->where('created_at', '>=', now()->subDays(30));
+            })
+            ->with('invoice')
+            ->latest('id')
+            ->first()
+            ?->invoice;
+    }
+
+    /**
+     * @return array{
+     *     current: array{
+     *         product: Product,
+     *         listing: ?ResellerProduct,
+     *         reseller_product_id: ?int,
+     *         name: string,
+     *         display_price: float,
+     *         disk_quota: ?float,
+     *         bandwidth_quota: mixed,
+     *         num_databases: ?int,
+     *         is_current: true
+     *     },
+     *     upgrades: Collection<int, array{
+     *         product: Product,
+     *         listing: ?ResellerProduct,
+     *         reseller_product_id: ?int,
+     *         name: string,
+     *         change_type: 'upgrade'|'downgrade'|'lateral',
+     *         display_price: float,
+     *         disk_quota: ?float,
+     *         bandwidth_quota: mixed,
+     *         num_databases: ?int,
+     *         is_current: false
+     *     }>,
+     *     billing_cycle: string,
+     *     can_choose_plan: bool
+     * }
+     */
+    public function renewalOptions(Service $service, User $customer): array
+    {
+        $service->loadMissing('product.directAdminPackage', 'node', 'user');
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+        $current = $this->currentPlanOption($service, $customer, $billingCycle);
+
+        $upgrades = collect();
+
+        if ($service->isSharedHosting()) {
+            $upgrades = $this->hostingUpgrades
+                ->planChangeOptions($service, $customer)
+                ->filter(fn (array $option) => in_array($option['change_type'], ['upgrade', 'lateral'], true))
+                ->map(fn (array $option) => array_merge($option, ['is_current' => false]))
+                ->values();
+        }
+
+        return [
+            'current' => $current,
+            'upgrades' => $upgrades,
+            'billing_cycle' => $billingCycle,
+            'can_choose_plan' => $upgrades->isNotEmpty(),
+        ];
+    }
+
+    public function findRenewalOption(Service $service, User $customer, int $productId, ?int $resellerProductId = null): ?array
+    {
+        $options = $this->renewalOptions($service, $customer);
+        $candidates = collect([$options['current']])->merge($options['upgrades']);
+
+        return $candidates->first(function (array $option) use ($productId, $resellerProductId) {
+            if ((int) $option['product']->id !== $productId) {
+                return false;
+            }
+
+            $optionListingId = $option['reseller_product_id'] ?? null;
+
+            return $resellerProductId === null
+                ? $optionListingId === null
+                : $optionListingId === $resellerProductId;
+        });
+    }
+
+    public function createRenewalInvoice(Service $service, User $customer, int $productId, ?int $resellerProductId = null): Invoice
+    {
+        if ($service->user_id !== $customer->id) {
+            throw new \InvalidArgumentException('Unauthorized service renewal.');
+        }
+
+        if (! in_array($service->status->value, ['active', 'suspended'], true)) {
+            throw new \InvalidArgumentException('Only active or suspended services can be renewed.');
+        }
+
+        $option = $this->findRenewalOption($service, $customer, $productId, $resellerProductId);
+
+        if (! $option) {
+            throw new \InvalidArgumentException('Selected plan is not available for this renewal.');
+        }
+
+        $isCurrentPlan = ! empty($option['is_current']);
+        $price = $this->renewalPrice($service, $customer, $option);
+        $taxBreakdown = TaxService::calculateForUser($price, $customer);
+        $dueDate = now()->addDays((int) Setting::getValue('invoice_due_days', 14))->toDateString();
+        $prefix = Setting::getValue('invoice_prefix', 'INV');
+        $cycleLabel = ucfirst($service->billing_cycle ?? 'monthly');
+
+        $invoice = DB::transaction(function () use (
+            $service,
+            $customer,
+            $option,
+            $isCurrentPlan,
+            $prefix,
+            $price,
+            $taxBreakdown,
+            $dueDate,
+            $cycleLabel,
+        ) {
+            $year = now()->format('Y');
+            $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
+            $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
+
+            $notes = $isCurrentPlan
+                ? "Manual renewal — {$option['name']} ({$cycleLabel})"
+                : "Renewal with upgrade — {$service->product->name} → {$option['name']} ({$cycleLabel})";
+
+            $invoice = Invoice::create([
+                'user_id' => $customer->id,
+                'invoice_number' => $number,
+                'status' => 'unpaid',
+                'due_date' => $dueDate,
+                'subtotal' => $taxBreakdown['subtotal'],
+                'tax' => $taxBreakdown['tax'],
+                'total' => $taxBreakdown['total'],
+                'notes' => $notes,
+            ]);
+
+            $customOptions = null;
+
+            if (! $isCurrentPlan) {
+                $customOptions = [
+                    'hosting_renewal_upgrade' => true,
+                    'hosting_upgrade' => true,
+                    'hosting_plan_change' => true,
+                    'change_type' => $option['change_type'] ?? 'upgrade',
+                    'from_product_id' => $service->product_id,
+                    'to_product_id' => $option['product']->id,
+                ];
+
+                if (! empty($option['reseller_product_id'])) {
+                    $customOptions['to_reseller_product_id'] = $option['reseller_product_id'];
+                }
+            }
+
+            $description = $isCurrentPlan
+                ? "{$option['name']} — {$cycleLabel} renewal"
+                : "{$option['name']} — {$cycleLabel} renewal (plan upgrade)";
+
+            InvoiceItem::create([
+                'invoice_id' => $invoice->id,
+                'service_id' => $service->id,
+                'product_id' => $option['product']->id,
+                'description' => $description,
+                'quantity' => 1,
+                'unit_price' => $price,
+                'amount' => $price,
+                'custom_options' => $customOptions,
+            ]);
+
+            $service->update(['invoice_id' => $invoice->id]);
+
+            return $invoice;
+        });
+
+        $this->notifications->notifyInvoiceGenerated($invoice->fresh(['user', 'items']));
+
+        return $invoice;
+    }
+
+    /**
+     * @return array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int,
+     *     is_current: true
+     * }
+     */
+    private function currentPlanOption(Service $service, User $customer, string $billingCycle): array
+    {
+        $product = $service->product;
+        $listingId = (int) ($service->service_meta['reseller_product_id'] ?? 0);
+        $listing = $listingId > 0
+            ? ResellerProduct::query()->where('id', $listingId)->first()
+            : null;
+
+        $displayPrice = $listing
+            ? $this->hostingUpgrades->displayPriceForPlanOption($customer, [
+                'product' => $product,
+                'listing' => $listing,
+                'reseller_product_id' => $listing?->id,
+            ], $billingCycle)
+            : $this->priceForProductCycle($service, $product, $billingCycle);
+
+        return [
+            'product' => $product,
+            'listing' => $listing,
+            'reseller_product_id' => $listing?->id,
+            'name' => $listing?->name ?? $product->name,
+            'display_price' => $displayPrice,
+            'disk_quota' => $product->directAdminPackage?->disk_quota,
+            'bandwidth_quota' => $product->directAdminPackage?->bandwidth_quota,
+            'num_databases' => $product->directAdminPackage?->num_databases,
+            'is_current' => true,
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     display_price: float
+     * }  $option
+     */
+    private function renewalPrice(Service $service, User $customer, array $option): float
+    {
+        if ($service->isSharedHosting()) {
+            return $this->hostingUpgrades->displayPriceForPlanOption(
+                $customer,
+                $option,
+                $service->billing_cycle ?? 'monthly',
+            );
+        }
+
+        return $this->priceForProductCycle($service, $option['product'], $service->billing_cycle ?? 'monthly');
+    }
+
+    private function priceForProductCycle(Service $service, Product $product, string $cycle): float
+    {
+        return match ($cycle) {
+            'monthly' => (float) $product->monthly_price,
+            'quarterly' => (float) ($product->monthly_price * 3),
+            'semi-annual' => (float) ($product->monthly_price * 6),
+            'annual' => (float) ($product->yearly_price ?: ($product->monthly_price * 12)),
+            default => (float) $product->price,
+        };
+    }
+}

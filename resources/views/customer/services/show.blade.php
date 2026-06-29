@@ -175,13 +175,10 @@
                             Cancel Service
                         </button>
                     @endif
-                    @if ($service->status->value === 'active')
-                        <form action="{{ route('customer.services.renew', $service) }}" method="POST" data-confirm='Are you sure you want to renew this service? An invoice will be created.'>
-                            @csrf
-                            <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm">
-                                Renew Service
-                            </button>
-                        </form>
+                    @if (in_array($service->status->value, ['active', 'suspended']))
+                        <a href="{{ route('customer.services.renew', $service) }}" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition text-sm text-center">
+                            Renew Service
+                        </a>
                     @endif
                     <button class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium rounded-lg transition text-sm">
                         View Documentation
