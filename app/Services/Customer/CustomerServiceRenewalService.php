@@ -11,6 +11,7 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\NotificationService;
+use App\Services\ResellerCustomerCatalogService;
 use App\Services\TaxService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
