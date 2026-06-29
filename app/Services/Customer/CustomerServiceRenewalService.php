@@ -21,6 +21,7 @@ class CustomerServiceRenewalService
     public function __construct(
         private CustomerHostingUpgradeService $hostingUpgrades,
         private NotificationService $notifications,
+        private ResellerCustomerCatalogService $catalog,
     ) {}
 
     public function findOutstandingRenewalInvoice(Service $service): ?Invoice
@@ -202,9 +203,7 @@ class CustomerServiceRenewalService
      */
     private function querySameNodeResellerListings(Service $service, User $customer, int $nodeId): Collection
     {
-        $catalog = app(ResellerCustomerCatalogService::class);
-
-        if (! $catalog->isResellerCustomer($customer)) {
+        if (! $this->catalog->isResellerCustomer($customer)) {
             return collect();
         }
 
@@ -214,7 +213,7 @@ class CustomerServiceRenewalService
         $currentOrder = (int) ($product->order ?? 0);
         $currentListingId = (int) ($service->service_meta['reseller_product_id'] ?? 0);
 
-        return $catalog->activeCatalog($customer)
+        return $this->catalog->activeCatalog($customer)
             ->filter(fn (ResellerProduct $listing) => $listing->type === 'shared_hosting')
             ->filter(fn (ResellerProduct $listing) => $listing->isOrderable())
             ->filter(fn (ResellerProduct $listing) => $listing->id !== $currentListingId)

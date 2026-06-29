@@ -314,6 +314,9 @@ class ServiceRenewalOptionsTest extends TestCase
         $item = $invoice->items()->first();
         $this->assertSame('monthly', $item->custom_options['to_billing_cycle']);
         $this->assertStringContainsString('Monthly', $item->description);
+        $this->assertTrue($item->custom_options['pricing_summary']['is_prorated'] ?? false);
+        $this->assertGreaterThan(0, $item->custom_options['pricing_summary']['prorated_subtotal'] ?? 0);
+        $this->assertStringContainsString('Prorated upgrade', $item->description);
     }
 
     public function test_upgrade_lists_plans_on_node_when_product_is_matched_by_package_name(): void

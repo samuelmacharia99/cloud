@@ -43,10 +43,11 @@
             action="{{ route('customer.services.upgrade.store', $service) }}"
             class="space-y-4"
             id="plan-change-form"
-            x-data="hostingPlanUpgradeForm(@js(old('billing_cycle', $billingCycle)))"
+            x-data="hostingPlanUpgradeForm(@js(old('billing_cycle', $billingCycle)), @js($planEstimates))"
+            x-init="syncSelectedPlan($refs.resellerProductId)"
         >
             @csrf
-            <input type="hidden" name="reseller_product_id" id="reseller_product_id" value="{{ old('reseller_product_id') }}">
+            <input type="hidden" name="reseller_product_id" id="reseller_product_id" x-ref="resellerProductId" value="{{ old('reseller_product_id') }}">
 
             <div class="ui-card p-5">
                 <label for="billing_cycle" class="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
@@ -84,6 +85,7 @@
                         'lateral' => 'Same tier',
                         default => 'Upgrade',
                     };
+                    $planKey = $product->id . ':' . ($option['reseller_product_id'] ?? 0);
                     $cyclePrices = [];
                     foreach ($billingCycles as $cycleOption) {
                         $cyclePrices[$cycleOption] = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycleOption);
@@ -97,7 +99,9 @@
                         class="mt-1 plan-option-radio"
                         required
                         data-reseller-product-id="{{ $option['reseller_product_id'] ?? '' }}"
+                        data-plan-key="{{ $planKey }}"
                         data-cycle-prices='@json($cyclePrices)'
+                        @change="syncSelectedPlan($refs.resellerProductId)"
                         @checked(
                             (string) old('product_id', $recommendedOption['product']->id ?? '') === (string) $product->id
                             && (string) old('reseller_product_id', $recommendedOption['reseller_product_id'] ?? '') === (string) ($option['reseller_product_id'] ?? '')
@@ -133,11 +137,34 @@
             @endforeach
 
             @error('product_id')<p class="text-sm text-red-600">{{ $message }}</p>@enderror
-            <p class="text-sm text-slate-500">Upgrades are prorated for the rest of your current billing period. Downgrades apply at no extra cost after you confirm.</p>
+
+            <div
+                x-show="selectedEstimate"
+                x-cloak
+                class="ui-card p-5 border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-950/20"
+            >
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">Due today</p>
+                <p class="text-2xl font-bold text-brand-700 dark:text-brand-300 mt-1" x-text="formatMoney(selectedEstimate?.estimated_total ?? 0)"></p>
+                <template x-if="selectedEstimate?.is_prorated && selectedEstimate?.days_remaining">
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="prorationExplanation(selectedEstimate)"></p>
+                </template>
+                <template x-if="selectedEstimate && !selectedEstimate.is_prorated && selectedEstimate.change_type !== 'downgrade'">
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                        One-time charge for the plan change.
+                    </p>
+                </template>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-3" x-show="selectedEstimate?.target_plan_price">
+                    After this period, <span x-text="selectedEstimate?.target_plan_name"></span> renews at
+                    <span x-text="formatMoney(selectedEstimate?.target_plan_price ?? 0)"></span>
+                    <span x-text="'/' + cycleSuffix(cycle)"></span>.
+                </p>
+            </div>
+
+            <p class="text-sm text-slate-500">The amount due today is a prorated upgrade charge for the rest of your current billing period — not the full annual plan price. Downgrades apply at no extra cost after you confirm.</p>
             <button type="submit" class="btn-primary">Continue to billing</button>
         </form>
         <script>
-            function hostingPlanUpgradeForm(initialCycle) {
+            function hostingPlanUpgradeForm(initialCycle, planEstimates) {
                 const cycleLabels = {
                     monthly: 'mo',
                     quarterly: 'qtr',
@@ -147,6 +174,38 @@
 
                 return {
                     cycle: initialCycle,
+                    selectedPlanKey: null,
+                    planEstimates: planEstimates || {},
+                    get selectedEstimate() {
+                        if (!this.selectedPlanKey) {
+                            return null;
+                        }
+
+                        return this.planEstimates[this.selectedPlanKey]?.[this.cycle] ?? null;
+                    },
+                    cycleSuffix(cycle) {
+                        return cycleLabels[cycle] ?? 'mo';
+                    },
+                    formatMoney(amount) {
+                        return `KES ${Math.round(Number(amount) || 0).toLocaleString()}`;
+                    },
+                    prorationExplanation(estimate) {
+                        const days = estimate.days_remaining ?? 0;
+                        const from = estimate.current_plan_name ?? 'current plan';
+                        const to = estimate.target_plan_name ?? 'new plan';
+                        const dueDate = estimate.next_due_date
+                            ? new Date(estimate.next_due_date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                            : null;
+
+                        return `Prorated upgrade from ${from} to ${to} for ${days} day${days === 1 ? '' : 's'} remaining${dueDate ? ` until ${dueDate}` : ''}.`;
+                    },
+                    syncSelectedPlan(resellerInput) {
+                        const selected = document.querySelector('.plan-option-radio:checked');
+                        this.selectedPlanKey = selected?.dataset.planKey || null;
+                        if (resellerInput) {
+                            resellerInput.value = selected?.dataset.resellerProductId || '';
+                        }
+                    },
                     planPriceLabel(el) {
                         const prices = JSON.parse(el.dataset.cyclePrices || '{}');
                         const amount = prices[this.cycle] ?? 0;
@@ -156,16 +215,6 @@
                     },
                 };
             }
-
-            const resellerProductInput = document.getElementById('reseller_product_id');
-            const syncResellerProductId = () => {
-                const selected = document.querySelector('.plan-option-radio:checked');
-                resellerProductInput.value = selected?.dataset.resellerProductId || '';
-            };
-            document.querySelectorAll('.plan-option-radio').forEach((radio) => {
-                radio.addEventListener('change', syncResellerProductId);
-            });
-            syncResellerProductId();
         </script>
     @endif
 </div>

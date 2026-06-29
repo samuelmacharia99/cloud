@@ -104,7 +104,7 @@ class PaymentController extends Controller
         }
 
         return view('customer.payment.select-method', [
-            'invoice' => $invoice->fresh(),
+            'invoice' => $invoice->fresh(['items']),
             'availableGateways' => $availableGateways,
             'creditBalance' => $creditBalance,
             'appliedCredits' => $invoice->getAppliedCredits(),

@@ -323,7 +323,8 @@ class CustomerHostingUpgradeService
         $billingCycle = $this->resolveTargetBillingCycle($service, $targetBillingCycle);
         $option['display_price'] = $this->displayPriceForPlanOption($customer, $option, $billingCycle);
 
-        $price = $this->proratedPlanChangePrice($service, $customer, $option, $billingCycle);
+        $pricing = $this->estimatePlanChangePricing($service, $customer, $option, $billingCycle);
+        $price = $pricing['prorated_subtotal'];
         $taxBreakdown = TaxService::calculateForUser($price, $service->user);
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
@@ -336,7 +337,7 @@ class CustomerHostingUpgradeService
         };
         $cycleLabel = ucfirst($billingCycle);
 
-        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel, $billingCycle, $cycleLabel) {
+        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel, $billingCycle, $cycleLabel, $pricing) {
             $year = now()->format('Y');
             $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
             $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
@@ -359,6 +360,7 @@ class CustomerHostingUpgradeService
                 'from_product_id' => $service->product_id,
                 'to_product_id' => $targetProduct->id,
                 'to_billing_cycle' => $billingCycle,
+                'pricing_summary' => $pricing,
             ];
 
             if (! empty($option['reseller_product_id'])) {
@@ -369,7 +371,7 @@ class CustomerHostingUpgradeService
                 'invoice_id' => $invoice->id,
                 'service_id' => $service->id,
                 'product_id' => $targetProduct->id,
-                'description' => "Change to {$option['name']} ({$cycleLabel})",
+                'description' => $this->planChangeInvoiceDescription($option['name'], $cycleLabel, $pricing),
                 'quantity' => 1,
                 'unit_price' => $price,
                 'amount' => $price,
@@ -846,31 +848,97 @@ class CustomerHostingUpgradeService
      *     change_type: 'upgrade'|'downgrade'|'lateral',
      *     display_price: float
      * }  $option
+     * @return array{
+     *     current_plan_name: string,
+     *     target_plan_name: string,
+     *     current_cycle: string,
+     *     target_cycle: string,
+     *     current_plan_price: float,
+     *     target_plan_price: float,
+     *     full_period_difference: float,
+     *     days_remaining: ?int,
+     *     next_due_date: ?string,
+     *     prorated_subtotal: float,
+     *     is_prorated: bool,
+     *     change_type: string
+     * }
      */
-    private function proratedPlanChangePrice(Service $service, User $customer, array $option, ?string $targetCycle = null): float
-    {
-        if ($option['change_type'] === 'downgrade') {
-            return 0.0;
-        }
-
+    public function estimatePlanChangePricing(
+        Service $service,
+        User $customer,
+        array $option,
+        ?string $targetBillingCycle = null,
+    ): array {
+        $service->loadMissing('product');
         $currentCycle = $service->billing_cycle ?? 'monthly';
-        $targetCycle = $this->resolveTargetBillingCycle($service, $targetCycle);
+        $targetCycle = $this->resolveTargetBillingCycle($service, $targetBillingCycle);
         $currentListing = $this->currentListingForService($service, $customer);
-        $current = $this->currentPlanPrice($service, $customer, $currentCycle, $currentListing);
-        $target = $this->displayPriceForPlanOption($customer, $option, $targetCycle);
-        $diff = max(0, $target - $current);
+        $currentPrice = $this->currentPlanPrice($service, $customer, $currentCycle, $currentListing);
+        $targetPrice = $this->displayPriceForPlanOption($customer, $option, $targetCycle);
+        $changeType = $option['change_type'] ?? 'upgrade';
 
-        if ($diff <= 0) {
-            return 0.0;
+        $summary = [
+            'current_plan_name' => $service->product?->name ?? 'Current plan',
+            'target_plan_name' => $option['name'],
+            'current_cycle' => $currentCycle,
+            'target_cycle' => $targetCycle,
+            'current_plan_price' => round($currentPrice, 2),
+            'target_plan_price' => round($targetPrice, 2),
+            'full_period_difference' => round(max(0, $targetPrice - $currentPrice), 2),
+            'days_remaining' => null,
+            'next_due_date' => $service->next_due_date?->toDateString(),
+            'prorated_subtotal' => 0.0,
+            'is_prorated' => false,
+            'change_type' => $changeType,
+        ];
+
+        if ($changeType === 'downgrade') {
+            return $summary;
         }
 
         if (! $service->next_due_date || $service->next_due_date->isPast()) {
-            return round($diff, 2);
+            $summary['prorated_subtotal'] = round(max(0, $targetPrice - $currentPrice), 2);
+
+            return $summary;
         }
 
-        $daysRemaining = max(1, now()->diffInDays($service->next_due_date));
+        $daysRemaining = max(1, (int) now()->diffInDays($service->next_due_date));
+        $currentDaily = $currentPrice / $this->cycleDays($currentCycle);
+        $targetDaily = $targetPrice / $this->cycleDays($targetCycle);
+        $diffDaily = max(0, $targetDaily - $currentDaily);
 
-        return round($diff * ($daysRemaining / $this->cycleDays($currentCycle)), 2);
+        $summary['days_remaining'] = $daysRemaining;
+        $summary['is_prorated'] = true;
+        $summary['prorated_subtotal'] = round($diffDaily * $daysRemaining, 2);
+
+        return $summary;
+    }
+
+    /**
+     * @param  array<string, mixed>  $pricing
+     */
+    private function planChangeInvoiceDescription(string $planName, string $cycleLabel, array $pricing): string
+    {
+        if (! empty($pricing['is_prorated']) && ! empty($pricing['days_remaining'])) {
+            return "Prorated upgrade to {$planName} ({$cycleLabel}) — {$pricing['days_remaining']} days remaining in current period";
+        }
+
+        return "Change to {$planName} ({$cycleLabel})";
+    }
+
+    /**
+     * @param  array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float
+     * }  $option
+     */
+    private function proratedPlanChangePrice(Service $service, User $customer, array $option, ?string $targetCycle = null): float
+    {
+        return $this->estimatePlanChangePricing($service, $customer, $option, $targetCycle)['prorated_subtotal'];
     }
 
     public function resolveTargetBillingCycle(Service $service, ?string $billingCycle = null): string

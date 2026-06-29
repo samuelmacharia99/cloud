@@ -14,6 +14,63 @@
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
         <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invoice Details</h2>
 
+        @php
+            $upgradePricing = null;
+            $upgradeItem = null;
+            foreach ($invoice->items as $item) {
+                $options = is_array($item->custom_options) ? $item->custom_options : [];
+                if (! empty($options['pricing_summary'])) {
+                    $upgradePricing = $options['pricing_summary'];
+                    $upgradeItem = $item;
+                    break;
+                }
+                if (! empty($options['hosting_upgrade']) || ! empty($options['hosting_plan_change'])) {
+                    $upgradeItem = $item;
+                }
+            }
+        @endphp
+
+        @if ($upgradePricing && ($upgradePricing['is_prorated'] ?? false))
+            <div class="mb-5 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-950/20 p-4">
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">Prorated hosting upgrade</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    You're paying the difference between
+                    <strong>{{ $upgradePricing['current_plan_name'] ?? 'your current plan' }}</strong>
+                    and
+                    <strong>{{ $upgradePricing['target_plan_name'] ?? 'the new plan' }}</strong>
+                    for
+                    <strong>{{ $upgradePricing['days_remaining'] ?? 0 }}</strong>
+                    {{ \Illuminate\Support\Str::plural('day', (int) ($upgradePricing['days_remaining'] ?? 0)) }}
+                    remaining in your current billing period
+                    @if (! empty($upgradePricing['next_due_date']))
+                        (until {{ \Illuminate\Support\Carbon::parse($upgradePricing['next_due_date'])->format('M d, Y') }})
+                    @endif
+                    — not the full plan price.
+                </p>
+                <div class="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                    <div class="flex justify-between">
+                        <span>New plan rate ({{ ucfirst(str_replace('-', ' ', $upgradePricing['target_cycle'] ?? 'annual')) }})</span>
+                        <span>{{ $invoice->formatMoney($upgradePricing['target_plan_price'] ?? 0) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Current plan rate ({{ ucfirst(str_replace('-', ' ', $upgradePricing['current_cycle'] ?? 'annual')) }})</span>
+                        <span>− {{ $invoice->formatMoney($upgradePricing['current_plan_price'] ?? 0) }}</span>
+                    </div>
+                    <div class="flex justify-between font-medium">
+                        <span>Prorated upgrade (before tax)</span>
+                        <span>{{ $invoice->formatMoney($upgradePricing['prorated_subtotal'] ?? 0) }}</span>
+                    </div>
+                </div>
+            </div>
+        @elseif ($upgradeItem)
+            <div class="mb-5 rounded-lg border border-brand-200 dark:border-brand-800 bg-brand-50/60 dark:bg-brand-950/20 p-4">
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">Hosting plan change</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    This invoice is a <strong>prorated upgrade charge</strong> for the rest of your current billing period — not the full annual plan price.
+                </p>
+            </div>
+        @endif
+
         <div class="space-y-3">
             <div class="flex justify-between">
                 <span class="text-slate-600 dark:text-slate-400">Invoice Number</span>
@@ -27,6 +84,24 @@
                 <span class="text-slate-600 dark:text-slate-400">Due Date</span>
                 <span class="font-semibold text-slate-900 dark:text-white">{{ $invoice->due_date->format('M d, Y') }}</span>
             </div>
+            @if ($invoice->items->isNotEmpty())
+                <hr class="my-4 border-slate-200 dark:border-slate-700">
+                <div class="space-y-2">
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">Line items</p>
+                    @foreach ($invoice->items as $item)
+                        <div class="flex justify-between gap-4 text-sm">
+                            <span class="text-slate-600 dark:text-slate-400">{{ $item->description }}</span>
+                            <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($item->amount) }}</span>
+                        </div>
+                    @endforeach
+                    @if ($invoice->tax > 0)
+                        <div class="flex justify-between gap-4 text-sm">
+                            <span class="text-slate-600 dark:text-slate-400">Tax</span>
+                            <span class="font-medium text-slate-900 dark:text-white shrink-0">{{ $invoice->formatMoney($invoice->tax) }}</span>
+                        </div>
+                    @endif
+                </div>
+            @endif
             <hr class="my-4 border-slate-200 dark:border-slate-700">
             @if(($appliedCredits ?? 0) > 0)
             <div class="flex justify-between">

@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\ServiceEnforcementInsightService;
+use App\Services\TaxService;
 use Illuminate\Http\Request;
 
 class ServiceUpgradeController extends Controller
@@ -18,6 +19,20 @@ class ServiceUpgradeController extends Controller
 
         $customer = auth()->user();
         $planOptions = $upgrades->planChangeOptions($service, $customer);
+        $billingCycles = CustomerHostingUpgradeService::BILLING_CYCLES;
+        $planEstimates = $planOptions->mapWithKeys(function (array $option) use ($upgrades, $service, $customer, $billingCycles) {
+            $key = $option['product']->id.':'.($option['reseller_product_id'] ?? 0);
+            $cycles = [];
+            foreach ($billingCycles as $cycle) {
+                $pricing = $upgrades->estimatePlanChangePricing($service, $customer, $option, $cycle);
+                $taxBreakdown = TaxService::calculateForUser($pricing['prorated_subtotal'], $customer);
+                $pricing['estimated_tax'] = $taxBreakdown['tax'];
+                $pricing['estimated_total'] = $taxBreakdown['total'];
+                $cycles[$cycle] = $pricing;
+            }
+
+            return [$key => $cycles];
+        })->all();
         $insight = app(ServiceEnforcementInsightService::class)->forService($service->load('product.directAdminPackage'));
         $recommendedOption = $upgrades->recommendedPlanOption(
             $service,
@@ -34,7 +49,8 @@ class ServiceUpgradeController extends Controller
             'packageUsageInsight' => $insight,
             'recommendedOption' => $recommendedOption,
             'billingCycle' => $billingCycle,
-            'billingCycles' => CustomerHostingUpgradeService::BILLING_CYCLES,
+            'billingCycles' => $billingCycles,
+            'planEstimates' => $planEstimates,
             'upgrades' => $upgrades,
         ]);
     }
