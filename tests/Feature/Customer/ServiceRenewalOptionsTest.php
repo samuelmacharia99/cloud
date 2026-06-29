@@ -207,4 +207,49 @@ class ServiceRenewalOptionsTest extends TestCase
         $this->assertSame('Silver', $options['current']['name']);
         $this->assertTrue($options['upgrades']->isEmpty());
     }
+
+    public function test_category_fallback_lists_same_category_plans_when_service_node_id_missing(): void
+    {
+        ['node' => $node, 'bronze' => $bronze, 'silver' => $silver] = $this->createHostingStack();
+
+        $bronze->update(['category' => 'DirectAdmin Hosting']);
+        $silver->update(['category' => 'DirectAdmin Hosting']);
+
+        $customer = User::factory()->customer()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $bronze->id,
+            'node_id' => null,
+            'status' => ServiceStatus::Active,
+            'billing_cycle' => 'monthly',
+            'provisioning_driver_key' => null,
+            'external_reference' => null,
+        ]);
+
+        $options = app(CustomerServiceRenewalService::class)->renewalOptions($service, $customer);
+
+        $this->assertTrue($options['can_choose_plan']);
+        $this->assertSame('Silver', $options['upgrades']->first()['name']);
+    }
+
+    public function test_plan_change_options_use_product_directadmin_node_when_service_node_missing(): void
+    {
+        ['node' => $node, 'bronze' => $bronze, 'silver' => $silver] = $this->createHostingStack();
+
+        $customer = User::factory()->customer()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $bronze->id,
+            'node_id' => null,
+            'status' => ServiceStatus::Active,
+            'billing_cycle' => 'monthly',
+            'provisioning_driver_key' => 'directadmin',
+            'external_reference' => 'client1',
+        ]);
+
+        $options = app(CustomerHostingUpgradeService::class)
+            ->planChangeOptions($service, $customer);
+
+        $this->assertTrue($options->contains(fn (array $option) => $option['product']->id === $silver->id));
+    }
 }

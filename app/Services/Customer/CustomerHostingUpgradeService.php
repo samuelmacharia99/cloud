@@ -576,7 +576,17 @@ class CustomerHostingUpgradeService
         $meta = $service->service_meta ?? [];
         $metaNodeId = $meta['node_id'] ?? null;
 
-        return $metaNodeId ? (int) $metaNodeId : null;
+        if ($metaNodeId) {
+            return (int) $metaNodeId;
+        }
+
+        $service->loadMissing('product.directAdminPackage');
+
+        if ($service->product?->directAdminPackage?->node_id) {
+            return (int) $service->product->directAdminPackage->node_id;
+        }
+
+        return null;
     }
 
     private function currentListingForService(Service $service, User $customer): ?ResellerProduct

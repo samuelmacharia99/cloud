@@ -63,7 +63,7 @@
             <section class="space-y-3">
                 <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Upgrade while renewing</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400">
-                    Switch to a higher DirectAdmin package on your next billing period. Your hosting account will be upgraded when payment is received.
+                    Switch to a higher plan in the same category for your next billing period. Your account will be upgraded when payment is received.
                 </p>
 
                 @foreach ($upgrades as $option)

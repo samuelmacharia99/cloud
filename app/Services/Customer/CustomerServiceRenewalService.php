@@ -70,15 +70,7 @@ class CustomerServiceRenewalService
         $billingCycle = $service->billing_cycle ?? 'monthly';
         $current = $this->currentPlanOption($service, $customer, $billingCycle);
 
-        $upgrades = collect();
-
-        if ($service->isSharedHosting()) {
-            $upgrades = $this->hostingUpgrades
-                ->planChangeOptions($service, $customer)
-                ->filter(fn (array $option) => in_array($option['change_type'], ['upgrade', 'lateral'], true))
-                ->map(fn (array $option) => array_merge($option, ['is_current' => false]))
-                ->values();
-        }
+        $upgrades = $this->upgradeOptionsForRenewal($service, $customer);
 
         return [
             'current' => $current,
@@ -86,6 +78,202 @@ class CustomerServiceRenewalService
             'billing_cycle' => $billingCycle,
             'can_choose_plan' => $upgrades->isNotEmpty(),
         ];
+    }
+
+    /**
+     * @return Collection<int, array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int,
+     *     is_current: false
+     * }>
+     */
+    private function upgradeOptionsForRenewal(Service $service, User $customer): Collection
+    {
+        if (! $this->supportsRenewalPlanPicker($service)) {
+            return collect();
+        }
+
+        $fromHosting = $this->hostingUpgrades
+            ->planChangeOptions($service, $customer)
+            ->filter(fn (array $option) => in_array($option['change_type'], ['upgrade', 'lateral'], true))
+            ->map(fn (array $option) => array_merge($option, ['is_current' => false]));
+
+        if ($fromHosting->isNotEmpty()) {
+            return $fromHosting->values();
+        }
+
+        return $this->categoryRenewalAlternatives($service, $customer)
+            ->map(fn (array $option) => array_merge($option, ['is_current' => false]))
+            ->values();
+    }
+
+    private function supportsRenewalPlanPicker(Service $service): bool
+    {
+        $type = $service->product?->type;
+
+        return in_array($type, ['shared_hosting', 'container_hosting', 'email_hosting'], true)
+            || $service->isSharedHosting();
+    }
+
+    /**
+     * @return Collection<int, array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int
+     * }>
+     */
+    private function categoryRenewalAlternatives(Service $service, User $customer): Collection
+    {
+        $product = $service->product;
+
+        if (! $product) {
+            return collect();
+        }
+
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+        $currentPrice = $this->hostingUpgrades->displayPriceForCycle($customer, $product, $billingCycle);
+        $currentOrder = (int) ($product->order ?? 0);
+        $nodeId = $this->resolveRenewalNodeId($service);
+
+        $query = Product::query()
+            ->where('is_active', true)
+            ->where('type', $product->type)
+            ->where('id', '!=', $product->id)
+            ->with('directAdminPackage');
+
+        if (filled($product->category)) {
+            $query->where('category', $product->category);
+        }
+
+        if ($product->type === 'shared_hosting' && $nodeId !== null) {
+            $query->whereHas('directAdminPackage', fn ($package) => $package->where('node_id', $nodeId));
+        }
+
+        $alternatives = $this->mapCategoryRenewalCandidates(
+            $query->orderBy('order')->orderBy('monthly_price')->get(),
+            $customer,
+            $billingCycle,
+            $currentPrice,
+            $currentOrder,
+        );
+
+        if ($alternatives->isNotEmpty() || ! filled($product->category)) {
+            return $alternatives;
+        }
+
+        $fallbackQuery = Product::query()
+            ->where('is_active', true)
+            ->where('type', $product->type)
+            ->where('id', '!=', $product->id)
+            ->with('directAdminPackage');
+
+        if ($product->type === 'shared_hosting' && $nodeId !== null) {
+            $fallbackQuery->whereHas('directAdminPackage', fn ($package) => $package->where('node_id', $nodeId));
+        }
+
+        return $this->mapCategoryRenewalCandidates(
+            $fallbackQuery->orderBy('order')->orderBy('monthly_price')->get(),
+            $customer,
+            $billingCycle,
+            $currentPrice,
+            $currentOrder,
+        );
+    }
+
+    /**
+     * @param  Collection<int, Product>  $candidates
+     * @return Collection<int, array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int
+     * }>
+     */
+    private function mapCategoryRenewalCandidates(
+        Collection $candidates,
+        User $customer,
+        string $billingCycle,
+        float $currentPrice,
+        int $currentOrder,
+    ): Collection {
+        return $candidates
+            ->map(function (Product $candidate) use ($customer, $billingCycle, $currentPrice, $currentOrder) {
+                $targetPrice = $this->hostingUpgrades->displayPriceForCycle($customer, $candidate, $billingCycle);
+                $targetOrder = (int) ($candidate->order ?? 0);
+                $changeType = $this->resolveChangeType($currentPrice, $currentOrder, $targetPrice, $targetOrder);
+
+                if (! in_array($changeType, ['upgrade', 'lateral'], true)) {
+                    return null;
+                }
+
+                return [
+                    'product' => $candidate,
+                    'listing' => null,
+                    'reseller_product_id' => null,
+                    'name' => $candidate->name,
+                    'change_type' => $changeType,
+                    'display_price' => $targetPrice,
+                    'disk_quota' => $candidate->directAdminPackage?->disk_quota,
+                    'bandwidth_quota' => $candidate->directAdminPackage?->bandwidth_quota,
+                    'num_databases' => $candidate->directAdminPackage?->num_databases,
+                ];
+            })
+            ->filter()
+            ->values();
+    }
+
+    private function resolveRenewalNodeId(Service $service): ?int
+    {
+        if ($service->node_id) {
+            return (int) $service->node_id;
+        }
+
+        $meta = $service->service_meta ?? [];
+        if (! empty($meta['node_id'])) {
+            return (int) $meta['node_id'];
+        }
+
+        $service->loadMissing('product.directAdminPackage');
+
+        if ($service->product?->directAdminPackage?->node_id) {
+            return (int) $service->product->directAdminPackage->node_id;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return 'upgrade'|'downgrade'|'lateral'
+     */
+    private function resolveChangeType(float $currentPrice, int $currentOrder, float $targetPrice, int $targetOrder): string
+    {
+        if ($targetPrice > $currentPrice) {
+            return 'upgrade';
+        }
+
+        if ($targetPrice < $currentPrice) {
+            return 'downgrade';
+        }
+
+        return $targetOrder > $currentOrder ? 'upgrade' : ($targetOrder < $currentOrder ? 'downgrade' : 'lateral');
     }
 
     public function findRenewalOption(Service $service, User $customer, int $productId, ?int $resellerProductId = null): ?array
@@ -254,7 +442,7 @@ class CustomerServiceRenewalService
      */
     private function renewalPrice(Service $service, User $customer, array $option): float
     {
-        if ($service->isSharedHosting()) {
+        if ($this->supportsRenewalPlanPicker($service)) {
             return $this->hostingUpgrades->displayPriceForPlanOption(
                 $customer,
                 $option,
