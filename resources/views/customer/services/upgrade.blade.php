@@ -7,7 +7,10 @@
     <div>
         <a href="{{ route('customer.services.show', $service) }}" class="text-sm text-brand-600 hover:underline">&larr; Back to service</a>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">Change hosting plan</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Current plan: <strong>{{ $service->product->name }}</strong></p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">
+            Current plan: <strong>{{ $service->product->name }}</strong>
+            · billed <span class="capitalize">{{ $billingCycle }}</span>
+        </p>
     </div>
 
     @if (!empty($packageUsageInsight['needs_upgrade']))
@@ -35,31 +38,71 @@
             <p>{{ $planChangeEmptyReason ?? 'No other shared hosting plans are available for this service right now.' }}</p>
         </div>
     @else
-        <form method="POST" action="{{ route('customer.services.upgrade.store', $service) }}" class="space-y-4" id="plan-change-form">
+        <form
+            method="POST"
+            action="{{ route('customer.services.upgrade.store', $service) }}"
+            class="space-y-4"
+            id="plan-change-form"
+            x-data="hostingPlanUpgradeForm(@js(old('billing_cycle', $billingCycle)))"
+        >
             @csrf
             <input type="hidden" name="reseller_product_id" id="reseller_product_id" value="{{ old('reseller_product_id') }}">
+
+            <div class="ui-card p-5">
+                <label for="billing_cycle" class="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
+                    Billing cycle for the new plan
+                </label>
+                <select
+                    id="billing_cycle"
+                    name="billing_cycle"
+                    x-model="cycle"
+                    class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                >
+                    @foreach ($billingCycles as $cycleOption)
+                        <option value="{{ $cycleOption }}" @selected(old('billing_cycle', $billingCycle) === $cycleOption)>
+                            {{ ucfirst(str_replace('-', ' ', $cycleOption)) }}
+                        </option>
+                    @endforeach
+                </select>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    Upgrade charges are prorated for the rest of your current billing period. Your service will renew on the selected cycle after the next invoice.
+                </p>
+                @error('billing_cycle')
+                    <p class="text-sm text-red-600 mt-2">{{ $message }}</p>
+                @enderror
+            </div>
+
             @foreach ($planOptions as $option)
                 @php
                     $product = $option['product'];
                     $isRecommended = $recommendedOption
                         && (int) ($recommendedOption['reseller_product_id'] ?? 0) === (int) ($option['reseller_product_id'] ?? 0)
                         && (int) $recommendedOption['product']->id === (int) $product->id;
-                    $cycle = $billingCycle ?? ($service->billing_cycle ?? 'monthly');
-                    $displayPrice = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycle);
                     $changeType = $option['change_type'];
                     $badge = match ($changeType) {
                         'downgrade' => 'Downgrade',
                         'lateral' => 'Same tier',
                         default => 'Upgrade',
                     };
+                    $cyclePrices = [];
+                    foreach ($billingCycles as $cycleOption) {
+                        $cyclePrices[$cycleOption] = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycleOption);
+                    }
                 @endphp
                 <label class="ui-card ui-card-interactive p-5 flex items-start gap-4 cursor-pointer has-[:checked]:ring-2 has-[:checked]:ring-brand-500 {{ $isRecommended ? 'ring-2 ring-amber-400' : '' }}">
-                    <input type="radio" name="product_id" value="{{ $product->id }}" class="mt-1 plan-option-radio" required
+                    <input
+                        type="radio"
+                        name="product_id"
+                        value="{{ $product->id }}"
+                        class="mt-1 plan-option-radio"
+                        required
                         data-reseller-product-id="{{ $option['reseller_product_id'] ?? '' }}"
+                        data-cycle-prices='@json($cyclePrices)'
                         @checked(
                             (string) old('product_id', $recommendedOption['product']->id ?? '') === (string) $product->id
                             && (string) old('reseller_product_id', $recommendedOption['reseller_product_id'] ?? '') === (string) ($option['reseller_product_id'] ?? '')
-                        )>
+                        )
+                    >
                     <div class="flex-1">
                         <div class="flex items-center gap-2 flex-wrap">
                             <p class="font-semibold text-slate-900 dark:text-white">{{ $option['name'] }}</p>
@@ -69,7 +112,7 @@
                             @endif
                         </div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                            KES {{ number_format($displayPrice, 0) }}/{{ $cycle === 'annual' ? 'yr' : 'mo' }}
+                            <span data-cycle-prices='@json($cyclePrices)' x-text="planPriceLabel($el)"></span>
                             @if($option['disk_quota'])
                                 · {{ rtrim(rtrim(number_format($option['disk_quota'], 2), '0'), '.') }} GB storage
                             @endif
@@ -78,8 +121,8 @@
                             @elseif($option['bandwidth_quota'] !== null)
                                 · Unlimited bandwidth
                             @endif
-                            @if($option['num_databases'])
-                                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', $option['num_databases']) }}
+                            @if(isset($option['num_databases']) && (int) $option['num_databases'] > 0)
+                                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', (int) $option['num_databases']) }}
                             @endif
                         </p>
                         @if ($changeType === 'downgrade')
@@ -88,11 +131,32 @@
                     </div>
                 </label>
             @endforeach
+
             @error('product_id')<p class="text-sm text-red-600">{{ $message }}</p>@enderror
-            <p class="text-sm text-slate-500">Upgrades are prorated for the rest of your billing period. Downgrades apply at no extra cost after you confirm.</p>
+            <p class="text-sm text-slate-500">Upgrades are prorated for the rest of your current billing period. Downgrades apply at no extra cost after you confirm.</p>
             <button type="submit" class="btn-primary">Continue to billing</button>
         </form>
         <script>
+            function hostingPlanUpgradeForm(initialCycle) {
+                const cycleLabels = {
+                    monthly: 'mo',
+                    quarterly: 'qtr',
+                    'semi-annual': '6 mo',
+                    annual: 'yr',
+                };
+
+                return {
+                    cycle: initialCycle,
+                    planPriceLabel(el) {
+                        const prices = JSON.parse(el.dataset.cyclePrices || '{}');
+                        const amount = prices[this.cycle] ?? 0;
+                        const suffix = cycleLabels[this.cycle] ?? 'mo';
+
+                        return `KES ${Math.round(amount).toLocaleString()}/${suffix}`;
+                    },
+                };
+            }
+
             const resellerProductInput = document.getElementById('reseller_product_id');
             const syncResellerProductId = () => {
                 const selected = document.querySelector('.plan-option-radio:checked');

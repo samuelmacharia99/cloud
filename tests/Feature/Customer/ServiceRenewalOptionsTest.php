@@ -280,6 +280,42 @@ class ServiceRenewalOptionsTest extends TestCase
         $this->assertSame('Silver', $options['upgrades']->first()['name']);
     }
 
+    public function test_upgrade_invoice_uses_selected_billing_cycle(): void
+    {
+        ['node' => $node, 'bronze' => $bronze, 'silver' => $silver] = $this->createHostingStack();
+
+        $bronze->update(['monthly_price' => 1000, 'yearly_price' => 10000]);
+        $silver->update(['monthly_price' => 2000, 'yearly_price' => 20000]);
+
+        $customer = User::factory()->customer()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $bronze->id,
+            'node_id' => $node->id,
+            'status' => ServiceStatus::Active,
+            'billing_cycle' => 'annual',
+            'provisioning_driver_key' => 'directadmin',
+            'external_reference' => 'client1',
+            'next_due_date' => now()->addMonths(6),
+        ]);
+
+        $this->mock(NotificationService::class)
+            ->shouldReceive('notifyInvoiceGenerated')
+            ->once();
+
+        $invoice = app(CustomerHostingUpgradeService::class)->createUpgradeInvoice(
+            $service,
+            $customer,
+            $silver,
+            null,
+            'monthly',
+        );
+
+        $item = $invoice->items()->first();
+        $this->assertSame('monthly', $item->custom_options['to_billing_cycle']);
+        $this->assertStringContainsString('Monthly', $item->description);
+    }
+
     public function test_upgrade_lists_plans_on_node_when_product_is_matched_by_package_name(): void
     {
         ['node' => $node, 'bronze' => $bronze] = $this->createHostingStack();

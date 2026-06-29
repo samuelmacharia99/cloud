@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\Log;
 
 class CustomerHostingUpgradeService
 {
+    public const BILLING_CYCLES = ['monthly', 'quarterly', 'semi-annual', 'annual'];
+
     public function __construct(
         private DirectAdminSetupService $directAdminSetup,
         private ResellerCustomerCatalogService $catalog,
@@ -267,8 +269,13 @@ class CustomerHostingUpgradeService
         };
     }
 
-    public function createUpgradeInvoice(Service $service, User $customer, Product $targetProduct, ?int $resellerProductId = null): Invoice
-    {
+    public function createUpgradeInvoice(
+        Service $service,
+        User $customer,
+        Product $targetProduct,
+        ?int $resellerProductId = null,
+        ?string $billingCycle = null,
+    ): Invoice {
         if ($service->user_id !== $customer->id) {
             throw new \InvalidArgumentException('Unauthorized service upgrade.');
         }
@@ -279,7 +286,7 @@ class CustomerHostingUpgradeService
             throw new \InvalidArgumentException('Selected plan is not available for this service.');
         }
 
-        return $this->createPlanChangeInvoice($service, $customer, $option);
+        return $this->createPlanChangeInvoice($service, $customer, $option, $billingCycle);
     }
 
     /**
@@ -295,8 +302,12 @@ class CustomerHostingUpgradeService
      *     num_databases: ?int
      * }  $option
      */
-    public function createPlanChangeInvoice(Service $service, User $customer, array $option): Invoice
-    {
+    public function createPlanChangeInvoice(
+        Service $service,
+        User $customer,
+        array $option,
+        ?string $targetBillingCycle = null,
+    ): Invoice {
         if ($service->user_id !== $customer->id) {
             throw new \InvalidArgumentException('Unauthorized service plan change.');
         }
@@ -309,7 +320,10 @@ class CustomerHostingUpgradeService
 
         $this->assertValidPlanChangeTarget($service, $option);
 
-        $price = $this->proratedPlanChangePrice($service, $customer, $option);
+        $billingCycle = $this->resolveTargetBillingCycle($service, $targetBillingCycle);
+        $option['display_price'] = $this->displayPriceForPlanOption($customer, $option, $billingCycle);
+
+        $price = $this->proratedPlanChangePrice($service, $customer, $option, $billingCycle);
         $taxBreakdown = TaxService::calculateForUser($price, $service->user);
         $tax = $taxBreakdown['tax'];
         $total = $taxBreakdown['total'];
@@ -320,8 +334,9 @@ class CustomerHostingUpgradeService
             'lateral' => 'Hosting plan change',
             default => 'Hosting upgrade',
         };
+        $cycleLabel = ucfirst($billingCycle);
 
-        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel) {
+        $invoice = DB::transaction(function () use ($service, $customer, $targetProduct, $option, $prefix, $price, $tax, $total, $dueDate, $taxBreakdown, $changeLabel, $billingCycle, $cycleLabel) {
             $year = now()->format('Y');
             $sequence = Invoice::whereYear('created_at', $year)->lockForUpdate()->count() + 1;
             $number = $prefix.'-'.$year.'-'.str_pad((string) $sequence, 5, '0', STR_PAD_LEFT);
@@ -334,7 +349,7 @@ class CustomerHostingUpgradeService
                 'subtotal' => $taxBreakdown['subtotal'],
                 'tax' => $tax,
                 'total' => $total,
-                'notes' => "{$changeLabel}: {$service->product->name} → {$option['name']}",
+                'notes' => "{$changeLabel}: {$service->product->name} → {$option['name']} ({$cycleLabel})",
             ]);
 
             $customOptions = [
@@ -343,6 +358,7 @@ class CustomerHostingUpgradeService
                 'change_type' => $option['change_type'],
                 'from_product_id' => $service->product_id,
                 'to_product_id' => $targetProduct->id,
+                'to_billing_cycle' => $billingCycle,
             ];
 
             if (! empty($option['reseller_product_id'])) {
@@ -353,7 +369,7 @@ class CustomerHostingUpgradeService
                 'invoice_id' => $invoice->id,
                 'service_id' => $service->id,
                 'product_id' => $targetProduct->id,
-                'description' => "Change to {$option['name']}",
+                'description' => "Change to {$option['name']} ({$cycleLabel})",
                 'quantity' => 1,
                 'unit_price' => $price,
                 'amount' => $price,
@@ -391,7 +407,10 @@ class CustomerHostingUpgradeService
                 : null;
 
             try {
-                $this->applyPlanChange($service, $targetProduct, $listing);
+                $billingCycle = ! empty($options['to_billing_cycle'])
+                    ? (string) $options['to_billing_cycle']
+                    : null;
+                $this->applyPlanChange($service, $targetProduct, $listing, $billingCycle);
             } catch (\Throwable $e) {
                 Log::error('Failed to apply hosting upgrade after payment', [
                     'invoice_id' => $invoice->id,
@@ -408,8 +427,12 @@ class CustomerHostingUpgradeService
         $this->applyPlanChange($service, $targetProduct, $listing);
     }
 
-    public function applyPlanChange(Service $service, Product $targetProduct, ?ResellerProduct $listing = null): void
-    {
+    public function applyPlanChange(
+        Service $service,
+        Product $targetProduct,
+        ?ResellerProduct $listing = null,
+        ?string $billingCycle = null,
+    ): void {
         $service->loadMissing('node', 'reseller', 'product.directAdminPackage', 'user');
 
         if (! $service->node || $service->node->type !== 'directadmin') {
@@ -492,6 +515,7 @@ class CustomerHostingUpgradeService
             'product_id' => $targetProduct->id,
             'provisioning_driver_key' => 'directadmin',
             'service_meta' => $meta,
+            ...($billingCycle ? ['billing_cycle' => $billingCycle] : []),
         ]);
 
         $fresh = $service->fresh(['user', 'product', 'node']);
@@ -805,7 +829,10 @@ class CustomerHostingUpgradeService
     private function effectiveListingCyclePrice(ResellerProduct $listing, string $cycle): float
     {
         return match ($cycle) {
-            'annual' => (float) ($listing->yearly_price ?: $listing->monthly_price * 12),
+            'monthly' => (float) $listing->monthly_price,
+            'quarterly' => (float) ($listing->monthly_price * 3),
+            'semi-annual' => (float) ($listing->monthly_price * 6),
+            'annual' => (float) ($listing->yearly_price ?: ($listing->monthly_price * 12)),
             default => (float) $listing->monthly_price,
         };
     }
@@ -820,16 +847,17 @@ class CustomerHostingUpgradeService
      *     display_price: float
      * }  $option
      */
-    private function proratedPlanChangePrice(Service $service, User $customer, array $option): float
+    private function proratedPlanChangePrice(Service $service, User $customer, array $option, ?string $targetCycle = null): float
     {
         if ($option['change_type'] === 'downgrade') {
             return 0.0;
         }
 
-        $cycle = $service->billing_cycle ?? 'monthly';
+        $currentCycle = $service->billing_cycle ?? 'monthly';
+        $targetCycle = $this->resolveTargetBillingCycle($service, $targetCycle);
         $currentListing = $this->currentListingForService($service, $customer);
-        $current = $this->currentPlanPrice($service, $customer, $cycle, $currentListing);
-        $target = (float) $option['display_price'];
+        $current = $this->currentPlanPrice($service, $customer, $currentCycle, $currentListing);
+        $target = $this->displayPriceForPlanOption($customer, $option, $targetCycle);
         $diff = max(0, $target - $current);
 
         if ($diff <= 0) {
@@ -841,9 +869,39 @@ class CustomerHostingUpgradeService
         }
 
         $daysRemaining = max(1, now()->diffInDays($service->next_due_date));
-        $cycleDays = $cycle === 'annual' ? 365 : 30;
 
-        return round($diff * ($daysRemaining / $cycleDays), 2);
+        return round($diff * ($daysRemaining / $this->cycleDays($currentCycle)), 2);
+    }
+
+    public function resolveTargetBillingCycle(Service $service, ?string $billingCycle = null): string
+    {
+        $cycle = $billingCycle ?? $service->billing_cycle ?? 'monthly';
+
+        if (! in_array($cycle, self::BILLING_CYCLES, true)) {
+            throw new \InvalidArgumentException('Invalid billing cycle selected.');
+        }
+
+        return $cycle;
+    }
+
+    public function cycleLabel(string $cycle): string
+    {
+        return match ($cycle) {
+            'annual' => 'yr',
+            'quarterly' => 'qtr',
+            'semi-annual' => '6 mo',
+            default => 'mo',
+        };
+    }
+
+    private function cycleDays(string $cycle): int
+    {
+        return match ($cycle) {
+            'quarterly' => 90,
+            'semi-annual' => 180,
+            'annual' => 365,
+            default => 30,
+        };
     }
 
     private function isViableResourceUpgrade(DirectAdminPackage $current, DirectAdminPackage $candidate): bool
@@ -868,8 +926,11 @@ class CustomerHostingUpgradeService
     private function cyclePrice(Product $product, string $cycle): float
     {
         return match ($cycle) {
-            'annual' => (float) ($product->yearly_price ?: $product->monthly_price * 12),
-            default => (float) $product->monthly_price,
+            'monthly' => (float) $product->monthly_price,
+            'quarterly' => (float) ($product->monthly_price * 3),
+            'semi-annual' => (float) ($product->monthly_price * 6),
+            'annual' => (float) ($product->yearly_price ?: ($product->monthly_price * 12)),
+            default => (float) $product->price,
         };
     }
 
@@ -879,10 +940,7 @@ class CustomerHostingUpgradeService
             $listing = $this->catalog->findListingForProduct($customer, $product->id);
 
             if ($listing) {
-                return match ($cycle) {
-                    'annual' => (float) ($listing->yearly_price ?: $listing->monthly_price * 12),
-                    default => (float) $listing->monthly_price,
-                };
+                return $this->effectiveListingCyclePrice($listing, $cycle);
             }
         }
 

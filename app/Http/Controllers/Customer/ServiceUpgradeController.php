@@ -34,6 +34,7 @@ class ServiceUpgradeController extends Controller
             'packageUsageInsight' => $insight,
             'recommendedOption' => $recommendedOption,
             'billingCycle' => $billingCycle,
+            'billingCycles' => CustomerHostingUpgradeService::BILLING_CYCLES,
             'upgrades' => $upgrades,
         ]);
     }
@@ -45,6 +46,7 @@ class ServiceUpgradeController extends Controller
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'reseller_product_id' => 'nullable|exists:reseller_products,id',
+            'billing_cycle' => 'required|in:'.implode(',', CustomerHostingUpgradeService::BILLING_CYCLES),
         ]);
 
         $targetProduct = Product::findOrFail($validated['product_id']);
@@ -58,6 +60,7 @@ class ServiceUpgradeController extends Controller
                 auth()->user(),
                 $targetProduct,
                 $resellerProductId,
+                $validated['billing_cycle'],
             );
             $settlement->applyAvailableCredits($invoice);
 
