@@ -169,22 +169,19 @@ class CustomerServiceRenewalService
         $currentPrice = $this->hostingUpgrades->displayPriceForCycle($customer, $product, $billingCycle);
         $currentOrder = (int) ($product->order ?? 0);
 
-        return Product::query()
-            ->where('is_active', true)
-            ->where('type', 'shared_hosting')
-            ->where('id', '!=', $product->id)
-            ->whereHas('directAdminPackage', fn ($package) => $package->where('node_id', $nodeId))
-            ->with('directAdminPackage')
-            ->orderBy('order')
-            ->orderBy('monthly_price')
-            ->get()
-            ->map(fn (Product $candidate) => $this->mapProductToRenewalOption(
-                $candidate,
-                null,
+        return $this->hostingUpgrades
+            ->platformHostingPlansOnNode($service, $nodeId)
+            ->filter(fn (array $candidate) => (int) $candidate['product']->id !== (int) $product->id)
+            ->map(fn (array $candidate) => $this->mapProductToRenewalOption(
+                $candidate['product'],
+                $candidate['listing'] ?? null,
                 $customer,
                 $billingCycle,
                 $currentPrice,
                 $currentOrder,
+                $candidate['disk_quota'] ?? null,
+                $candidate['bandwidth_quota'] ?? null,
+                $candidate['num_databases'] ?? null,
             ))
             ->values();
     }

@@ -634,7 +634,63 @@ class CustomerHostingUpgradeService
     /**
      * @return Collection<int, array{product: Product, listing: ?ResellerProduct, disk_quota: ?float, bandwidth_quota: mixed, num_databases: ?int}>
      */
+    public function platformHostingPlansOnNode(Service $service, int $nodeId): Collection
+    {
+        return $this->platformPlanChangeCandidates($service, $nodeId);
+    }
+
+    /**
+     * @return Collection<int, array{product: Product, listing: ?ResellerProduct, disk_quota: ?float, bandwidth_quota: mixed, num_databases: ?int}>
+     */
     private function platformPlanChangeCandidates(Service $service, int $nodeId): Collection
+    {
+        $service->loadMissing('product');
+
+        $packages = DirectAdminPackage::query()
+            ->where('node_id', $nodeId)
+            ->where('is_active', true)
+            ->orderBy('disk_quota')
+            ->orderBy('name')
+            ->get();
+
+        if ($packages->isEmpty()) {
+            return $this->legacyPlatformPlanChangeCandidates($nodeId);
+        }
+
+        $linkedProducts = Product::query()
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->whereIn('direct_admin_package_id', $packages->pluck('id'))
+            ->with('directAdminPackage')
+            ->get()
+            ->keyBy('direct_admin_package_id');
+
+        return $packages
+            ->map(function (DirectAdminPackage $package) use ($linkedProducts, $service) {
+                $product = $linkedProducts->get($package->id)
+                    ?? $this->resolveProductForDirectAdminPackage($package, $service);
+
+                if (! $product) {
+                    return null;
+                }
+
+                return [
+                    'product' => $product,
+                    'listing' => null,
+                    'disk_quota' => $package->disk_quota,
+                    'bandwidth_quota' => $package->bandwidth_quota,
+                    'num_databases' => $package->num_databases,
+                ];
+            })
+            ->filter()
+            ->unique(fn (array $candidate) => $candidate['product']->id)
+            ->values();
+    }
+
+    /**
+     * @return Collection<int, array{product: Product, listing: ?ResellerProduct, disk_quota: ?float, bandwidth_quota: mixed, num_databases: ?int}>
+     */
+    private function legacyPlatformPlanChangeCandidates(int $nodeId): Collection
     {
         return Product::query()
             ->where('is_active', true)
@@ -650,6 +706,42 @@ class CustomerHostingUpgradeService
                 'bandwidth_quota' => $product->directAdminPackage?->bandwidth_quota,
                 'num_databases' => $product->directAdminPackage?->num_databases,
             ]);
+    }
+
+    private function resolveProductForDirectAdminPackage(DirectAdminPackage $package, Service $service): ?Product
+    {
+        $name = strtolower(trim($package->name));
+        $key = strtolower(trim((string) $package->package_key));
+
+        $query = Product::query()
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting');
+
+        if (filled($service->product?->category)) {
+            $category = $service->product->category;
+            $query->where(function ($builder) use ($category) {
+                $builder->where('category', $category)
+                    ->orWhereNull('category')
+                    ->orWhere('category', '');
+            });
+        }
+
+        return $query->get()->first(function (Product $product) use ($name, $key) {
+            $productName = strtolower(trim($product->name));
+            $productSlug = strtolower(trim((string) $product->slug));
+
+            if ($productName === $name) {
+                return true;
+            }
+
+            if ($key === '') {
+                return false;
+            }
+
+            return $productSlug === $key
+                || str_contains($productSlug, $key)
+                || str_contains($productName, $key);
+        });
     }
 
     /**

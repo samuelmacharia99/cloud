@@ -280,6 +280,48 @@ class ServiceRenewalOptionsTest extends TestCase
         $this->assertSame('Silver', $options['upgrades']->first()['name']);
     }
 
+    public function test_upgrade_lists_plans_on_node_when_product_is_matched_by_package_name(): void
+    {
+        ['node' => $node, 'bronze' => $bronze] = $this->createHostingStack();
+
+        $silverPackage = DirectAdminPackage::create([
+            'name' => 'Silver',
+            'package_key' => 'silver',
+            'node_id' => $node->id,
+            'disk_quota' => 50,
+            'bandwidth_quota' => 500,
+            'num_databases' => 10,
+            'is_active' => true,
+        ]);
+
+        $silver = Product::create([
+            'name' => 'Silver',
+            'slug' => 'silver-unlinked-'.uniqid(),
+            'type' => 'shared_hosting',
+            'monthly_price' => 2000,
+            'provisioning_driver_key' => 'directadmin',
+            'direct_admin_package_id' => null,
+            'order' => 2,
+            'is_active' => true,
+        ]);
+
+        $customer = User::factory()->customer()->create();
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $bronze->id,
+            'node_id' => $node->id,
+            'status' => ServiceStatus::Active,
+            'billing_cycle' => 'monthly',
+            'provisioning_driver_key' => 'directadmin',
+            'external_reference' => 'client1',
+        ]);
+
+        $options = app(CustomerHostingUpgradeService::class)->planChangeOptions($service, $customer);
+
+        $this->assertTrue($options->contains(fn (array $option) => $option['product']->id === $silver->id));
+        $this->assertSame(50.0, (float) $options->first(fn (array $option) => $option['product']->id === $silver->id)['disk_quota']);
+    }
+
     public function test_plan_change_options_use_product_directadmin_node_when_service_node_missing(): void
     {
         ['node' => $node, 'bronze' => $bronze, 'silver' => $silver] = $this->createHostingStack();
