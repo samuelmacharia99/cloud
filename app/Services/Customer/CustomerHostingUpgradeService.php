@@ -586,6 +586,21 @@ class CustomerHostingUpgradeService
             return (int) $service->product->directAdminPackage->node_id;
         }
 
+        $packageKey = $meta['package'] ?? $meta['package_name'] ?? null;
+
+        if ($packageKey) {
+            $package = DirectAdminPackage::query()
+                ->where(function ($query) use ($packageKey) {
+                    $query->where('package_key', $packageKey)
+                        ->orWhere('name', $packageKey);
+                })
+                ->first();
+
+            if ($package?->node_id) {
+                return (int) $package->node_id;
+            }
+        }
+
         return null;
     }
 

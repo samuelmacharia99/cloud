@@ -17,7 +17,7 @@
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">Renew your service</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             @if ($renewalOptions['can_choose_plan'])
-                Choose whether to keep your current plan or upgrade to a higher package before generating your renewal invoice.
+                Choose whether to keep your current plan or switch to another plan on the same server.
             @else
                 Confirm your renewal package and continue to payment.
             @endif
@@ -61,16 +61,22 @@
 
         @if ($upgrades->isNotEmpty())
             <section class="space-y-3">
-                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Upgrade while renewing</h2>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Other plans on your server</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400">
-                    Switch to a higher plan in the same category for your next billing period. Your account will be upgraded when payment is received.
+                    Renew on a different hosting package available on the same DirectAdmin server. Your account will be moved to the selected plan when payment is received.
                 </p>
 
                 @foreach ($upgrades as $option)
                     @php
                         $badge = match ($option['change_type']) {
+                            'downgrade' => 'Lower plan',
                             'lateral' => 'Alternative plan',
-                            default => 'Upgrade',
+                            default => 'Higher plan',
+                        };
+                        $badgeClass = match ($option['change_type']) {
+                            'downgrade' => 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                            'lateral' => 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-200',
+                            default => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200',
                         };
                         $isChecked = (string) old('product_id') === (string) $option['product']->id
                             && (string) old('reseller_product_id', '') === (string) ($option['reseller_product_id'] ?? '');
@@ -80,7 +86,7 @@
                         'billingCycle' => $billingCycle,
                         'cycleLabel' => $cycleLabel,
                         'badge' => $badge,
-                        'badgeClass' => 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200',
+                        'badgeClass' => $badgeClass,
                         'description' => 'Renew on the '.$option['name'].' package instead.',
                         'checked' => $isChecked,
                     ])

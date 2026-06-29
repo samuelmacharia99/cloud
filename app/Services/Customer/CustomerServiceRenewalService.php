@@ -2,6 +2,7 @@
 
 namespace App\Services\Customer;
 
+use App\Models\DirectAdminPackage;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Product;
@@ -70,7 +71,7 @@ class CustomerServiceRenewalService
         $billingCycle = $service->billing_cycle ?? 'monthly';
         $current = $this->currentPlanOption($service, $customer, $billingCycle);
 
-        $upgrades = $this->upgradeOptionsForRenewal($service, $customer);
+        $upgrades = $this->alternativePlansForRenewal($service, $customer);
 
         return [
             'current' => $current,
@@ -78,6 +79,33 @@ class CustomerServiceRenewalService
             'billing_cycle' => $billingCycle,
             'can_choose_plan' => $upgrades->isNotEmpty(),
         ];
+    }
+
+    private function alternativePlansForRenewal(Service $service, User $customer): Collection
+    {
+        $product = $service->product;
+
+        if (! $product) {
+            return collect();
+        }
+
+        if ($product->type === 'shared_hosting' || $service->isSharedHosting()) {
+            return $this->sameNodeSharedHostingPlans($service, $customer);
+        }
+
+        $meta = $service->service_meta ?? [];
+        if ($this->resolveRenewalNodeId($service) !== null
+            && (filled($service->external_reference) || filled($meta['username'] ?? null))) {
+            return $this->sameNodeSharedHostingPlans($service, $customer);
+        }
+
+        if (! $this->supportsRenewalPlanPicker($service)) {
+            return collect();
+        }
+
+        return $this->categoryRenewalAlternatives($service, $customer)
+            ->map(fn (array $option) => array_merge($option, ['is_current' => false]))
+            ->values();
     }
 
     /**
@@ -94,24 +122,191 @@ class CustomerServiceRenewalService
      *     is_current: false
      * }>
      */
-    private function upgradeOptionsForRenewal(Service $service, User $customer): Collection
+    private function sameNodeSharedHostingPlans(Service $service, User $customer): Collection
     {
-        if (! $this->supportsRenewalPlanPicker($service)) {
+        $nodeId = $this->resolveRenewalNodeId($service);
+
+        if ($nodeId === null) {
             return collect();
         }
 
-        $fromHosting = $this->hostingUpgrades
+        $fromPlanChange = $this->hostingUpgrades
             ->planChangeOptions($service, $customer)
-            ->filter(fn (array $option) => in_array($option['change_type'], ['upgrade', 'lateral'], true))
             ->map(fn (array $option) => array_merge($option, ['is_current' => false]));
 
-        if ($fromHosting->isNotEmpty()) {
-            return $fromHosting->values();
+        if ($fromPlanChange->isNotEmpty()) {
+            return $fromPlanChange->values();
         }
 
-        return $this->categoryRenewalAlternatives($service, $customer)
-            ->map(fn (array $option) => array_merge($option, ['is_current' => false]))
+        $fromPlatform = $this->querySameNodePlatformProducts($service, $customer, $nodeId);
+
+        if ($fromPlatform->isNotEmpty()) {
+            return $fromPlatform;
+        }
+
+        return $this->querySameNodeResellerListings($service, $customer, $nodeId);
+    }
+
+    /**
+     * @return Collection<int, array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int,
+     *     is_current: false
+     * }>
+     */
+    private function querySameNodePlatformProducts(Service $service, User $customer, int $nodeId): Collection
+    {
+        $product = $service->product;
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+        $currentPrice = $this->hostingUpgrades->displayPriceForCycle($customer, $product, $billingCycle);
+        $currentOrder = (int) ($product->order ?? 0);
+
+        return Product::query()
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->where('id', '!=', $product->id)
+            ->whereHas('directAdminPackage', fn ($package) => $package->where('node_id', $nodeId))
+            ->with('directAdminPackage')
+            ->orderBy('order')
+            ->orderBy('monthly_price')
+            ->get()
+            ->map(fn (Product $candidate) => $this->mapProductToRenewalOption(
+                $candidate,
+                null,
+                $customer,
+                $billingCycle,
+                $currentPrice,
+                $currentOrder,
+            ))
             ->values();
+    }
+
+    /**
+     * @return Collection<int, array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int,
+     *     is_current: false
+     * }>
+     */
+    private function querySameNodeResellerListings(Service $service, User $customer, int $nodeId): Collection
+    {
+        $catalog = app(ResellerCustomerCatalogService::class);
+
+        if (! $catalog->isResellerCustomer($customer)) {
+            return collect();
+        }
+
+        $product = $service->product;
+        $billingCycle = $service->billing_cycle ?? 'monthly';
+        $currentPrice = $this->hostingUpgrades->displayPriceForCycle($customer, $product, $billingCycle);
+        $currentOrder = (int) ($product->order ?? 0);
+        $currentListingId = (int) ($service->service_meta['reseller_product_id'] ?? 0);
+
+        return $catalog->activeCatalog($customer)
+            ->filter(fn (ResellerProduct $listing) => $listing->type === 'shared_hosting')
+            ->filter(fn (ResellerProduct $listing) => $listing->isOrderable())
+            ->filter(fn (ResellerProduct $listing) => $listing->id !== $currentListingId)
+            ->map(function (ResellerProduct $listing) use ($nodeId, $customer, $billingCycle, $currentPrice, $currentOrder) {
+                $candidate = $listing->provisionProduct();
+
+                if (! $candidate) {
+                    return null;
+                }
+
+                if ($listing->usesDirectAdminPackage()) {
+                    return $this->mapProductToRenewalOption(
+                        $candidate,
+                        $listing,
+                        $customer,
+                        $billingCycle,
+                        $currentPrice,
+                        $currentOrder,
+                    );
+                }
+
+                $package = $listing->adminProduct?->directAdminPackage;
+
+                if (! $package || (int) $package->node_id !== $nodeId) {
+                    return null;
+                }
+
+                return $this->mapProductToRenewalOption(
+                    $candidate,
+                    $listing,
+                    $customer,
+                    $billingCycle,
+                    $currentPrice,
+                    $currentOrder,
+                    $package->disk_quota,
+                    $package->bandwidth_quota,
+                    $package->num_databases,
+                );
+            })
+            ->filter()
+            ->values();
+    }
+
+    /**
+     * @return array{
+     *     product: Product,
+     *     listing: ?ResellerProduct,
+     *     reseller_product_id: ?int,
+     *     name: string,
+     *     change_type: 'upgrade'|'downgrade'|'lateral',
+     *     display_price: float,
+     *     disk_quota: ?float,
+     *     bandwidth_quota: mixed,
+     *     num_databases: ?int,
+     *     is_current: false
+     * }
+     */
+    private function mapProductToRenewalOption(
+        Product $candidate,
+        ?ResellerProduct $listing,
+        User $customer,
+        string $billingCycle,
+        float $currentPrice,
+        int $currentOrder,
+        ?float $diskQuota = null,
+        mixed $bandwidthQuota = null,
+        ?int $numDatabases = null,
+    ): array {
+        $targetPrice = $listing
+            ? $this->hostingUpgrades->displayPriceForPlanOption($customer, [
+                'product' => $candidate,
+                'listing' => $listing,
+                'reseller_product_id' => $listing->id,
+            ], $billingCycle)
+            : $this->hostingUpgrades->displayPriceForCycle($customer, $candidate, $billingCycle);
+
+        $targetOrder = (int) ($candidate->order ?? 0);
+
+        return [
+            'product' => $candidate,
+            'listing' => $listing,
+            'reseller_product_id' => $listing?->id,
+            'name' => $listing?->name ?? $candidate->name,
+            'change_type' => $this->resolveChangeType($currentPrice, $currentOrder, $targetPrice, $targetOrder),
+            'display_price' => $targetPrice,
+            'disk_quota' => $diskQuota ?? $candidate->directAdminPackage?->disk_quota,
+            'bandwidth_quota' => $bandwidthQuota ?? $candidate->directAdminPackage?->bandwidth_quota,
+            'num_databases' => $numDatabases ?? $candidate->directAdminPackage?->num_databases,
+            'is_current' => false,
+        ];
     }
 
     private function supportsRenewalPlanPicker(Service $service): bool
@@ -220,7 +415,7 @@ class CustomerServiceRenewalService
                 $targetOrder = (int) ($candidate->order ?? 0);
                 $changeType = $this->resolveChangeType($currentPrice, $currentOrder, $targetPrice, $targetOrder);
 
-                if (! in_array($changeType, ['upgrade', 'lateral'], true)) {
+                if (! in_array($changeType, ['upgrade', 'lateral', 'downgrade'], true)) {
                     return null;
                 }
 
@@ -255,6 +450,21 @@ class CustomerServiceRenewalService
 
         if ($service->product?->directAdminPackage?->node_id) {
             return (int) $service->product->directAdminPackage->node_id;
+        }
+
+        $packageKey = $meta['package'] ?? $meta['package_name'] ?? null;
+
+        if ($packageKey) {
+            $package = DirectAdminPackage::query()
+                ->where(function ($query) use ($packageKey) {
+                    $query->where('package_key', $packageKey)
+                        ->orWhere('name', $packageKey);
+                })
+                ->first();
+
+            if ($package?->node_id) {
+                return (int) $package->node_id;
+            }
         }
 
         return null;
@@ -334,7 +544,10 @@ class CustomerServiceRenewalService
 
             $notes = $isCurrentPlan
                 ? "Manual renewal — {$option['name']} ({$cycleLabel})"
-                : "Renewal with upgrade — {$service->product->name} → {$option['name']} ({$cycleLabel})";
+                : match ($option['change_type'] ?? 'upgrade') {
+                    'downgrade' => "Renewal with plan change (downgrade) — {$service->product->name} → {$option['name']} ({$cycleLabel})",
+                    default => "Renewal with plan change — {$service->product->name} → {$option['name']} ({$cycleLabel})",
+                };
 
             $invoice = Invoice::create([
                 'user_id' => $customer->id,
@@ -366,7 +579,7 @@ class CustomerServiceRenewalService
 
             $description = $isCurrentPlan
                 ? "{$option['name']} — {$cycleLabel} renewal"
-                : "{$option['name']} — {$cycleLabel} renewal (plan upgrade)";
+                : "{$option['name']} — {$cycleLabel} renewal (plan change)";
 
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,

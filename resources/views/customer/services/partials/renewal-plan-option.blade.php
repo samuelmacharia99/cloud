@@ -28,8 +28,8 @@
             @elseif (isset($option['bandwidth_quota']) && $option['bandwidth_quota'] !== null)
                 · Unlimited bandwidth
             @endif
-            @if (! empty($option['num_databases']))
-                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', $option['num_databases']) }}
+            @if (isset($option['num_databases']) && (int) $option['num_databases'] > 0)
+                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', (int) $option['num_databases']) }}
             @endif
         </p>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">{{ $description }}</p>
