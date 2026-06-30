@@ -21,9 +21,10 @@ use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminSetupService;
-use App\Services\ResellerDirectAdminService;
-use App\Services\TaxService;
 use App\Services\RegistrationContextService;
+use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerHostedAccountDirectoryService;
+use App\Services\TaxService;
 use App\Services\UserCurrencyService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -33,57 +34,9 @@ use Illuminate\Support\Str;
 
 class CustomerController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, ResellerHostedAccountDirectoryService $directory)
     {
-        $query = User::where('is_admin', false)->where('is_reseller', false)->latest();
-
-        // Search
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'like', "%{$request->search}%")
-                    ->orWhere('email', 'like', "%{$request->search}%")
-                    ->orWhere('company', 'like', "%{$request->search}%");
-            });
-        }
-
-        // Status filter
-        if ($request->filled('status') && $request->status !== 'all') {
-            if ($request->status === 'unverified') {
-                $query->whereNull('email_verified_at');
-            } else {
-                $query->where('status', $request->status);
-            }
-        }
-
-        // Account type filter
-        if ($request->filled('type')) {
-            if ($request->type === 'company') {
-                $query->whereNotNull('company')->where('company', '!=', '');
-            } elseif ($request->type === 'individual') {
-                $query->where(function ($q) {
-                    $q->whereNull('company')->orWhere('company', '');
-                });
-            }
-        }
-
-        // Owner filter (platform vs reseller-managed)
-        if ($request->filled('owner') && $request->owner !== 'all') {
-            if ($request->owner === 'platform') {
-                $query->whereNull('reseller_id');
-            } elseif ($request->owner === 'reseller') {
-                $query->whereNotNull('reseller_id');
-            }
-        }
-
-        if ($request->filled('reseller_id')) {
-            $query->where('reseller_id', $request->reseller_id);
-        }
-
-        $customers = $query
-            ->with('reseller:id,name,email')
-            ->withCount('services', 'invoices')
-            ->paginate(15)
-            ->withQueryString();
+        $directoryResult = $directory->paginatedForAdmin($request);
 
         $resellers = User::query()
             ->where('is_reseller', true)
@@ -91,7 +44,9 @@ class CustomerController extends Controller
             ->get(['id', 'name', 'email']);
 
         return view('admin.customers.index', [
-            'customers' => $customers,
+            'customers' => $directoryResult['rows'],
+            'directoryStats' => $directoryResult['stats'],
+            'usesDirectAdminDirectory' => $directoryResult['uses_directadmin'],
             'resellers' => $resellers,
             'platformRegistrationUrl' => app(RegistrationContextService::class)->platformRegistrationUrl(),
         ]);

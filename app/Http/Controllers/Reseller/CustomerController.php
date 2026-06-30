@@ -7,38 +7,30 @@ use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\ResellerCustomerWelcomeService;
+use App\Services\ResellerHostedAccountDirectoryService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
 
 class CustomerController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, ResellerHostedAccountDirectoryService $directory)
     {
-        $query = User::where('reseller_id', auth()->id())->latest();
+        $reseller = auth()->user();
+        $directoryResult = $directory->paginatedForReseller($reseller, $request);
 
-        // Search
-        if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('name', 'like', "%{$request->search}%")
-                    ->orWhere('email', 'like', "%{$request->search}%")
-                    ->orWhere('company', 'like', "%{$request->search}%");
-            });
-        }
+        $resellerPackage = $reseller->resellerPackage;
+        $customerCount = $reseller->getResellerUserCountForLimits();
+        $hostedUserCountSource = $reseller->getResellerUserCountBreakdown()['source'];
 
-        // Status filter
-        if ($request->filled('status') && $request->status !== 'all') {
-            $query->where('status', $request->status);
-        }
-
-        $customers = $query->withCount('services', 'invoices')->paginate(15)->withQueryString();
-
-        // Get package limits for display
-        $resellerPackage = auth()->user()->resellerPackage;
-        $customerCount = auth()->user()->getResellerUserCountForLimits();
-        $hostedUserCountSource = auth()->user()->getResellerUserCountBreakdown()['source'];
-
-        return view('reseller.customers.index', compact('customers', 'resellerPackage', 'customerCount', 'hostedUserCountSource'));
+        return view('reseller.customers.index', [
+            'customers' => $directoryResult['rows'],
+            'directoryStats' => $directoryResult['stats'],
+            'usesDirectAdminDirectory' => $directoryResult['uses_directadmin'],
+            'resellerPackage' => $resellerPackage,
+            'customerCount' => $customerCount,
+            'hostedUserCountSource' => $hostedUserCountSource,
+        ]);
     }
 
     public function create()

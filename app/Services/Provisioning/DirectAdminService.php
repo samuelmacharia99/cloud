@@ -497,6 +497,34 @@ class DirectAdminService
         ];
     }
 
+    /**
+     * @return array{username: string, domain: ?string, package: ?string, email: ?string, name: ?string, suspended: bool}|null
+     */
+    public function getAccountDirectoryEntry(string $username): ?array
+    {
+        if (! $this->isConfigured() || blank($username)) {
+            return null;
+        }
+
+        $config = $this->executeAdminApiCall('CMD_API_SHOW_USER_CONFIG', ['user' => $username]);
+        if (! $config['success']) {
+            return null;
+        }
+
+        $data = $config['data'];
+
+        return [
+            'username' => strtolower(trim($username)),
+            'domain' => filled($data['domain'] ?? null) ? (string) $data['domain'] : null,
+            'package' => filled($data['package'] ?? null) ? (string) $data['package'] : null,
+            'email' => filled($data['email'] ?? null)
+                ? (string) $data['email']
+                : (filled($data['notify_addr'] ?? null) ? (string) $data['notify_addr'] : null),
+            'name' => filled($data['name'] ?? null) ? (string) $data['name'] : null,
+            'suspended' => $this->isDirectAdminSuspendedFlag($data['suspended'] ?? null),
+        ];
+    }
+
     private function isDirectAdminSuspendedFlag(mixed $value): bool
     {
         return in_array(strtolower(trim((string) $value)), ['yes', '1', 'on', 'true'], true);

@@ -8,7 +8,13 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Customers</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your customer accounts and subscriptions.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">
+                @if ($usesDirectAdminDirectory ?? false)
+                    All hosted users from DirectAdmin, with platform link and billing status.
+                @else
+                    Manage your customer accounts and subscriptions.
+                @endif
+            </p>
         </div>
         <a href="{{ route('reseller.customers.create') }}" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
             <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -44,12 +50,33 @@
     </div>
     @endif
 
+    @if ($usesDirectAdminDirectory ?? false)
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Total users</p>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['total'] ?? 0 }}</p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">On DirectAdmin</p>
+                <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ $directoryStats['directadmin_total'] ?? 0 }}</p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-emerald-800 p-4">
+                <p class="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Linked</p>
+                <p class="text-2xl font-bold text-emerald-700 dark:text-emerald-300 mt-1">{{ $directoryStats['linked'] ?? 0 }}</p>
+            </div>
+            <div class="bg-white dark:bg-slate-900 rounded-xl border border-amber-200 dark:border-amber-800 p-4">
+                <p class="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Unlinked</p>
+                <p class="text-2xl font-bold text-amber-700 dark:text-amber-300 mt-1">{{ $directoryStats['unlinked'] ?? 0 }}</p>
+            </div>
+        </div>
+    @endif
+
     <!-- Filters -->
     <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
-                <input type="text" name="search" value="{{ request('search') }}" placeholder="Name, email, company..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                <input type="text" name="search" value="{{ request('search') }}" placeholder="Name, email, DA username, domain..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
             </div>
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Status</label>
@@ -60,8 +87,32 @@
                     <option value="inactive" @selected(request('status') === 'inactive')>Inactive</option>
                 </select>
             </div>
+            @if ($usesDirectAdminDirectory ?? false)
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Platform link</label>
+                    <select name="link" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                        <option value="all">All</option>
+                        <option value="linked" @selected(request('link') === 'linked')>Linked</option>
+                        <option value="unlinked" @selected(request('link') === 'unlinked')>Unlinked</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Billing</label>
+                    <select name="billing" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-purple-500 dark:focus:ring-purple-400 text-sm">
+                        <option value="all">All</option>
+                        <option value="ready" @selected(request('billing') === 'ready')>Auto-billing ready</option>
+                        <option value="package_detected" @selected(request('billing') === 'package_detected')>Package detected</option>
+                        <option value="needs_package" @selected(request('billing') === 'needs_package')>Needs package</option>
+                    </select>
+                </div>
+            @endif
         </div>
-        <button type="submit" class="mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Filter</button>
+        <div class="mt-4 flex flex-wrap gap-3">
+            <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition text-sm">Filter</button>
+            @if ($usesDirectAdminDirectory ?? false)
+                <a href="{{ request()->fullUrlWithQuery(['refresh' => 1]) }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition text-sm">Refresh from DirectAdmin</a>
+            @endif
+        </div>
     </form>
 
     <!-- Table -->
@@ -71,8 +122,15 @@
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
                     <tr>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Customer</th>
-                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
+                        @if ($usesDirectAdminDirectory ?? false)
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">DA user</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Domain</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Package</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Link</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Billing</th>
+                        @endif
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
+                        <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Services</th>
                         <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Invoices</th>
                         <th class="px-6 py-4 text-right text-sm font-semibold text-slate-900 dark:text-white">Actions</th>
@@ -80,6 +138,9 @@
                 </thead>
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($customers as $customer)
+                        @if ($usesDirectAdminDirectory ?? false)
+                            @include('partials.customer-directory-row', ['row' => $customer, 'context' => 'reseller'])
+                        @else
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                             <td class="px-6 py-4">
                                 <div class="flex items-center gap-3">
@@ -139,9 +200,10 @@
                                 </div>
                             </td>
                         </tr>
+                        @endif
                     @empty
                         <tr>
-                            <td colspan="6" class="px-6 py-12 text-center">
+                            <td colspan="{{ ($usesDirectAdminDirectory ?? false) ? 11 : 6 }}" class="px-6 py-12 text-center">
                                 <p class="text-slate-600 dark:text-slate-400">No customers found.</p>
                             </td>
                         </tr>
