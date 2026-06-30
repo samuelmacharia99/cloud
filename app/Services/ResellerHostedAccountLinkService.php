@@ -95,15 +95,18 @@ class ResellerHostedAccountLinkService
                     : now()->addYear(),
                 'commenced_at' => now(),
                 'provisioning_driver_key' => 'directadmin',
-                'external_reference' => Service::resolveExternalReferenceForAssignment($daUsername),
                 'service_meta' => $meta,
             ]);
 
+            $updates = [
+                'external_reference' => Service::resolveExternalReferenceForAssignment($daUsername, $service->id),
+            ];
+
             if ($listing && empty($options['custom_price'])) {
-                $service->update([
-                    'custom_price' => $this->defaultPriceForCycle($listing, $billingCycle),
-                ]);
+                $updates['custom_price'] = $this->defaultPriceForCycle($listing, $billingCycle);
             }
+
+            $service->update($updates);
 
             $this->forgetDirectoryCache($reseller);
 
