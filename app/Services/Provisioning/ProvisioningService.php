@@ -193,13 +193,15 @@ class ProvisioningService
                         'username' => $username,
                     ]);
                 } else {
-                    $node = $this->resolveDirectAdminNode($service);
-                    if (! $node) {
-                        throw new \Exception('Service has no DirectAdmin node assigned');
+                    $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+                    $daService = $resellerDirectAdmin->directAdminForService($service);
+
+                    if (! $daService) {
+                        throw new \Exception('DirectAdmin API is not configured for this service');
                     }
 
-                    $daService = new DirectAdminService($node);
-                    $terminated = $daService->terminateAccount($service);
+                    $ownerReseller = $resellerDirectAdmin->impersonationUsernameForService($service);
+                    $terminated = $daService->terminateAccount($service, $ownerReseller);
                     if (! $terminated) {
                         throw new \Exception('DirectAdmin API failed to terminate account');
                     }

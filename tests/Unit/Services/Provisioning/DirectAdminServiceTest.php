@@ -99,6 +99,42 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_terminate_account_uses_reseller_impersonation_when_owner_is_set(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Deleted', 200),
+        ]);
+
+        $node = $this->createDirectAdminNode();
+        $service = $this->createService('wambuiesther7516');
+        $service->service_meta = ['directadmin_reseller' => 'reseller1'];
+
+        $this->assertTrue((new DirectAdminService($node))->terminateAccount($service, 'reseller1'));
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+                && $request->hasHeader('Authorization', 'Basic '.base64_encode('admin|reseller1:secret'));
+        });
+    }
+
+    public function test_terminate_account_as_reseller_uses_direct_reseller_auth(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Deleted', 200),
+        ]);
+
+        $node = $this->createDirectAdminNode();
+        $service = $this->createService('wambuiesther7516');
+        $da = DirectAdminService::forResellerAccount($node, 'reseller1', 'login-key');
+
+        $this->assertTrue($da->terminateAccount($service));
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_ACCOUNT_USER')
+                && $request->hasHeader('Authorization', 'Basic '.base64_encode('reseller1:login-key'));
+        });
+    }
+
     public function test_suspend_user_by_username_uses_select_users_endpoint(): void
     {
         Http::fake([

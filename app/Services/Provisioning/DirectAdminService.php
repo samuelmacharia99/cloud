@@ -802,7 +802,7 @@ class DirectAdminService
     /**
      * Terminate a hosting account on DirectAdmin
      */
-    public function terminateAccount(Service $service): bool
+    public function terminateAccount(Service $service, ?string $ownerResellerUsername = null): bool
     {
         $username = $this->resolveDirectAdminUsername($service);
 
@@ -812,16 +812,25 @@ class DirectAdminService
             return false;
         }
 
+        if (! $this->directResellerAuth && $ownerResellerUsername === null) {
+            $meta = is_array($service->service_meta) ? $service->service_meta : [];
+            $ownerResellerUsername = filled($meta['directadmin_reseller'] ?? null)
+                ? (string) $meta['directadmin_reseller']
+                : null;
+        }
+
         $endpoint = rtrim($this->apiUrl, '/').'/CMD_API_ACCOUNT_USER';
 
         Log::info('TERMINATE_API_CALL', [
             'service_id' => $service->id,
             'username' => $username,
             'endpoint' => $endpoint,
+            'owner_reseller' => $ownerResellerUsername,
+            'direct_reseller_auth' => $this->directResellerAuth,
         ]);
 
         try {
-            $response = $this->httpClient()
+            $response = $this->httpClient($ownerResellerUsername)
                 ->asForm()
                 ->post($endpoint, [
                     'action' => 'delete',
