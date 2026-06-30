@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     @php
-        $branding = email_branding();
+        $branding = $emailBranding ?? email_branding();
         $primaryColor = $branding['primary_color'] ?? '#2563eb';
     @endphp
     <style>

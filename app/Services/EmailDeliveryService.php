@@ -95,8 +95,9 @@ class EmailDeliveryService
         }
 
         try {
-            $this->dispatchMail($email, $mailable);
-            $content = $this->captureMailableContent($mailable, $user, $logBody);
+            View::share('emailBranding', $this->brandingResolver->defaults());
+            Mail::to($email)->sendNow($mailable);
+            $content = $this->captureMailableContent($mailable, $user, $logBody, forcePlatformBranding: true);
             $this->logEmail($email, $subject, 'sent', null, $content['body'], $event, $user?->id, null, $content['html_body']);
 
             return true;
@@ -284,11 +285,13 @@ class EmailDeliveryService
     /**
      * @return array{body: string, html_body: ?string}
      */
-    protected function captureMailableContent(Mailable $mailable, ?User $customer, ?string $logBody): array
+    protected function captureMailableContent(Mailable $mailable, ?User $user, ?string $logBody, bool $forcePlatformBranding = false): array
     {
-        if ($customer) {
-            View::share('emailBranding', $this->brandingResolver->forCustomer($customer));
-        } elseif ($customer === null) {
+        if ($forcePlatformBranding) {
+            View::share('emailBranding', $this->brandingResolver->defaults());
+        } elseif ($user) {
+            View::share('emailBranding', $this->brandingResolver->forCustomer($user));
+        } else {
             View::share('emailBranding', $this->brandingResolver->defaults());
         }
 

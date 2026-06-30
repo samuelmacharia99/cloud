@@ -1,17 +1,17 @@
 @extends('emails._layout')
 
 @section('content')
-<h1>Domain renewed</h1>
+<h1>Domain renewal completed</h1>
 
 <p>Hello {{ $recipient->name }},</p>
 
 <p>
-    <strong>{{ $fqdn }}</strong> has been renewed for
-    {{ $years }} year{{ $years > 1 ? 's' : '' }}.
+    {{ $platformName }} has renewed <strong>{{ $fqdn }}</strong> for
+    {{ $years }} year{{ $years > 1 ? 's' : '' }} at the registry.
 </p>
 
 @if($endCustomerName)
-    <p>This domain is managed for your customer <strong>{{ $endCustomerName }}</strong>.</p>
+    <p>This domain is assigned to your customer <strong>{{ $endCustomerName }}</strong>.</p>
 @endif
 
 <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
@@ -25,7 +25,7 @@
     </tr>
 </table>
 
-<p>The updated expiry is now reflected in your domain management area.</p>
+<p>The updated expiry is now reflected in your reseller portal and on your customer accounts where this domain is assigned.</p>
 
-<p>If you have any questions, please contact support.</p>
+<p>If you have any questions, reply to {{ $emailBranding['support_email'] ?? email_support_email() }}.</p>
 @endsection

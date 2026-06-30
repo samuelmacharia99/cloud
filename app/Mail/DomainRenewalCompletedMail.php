@@ -5,6 +5,7 @@ namespace App\Mail;
 use App\Models\Domain;
 use App\Models\DomainRenewalOrder;
 use App\Models\User;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
@@ -24,7 +25,10 @@ class DomainRenewalCompletedMail extends Mailable implements ShouldQueue
         public int $years,
         public Carbon $newExpiry,
         public ?string $endCustomerName = null,
-    ) {}
+        public ?array $emailBranding = null,
+    ) {
+        $this->emailBranding ??= app(ResellerBrandingResolver::class)->defaults();
+    }
 
     public function envelope(): Envelope
     {
@@ -45,6 +49,8 @@ class DomainRenewalCompletedMail extends Mailable implements ShouldQueue
                 'newExpiry' => $this->newExpiry,
                 'endCustomerName' => $this->endCustomerName,
                 'fqdn' => $this->domain->fqdn(),
+                'emailBranding' => $this->emailBranding,
+                'platformName' => $this->emailBranding['company_name'] ?? config('app.name', 'Talksasa Cloud'),
             ],
         );
     }

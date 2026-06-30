@@ -322,7 +322,7 @@ class NotificationService
 
         if ($recipient->phone && $this->smsService->isConfigured()) {
             try {
-                $company = $this->brandingResolver->forReseller($recipient)['company_name'];
+                $company = $this->brandingResolver->defaults()['company_name'];
                 $expiry = ($domain->expires_at ?? now())->format('M d, Y');
                 $this->smsService->send(
                     $recipient->phone,

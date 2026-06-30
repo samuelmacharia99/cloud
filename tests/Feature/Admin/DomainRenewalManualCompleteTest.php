@@ -24,6 +24,7 @@ class DomainRenewalManualCompleteTest extends TestCase
         Setting::setValue('smtp_port', '587');
         Setting::setValue('smtp_from_address', 'noreply@example.com');
         Setting::setValue('notify_domain_renewal_completed', 'true');
+        Setting::setValue('company_name', 'Talksasa Cloud');
     }
 
     private function createReseller(): User
@@ -63,6 +64,14 @@ class DomainRenewalManualCompleteTest extends TestCase
 
         $admin = User::factory()->admin()->create();
         $reseller = $this->createReseller();
+        $reseller->update([
+            'settings' => [
+                'branding' => [
+                    'company_name' => 'Digiworld',
+                    'primary_color' => '#7c3aed',
+                ],
+            ],
+        ]);
         $customer = User::factory()->create([
             'reseller_id' => $reseller->id,
             'email' => 'end-customer@example.com',
@@ -97,11 +106,16 @@ class DomainRenewalManualCompleteTest extends TestCase
         $this->assertSame(2, $renewal->years);
         $this->assertTrue($domain->expires_at->equalTo($currentExpiry->copy()->addYears(2)));
 
-        Mail::assertQueued(DomainRenewalCompletedMail::class, function (DomainRenewalCompletedMail $mail) use ($reseller, $customer) {
+        Mail::assertSent(DomainRenewalCompletedMail::class, function (DomainRenewalCompletedMail $mail) use ($reseller, $customer) {
+            $html = $mail->render();
+
             return $mail->hasTo($reseller->email)
                 && ! $mail->hasTo($customer->email)
                 && $mail->years === 2
-                && $mail->endCustomerName === $customer->name;
+                && $mail->endCustomerName === $customer->name
+                && ($mail->emailBranding['company_name'] ?? '') === 'Talksasa Cloud'
+                && str_contains($html, 'Talksasa Cloud has renewed')
+                && ! str_contains($html, 'automated email from Digiworld');
         });
     }
 
