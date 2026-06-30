@@ -103,10 +103,11 @@ class DomainExtension extends Model
 
             if ($resellerPricing) {
                 $retail = (float) $resellerPricing->retail_price;
+                $renewal = $resellerPricing->effectiveRenewalRetailPrice();
 
                 return (object) [
                     'price' => $retail,
-                    'renewal_price' => $retail,
+                    'renewal_price' => $renewal,
                 ];
             }
         }

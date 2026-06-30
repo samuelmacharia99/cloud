@@ -95,6 +95,18 @@ class ResellerPublicApiService
         return $pricing ? (float) $pricing->retail_price : null;
     }
 
+    public function renewalRetailPrice(User $reseller, DomainExtension $extension, int $years): ?float
+    {
+        $pricing = ResellerDomainPricing::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('domain_extension_id', $extension->id)
+            ->where('period_years', $years)
+            ->where('enabled', true)
+            ->first();
+
+        return $pricing ? $pricing->effectiveRenewalRetailPrice() : null;
+    }
+
     public function transferRetailPrice(User $reseller, DomainExtension $extension): ?float
     {
         $registrationRetail = $this->retailPrice($reseller, $extension, 1);
@@ -190,6 +202,7 @@ class ResellerPublicApiService
                     'description' => $extension->description,
                     'period_years' => $periodYears,
                     'price' => $price,
+                    'renewal_price' => $this->renewalRetailPrice($reseller, $extension, $periodYears),
                     'transfer_price' => $this->transferRetailPrice($reseller, $extension),
                     'currency' => 'KES',
                 ];

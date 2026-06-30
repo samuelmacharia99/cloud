@@ -183,6 +183,17 @@ class DomainController extends Controller
             ? (float) ($wholesalePricing->renewal_price ?? $wholesalePricing->price)
             : 0;
 
+        if ($useRetail && ResellerCartContext::isCustomerMode()) {
+            $customer = User::find(ResellerCartContext::customerId());
+            if ($customer) {
+                $renewalRetail = app(ResellerCustomerCatalogService::class)
+                    ->domainRenewalPrice($customer, $extension, $period);
+                if ($renewalRetail !== null) {
+                    $renewalPrice = $renewalRetail;
+                }
+            }
+        }
+
         return response()->json([
             'price' => $unitPrice,
             'line_total' => $lineTotal,

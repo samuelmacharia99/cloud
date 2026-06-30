@@ -16,6 +16,7 @@ class ResellerDomainPricing extends Model
         'domain_extension_id',
         'period_years',
         'retail_price',
+        'renewal_retail_price',
         'enabled',
     ];
 
@@ -24,7 +25,38 @@ class ResellerDomainPricing extends Model
         return [
             'enabled' => 'boolean',
             'retail_price' => 'decimal:2',
+            'renewal_retail_price' => 'decimal:2',
         ];
+    }
+
+    public function effectiveRenewalRetailPrice(): float
+    {
+        if ($this->renewal_retail_price !== null) {
+            return (float) $this->renewal_retail_price;
+        }
+
+        return (float) $this->retail_price;
+    }
+
+    public function getWholesaleRenewalPrice(): ?float
+    {
+        $wholesale = $this->extension?->getWholesalePricing($this->period_years);
+
+        if (! $wholesale) {
+            return null;
+        }
+
+        return (float) ($wholesale->renewal_price ?? $wholesale->price);
+    }
+
+    public function getRenewalMargin(): ?float
+    {
+        $wholesale = $this->getWholesaleRenewalPrice();
+        if ($wholesale === null) {
+            return null;
+        }
+
+        return $this->effectiveRenewalRetailPrice() - $wholesale;
     }
 
     public function reseller()
@@ -40,6 +72,7 @@ class ResellerDomainPricing extends Model
     public function getWholesalePrice(): ?float
     {
         $wholesale = $this->extension?->getWholesalePricing($this->period_years);
+
         return $wholesale ? (float) $wholesale->price : null;
     }
 
@@ -49,6 +82,7 @@ class ResellerDomainPricing extends Model
         if (is_null($wholesale)) {
             return null;
         }
+
         return (float) $this->retail_price - $wholesale;
     }
 
@@ -59,6 +93,7 @@ class ResellerDomainPricing extends Model
             return null;
         }
         $margin = $this->getMargin();
+
         return $margin ? (($margin / $wholesale) * 100) : 0;
     }
 }

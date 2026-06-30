@@ -41,11 +41,15 @@ class DomainPricingController extends Controller
             'domain_extension_id' => 'required|exists:domain_extensions,id',
             'period_years' => 'required|integer|in:1,2,3,5,10',
             'retail_price' => 'required|numeric|min:0',
+            'renewal_retail_price' => 'nullable|numeric|min:0',
             'enabled' => 'boolean',
         ]);
 
         $validated['reseller_id'] = auth()->id();
-        $validated['enabled'] = $validated['enabled'] ?? true;
+        $validated['enabled'] = $request->boolean('enabled');
+        $validated['renewal_retail_price'] = filled($validated['renewal_retail_price'] ?? null)
+            ? $validated['renewal_retail_price']
+            : null;
 
         ResellerDomainPricing::updateOrCreate(
             [
@@ -55,6 +59,7 @@ class DomainPricingController extends Controller
             ],
             [
                 'retail_price' => $validated['retail_price'],
+                'renewal_retail_price' => $validated['renewal_retail_price'],
                 'enabled' => $validated['enabled'],
             ]
         );

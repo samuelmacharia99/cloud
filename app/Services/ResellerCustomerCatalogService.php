@@ -134,6 +134,24 @@ class ResellerCustomerCatalogService
         return $resellerPricing ? (float) $resellerPricing->retail_price : null;
     }
 
+    public function domainRenewalPrice(User $user, DomainExtension $extension, int $years): ?float
+    {
+        if (! $this->isResellerCustomer($user)) {
+            $pricing = $extension->getRetailPricing($years);
+
+            return $pricing ? (float) ($pricing->renewal_price ?? $pricing->price) : null;
+        }
+
+        $resellerPricing = ResellerDomainPricing::query()
+            ->where('reseller_id', $user->reseller_id)
+            ->where('domain_extension_id', $extension->id)
+            ->where('period_years', $years)
+            ->where('enabled', true)
+            ->first();
+
+        return $resellerPricing ? $resellerPricing->effectiveRenewalRetailPrice() : null;
+    }
+
     public function domainTransferPrice(User $user, DomainExtension $extension): float
     {
         if (! $this->isResellerCustomer($user)) {

@@ -108,4 +108,86 @@ class DomainSearchPricingTest extends TestCase
                 'wholesale_line_total' => 1199.0,
             ]);
     }
+
+    public function test_reseller_can_save_renewal_retail_price(): void
+    {
+        $reseller = $this->createReseller();
+        $extension = $this->seedExtensionPricing('.ke', 1000.00, 1500.00);
+
+        DomainPricing::where('domain_extension_id', $extension->id)
+            ->where('tier', 'wholesale')
+            ->where('period_years', 2)
+            ->update(['renewal_price' => 900.00]);
+
+        $response = $this->actingAs($reseller)->post(route('reseller.domains.pricing.update'), [
+            'domain_extension_id' => $extension->id,
+            'period_years' => 2,
+            'retail_price' => 2000.00,
+            'renewal_retail_price' => 1800.00,
+            'enabled' => '1',
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHas('success');
+
+        $this->assertDatabaseHas('reseller_domain_pricing', [
+            'reseller_id' => $reseller->id,
+            'domain_extension_id' => $extension->id,
+            'period_years' => 2,
+            'retail_price' => 2000.00,
+            'renewal_retail_price' => 1800.00,
+            'enabled' => true,
+        ]);
+    }
+
+    public function test_pricing_api_returns_retail_renewal_rate_in_customer_cart_mode(): void
+    {
+        $reseller = $this->createReseller();
+        $extension = $this->seedExtensionPricing('.org', 1199.00, 1999.00);
+
+        DomainPricing::where('domain_extension_id', $extension->id)
+            ->where('tier', 'wholesale')
+            ->where('period_years', 2)
+            ->update(['renewal_price' => 999.00]);
+
+        ResellerDomainPricing::create([
+            'reseller_id' => $reseller->id,
+            'domain_extension_id' => $extension->id,
+            'period_years' => 2,
+            'retail_price' => 2299.00,
+            'renewal_retail_price' => 1899.00,
+            'enabled' => true,
+        ]);
+
+        ResellerCartContext::setCustomer(User::factory()->create(['reseller_id' => $reseller->id])->id);
+
+        $response = $this->actingAs($reseller)
+            ->getJson(route('reseller.domains.pricing.api', ['extension' => $extension->extension]).'?period=2');
+
+        $response->assertOk()
+            ->assertJson([
+                'renewal_price' => 1899.0,
+            ]);
+    }
+
+    public function test_get_pricing_for_user_uses_renewal_retail_for_reseller_customers(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+        $extension = $this->seedExtensionPricing('.net', 800.00, 1200.00);
+
+        ResellerDomainPricing::create([
+            'reseller_id' => $reseller->id,
+            'domain_extension_id' => $extension->id,
+            'period_years' => 2,
+            'retail_price' => 2500.00,
+            'renewal_retail_price' => 2100.00,
+            'enabled' => true,
+        ]);
+
+        $pricing = $extension->getPricingForUser($customer, 2);
+
+        $this->assertSame(2500.0, $pricing->price);
+        $this->assertSame(2100.0, $pricing->renewal_price);
+    }
 }
