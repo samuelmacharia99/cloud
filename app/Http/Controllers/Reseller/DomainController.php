@@ -331,16 +331,17 @@ class DomainController extends Controller
                 'added_at' => now()->toIso8601String(),
             ];
 
-            if (ResellerCartContext::isCustomerMode()) {
-                $customer = User::find(ResellerCartContext::customerId());
-                if (! $customer || ! $this->scope->ownsCustomer($reseller, $customer)) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Select a valid customer for whitelabel checkout first.',
-                    ], 422);
-                }
+            $billingCustomer = $this->resolveRenewalBillingCustomer($domain, $reseller);
 
-                if ((int) $domain->user_id !== (int) $customer->id) {
+            if (ResellerCartContext::isCustomerMode() && ! $billingCustomer) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Select a valid customer for whitelabel checkout first.',
+                ], 422);
+            }
+
+            if ($billingCustomer) {
+                if ((int) $domain->user_id !== (int) $billingCustomer->id) {
                     return response()->json([
                         'success' => false,
                         'message' => 'This domain does not belong to the selected customer. Switch cart billing mode or choose another domain.',
@@ -355,7 +356,7 @@ class DomainController extends Controller
                     ], 422);
                 }
 
-                $retailAmount = $this->catalog->domainRenewalPrice($customer, $extension, $years);
+                $retailAmount = $this->catalog->domainRenewalPrice($billingCustomer, $extension, $years);
                 if ($retailAmount === null) {
                     return response()->json([
                         'success' => false,
@@ -365,6 +366,7 @@ class DomainController extends Controller
 
                 $cartItem['price'] = $retailAmount;
                 $cartItem['retail_total'] = $retailAmount;
+                $cartItem['billing_customer_id'] = $billingCustomer->id;
             } else {
                 $cartItem['price'] = $wholesaleAmount;
             }
@@ -386,5 +388,21 @@ class DomainController extends Controller
                 'message' => $e->getMessage(),
             ], 422);
         }
+    }
+
+    private function resolveRenewalBillingCustomer(Domain $domain, User $reseller): ?User
+    {
+        if (ResellerCartContext::isCustomerMode()) {
+            $customer = User::find(ResellerCartContext::customerId());
+
+            return ($customer && $this->scope->ownsCustomer($reseller, $customer)) ? $customer : null;
+        }
+
+        $owner = $domain->user;
+        if ($owner && (int) $owner->id !== (int) $reseller->id && $this->scope->ownsCustomer($reseller, $owner)) {
+            return $owner;
+        }
+
+        return null;
     }
 }

@@ -308,11 +308,7 @@
                                                     <button type="button" @click="showRenewal = false" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 hover:text-slate-700 dark:hover:text-slate-200">← Back</button>
                                                     <p class="text-sm font-semibold text-slate-900 dark:text-white mb-2">Renewal period</p>
                                                     <p class="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                                                        @if (($cartContext['mode'] ?? 'self') === 'customer')
-                                                            Prices use your <strong>renewal retail</strong> rates for the selected customer.
-                                                        @else
-                                                            Prices use your <strong>wholesale renewal</strong> rates.
-                                                        @endif
+                                                        Customer-owned domains bill at your <strong>renewal retail</strong> rate. Your own domains use <strong>wholesale renewal</strong> rates.
                                                     </p>
                                                     <div class="space-y-2 mb-4">
                                                         @foreach($periods as $period)

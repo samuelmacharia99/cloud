@@ -142,6 +142,59 @@ class DomainRenewalCartTest extends TestCase
         $this->assertSame(1750.0, (float) $item['price']);
         $this->assertSame(1750.0, (float) $item['retail_total']);
         $this->assertSame(900.0, (float) $item['wholesale_total']);
+        $this->assertSame($customer->id, $item['billing_customer_id']);
+    }
+
+    public function test_customer_owned_domain_renewal_uses_retail_rate_without_cart_mode(): void
+    {
+        $reseller = $this->createResellerWithPackage();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+
+        $extension = DomainExtension::create([
+            'extension' => '.com',
+            'description' => 'COM',
+            'enabled' => true,
+        ]);
+
+        DomainPricing::create([
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'tier' => 'wholesale',
+            'price' => 1350,
+            'renewal_price' => 1400,
+            'enabled' => true,
+        ]);
+
+        ResellerDomainPricing::create([
+            'reseller_id' => $reseller->id,
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'retail_price' => 2000,
+            'renewal_retail_price' => 2200,
+            'enabled' => true,
+        ]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'name' => 'devkisteelmaishamabati',
+            'extension' => '.com',
+            'status' => 'active',
+            'type' => 'registration',
+        ]);
+
+        ResellerCartContext::setSelf();
+
+        $this->actingAs($reseller)
+            ->postJson(route('reseller.domains.renew', $domain), ['years' => 1])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $item = array_values(session(CartController::CART_KEY))[0];
+
+        $this->assertSame(2200.0, (float) $item['price']);
+        $this->assertSame(1400.0, (float) $item['wholesale_total']);
+        $this->assertSame($customer->id, $item['billing_customer_id']);
     }
 
     public function test_paid_renewal_invoice_pushes_order_to_admin(): void

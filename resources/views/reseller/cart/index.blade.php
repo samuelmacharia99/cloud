@@ -15,7 +15,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Your Cart</h1>
-        @if (($cartContext['mode'] ?? 'self') === 'customer' && $checkoutCustomer)
+        @if ($checkoutCustomer ?? null)
             <p class="text-slate-600 dark:text-slate-400 mt-1">Whitelabel checkout for <strong>{{ $checkoutCustomer->name }}</strong> at your retail prices.</p>
         @else
             <p class="text-slate-600 dark:text-slate-400 mt-1">Review domain orders before checkout (wholesale to your account).</p>
@@ -60,6 +60,9 @@
                                             <p class="text-sm text-slate-600 dark:text-slate-400">Renewal price</p>
                                             <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
                                             <p class="text-xs text-slate-500 dark:text-slate-400">{{ $item['years'] }} year{{ $item['years'] > 1 ? 's' : '' }}</p>
+                                            @if(isset($item['wholesale_total']) && isset($item['retail_total']) && (float) $item['wholesale_total'] !== (float) $item['retail_total'])
+                                                <p class="text-xs text-slate-500 dark:text-slate-400">Your cost: KSH {{ number_format($item['wholesale_total'], 2) }}</p>
+                                            @endif
                                         @else
                                             <p class="text-sm text-slate-600 dark:text-slate-400">Unit Price</p>
                                             <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['price'], 2) }}</p>

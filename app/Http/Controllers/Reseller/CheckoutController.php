@@ -428,24 +428,10 @@ class CheckoutController extends Controller
 
     private function resolveCheckoutCustomer(): ?User
     {
-        if (! ResellerCartContext::isCustomerMode()) {
-            return null;
-        }
-
-        $customerId = ResellerCartContext::customerId();
-        if (! $customerId) {
-            return null;
-        }
-
-        $customer = User::find($customerId);
-        $reseller = auth()->user();
-
-        if (! $customer || ! $this->scope->ownsCustomer($reseller, $customer)) {
-            ResellerCartContext::setSelf();
-
-            return null;
-        }
-
-        return $customer;
+        return ResellerCartContext::resolveCheckoutCustomer(
+            auth()->user(),
+            session(CartController::CART_KEY, []),
+            $this->scope,
+        );
     }
 }

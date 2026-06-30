@@ -47,7 +47,7 @@ class CartController extends Controller
         $taxBreakdown = TaxService::calculateResellerWholesale($subtotal);
 
         $cartContext = ResellerCartContext::summary();
-        $checkoutCustomer = $this->resolveCheckoutCustomer();
+        $checkoutCustomer = ResellerCartContext::resolveCheckoutCustomer(auth()->user(), $cart, $this->scope);
         $resellerDefaults = $this->nameservers->defaultsForReseller(auth()->user());
         $platformDefaults = $this->nameservers->platformDefaults();
 
@@ -416,22 +416,10 @@ class CartController extends Controller
 
     private function resolveCheckoutCustomer(): ?User
     {
-        if (! ResellerCartContext::isCustomerMode()) {
-            return null;
-        }
-
-        $customerId = ResellerCartContext::customerId();
-        if (! $customerId) {
-            return null;
-        }
-
-        $customer = User::find($customerId);
-        if (! $customer || ! $this->scope->ownsCustomer(auth()->user(), $customer)) {
-            ResellerCartContext::setSelf();
-
-            return null;
-        }
-
-        return $customer;
+        return ResellerCartContext::resolveCheckoutCustomer(
+            auth()->user(),
+            session(self::CART_KEY, []),
+            $this->scope,
+        );
     }
 }
