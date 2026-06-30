@@ -116,7 +116,18 @@
     </form>
 
     <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div
+        class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+        @if ($usesDirectAdminDirectory ?? false)
+            x-data="directAdminCustomerDirectory(@js([
+                'listings' => ($catalogListings ?? collect())->map(fn ($l) => ['id' => $l->id, 'name' => $l->name])->values(),
+                'customers' => ($managedCustomers ?? collect())->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values(),
+                'linkUrl' => route('reseller.directadmin-accounts.link'),
+                'isAdmin' => false,
+            ]))"
+            @open-da-link-modal.window="openLink($event.detail)"
+        @endif
+    >
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -139,7 +150,7 @@
                 <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                     @forelse ($customers as $customer)
                         @if ($usesDirectAdminDirectory ?? false)
-                            @include('partials.customer-directory-row', ['row' => $customer, 'context' => 'reseller'])
+                            @include('partials.customer-directory-row', ['row' => $customer, 'context' => 'reseller', 'catalogListings' => $catalogListings ?? collect()])
                         @else
                         <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                             <td class="px-6 py-4">
@@ -214,6 +225,118 @@
     </div>
 
     <!-- Pagination -->
+    @if ($usesDirectAdminDirectory ?? false)
+        <form method="POST" action="{{ route('reseller.directadmin-accounts.bulk-link') }}" id="bulk-da-link-form" class="flex flex-wrap items-center gap-3 mb-4">
+            @csrf
+            <input type="hidden" name="billing_cycle" value="annual">
+            <input type="hidden" name="country" value="KE">
+            <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Bulk link selected</button>
+            <p class="text-xs text-slate-500">Select unlinked DirectAdmin accounts on this page, then bulk link with your default annual billing cycle.</p>
+        </form>
+
+        <div x-show="linkModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div class="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-lg p-6" @click.outside="linkModalOpen = false">
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Link DirectAdmin account</h3>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="linkForm.da_username ? 'User: ' + linkForm.da_username : ''"></p>
+                <form method="POST" :action="linkUrl" class="mt-4 space-y-4">
+                    @csrf
+                    <input type="hidden" name="da_username" x-model="linkForm.da_username">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Create new customer or link existing</label>
+                        <select name="customer_id" x-model="linkForm.customer_id" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            <option value="">Create new customer</option>
+                            <template x-for="customer in customers" :key="customer.id">
+                                <option :value="customer.id" x-text="customer.name + ' (' + customer.email + ')'"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div x-show="!linkForm.customer_id" class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Name</label>
+                            <input type="text" name="name" x-model="linkForm.name" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Email</label>
+                            <input type="email" name="email" x-model="linkForm.email" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1">Country</label>
+                            <input type="text" name="country" value="KE" maxlength="2" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Catalog package</label>
+                        <select name="reseller_product_id" x-model="linkForm.reseller_product_id" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            <option value="">Auto-detect from DirectAdmin package</option>
+                            <template x-for="listing in listings" :key="listing.id">
+                                <option :value="listing.id" x-text="listing.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Billing cycle</label>
+                        <select name="billing_cycle" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            <option value="annual">Annual</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="semi-annual">Semi-annual</option>
+                        </select>
+                    </div>
+                    <div class="flex justify-end gap-3 pt-2">
+                        <button type="button" @click="linkModalOpen = false" class="px-4 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600">Cancel</button>
+                        <button type="submit" class="px-4 py-2 text-sm rounded-lg bg-purple-600 hover:bg-purple-700 text-white">Link account</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            function directAdminCustomerDirectory(config) {
+                return {
+                    linkModalOpen: false,
+                    linkUrl: config.linkUrl,
+                    listingsByReseller: config.listingsByReseller || {},
+                    customersByReseller: config.customersByReseller || {},
+                    listings: config.listings || [],
+                    customers: config.customers || [],
+                    linkForm: {
+                        da_username: '',
+                        name: '',
+                        email: '',
+                        customer_id: '',
+                        reseller_id: '',
+                        reseller_product_id: '',
+                    },
+                    get activeListings() {
+                        if (config.isAdmin) {
+                            return this.listingsByReseller[this.linkForm.reseller_id] || [];
+                        }
+
+                        return this.listings;
+                    },
+                    get activeCustomers() {
+                        if (config.isAdmin) {
+                            return this.customersByReseller[this.linkForm.reseller_id] || [];
+                        }
+
+                        return this.customers;
+                    },
+                    openLink(detail) {
+                        this.linkForm = {
+                            da_username: detail.da_username || '',
+                            name: detail.display_name || '',
+                            email: detail.display_email || '',
+                            customer_id: '',
+                            reseller_id: detail.reseller_id ? String(detail.reseller_id) : '',
+                            reseller_product_id: detail.matched_listing_id ? String(detail.matched_listing_id) : '',
+                        };
+                        this.linkModalOpen = true;
+                    },
+                };
+            }
+        </script>
+    @endif
+
     <div class="mt-6">
         {{ $customers->links() }}
     </div>

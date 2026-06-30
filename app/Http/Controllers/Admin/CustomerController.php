@@ -11,6 +11,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Node;
 use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\Setting;
 use App\Models\User;
@@ -43,11 +44,29 @@ class CustomerController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
 
+        $resellerIds = $resellers->pluck('id');
+
+        $catalogListingsByReseller = ResellerProduct::query()
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->whereIn('reseller_id', $resellerIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'direct_admin_package_name', 'reseller_id'])
+            ->groupBy('reseller_id');
+
+        $managedCustomersByReseller = User::query()
+            ->whereIn('reseller_id', $resellerIds)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'reseller_id'])
+            ->groupBy('reseller_id');
+
         return view('admin.customers.index', [
             'customers' => $directoryResult['rows'],
             'directoryStats' => $directoryResult['stats'],
             'usesDirectAdminDirectory' => $directoryResult['uses_directadmin'],
             'resellers' => $resellers,
+            'catalogListingsByReseller' => $catalogListingsByReseller,
+            'managedCustomersByReseller' => $managedCustomersByReseller,
             'platformRegistrationUrl' => app(RegistrationContextService::class)->platformRegistrationUrl(),
         ]);
     }

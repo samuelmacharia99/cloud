@@ -303,7 +303,13 @@ class ProvisioningService
         }
 
         if ($daService->accountExists($username)) {
-            throw new \Exception("DirectAdmin account \"{$username}\" already exists on {$node->name}.");
+            if (! empty($meta['link_existing']) || ! empty($meta['imported_from_directadmin'])) {
+                $this->linkExistingDirectAdminAccount($service, $username, $domain, $packageName, $meta, $node, $reseller);
+
+                return;
+            }
+
+            throw new \Exception("DirectAdmin account \"{$username}\" already exists on {$node->name}. Link the existing account instead of creating a new one.");
         }
 
         $ownerReseller = $resellerDirectAdmin->impersonationUsernameForService($service);
@@ -373,5 +379,41 @@ class ProvisioningService
         } else {
             throw new \Exception($result['message'] ?? 'DirectAdmin provisioning failed');
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function linkExistingDirectAdminAccount(
+        Service $service,
+        string $username,
+        string $domain,
+        string $packageName,
+        array $meta,
+        Node $node,
+        ?User $reseller,
+    ): void {
+        $storedOwner = $reseller?->directadmin_username
+            ?? (filled($meta['directadmin_reseller'] ?? null) ? (string) $meta['directadmin_reseller'] : null);
+
+        $service->update([
+            'status' => 'active',
+            'external_reference' => $username,
+            'service_meta' => array_merge($meta, [
+                'username' => $username,
+                'domain' => $meta['domain'] ?? $domain,
+                'package_name' => $meta['package_name'] ?? $packageName,
+                'package' => $meta['package'] ?? $packageName,
+                'node_id' => $node->id,
+                'node_name' => $node->name,
+                'linked_at' => now()->toIso8601String(),
+                'directadmin_reseller' => filled($storedOwner) ? (string) $storedOwner : null,
+            ]),
+        ]);
+
+        \Log::info("Linked existing DirectAdmin account for service {$service->id}", [
+            'username' => $username,
+            'node' => $node->name,
+        ]);
     }
 }

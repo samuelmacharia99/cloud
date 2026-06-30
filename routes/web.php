@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\DomainOrderController;
 use App\Http\Controllers\Admin\DomainRenewalController;
 use App\Http\Controllers\Admin\EmailController;
 use App\Http\Controllers\Admin\EmailTemplateController;
+use App\Http\Controllers\Admin\HostedDirectAdminAccountController;
 use App\Http\Controllers\Admin\InvoiceController;
 use App\Http\Controllers\Admin\ManualPaymentController;
 use App\Http\Controllers\Admin\NodeController;
@@ -172,6 +173,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/customers/{customer}/credits', [CustomerController::class, 'addCredit'])->name('admin.customers.add-credit');
         Route::post('admin/customers/{customer}/credits/remove', [CustomerController::class, 'removeCredit'])->name('admin.customers.remove-credit');
         Route::post('admin/customers/{customer}/credits/{credit}/revoke', [CustomerController::class, 'revokeCredit'])->name('admin.customers.revoke-credit');
+        Route::post('admin/directadmin-accounts/link', [HostedDirectAdminAccountController::class, 'link'])->name('admin.directadmin-accounts.link');
+        Route::post('admin/services/{service}/connect-billing', [HostedDirectAdminAccountController::class, 'connectBilling'])->name('admin.directadmin-accounts.connect-billing');
         Route::post('admin/products/{product}/duplicate', [ProductController::class, 'duplicate'])->name('admin.products.duplicate');
         Route::resource('admin/products', ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', InvoiceController::class)->names('admin.invoices');
@@ -460,6 +463,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::middleware('reseller.limits')->group(function () {
             Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
             Route::post('reseller/customers/{customer}/impersonate', [App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
+            Route::post('reseller/directadmin-accounts/link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'link'])->name('reseller.directadmin-accounts.link');
+            Route::post('reseller/directadmin-accounts/bulk-link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'bulkLink'])->name('reseller.directadmin-accounts.bulk-link');
+            Route::post('reseller/services/{service}/connect-billing', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'connectBilling'])->name('reseller.directadmin-accounts.connect-billing');
+            Route::get('reseller/directadmin-accounts/catalog-options', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'catalogOptions'])->name('reseller.directadmin-accounts.catalog-options');
             Route::post('reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
             Route::resource('reseller/catalog', CatalogController::class)
                 ->parameters(['catalog' => 'catalogItem'])

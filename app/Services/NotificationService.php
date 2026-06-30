@@ -1339,4 +1339,51 @@ class NotificationService
             }
         }
     }
+
+    /**
+     * @param  list<string>  $usernames
+     */
+    public function notifyResellerUnlinkedDirectAdminAccounts(User $reseller, int $count, array $usernames = []): void
+    {
+        if ($count <= 0) {
+            return;
+        }
+
+        $this->telegram()->resellerEvent($reseller, 'Unlinked DirectAdmin accounts', [
+            'Count' => (string) $count,
+        ]);
+
+        $customersUrl = route('reseller.customers.index', ['link' => 'unlinked']);
+        $sample = array_slice($usernames, 0, 5);
+        $sampleText = $sample !== [] ? implode(', ', $sample) : 'n/a';
+
+        if ($reseller->email && $this->emailDelivery->mailConfiguredFor(null)) {
+            $subject = "{$count} DirectAdmin account(s) need linking";
+            $body = "Hello {$reseller->name},\n\n"
+                ."{$count} hosting account(s) on your DirectAdmin server are not linked to the platform yet.\n\n"
+                ."Sample usernames: {$sampleText}\n\n"
+                ."Link them from your customer list to enable portal access and auto-billing:\n{$customersUrl}";
+
+            try {
+                $this->emailDelivery->sendPlatformMailable(
+                    $reseller->email,
+                    new GenericNotificationMail($subject, 'DirectAdmin accounts need linking', $body),
+                    $subject,
+                    NotificationEvent::ResellerDiskPoolWarning,
+                    $reseller,
+                    $body,
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Failed to email reseller about unlinked DirectAdmin accounts', [
+                    'reseller_id' => $reseller->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        Log::info('Notified reseller about unlinked DirectAdmin accounts', [
+            'reseller_id' => $reseller->id,
+            'count' => $count,
+        ]);
+    }
 }

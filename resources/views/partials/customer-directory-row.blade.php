@@ -1,10 +1,12 @@
 @props([
     'row',
     'context' => 'reseller',
+    'catalogListings' => collect(),
 ])
 
 @php
     $user = $row['user'] ?? null;
+    $service = $row['service'] ?? null;
     $isLinked = ($row['link_status'] ?? '') === 'linked';
     $billingStatus = $row['billing_status'] ?? 'needs_package';
     $matchedListing = $row['matched_listing'] ?? null;
@@ -21,7 +23,10 @@
 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
     <td class="px-6 py-4">
         <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-full bg-gradient-to-br {{ $context === 'admin' ? 'from-blue-400 to-blue-600' : 'from-purple-400 to-purple-600' }} flex items-center justify-center text-white text-sm font-semibold">
+            @if ($context === 'reseller' && ! $isLinked && ! empty($row['da_username']))
+                <input type="checkbox" name="da_usernames[]" value="{{ $row['da_username'] }}" form="bulk-da-link-form" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500">
+            @endif
+            <div class="w-10 h-10 rounded-full bg-gradient-to-br {{ $context === 'admin' ? 'from-blue-400 to-blue-600' : 'from-purple-400 to-purple-600' }} flex items-center justify-center text-white text-sm font-semibold shrink-0">
                 {{ strtoupper(substr($row['display_name'] ?? '?', 0, 1)) }}
             </div>
             <div>
@@ -101,7 +106,59 @@
         {{ $row['invoices_count'] ?? 0 }}
     </td>
     <td class="px-6 py-4 text-right">
-        @if ($user && $context === 'reseller')
+        @if ($context === 'reseller' && ! $isLinked && ! empty($row['da_username']))
+            <button
+                type="button"
+                class="px-3 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg"
+                @click="$dispatch('open-da-link-modal', @js([
+                    'da_username' => $row['da_username'],
+                    'display_name' => $row['display_name'],
+                    'display_email' => $row['display_email'],
+                    'da_package' => $row['da_package'],
+                    'matched_listing_id' => $matchedListing?->id,
+                ]))"
+            >
+                Link to platform
+            </button>
+        @elseif ($context === 'admin' && ! $isLinked && ! empty($row['da_username']) && ! empty($row['reseller']))
+            <button
+                type="button"
+                class="px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
+                @click="$dispatch('open-da-link-modal', @js([
+                    'da_username' => $row['da_username'],
+                    'display_name' => $row['display_name'],
+                    'display_email' => $row['display_email'],
+                    'da_package' => $row['da_package'],
+                    'matched_listing_id' => $matchedListing?->id,
+                    'reseller_id' => $row['reseller']->id,
+                ]))"
+            >
+                Link
+            </button>
+        @elseif ($context === 'reseller' && $isLinked && $billingStatus !== 'ready' && $service)
+            <form method="POST" action="{{ route('reseller.directadmin-accounts.connect-billing', $service) }}" class="flex flex-col items-end gap-2 min-w-[12rem]">
+                @csrf
+                <select name="reseller_product_id" required class="w-full text-xs px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                    <option value="">Select package</option>
+                    @foreach ($catalogListings as $listing)
+                        <option value="{{ $listing->id }}" @selected($matchedListing && (int) $matchedListing->id === (int) $listing->id)>{{ $listing->name }}</option>
+                    @endforeach
+                </select>
+                <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Connect billing</button>
+            </form>
+        @elseif ($context === 'admin' && $isLinked && $billingStatus !== 'ready' && $service && ! empty($row['reseller']))
+            <form method="POST" action="{{ route('admin.directadmin-accounts.connect-billing', $service) }}" class="flex flex-col items-end gap-2 min-w-[12rem]">
+                @csrf
+                <input type="hidden" name="reseller_id" value="{{ $row['reseller']->id }}">
+                <select name="reseller_product_id" required class="w-full text-xs px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                    <option value="">Select package</option>
+                    @foreach ($catalogListings as $listing)
+                        <option value="{{ $listing->id }}" @selected($matchedListing && (int) $matchedListing->id === (int) $listing->id)>{{ $listing->name }}</option>
+                    @endforeach
+                </select>
+                <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Connect billing</button>
+            </form>
+        @elseif ($user && $context === 'reseller')
             <div class="flex items-center justify-end gap-1">
                 <form method="POST" action="{{ route('reseller.customers.impersonate', $user) }}" class="inline">
                     @csrf
@@ -136,8 +193,10 @@
             <div class="flex items-center justify-end gap-1">
                 <a href="{{ route('admin.customers.show', $user) }}" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition">View</a>
             </div>
+        @elseif ($isLinked)
+            <span class="text-xs text-slate-500 dark:text-slate-400">—</span>
         @else
-            <span class="text-xs text-slate-500 dark:text-slate-400">Add on platform to manage</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Link to manage</span>
         @endif
     </td>
 </tr>

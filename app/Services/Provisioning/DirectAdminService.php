@@ -6,6 +6,7 @@ use App\Models\DirectAdminPackage;
 use App\Models\Node;
 use App\Models\Service;
 use App\Models\Setting;
+use App\Services\DirectAdminNodeHealthService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -1697,6 +1698,8 @@ class DirectAdminService
 
             return $this->decodeUserApiResponse($response->body(), $response->status());
         } catch (\Throwable $e) {
+            app(DirectAdminNodeHealthService::class)->recordFailure($this->node, $e->getMessage());
+
             Log::error('DirectAdmin admin API call failed', [
                 'node_id' => $this->node?->id,
                 'command' => $command,
@@ -1714,8 +1717,12 @@ class DirectAdminService
     {
         $parsed = $this->parseApiResponse($body, $status);
         if (! $parsed['success']) {
+            app(DirectAdminNodeHealthService::class)->recordFailure($this->node, $parsed['message']);
+
             return ['success' => false, 'message' => $parsed['message'], 'data' => []];
         }
+
+        app(DirectAdminNodeHealthService::class)->recordSuccess($this->node);
 
         return [
             'success' => true,

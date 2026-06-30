@@ -100,6 +100,22 @@ class ResellerHostedAccountDirectoryService
     /**
      * @return Collection<int, array<string, mixed>>
      */
+    public function buildRowsForReseller(User $reseller, ?Collection $portalCustomers = null): Collection
+    {
+        if (! $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)) {
+            return collect();
+        }
+
+        $portalCustomers ??= $this->scope->managedCustomersQuery($reseller)
+            ->withCount('services', 'invoices')
+            ->get();
+
+        return $this->buildResellerRows($reseller, $portalCustomers);
+    }
+
+    /**
+     * @return Collection<int, array<string, mixed>>
+     */
     private function cachedRowsForReseller(User $reseller, bool $refresh): Collection
     {
         $cacheKey = 'reseller_hosted_directory:'.$reseller->id;

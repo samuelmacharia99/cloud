@@ -158,6 +158,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Reconcile DirectAdmin Hosted Accounts',
+                'description' => 'Compares DirectAdmin hosted users with platform services, heals package drift, and notifies resellers about unlinked accounts.',
+                'command' => 'cron:reconcile-directadmin-hosted-accounts',
+                'schedule' => '30 4 * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Provision Reseller SSL',
                 'description' => 'Automatically issues and renews Let\'s Encrypt SSL for reseller custom domains.',
                 'command' => 'cron:provision-reseller-ssl',

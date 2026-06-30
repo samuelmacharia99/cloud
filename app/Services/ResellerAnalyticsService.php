@@ -297,6 +297,20 @@ class ResellerAnalyticsService
             ];
         }
 
+        if ($reseller->directadmin_username && app(ResellerDirectAdminService::class)->hasDirectAdminBinding($reseller)) {
+            $reconciliation = app(ResellerHostedAccountReconciliationService::class)->reconcileReseller($reseller);
+            $unlinked = (int) ($reconciliation['unlinked_count'] ?? 0);
+
+            if ($unlinked > 0) {
+                $queue[] = [
+                    'label' => "{$unlinked} DirectAdmin account(s) not linked to the platform",
+                    'count' => $unlinked,
+                    'url' => route('reseller.customers.index', ['link' => 'unlinked']),
+                    'severity' => 'warning',
+                ];
+            }
+        }
+
         return $queue;
     }
 
