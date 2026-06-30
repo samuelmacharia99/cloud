@@ -403,11 +403,6 @@ class CheckoutController extends Controller
      */
     private function processCustomerCheckout(array $cart, $reseller, $checkoutCustomer): RedirectResponse
     {
-        if (collect($cart)->contains(fn ($item) => ($item['type'] ?? 'domain') === 'domain_renewal')) {
-            return redirect()->route('reseller.cart.index')
-                ->with('error', 'Renewals cannot be billed to customers via cart. Use your account cart for renewals.');
-        }
-
         try {
             $invoice = $this->customerOrders->checkoutDomainCartForCustomer(
                 $reseller,

@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Enums\ResellerDomainOrderType;
 use App\Models\Domain;
 use App\Models\DomainExtension;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Product;
 use App\Models\ResellerDomainOrder;
@@ -341,7 +342,7 @@ class ResellerCustomerOrderService
 
         $domainItems = array_values(array_filter(
             $cartItems,
-            fn ($item) => in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer'], true),
+            fn ($item) => in_array($item['type'] ?? 'domain', ['domain', 'domain_transfer', 'domain_renewal'], true),
         ));
 
         if ($domainItems === []) {
@@ -352,6 +353,13 @@ class ResellerCustomerOrderService
             $lineItems = [];
 
             foreach ($domainItems as $item) {
+                if (($item['type'] ?? 'domain') === 'domain_renewal') {
+                    $prepared = $this->prepareDomainRenewal($reseller, $customer, $item);
+                    $lineItems[] = $prepared['line_item'];
+
+                    continue;
+                }
+
                 $extension = DomainExtension::query()
                     ->where('extension', $item['extension'])
                     ->where('enabled', true)
@@ -390,9 +398,13 @@ class ResellerCustomerOrderService
             }
 
             $hasTransfer = collect($domainItems)->contains(fn ($item) => ($item['type'] ?? 'domain') === 'domain_transfer');
-            $invoiceNotes = $hasTransfer
-                ? 'Whitelabel domain cart checkout (includes transfer)'
-                : 'Whitelabel domain cart checkout';
+            $hasRenewal = collect($domainItems)->contains(fn ($item) => ($item['type'] ?? 'domain') === 'domain_renewal');
+            $invoiceNotes = match (true) {
+                $hasTransfer && $hasRenewal => 'Whitelabel domain cart checkout (includes transfer and renewal)',
+                $hasTransfer => 'Whitelabel domain cart checkout (includes transfer)',
+                $hasRenewal => 'Whitelabel domain cart checkout (includes renewal)',
+                default => 'Whitelabel domain cart checkout',
+            };
 
             $invoice = $this->billing->createCustomerInvoice($reseller, $customer, [
                 'status' => InvoiceStatus::Unpaid->value,
@@ -403,6 +415,16 @@ class ResellerCustomerOrderService
             ]);
 
             foreach ($invoice->items as $item) {
+                $renewalOrderId = $item->custom_options['renewal_order_id'] ?? null;
+                if ($renewalOrderId) {
+                    $renewalOrder = DomainRenewalOrder::find($renewalOrderId);
+                    if ($renewalOrder) {
+                        app(DomainRenewalService::class)->linkRenewalToInvoice($renewalOrder, $invoice);
+                    }
+
+                    continue;
+                }
+
                 $orderId = $item->custom_options['domain_order_id'] ?? null;
                 if (! $orderId) {
                     continue;
@@ -421,6 +443,59 @@ class ResellerCustomerOrderService
 
             return $invoice->fresh(['items', 'user']);
         });
+    }
+
+    /**
+     * @return array{renewal_order: DomainRenewalOrder, line_item: array<string, mixed>}
+     */
+    private function prepareDomainRenewal(User $reseller, User $customer, array $item): array
+    {
+        $domain = Domain::query()->findOrFail($item['domain_id'] ?? 0);
+
+        if ((int) $domain->user_id !== (int) $customer->id) {
+            throw new \InvalidArgumentException('This renewal domain does not belong to the selected customer.');
+        }
+
+        if ((int) $domain->reseller_id !== 0 && (int) $domain->reseller_id !== (int) $reseller->id) {
+            throw new \InvalidArgumentException('You cannot renew this domain for the selected customer.');
+        }
+
+        $years = (int) ($item['years'] ?? 1);
+        $extension = $domain->domainExtension;
+
+        if (! $extension) {
+            throw new \InvalidArgumentException('Domain extension not configured.');
+        }
+
+        $expectedRetail = app(ResellerCustomerCatalogService::class)
+            ->domainRenewalPrice($customer, $extension, $years);
+
+        if ($expectedRetail === null) {
+            throw new \InvalidArgumentException("Renewal pricing is not configured for {$domain->extension} ({$years} year(s)).");
+        }
+
+        $submittedRetail = (float) ($item['retail_total'] ?? $item['price'] ?? 0);
+        if (abs($submittedRetail - $expectedRetail) > 0.02) {
+            throw new \InvalidArgumentException('Renewal price mismatch. Refresh and try again.');
+        }
+
+        $renewalOrder = app(DomainRenewalService::class)->initiateRenewal($domain, $customer, $years);
+
+        return [
+            'renewal_order' => $renewalOrder,
+            'line_item' => [
+                'description' => 'Renew '.$domain->name.$domain->extension.' ('.$years.' year'.($years > 1 ? 's' : '').')',
+                'quantity' => 1,
+                'unit_price' => $expectedRetail,
+                'product_id' => null,
+                'product_type' => 'Domain',
+                'domain_id' => $domain->id,
+                'custom_options' => [
+                    'type' => 'domain_renewal',
+                    'renewal_order_id' => $renewalOrder->id,
+                ],
+            ],
+        ];
     }
 
     /**

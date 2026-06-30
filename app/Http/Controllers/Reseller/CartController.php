@@ -400,7 +400,7 @@ class CartController extends Controller
     public static function cartItemTotal(array $item): float
     {
         if (($item['type'] ?? 'domain') === 'domain_renewal') {
-            return (float) $item['price'];
+            return (float) ($item['retail_total'] ?? $item['price']);
         }
 
         if (($item['type'] ?? 'domain') === 'domain_transfer') {

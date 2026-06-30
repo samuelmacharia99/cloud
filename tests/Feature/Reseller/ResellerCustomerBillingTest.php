@@ -631,6 +631,26 @@ class ResellerCustomerBillingTest extends TestCase
         $this->assertSame($expiry, $domain->expires_at->format('Y-m-d'));
     }
 
+    public function test_customer_domain_order_page_redirects_to_domains(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.customer-orders.domain.create', ['customer' => $customer->id]))
+            ->assertRedirect(route('reseller.domains.index', ['customer' => $customer->id]));
+    }
+
+    public function test_customer_hosting_order_page_redirects_to_customer_invoice_create(): void
+    {
+        $reseller = $this->reseller();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($reseller)
+            ->get(route('reseller.customer-orders.hosting.create', ['customer' => $customer->id]))
+            ->assertRedirect(route('reseller.customer-invoices.create', ['customer' => $customer->id]));
+    }
+
     public function test_reports_page_shows_whitelabel_heading(): void
     {
         $reseller = $this->reseller();

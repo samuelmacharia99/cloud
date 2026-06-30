@@ -10,10 +10,8 @@ use App\Services\ResellerCustomerBillingService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerHostingSetupService;
 use App\Services\ResellerScopeService;
-use App\Support\ResellerCartContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 
 class CustomerOrderController extends Controller
 {
@@ -23,25 +21,6 @@ class CustomerOrderController extends Controller
         private ResellerCustomerOrderService $orders,
         private ResellerHostingSetupService $hostingSetup,
     ) {}
-
-    public function createHosting(Request $request): View
-    {
-        $reseller = auth()->user();
-        $customers = $this->scope->managedCustomersQuery($reseller)->orderBy('name')->get(['id', 'name', 'email']);
-        $products = ResellerProduct::query()
-            ->where('reseller_id', $reseller->id)
-            ->where('is_active', true)
-            ->with('adminProduct')
-            ->orderBy('name')
-            ->get()
-            ->filter(fn (ResellerProduct $product) => $product->isOrderable());
-
-        $selectedCustomer = $request->filled('customer')
-            ? $customers->firstWhere('id', (int) $request->customer)
-            : null;
-
-        return view('reseller.customer-orders.create-hosting', compact('customers', 'products', 'selectedCustomer'));
-    }
 
     public function storeHosting(Request $request): RedirectResponse
     {
@@ -146,28 +125,6 @@ class CustomerOrderController extends Controller
         }
     }
 
-    public function createDomain(Request $request): View
-    {
-        $reseller = auth()->user();
-        $customers = $this->scope->managedCustomersQuery($reseller)->orderBy('name')->get(['id', 'name', 'email']);
-        $extensions = DomainExtension::with([
-            'pricing' => fn ($q) => $q->where('tier', 'wholesale'),
-            'resellerPricing' => fn ($q) => $q->where('reseller_id', $reseller->id)->where('enabled', true),
-        ])->where('enabled', true)->orderBy('extension')->get()
-            ->each->concealUpstreamProviderDetails();
-
-        $selectedCustomer = $request->filled('customer')
-            ? $customers->firstWhere('id', (int) $request->customer)
-            : null;
-
-        if ($selectedCustomer) {
-            ResellerCartContext::setCustomer($selectedCustomer->id);
-            ResellerCartContext::setCustomerName($selectedCustomer->name);
-        }
-
-        return view('reseller.customer-orders.create-domain', compact('customers', 'extensions', 'selectedCustomer'));
-    }
-
     public function storeDomain(Request $request): RedirectResponse
     {
         $reseller = auth()->user();
@@ -225,13 +182,7 @@ class CustomerOrderController extends Controller
         }
     }
 
-    /** @deprecated Use createHosting */
-    public function create(Request $request): View
-    {
-        return $this->createHosting($request);
-    }
-
-    /** @deprecated Use storeHosting */
+    /** @deprecated Redirected to customer invoices; POST kept for legacy invoice-only catalog billing. */
     public function store(Request $request): RedirectResponse
     {
         $request->merge(['order_type' => 'invoice_only']);

@@ -56,8 +56,14 @@
 
                                 <div class="flex items-center gap-6">
                                     <div class="text-right">
-                                        <p class="text-sm text-slate-600 dark:text-slate-400">Unit Price</p>
-                                        <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['price'], 2) }}</p>
+                                        @if(($item['type'] ?? 'domain') === 'domain_renewal')
+                                            <p class="text-sm text-slate-600 dark:text-slate-400">Renewal price</p>
+                                            <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['total'], 2) }}</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400">{{ $item['years'] }} year{{ $item['years'] > 1 ? 's' : '' }}</p>
+                                        @else
+                                            <p class="text-sm text-slate-600 dark:text-slate-400">Unit Price</p>
+                                            <p class="font-semibold text-slate-900 dark:text-white">KSH {{ number_format($item['price'], 2) }}</p>
+                                        @endif
                                     </div>
 
                                     <div class="text-right">

@@ -65,6 +65,7 @@ use App\Http\Controllers\Reseller\WalletController;
 use App\Http\Controllers\TicketAttachmentController;
 use App\Models\DomainExtension;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/currency', [CurrencyPreferenceController::class, 'update'])->name('currency.update');
@@ -423,11 +424,23 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         Route::get('reseller/customer-payments', [CustomerPaymentController::class, 'index'])->name('reseller.customer-payments.index');
 
-        Route::get('reseller/customer-orders/hosting', [CustomerOrderController::class, 'createHosting'])->name('reseller.customer-orders.hosting.create');
+        Route::get('reseller/customer-orders/hosting', function (Request $request) {
+            $params = $request->filled('customer') ? ['customer' => $request->integer('customer')] : [];
+
+            return redirect()->route('reseller.customer-invoices.create', $params);
+        })->name('reseller.customer-orders.hosting.create');
         Route::post('reseller/customer-orders/hosting', [CustomerOrderController::class, 'storeHosting'])->name('reseller.customer-orders.hosting.store');
-        Route::get('reseller/customer-orders/domain', [CustomerOrderController::class, 'createDomain'])->name('reseller.customer-orders.domain.create');
+        Route::get('reseller/customer-orders/domain', function (Request $request) {
+            $params = $request->filled('customer') ? ['customer' => $request->integer('customer')] : [];
+
+            return redirect()->route('reseller.domains.index', $params);
+        })->name('reseller.customer-orders.domain.create');
         Route::post('reseller/customer-orders/domain', [CustomerOrderController::class, 'storeDomain'])->name('reseller.customer-orders.domain.store');
-        Route::get('reseller/customer-orders/create', [CustomerOrderController::class, 'create'])->name('reseller.customer-orders.create');
+        Route::get('reseller/customer-orders/create', function (Request $request) {
+            $params = $request->filled('customer') ? ['customer' => $request->integer('customer')] : [];
+
+            return redirect()->route('reseller.customer-invoices.create', $params);
+        })->name('reseller.customer-orders.create');
         Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
 
         Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');

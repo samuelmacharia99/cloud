@@ -11,8 +11,7 @@
         </div>
         <div class="flex flex-wrap gap-2">
             <a href="{{ route('reseller.customer-invoices.create') }}" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium">Create invoice</a>
-            <a href="{{ route('reseller.customer-orders.hosting.create') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium">Order hosting</a>
-            <a href="{{ route('reseller.customer-orders.domain.create') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium">Register domain</a>
+            <a href="{{ route('reseller.domains.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium">Register domain</a>
         </div>
     </div>
 

@@ -89,7 +89,7 @@
                 @endforelse
                 <div class="flex flex-wrap gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <a href="{{ route('reseller.customer-invoices.create') }}" class="text-xs font-medium text-purple-600">New invoice</a>
-                    <a href="{{ route('reseller.customer-orders.hosting.create') }}" class="text-xs font-medium text-purple-600">Order hosting</a>
+                    <a href="{{ route('reseller.domains.index') }}" class="text-xs font-medium text-purple-600">Domains</a>
                     <a href="{{ route('reseller.customers.create') }}" class="text-xs font-medium text-purple-600">Add customer</a>
                 </div>
             </div>

@@ -14,6 +14,7 @@ use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerDomainTransferService;
+use App\Services\ResellerScopeService;
 use App\Support\ResellerCartContext;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -27,6 +28,8 @@ class DomainController extends Controller
         protected ResellerCustomerOrderService $customerOrders,
         protected DomainAvailabilityService $availability,
         protected ResellerDomainTransferService $domainTransfer,
+        protected ResellerScopeService $scope,
+        protected ResellerCustomerCatalogService $catalog,
     ) {}
 
     /**
@@ -305,7 +308,8 @@ class DomainController extends Controller
 
         try {
             $years = (int) $validated['years'];
-            $amount = $this->renewalService->wholesaleRenewalAmount($domain, $years);
+            $reseller = auth()->user();
+            $wholesaleAmount = $this->renewalService->wholesaleRenewalAmount($domain, $years);
             $cart = session()->get(CartController::CART_KEY, []);
 
             foreach ($cart as $item) {
@@ -317,16 +321,56 @@ class DomainController extends Controller
                 }
             }
 
-            $key = uniqid('renew_', true);
-            $cart[$key] = [
+            $cartItem = [
                 'type' => 'domain_renewal',
                 'domain_id' => $domain->id,
                 'domain' => $domain->name,
                 'extension' => $domain->extension,
                 'years' => $years,
-                'price' => $amount,
+                'wholesale_total' => $wholesaleAmount,
                 'added_at' => now()->toIso8601String(),
             ];
+
+            if (ResellerCartContext::isCustomerMode()) {
+                $customer = User::find(ResellerCartContext::customerId());
+                if (! $customer || ! $this->scope->ownsCustomer($reseller, $customer)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Select a valid customer for whitelabel checkout first.',
+                    ], 422);
+                }
+
+                if ((int) $domain->user_id !== (int) $customer->id) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This domain does not belong to the selected customer. Switch cart billing mode or choose another domain.',
+                    ], 422);
+                }
+
+                $extension = $domain->domainExtension;
+                if (! $extension) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Domain extension not configured.',
+                    ], 422);
+                }
+
+                $retailAmount = $this->catalog->domainRenewalPrice($customer, $extension, $years);
+                if ($retailAmount === null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Renewal pricing is not configured for this extension and period.',
+                    ], 422);
+                }
+
+                $cartItem['price'] = $retailAmount;
+                $cartItem['retail_total'] = $retailAmount;
+            } else {
+                $cartItem['price'] = $wholesaleAmount;
+            }
+
+            $key = uniqid('renew_', true);
+            $cart[$key] = $cartItem;
 
             session()->put(CartController::CART_KEY, $cart);
 
