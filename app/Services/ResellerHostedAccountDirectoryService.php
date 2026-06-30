@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\ServiceStatus;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
@@ -171,7 +172,17 @@ class ResellerHostedAccountDirectoryService
                 continue;
             }
 
-            $rows->push($this->makePortalOnlyRow($reseller, $customer));
+            $hostingServices = $this->directAdminServicesForCustomer($customer);
+
+            if ($hostingServices->isEmpty()) {
+                $rows->push($this->makePortalOnlyRow($reseller, $customer));
+
+                continue;
+            }
+
+            foreach ($hostingServices as $service) {
+                $rows->push($this->makePlatformHostingRow($reseller, $customer, $service));
+            }
         }
 
         return $this->sortRows($rows);
@@ -207,7 +218,19 @@ class ResellerHostedAccountDirectoryService
                 continue;
             }
 
-            $rows->push($this->makePortalOnlyRow($owner, $customer));
+            $hostingServices = $this->directAdminServicesForCustomer($customer);
+
+            if ($hostingServices->isEmpty()) {
+                $rows->push($this->makePortalOnlyRow($owner, $customer));
+
+                continue;
+            }
+
+            foreach ($hostingServices as $service) {
+                $rows->push($this->makePlatformHostingRow($owner, $customer, $service));
+            }
+
+            $seenUserIds[$customer->id] = true;
         }
 
         return $this->sortRows($rows);
@@ -280,6 +303,74 @@ class ResellerHostedAccountDirectoryService
             'invoices_count' => (int) ($customer->invoices_count ?? 0),
             'portal_status' => $customer->status,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function makePlatformHostingRow(?User $reseller, User $customer, Service $service): array
+    {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $daUsername = $this->hostingUsername($service) ?? '';
+        $daPackage = $meta['package_name'] ?? $meta['package'] ?? $service->product?->name;
+        $catalogByPackage = $reseller ? $this->catalogByPackageName($reseller) : [];
+        $matchedListing = $reseller
+            ? $this->resolveMatchedListing($service, is_string($daPackage) ? $daPackage : null, $catalogByPackage)
+            : null;
+        $billingStatus = $reseller
+            ? $this->resolveBillingStatus($service, $matchedListing)
+            : $this->resolvePlatformBillingStatus($service, is_string($daPackage) ? $daPackage : null);
+
+        return [
+            'row_key' => 'user:'.$customer->id.':service:'.$service->id,
+            'source' => 'portal',
+            'link_status' => 'linked',
+            'billing_status' => $billingStatus,
+            'da_username' => $daUsername !== '' ? $daUsername : null,
+            'da_domain' => $meta['domain'] ?? null,
+            'da_package' => is_string($daPackage) ? $daPackage : null,
+            'da_status' => $service->status === ServiceStatus::Suspended ? 'suspended' : 'active',
+            'user' => $customer,
+            'service' => $service,
+            'reseller' => $reseller,
+            'matched_listing' => $matchedListing,
+            'display_name' => $customer->name,
+            'display_email' => $customer->email,
+            'services_count' => (int) ($customer->services_count ?? 0),
+            'invoices_count' => (int) ($customer->invoices_count ?? 0),
+            'portal_status' => $customer->status,
+        ];
+    }
+
+    private function resolvePlatformBillingStatus(Service $service, ?string $daPackage): string
+    {
+        if ($service->product_id) {
+            return 'ready';
+        }
+
+        if (filled($daPackage)) {
+            return 'package_detected';
+        }
+
+        return 'needs_package';
+    }
+
+    /**
+     * @return Collection<int, Service>
+     */
+    private function directAdminServicesForCustomer(User $customer): Collection
+    {
+        return Service::query()
+            ->where('user_id', $customer->id)
+            ->where(function (Builder $query) {
+                $query->where('provisioning_driver_key', 'directadmin')
+                    ->orWhereHas('product', fn (Builder $productQuery) => $productQuery->where('provisioning_driver_key', 'directadmin'));
+            })
+            ->with(['user' => fn ($query) => $query->withCount('services', 'invoices'), 'product'])
+            ->latest()
+            ->get()
+            ->filter(fn (Service $service) => filled($this->hostingUsername($service)))
+            ->values();
     }
 
     /**

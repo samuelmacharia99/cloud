@@ -110,4 +110,70 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
         $this->assertSame('package_detected', $orphan['billing_status']);
         $this->assertNull($orphan['user']);
     }
+
+    public function test_admin_directory_marks_platform_customer_with_directadmin_service_as_linked(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'api_url' => 'https://da.example.test:2222',
+            'is_active' => true,
+        ]);
+
+        $reseller = User::factory()->reseller()->create([
+            'directadmin_username' => 'res_acme',
+            'directadmin_login_key' => 'login-key',
+            'reseller_node_id' => $node->id,
+        ]);
+
+        $platformCustomer = User::factory()->customer()->create([
+            'reseller_id' => null,
+            'name' => 'Copyrite Furnitures Ltd.',
+            'email' => 'furniturenairobi@gmail.com',
+            'company' => 'Copyrite Furnitures Ltd.',
+        ]);
+
+        $product = Product::factory()->create([
+            'name' => 'Gold',
+            'type' => 'shared_hosting',
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $platformCustomer->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'provisioning_driver_key' => 'directadmin',
+            'external_reference' => 'copyrite',
+            'service_meta' => [
+                'username' => 'copyrite',
+                'domain' => 'copyritefurniturekenya.com',
+                'package' => 'gold',
+                'package_name' => 'Gold',
+            ],
+        ]);
+
+        $daMock = Mockery::mock(DirectAdminService::class);
+        $daMock->shouldReceive('isConfigured')->andReturn(true);
+        $daMock->shouldReceive('listUsersOwnedByReseller')
+            ->with('res_acme')
+            ->andReturn([]);
+        $this->mock(ResellerDirectAdminService::class, function ($mock) use ($reseller, $daMock, $node) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('directAdmin')->andReturn($daMock);
+            $mock->shouldReceive('resolveNode')->with($reseller)->andReturn($node);
+        });
+
+        $result = app(ResellerHostedAccountDirectoryService::class)
+            ->paginatedForAdmin(Request::create('/admin/customers', 'GET'));
+
+        $row = collect($result['rows']->items())
+            ->firstWhere('display_email', 'furniturenairobi@gmail.com');
+
+        $this->assertNotNull($row);
+        $this->assertSame('linked', $row['link_status']);
+        $this->assertSame('ready', $row['billing_status']);
+        $this->assertSame('copyrite', $row['da_username']);
+        $this->assertSame('copyritefurniturekenya.com', $row['da_domain']);
+        $this->assertSame('Gold', $row['da_package']);
+    }
 }
