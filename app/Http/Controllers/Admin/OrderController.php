@@ -45,7 +45,15 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $order->load('user', 'items.product');
+        $order->load([
+            'user',
+            'items.product',
+            'invoice',
+            'domainRenewalOrder.domain',
+            'domainRenewalOrder.invoice',
+            'domainRenewalOrder.adminInvoice',
+        ]);
+
         return view('admin.orders.show', compact('order'));
     }
 

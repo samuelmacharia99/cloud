@@ -125,8 +125,10 @@ class DomainRenewalService
         $adminInvoice = null;
 
         DB::transaction(function () use ($renewalOrder, &$adminOrder, &$adminInvoice) {
+            $renewalOrder->loadMissing('invoice');
             $domain = $renewalOrder->domain;
             $customer = $renewalOrder->user;
+            $customerInvoicePaid = $renewalOrder->invoice?->isPaid() ?? false;
 
             $tax = TaxService::calculateForUser((float) $renewalOrder->amount, $customer);
 
@@ -134,6 +136,9 @@ class DomainRenewalService
                 'user_id' => $customer->id,
                 'order_number' => 'ORD-'.strtoupper(uniqid()),
                 'status' => 'pending',
+                'payment_status' => $customerInvoicePaid ? 'paid' : 'unpaid',
+                'subtotal' => $tax['subtotal'],
+                'tax' => $tax['tax'],
                 'total' => $tax['total'],
                 'notes' => "Domain renewal for {$domain->name}{$domain->extension}",
             ]);
@@ -158,11 +163,14 @@ class DomainRenewalService
                 'amount' => $renewalOrder->amount,
             ]);
 
+            $adminOrder->update(['invoice_id' => $adminInvoice->id]);
+
             $renewalOrder->update([
                 'admin_order_id' => $adminOrder->id,
                 'admin_invoice_id' => $adminInvoice->id,
                 'status' => 'pushed',
                 'pushed_at' => now(),
+                'paid_at' => $customerInvoicePaid ? ($renewalOrder->invoice?->paid_date ?? now()) : null,
             ]);
         });
 

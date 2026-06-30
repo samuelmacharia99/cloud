@@ -245,5 +245,9 @@ class DomainRenewalCartTest extends TestCase
         $this->assertSame('pushed', $renewalOrder->status);
         $this->assertNotNull($renewalOrder->admin_order_id);
         $this->assertNotNull($renewalOrder->admin_invoice_id);
+
+        $adminOrder = $renewalOrder->adminOrder;
+        $this->assertSame('paid', $adminOrder->payment_status);
+        $this->assertSame($renewalOrder->admin_invoice_id, $adminOrder->invoice_id);
     }
 }

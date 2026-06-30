@@ -44,6 +44,18 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    public function domainRenewalOrder(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(DomainRenewalOrder::class, 'admin_order_id');
+    }
+
+    public function isDomainRenewalFulfillment(): bool
+    {
+        return $this->relationLoaded('domainRenewalOrder')
+            ? $this->domainRenewalOrder !== null
+            : $this->domainRenewalOrder()->exists();
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';

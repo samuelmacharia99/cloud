@@ -16,7 +16,13 @@
     <div class="flex items-start justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $order->order_number }}</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage and track this customer order</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">
+                @if($order->isDomainRenewalFulfillment())
+                    Domain renewal fulfillment order
+                @else
+                    Manage and track this customer order
+                @endif
+            </p>
         </div>
         <div class="flex items-center gap-2" x-data="{ actionsOpen: false }">
             <div class="relative">
@@ -249,6 +255,36 @@
                     <p class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{{ $order->notes }}</p>
                 </div>
             @endif
+
+            @if($order->isDomainRenewalFulfillment() && $order->domainRenewalOrder)
+                @php $renewal = $order->domainRenewalOrder; @endphp
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Domain Renewal</h2>
+                    <div class="space-y-3 text-sm">
+                        <div class="flex justify-between gap-4">
+                            <span class="text-slate-600 dark:text-slate-400">Domain</span>
+                            <span class="font-medium text-slate-900 dark:text-white">{{ $renewal->domain->name }}{{ $renewal->domain->extension }}</span>
+                        </div>
+                        <div class="flex justify-between gap-4">
+                            <span class="text-slate-600 dark:text-slate-400">Renewal status</span>
+                            <span class="font-medium text-slate-900 dark:text-white">{{ ucfirst($renewal->status) }}</span>
+                        </div>
+                        @if($renewal->invoice)
+                            <div class="flex justify-between gap-4">
+                                <span class="text-slate-600 dark:text-slate-400">Customer invoice (paid by reseller)</span>
+                                <a href="{{ route('admin.invoices.show', $renewal->invoice) }}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                                    {{ $renewal->invoice->invoice_number }}
+                                    <span class="text-slate-500 dark:text-slate-400">({{ ucfirst($renewal->invoice->status->value ?? $renewal->invoice->status) }})</span>
+                                </a>
+                            </div>
+                        @endif
+                    </div>
+                    <a href="{{ route('admin.domain-renewals.show', $renewal) }}" class="mt-4 inline-flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                        Open domain renewal workflow
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </a>
+                </div>
+            @endif
         </div>
 
         <!-- Sidebar -->
@@ -282,10 +318,27 @@
                         </svg>
                     </div>
                 </div>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Invoice will be generated once payment is confirmed.</p>
-                <button class="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm" disabled>
-                    Download Invoice
-                </button>
+                @if($order->invoice)
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-2">
+                        @if($order->isDomainRenewalFulfillment())
+                            Internal fulfillment invoice (customer payment is on the linked customer invoice).
+                        @else
+                            Linked invoice for this order.
+                        @endif
+                    </p>
+                    <a href="{{ route('admin.invoices.show', $order->invoice) }}" class="block text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline mb-4">
+                        {{ $order->invoice->invoice_number }}
+                        · {{ ucfirst($order->invoice->status->value ?? $order->invoice->status) }}
+                    </a>
+                    <a href="{{ route('admin.invoices.show', $order->invoice) }}" class="block w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm text-center">
+                        View Invoice
+                    </a>
+                @else
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Invoice will be generated once payment is confirmed.</p>
+                    <button class="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm" disabled>
+                        Download Invoice
+                    </button>
+                @endif
             </div>
 
             <!-- Services Card -->
@@ -298,10 +351,19 @@
                         </svg>
                     </div>
                 </div>
-                <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Service provisioning will begin after payment.</p>
-                <button class="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm" disabled>
-                    Manage Services
-                </button>
+                @if($order->isDomainRenewalFulfillment())
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Renew the domain at the registrar from the domain renewal workflow.</p>
+                    @if($order->domainRenewalOrder)
+                        <a href="{{ route('admin.domain-renewals.show', $order->domainRenewalOrder) }}" class="block w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm text-center">
+                            Manage Renewal
+                        </a>
+                    @endif
+                @else
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Service provisioning will begin after payment.</p>
+                    <button class="w-full px-4 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium rounded-lg transition text-sm" disabled>
+                        Manage Services
+                    </button>
+                @endif
             </div>
 
             <!-- Timeline Card -->
