@@ -11,6 +11,7 @@ use App\Mail\ContainerBackupCompletedMail;
 use App\Mail\ContainerBackupFailedMail;
 use App\Mail\ContainerFailedMail;
 use App\Mail\DomainExpiryMail;
+use App\Mail\DomainRenewalCompletedMail;
 use App\Mail\DomainTransferInitiatedMail;
 use App\Mail\GenericNotificationMail;
 use App\Mail\HostingPackageUsageWarningMail;
@@ -278,6 +279,63 @@ class NotificationService
         ]);
 
         $this->sendAdminSmsAlert($event, $message);
+    }
+
+    public function notifyDomainRenewalCompleted(
+        DomainRenewalOrder $renewalOrder,
+        Domain $domain,
+        int $years,
+    ): void {
+        $event = NotificationEvent::DomainRenewalCompleted;
+        if (! $this->preferences->isGloballyEnabled($event)) {
+            return;
+        }
+
+        $recipient = app(DomainRenewalService::class)->renewalNotificationRecipient($renewalOrder);
+        if (! $recipient || ! $recipient->email) {
+            return;
+        }
+
+        $renewalOrder->loadMissing('domain.user', 'user');
+        $endCustomer = null;
+        $domainOwner = $domain->user;
+
+        if ($recipient->is_reseller && $domainOwner && $domainOwner->id !== $recipient->id) {
+            $endCustomer = $domainOwner->name;
+        }
+
+        $subject = 'Domain renewed — '.$domain->fqdn();
+        $this->sendPlatformEmail(
+            $recipient->email,
+            new DomainRenewalCompletedMail(
+                $renewalOrder,
+                $domain,
+                $recipient,
+                $years,
+                $domain->expires_at ?? now(),
+                $endCustomer,
+            ),
+            $subject,
+            $event,
+            $recipient,
+        );
+
+        if ($recipient->phone && $this->smsService->isConfigured()) {
+            try {
+                $company = $this->brandingResolver->forReseller($recipient)['company_name'];
+                $expiry = ($domain->expires_at ?? now())->format('M d, Y');
+                $this->smsService->send(
+                    $recipient->phone,
+                    "{$company}: {$domain->fqdn()} renewed for {$years} year(s). New expiry: {$expiry}.",
+                );
+            } catch (\Exception $e) {
+                Log::error('Failed to send domain renewal completed SMS', [
+                    'renewal_order_id' => $renewalOrder->id,
+                    'recipient_id' => $recipient->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     public function notifyInvoiceGenerated(Invoice $invoice): void

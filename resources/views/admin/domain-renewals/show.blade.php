@@ -103,7 +103,7 @@
 
             <!-- Customer Info -->
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Customer Information</h2>
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Billing Account</h2>
 
                 <div class="space-y-3 text-sm">
                     <div class="flex justify-between">
@@ -122,32 +122,83 @@
             </div>
 
             <!-- Action Forms -->
-            @if($renewal->status === 'pushed')
-                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                    <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Actions</h2>
+            @if(in_array($renewal->status, ['pushed', 'failed'], true))
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-1">Mark as renewed (manual)</h2>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">
+                            Use this after renewing at the registrar outside the API. Expiry updates everywhere this domain is shown.
+                        </p>
+                    </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <!-- Complete Form -->
+                    <form action="{{ route('admin.domain-renewals.complete-manually', $renewal) }}" method="POST" class="space-y-4">
+                        @csrf
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Renewal duration</label>
+                                <select name="years" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                    @foreach($availableYears as $year)
+                                        <option value="{{ $year }}" @selected(old('years', $renewal->years) == $year)>
+                                            {{ $year }} year{{ $year > 1 ? 's' : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Projected new expiry</label>
+                                <p class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-sm font-medium text-slate-900 dark:text-white">
+                                    {{ $renewalService->projectedExpiryAfterRenewal($renewal->domain, (int) old('years', $renewal->years))->format('M d, Y') }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Admin notes (optional)</label>
+                            <textarea name="admin_notes" rows="3" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" placeholder="Registrar reference, manual renewal details...">{{ old('admin_notes') }}</textarea>
+                        </div>
+
+                        <label class="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-300">
+                            <input type="hidden" name="send_notification" value="0">
+                            <input type="checkbox" name="send_notification" value="1" @checked(old('send_notification', '1') == '1') class="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                            <span>
+                                Email notification to
+                                @if($notificationRecipient)
+                                    <strong>{{ $notificationRecipient->name }}</strong> ({{ $notificationRecipient->email }})
+                                @else
+                                    the account owner
+                                @endif
+                                @if($renewal->domain->user && $renewal->domain->user->id !== ($notificationRecipient?->id))
+                                    <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1">End customers are not emailed — only the reseller or direct account owner.</span>
+                                @endif
+                            </span>
+                        </label>
+
+                        <button type="submit" class="w-full px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition">
+                            Mark as renewed
+                        </button>
+                    </form>
+
+                    <div class="border-t border-slate-200 dark:border-slate-700 pt-6">
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-3">Or retry via registrar API</h3>
                         <form action="{{ route('admin.domain-renewals.complete', $renewal) }}" method="POST" class="space-y-3">
                             @csrf
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Admin Notes (Optional)</label>
-                                <textarea name="admin_notes" rows="3" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"></textarea>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Admin notes (optional)</label>
+                                <textarea name="admin_notes" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"></textarea>
                             </div>
-                            <button type="submit" class="w-full px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition">
-                                Mark as Completed
+                            <button type="submit" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                                Renew via API
                             </button>
                         </form>
 
-                        <!-- Fail Form -->
-                        <form action="{{ route('admin.domain-renewals.fail', $renewal) }}" method="POST" class="space-y-3">
+                        <form action="{{ route('admin.domain-renewals.fail', $renewal) }}" method="POST" class="space-y-3 mt-4">
                             @csrf
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Failure Reason</label>
-                                <textarea name="failure_reason" rows="3" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required></textarea>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Failure reason</label>
+                                <textarea name="failure_reason" rows="2" class="w-full px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" required></textarea>
                             </div>
                             <button type="submit" class="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition">
-                                Mark as Failed
+                                Mark as failed
                             </button>
                         </form>
                     </div>
@@ -193,6 +244,18 @@
                         <p class="text-slate-600 dark:text-slate-400 mb-1">Current Expiry</p>
                         <p class="font-medium text-slate-900 dark:text-white">{{ $renewal->domain->expires_at?->format('M d, Y') ?? 'N/A' }}</p>
                     </div>
+                    @if($renewal->status === 'completed')
+                        <div>
+                            <p class="text-slate-600 dark:text-slate-400 mb-1">Renewed for</p>
+                            <p class="font-medium text-slate-900 dark:text-white">{{ $renewal->years }} year{{ $renewal->years > 1 ? 's' : '' }}</p>
+                        </div>
+                    @endif
+                    @if($renewal->domain->user && $renewal->domain->user->id !== $renewal->user_id)
+                        <div>
+                            <p class="text-slate-600 dark:text-slate-400 mb-1">Domain owner</p>
+                            <p class="font-medium text-slate-900 dark:text-white">{{ $renewal->domain->user->name }}</p>
+                        </div>
+                    @endif
                     <div>
                         <p class="text-slate-600 dark:text-slate-400 mb-1">Status</p>
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium {{ $renewal->domain->status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' }}">

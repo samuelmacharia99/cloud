@@ -126,6 +126,7 @@ class SettingSeeder extends Seeder
             ['key' => 'notify_container_restart', 'value' => 'true', 'description' => 'Notify on container auto-restart'],
             ['key' => 'notify_reseller_domain_queued', 'value' => 'true', 'description' => 'Notify reseller when domain order is queued'],
             ['key' => 'notify_reseller_domain_pushed', 'value' => 'true', 'description' => 'Notify reseller when domain is pushed to admin'],
+            ['key' => 'notify_domain_renewal_completed', 'value' => 'true', 'description' => 'Notify reseller when admin manually completes a domain renewal'],
             ['key' => 'notify_reseller_new_customer_order', 'value' => 'true', 'description' => 'Notify reseller on new customer domain order'],
             ['key' => 'notify_reseller_wallet_low', 'value' => 'true', 'description' => 'Notify reseller on low wallet balance'],
             ['key' => 'notify_reseller_wallet_topup', 'value' => 'true', 'description' => 'Notify reseller on wallet top-up'],

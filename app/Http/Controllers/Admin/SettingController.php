@@ -86,6 +86,7 @@ class SettingController extends Controller
             'notify_reseller_domain_queued', 'notify_reseller_domain_pushed', 'notify_reseller_new_customer_order',
             'notify_reseller_wallet_low', 'notify_reseller_wallet_topup', 'notify_reseller_wallet_adjustment',
             'notify_reseller_suspended', 'notify_reseller_disk_pool_warning', 'notify_reseller_domain_order_expired',
+            'notify_domain_renewal_completed',
             'notify_reseller_ssl_provision_failed',
             'notify_admin_new_order', 'notify_admin_reseller_domain_push', 'notify_admin_manual_payment',
             'notify_admin_node_offline',

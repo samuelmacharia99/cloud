@@ -9,6 +9,7 @@ use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\User;
 use App\Services\Registrar\RegistrarFulfillmentService;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class DomainRenewalService
@@ -190,36 +191,143 @@ class DomainRenewalService
         }
     }
 
-    public function completeRenewal(DomainRenewalOrder $renewalOrder, string $adminNotes = ''): void
-    {
-        DB::transaction(function () use ($renewalOrder, $adminNotes) {
+    public function completeRenewalManually(
+        DomainRenewalOrder $renewalOrder,
+        int $years,
+        string $adminNotes = '',
+        bool $sendNotification = true,
+    ): Domain {
+        if (! in_array($renewalOrder->status, ['pushed', 'failed'], true)) {
+            throw new \InvalidArgumentException('Only pushed or failed renewals can be completed manually.');
+        }
+
+        $domain = $this->completeRenewal($renewalOrder, $adminNotes, $years);
+
+        if ($sendNotification) {
+            app(NotificationService::class)->notifyDomainRenewalCompleted(
+                $renewalOrder->fresh(['domain', 'user']),
+                $domain->fresh(),
+                $years,
+            );
+        }
+
+        return $domain->fresh();
+    }
+
+    public function completeRenewal(
+        DomainRenewalOrder $renewalOrder,
+        string $adminNotes = '',
+        ?int $years = null,
+    ): Domain {
+        $years = max(1, $years ?? (int) $renewalOrder->years);
+
+        return DB::transaction(function () use ($renewalOrder, $adminNotes, $years) {
+            $renewalOrder->loadMissing('domain', 'adminOrder', 'adminInvoice');
             $domain = $renewalOrder->domain;
 
-            $domain->update([
-                'expires_at' => $domain->expires_at?->addYears($renewalOrder->years) ?? now()->addYears($renewalOrder->years),
-            ]);
+            if (! $domain) {
+                throw new \RuntimeException('Domain not found for this renewal order.');
+            }
 
-            if ($adminNotes) {
+            $domain = $this->applyRenewalExpiry($domain, $years);
+
+            if ($adminNotes !== '') {
                 $notes = $domain->notes ?? [];
                 if (! is_array($notes)) {
                     $notes = [];
                 }
                 $notes[] = [
                     'date' => now()->toDateTimeString(),
-                    'message' => "Domain renewed for {$renewalOrder->years} year(s). {$adminNotes}",
+                    'message' => "Domain renewed for {$years} year(s). {$adminNotes}",
                 ];
                 $domain->update(['notes' => $notes]);
             }
 
             $renewalOrder->update([
+                'years' => $years,
                 'status' => 'completed',
                 'completed_at' => now(),
+                'failed_at' => null,
+                'failure_reason' => null,
             ]);
 
             if ($renewalOrder->adminInvoice) {
                 $renewalOrder->adminInvoice->update(['status' => 'paid']);
             }
+
+            if ($renewalOrder->adminOrder && ! $renewalOrder->adminOrder->isPaid()) {
+                $renewalOrder->adminOrder->update([
+                    'status' => 'paid',
+                    'payment_status' => 'paid',
+                ]);
+            }
+
+            return $domain->fresh();
         });
+    }
+
+    public function applyRenewalExpiry(Domain $domain, int $years): Domain
+    {
+        $base = ($domain->expires_at && $domain->expires_at->isFuture())
+            ? $domain->expires_at->copy()
+            : now();
+
+        $newExpiry = $base->addYears($years);
+        $schedule = app(InvoiceGenerationScheduleService::class);
+        $domain->expires_at = $newExpiry;
+
+        $updates = [
+            'expires_at' => $newExpiry,
+            'next_invoice_date' => $schedule->domainNextInvoiceDate($domain),
+        ];
+
+        if ($domain->status === 'expired') {
+            $updates['status'] = 'active';
+        }
+
+        $domain->update($updates);
+
+        return $domain->fresh();
+    }
+
+    /**
+     * Reseller-managed renewals notify the reseller only — never the reseller's end customer.
+     */
+    public function renewalNotificationRecipient(DomainRenewalOrder $renewalOrder): ?User
+    {
+        $renewalOrder->loadMissing('domain.user', 'user');
+        $domain = $renewalOrder->domain;
+        $user = $renewalOrder->user;
+
+        if ($domain?->reseller_id) {
+            $reseller = User::query()->find($domain->reseller_id);
+            if ($reseller?->is_reseller) {
+                return $reseller;
+            }
+        }
+
+        if ($user?->is_reseller) {
+            return $user;
+        }
+
+        if ($user?->reseller_id) {
+            return User::query()->find($user->reseller_id);
+        }
+
+        if ($user && $user->isCustomer()) {
+            return $user;
+        }
+
+        return null;
+    }
+
+    public function projectedExpiryAfterRenewal(Domain $domain, int $years): Carbon
+    {
+        $base = ($domain->expires_at && $domain->expires_at->isFuture())
+            ? $domain->expires_at->copy()
+            : now();
+
+        return $base->addYears($years);
     }
 
     public function failRenewal(DomainRenewalOrder $renewalOrder, string $reason): void

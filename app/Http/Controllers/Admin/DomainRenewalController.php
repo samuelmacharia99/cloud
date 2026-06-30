@@ -50,11 +50,20 @@ class DomainRenewalController extends Controller
     {
         $renewal->load('domain', 'user', 'invoice', 'adminOrder', 'adminInvoice');
 
-        return view('admin.domain-renewals.show', compact('renewal'));
+        $renewalService = app(DomainRenewalService::class);
+        $notificationRecipient = $renewalService->renewalNotificationRecipient($renewal);
+        $availableYears = range(1, 10);
+
+        return view('admin.domain-renewals.show', compact(
+            'renewal',
+            'notificationRecipient',
+            'availableYears',
+            'renewalService',
+        ));
     }
 
     /**
-     * Complete a domain renewal
+     * Complete a domain renewal via registrar API (when available).
      */
     public function complete(Request $request, DomainRenewalOrder $renewal)
     {
@@ -72,6 +81,34 @@ class DomainRenewalController extends Controller
             }
 
             return back()->with('success', 'Domain renewal completed successfully');
+        } catch (\Exception $e) {
+            return back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * Mark a domain renewal complete after manual registrar work.
+     */
+    public function completeManually(Request $request, DomainRenewalOrder $renewal)
+    {
+        $validated = $request->validate([
+            'years' => 'required|integer|min:1|max:10',
+            'admin_notes' => 'nullable|string|max:500',
+            'send_notification' => 'sometimes|boolean',
+        ]);
+
+        try {
+            $renewalService = app(DomainRenewalService::class);
+            $domain = $renewalService->completeRenewalManually(
+                $renewal,
+                (int) $validated['years'],
+                $validated['admin_notes'] ?? '',
+                $request->boolean('send_notification', true),
+            );
+
+            return back()->with('success', 'Domain renewed until '.$domain->expires_at->format('M d, Y').'. Notification sent to account owner.');
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {
             return back()->with('error', $e->getMessage());
         }

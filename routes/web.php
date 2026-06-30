@@ -378,6 +378,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('admin/domain-renewals', [DomainRenewalController::class, 'index'])->name('admin.domain-renewals.index');
         Route::get('admin/domain-renewals/{renewal}', [DomainRenewalController::class, 'show'])->name('admin.domain-renewals.show');
         Route::post('admin/domain-renewals/{renewal}/complete', [DomainRenewalController::class, 'complete'])->name('admin.domain-renewals.complete');
+        Route::post('admin/domain-renewals/{renewal}/complete-manually', [DomainRenewalController::class, 'completeManually'])->name('admin.domain-renewals.complete-manually');
         Route::post('admin/domain-renewals/{renewal}/fail', [DomainRenewalController::class, 'fail'])->name('admin.domain-renewals.fail');
         Route::post('admin/domain-renewals/{renewal}/expire', [DomainRenewalController::class, 'expire'])->name('admin.domain-renewals.expire');
     });

@@ -42,6 +42,7 @@ enum NotificationEvent: string
     case ResellerSuspended = 'reseller_suspended';
     case ResellerDiskPoolWarning = 'reseller_disk_pool_warning';
     case ResellerDomainOrderExpired = 'reseller_domain_order_expired';
+    case DomainRenewalCompleted = 'domain_renewal_completed';
     case DomainTransferCompleted = 'domain_transfer_completed';
     case DomainTransferFailed = 'domain_transfer_failed';
     case ResellerSslProvisionFailed = 'reseller_ssl_provision_failed';
@@ -90,6 +91,7 @@ enum NotificationEvent: string
             self::ResellerSuspended => 'notify_reseller_suspended',
             self::ResellerDiskPoolWarning => 'notify_reseller_disk_pool_warning',
             self::ResellerDomainOrderExpired => 'notify_reseller_domain_order_expired',
+            self::DomainRenewalCompleted => 'notify_domain_renewal_completed',
             self::DomainTransferCompleted => 'notify_domain_transfer',
             self::DomainTransferFailed => 'notify_domain_transfer',
             self::ResellerSslProvisionFailed => 'notify_reseller_ssl_provision_failed',
@@ -122,6 +124,7 @@ enum NotificationEvent: string
             self::ResellerDiskPoolWarning,
             self::ResellerDomainOrderExpired,
             self::ResellerSslProvisionFailed,
+            self::DomainRenewalCompleted,
             self::ResellerCustomerAssigned => 'reseller',
             default => 'customer',
         };
