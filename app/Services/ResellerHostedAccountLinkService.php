@@ -179,7 +179,7 @@ class ResellerHostedAccountLinkService
             } catch (\Throwable $e) {
                 $failed[] = [
                     'username' => $username,
-                    'error' => $e->getMessage(),
+                    'error' => $this->formatLinkError($e),
                 ];
             }
         }
@@ -341,5 +341,14 @@ class ResellerHostedAccountLinkService
     private function forgetDirectoryCache(User $reseller): void
     {
         Cache::forget('reseller_hosted_directory:'.$reseller->id);
+    }
+
+    private function formatLinkError(\Throwable $e): string
+    {
+        if ($e instanceof ValidationException) {
+            return collect($e->errors())->flatten()->implode(' ');
+        }
+
+        return $e->getMessage();
     }
 }

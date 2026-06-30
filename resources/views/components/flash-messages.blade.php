@@ -1,4 +1,4 @@
-@if (session('success') || session('error') || session('warning') || session('info'))
+@if (session('success') || session('error') || session('warning') || session('info') || session('link_failures'))
 <div class="px-4 sm:px-6 pt-4 space-y-3">
     @if (session('success'))
     <div x-data="{ show: true }" x-show="show" x-init="setTimeout(() => show = false, 5000)"
@@ -63,6 +63,33 @@
         </span>
         <p class="text-sm font-medium flex-1 pt-1">{{ session('info') }}</p>
         <button type="button" @click="show = false" class="btn-ghost btn-sm !p-1.5" aria-label="Dismiss">✕</button>
+    </div>
+    @endif
+
+    @if (session('link_failures'))
+    <div x-data="{ show: true }" x-show="show"
+        class="flex items-start gap-3 px-4 py-3.5 rounded-xl border bg-red-50/90 dark:bg-red-950/50 border-red-200/80 dark:border-red-800/80 text-red-800 dark:text-red-200 shadow-sm">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 dark:bg-red-900/60">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+        </span>
+        <div class="flex-1 pt-1 min-w-0">
+            <p class="text-sm font-semibold">Could not link the following DirectAdmin account(s):</p>
+            <ul class="mt-2 space-y-1.5 text-sm">
+                @foreach (session('link_failures') as $failure)
+                    <li class="break-words">
+                        <span class="font-mono font-medium">{{ $failure['username'] }}</span>:
+                        <span>{{ $failure['error'] }}</span>
+                    </li>
+                @endforeach
+            </ul>
+        </div>
+        <button type="button" @click="show = false" class="btn-ghost btn-sm !p-1.5 text-red-600 dark:text-red-400" aria-label="Dismiss">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
     </div>
     @endif
 </div>

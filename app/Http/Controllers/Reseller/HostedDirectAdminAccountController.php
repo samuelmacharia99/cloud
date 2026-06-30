@@ -8,7 +8,9 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\ResellerHostedAccountLinkService;
 use App\Services\ResellerScopeService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class HostedDirectAdminAccountController extends Controller
 {
@@ -46,7 +48,7 @@ class HostedDirectAdminAccountController extends Controller
                 ->route('reseller.customers.show', $result['customer'])
                 ->with('success', "DirectAdmin account {$validated['da_username']} linked to the platform.");
         } catch (\Throwable $e) {
-            return back()->withInput()->with('error', $e->getMessage());
+            return $this->linkFailureRedirect($request, $e);
         }
     }
 
@@ -70,14 +72,52 @@ class HostedDirectAdminAccountController extends Controller
 
         $result = $this->linkService->bulkLink($reseller, $validated['da_usernames'], $defaults);
 
-        $message = "{$result['linked']} account(s) linked.";
-        if ($result['failed'] !== []) {
-            $message .= ' '.count($result['failed']).' failed.';
+        $redirect = redirect()->route('reseller.customers.index', $this->customersIndexQuery($request));
+
+        if ($result['failed'] === []) {
+            return $redirect->with('success', "{$result['linked']} account(s) linked.");
         }
 
+        if ($result['linked'] > 0) {
+            return $redirect
+                ->with('warning', "{$result['linked']} account(s) linked. ".count($result['failed']).' failed.')
+                ->with('link_failures', $result['failed']);
+        }
+
+        return $redirect
+            ->with('error', 'No accounts were linked.')
+            ->with('link_failures', $result['failed']);
+    }
+
+    private function linkFailureRedirect(Request $request, \Throwable $e): RedirectResponse
+    {
         return redirect()
-            ->route('reseller.customers.index', ['link' => 'unlinked'])
-            ->with($result['failed'] === [] ? 'success' : 'info', $message);
+            ->route('reseller.customers.index', $this->customersIndexQuery($request))
+            ->withInput()
+            ->with('error', $this->linkErrorMessage($e))
+            ->with('open_da_link', $request->input('da_username'));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function customersIndexQuery(Request $request): array
+    {
+        return array_filter([
+            'link' => $request->input('link', 'unlinked'),
+            'search' => $request->input('search'),
+            'status' => $request->input('status'),
+            'billing' => $request->input('billing'),
+        ], fn ($value) => filled($value) && $value !== 'all');
+    }
+
+    private function linkErrorMessage(\Throwable $e): string
+    {
+        if ($e instanceof ValidationException) {
+            return collect($e->errors())->flatten()->implode(' ');
+        }
+
+        return $e->getMessage();
     }
 
     public function connectBilling(Request $request, Service $service)

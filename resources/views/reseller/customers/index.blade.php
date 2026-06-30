@@ -124,6 +124,13 @@
                 'customers' => ($managedCustomers ?? collect())->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values(),
                 'linkUrl' => route('reseller.directadmin-accounts.link'),
                 'isAdmin' => false,
+                'reopenLink' => session('open_da_link') ? [
+                    'da_username' => session('open_da_link'),
+                    'display_name' => old('name'),
+                    'display_email' => old('email'),
+                    'customer_id' => old('customer_id'),
+                    'matched_listing_id' => old('reseller_product_id'),
+                ] : null,
             ]))"
             @open-da-link-modal.window="openLink($event.detail)"
         @endif
@@ -228,6 +235,16 @@
     @if ($usesDirectAdminDirectory ?? false)
         <form method="POST" action="{{ route('reseller.directadmin-accounts.bulk-link') }}" id="bulk-da-link-form" class="flex flex-wrap items-center gap-3 mb-4">
             @csrf
+            <input type="hidden" name="link" value="{{ request('link', 'unlinked') }}">
+            @if (request('search'))
+                <input type="hidden" name="search" value="{{ request('search') }}">
+            @endif
+            @if (request('status') && request('status') !== 'all')
+                <input type="hidden" name="status" value="{{ request('status') }}">
+            @endif
+            @if (request('billing') && request('billing') !== 'all')
+                <input type="hidden" name="billing" value="{{ request('billing') }}">
+            @endif
             <input type="hidden" name="billing_cycle" value="annual">
             <input type="hidden" name="country" value="KE">
             <button type="submit" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Bulk link selected</button>
@@ -240,6 +257,16 @@
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1" x-text="linkForm.da_username ? 'User: ' + linkForm.da_username : ''"></p>
                 <form method="POST" :action="linkUrl" class="mt-4 space-y-4">
                     @csrf
+                    <input type="hidden" name="link" value="{{ request('link', 'unlinked') }}">
+                    @if (request('search'))
+                        <input type="hidden" name="search" value="{{ request('search') }}">
+                    @endif
+                    @if (request('status') && request('status') !== 'all')
+                        <input type="hidden" name="status" value="{{ request('status') }}">
+                    @endif
+                    @if (request('billing') && request('billing') !== 'all')
+                        <input type="hidden" name="billing" value="{{ request('billing') }}">
+                    @endif
                     <input type="hidden" name="da_username" x-model="linkForm.da_username">
                     <div>
                         <label class="block text-sm font-medium mb-1">Create new customer or link existing</label>
@@ -306,6 +333,21 @@
                         customer_id: '',
                         reseller_id: '',
                         reseller_product_id: '',
+                    },
+                    init() {
+                        if (! config.reopenLink) {
+                            return;
+                        }
+
+                        this.openLink(config.reopenLink);
+
+                        if (config.reopenLink.customer_id) {
+                            this.linkForm.customer_id = String(config.reopenLink.customer_id);
+                        }
+
+                        if (config.reopenLink.matched_listing_id) {
+                            this.linkForm.reseller_product_id = String(config.reopenLink.matched_listing_id);
+                        }
                     },
                     get activeListings() {
                         if (config.isAdmin) {
