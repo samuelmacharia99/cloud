@@ -106,6 +106,41 @@ class ResellerDashboardTest extends TestCase
         ]);
     }
 
+    public function test_reseller_dashboard_activity_endpoint_returns_paginated_feed(): void
+    {
+        $reseller = $this->createResellerWithPackage();
+        $customer = $this->createManagedCustomer($reseller);
+
+        foreach (range(1, 12) as $index) {
+            Invoice::factory()->create([
+                'user_id' => $customer->id,
+                'status' => 'paid',
+                'total' => 1000 + $index,
+                'created_at' => now()->subMinutes($index),
+            ]);
+        }
+
+        $firstPage = $this->actingAs($reseller)->getJson(route('reseller.dashboard.activity', ['offset' => 0]));
+        $firstPage->assertOk();
+        $firstPage->assertJsonCount(10, 'items');
+        $firstPage->assertJsonPath('has_more', true);
+        $firstPage->assertJsonPath('next_offset', 10);
+
+        $secondPage = $this->actingAs($reseller)->getJson(route('reseller.dashboard.activity', ['offset' => 10]));
+        $secondPage->assertOk();
+        $secondPage->assertJsonPath('has_more', false);
+        $this->assertGreaterThanOrEqual(2, count($secondPage->json('items')));
+    }
+
+    public function test_customer_cannot_access_reseller_dashboard_activity_endpoint(): void
+    {
+        $customer = User::factory()->customer()->create();
+
+        $this->actingAs($customer)
+            ->getJson(route('reseller.dashboard.activity'))
+            ->assertForbidden();
+    }
+
     public function test_customer_cannot_access_reseller_directadmin_live_endpoint(): void
     {
         $customer = User::factory()->customer()->create();

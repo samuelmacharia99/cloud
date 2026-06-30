@@ -12,9 +12,11 @@
         $customerSubtitle .= ' · '.($unlinkedDaCount).' unlinked';
     }
     $maxUsers = $resellerPackage->max_users ?? 0;
+    $hasServerPulse = ($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false);
+    $defaultDashboardTab = $hasServerPulse ? 'server' : 'activity';
 @endphp
 
-<div class="space-y-6" x-data="{ dashboardTab: 'activity' }">
+<div class="space-y-6" x-data="{ dashboardTab: @js($defaultDashboardTab) }">
     <x-reseller-page-header
         title="Dashboard"
         description="{{ $billingHealth['message'] ?? 'Manage customers, retail billing, and your whitelabel business.' }}"
@@ -65,40 +67,59 @@
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
-            <button type="button" @click="dashboardTab = 'activity'" :class="dashboardTab === 'activity' ? 'border-b-2 border-purple-600 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400'" class="px-5 py-3 text-sm font-medium whitespace-nowrap">Recent activity</button>
-            @if (($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false))
+            @if ($hasServerPulse)
                 <button type="button" @click="dashboardTab = 'server'" :class="dashboardTab === 'server' ? 'border-b-2 border-purple-600 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400'" class="px-5 py-3 text-sm font-medium whitespace-nowrap">Server pulse</button>
             @endif
+            <button type="button" @click="dashboardTab = 'activity'" :class="dashboardTab === 'activity' ? 'border-b-2 border-purple-600 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400'" class="px-5 py-3 text-sm font-medium whitespace-nowrap">Recent activity</button>
             <button type="button" @click="dashboardTab = 'revenue'" :class="dashboardTab === 'revenue' ? 'border-b-2 border-purple-600 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400'" class="px-5 py-3 text-sm font-medium whitespace-nowrap">Revenue</button>
         </div>
 
         <div class="p-5 sm:p-6">
-            <div x-show="dashboardTab === 'activity'" x-cloak>
-                @forelse ($activityFeed ?? [] as $item)
-                    <a href="{{ $item['url'] }}" class="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 px-2 -mx-2 rounded-lg transition">
-                        <div class="min-w-0">
-                            <p class="text-sm font-medium text-slate-900 dark:text-white truncate">{{ $item['title'] }}</p>
-                            @if (! empty($item['subtitle']))
-                                <p class="text-xs text-slate-500 truncate">{{ $item['subtitle'] }}</p>
-                            @endif
-                        </div>
-                        <span class="text-[10px] uppercase tracking-wide text-slate-400 shrink-0">{{ str_replace('_', ' ', $item['type']) }}</span>
-                    </a>
-                @empty
+            @if ($hasServerPulse)
+                <div x-show="dashboardTab === 'server'" x-cloak>
+                    @include('reseller.dashboard.partials.directadmin-monitor', ['directAdminMonitor' => $directAdminMonitor ?? []])
+                </div>
+            @endif
+
+            <div
+                x-show="dashboardTab === 'activity'"
+                x-cloak
+                x-data="resellerActivityFeed(@js([
+                    'initial' => $activityFeed ?? [],
+                    'hasMore' => $activityFeedHasMore ?? false,
+                    'nextOffset' => $activityFeedNextOffset ?? 10,
+                    'loadUrl' => route('reseller.dashboard.activity'),
+                ]))"
+            >
+                <template x-if="items.length === 0">
                     <p class="text-sm text-slate-500 text-center py-8">No recent activity yet. Create a customer or invoice to get started.</p>
-                @endforelse
+                </template>
+                <template x-for="(item, index) in items" :key="item.at + '-' + item.url + '-' + index">
+                    <a :href="item.url" class="flex items-center justify-between gap-4 py-3 border-b border-slate-100 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50 px-2 -mx-2 rounded-lg transition">
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-slate-900 dark:text-white truncate" x-text="item.title"></p>
+                            <p class="text-xs text-slate-500 truncate" x-show="item.subtitle" x-text="item.subtitle"></p>
+                        </div>
+                        <span class="text-[10px] uppercase tracking-wide text-slate-400 shrink-0" x-text="item.type.replace(/_/g, ' ')"></span>
+                    </a>
+                </template>
+                <div class="flex justify-center mt-4" x-show="hasMore">
+                    <button
+                        type="button"
+                        @click="loadMore()"
+                        :disabled="loading"
+                        class="px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-950/30 disabled:opacity-50"
+                    >
+                        <span x-show="!loading">Next</span>
+                        <span x-show="loading">Loading…</span>
+                    </button>
+                </div>
                 <div class="flex flex-wrap gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <a href="{{ route('reseller.customer-invoices.create') }}" class="text-xs font-medium text-purple-600">New invoice</a>
                     <a href="{{ route('reseller.domains.index') }}" class="text-xs font-medium text-purple-600">Domains</a>
                     <a href="{{ route('reseller.customers.create') }}" class="text-xs font-medium text-purple-600">Add customer</a>
                 </div>
             </div>
-
-            @if (($directAdminMonitor['connected'] ?? false) || ($hasDirectAdmin ?? false))
-                <div x-show="dashboardTab === 'server'" x-cloak>
-                    @include('reseller.dashboard.partials.directadmin-monitor', ['directAdminMonitor' => $directAdminMonitor ?? []])
-                </div>
-            @endif
 
             <div x-show="dashboardTab === 'revenue'" x-cloak>
                 <div class="grid grid-cols-3 gap-4 mb-6">
@@ -134,4 +155,45 @@
         </div>
     </div>
 </div>
+
+<script>
+    function resellerActivityFeed(config) {
+        return {
+            items: config.initial || [],
+            hasMore: config.hasMore || false,
+            nextOffset: config.nextOffset || 10,
+            loading: false,
+            loadUrl: config.loadUrl,
+            async loadMore() {
+                if (this.loading || ! this.hasMore) {
+                    return;
+                }
+
+                this.loading = true;
+
+                try {
+                    const response = await fetch(`${this.loadUrl}?offset=${this.nextOffset}`, {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    if (! response.ok) {
+                        throw new Error('Unable to load more activity.');
+                    }
+
+                    const data = await response.json();
+                    this.items = [...this.items, ...(data.items || [])];
+                    this.hasMore = Boolean(data.has_more);
+                    this.nextOffset = data.next_offset ?? this.nextOffset;
+                } catch (error) {
+                    console.error(error);
+                } finally {
+                    this.loading = false;
+                }
+            },
+        };
+    }
+</script>
 @endsection

@@ -16,6 +16,10 @@ use Illuminate\Support\Facades\Cache;
 
 class ResellerAnalyticsService
 {
+    private const ACTIVITY_FEED_PAGE_SIZE = 10;
+
+    private const ACTIVITY_FEED_MAX_ITEMS = 100;
+
     public function __construct(
         private ResellerScopeService $scope,
         private ResellerCustomerBillingService $billing,
@@ -73,6 +77,7 @@ class ResellerAnalyticsService
 
         $maxServices = $reseller->resellerPackage?->max_services ?? 0;
         $onboarding = $this->onboardingChecklist($reseller, $hasDa, $unlinkedDaCount);
+        $activityPage = $this->paginatedActivityFeed($reseller, $customerIds);
 
         return [
             'resellerPackage' => $reseller->resellerPackage,
@@ -96,7 +101,9 @@ class ResellerAnalyticsService
             'directAdminDiskIncludesAllUsers' => $reseller->resellerUserCountUsesDirectAdmin(),
             'billingHealth' => $billingHealth,
             'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth),
-            'activityFeed' => $this->activityFeed($reseller, $customerIds),
+            'activityFeed' => $activityPage['items'],
+            'activityFeedHasMore' => $activityPage['has_more'],
+            'activityFeedNextOffset' => $activityPage['next_offset'],
             'onboarding' => $onboarding,
             'registrationInviteUrl' => app(ResellerBrandingResolver::class)->signedRegistrationUrl($reseller),
             'packageExpiresAt' => $reseller->package_expires_at,
@@ -275,16 +282,37 @@ class ResellerAnalyticsService
 
     /**
      * @param  list<int>  $customerIds
+     * @return array{items: list<array{type: string, title: string, subtitle: ?string, url: string, at: string}>, has_more: bool, next_offset: int}
+     */
+    public function paginatedActivityFeed(
+        User $reseller,
+        array $customerIds,
+        int $offset = 0,
+        int $limit = self::ACTIVITY_FEED_PAGE_SIZE,
+    ): array {
+        $all = $this->buildActivityFeedItems($reseller, $customerIds);
+        $items = array_slice($all, $offset, $limit);
+        $nextOffset = $offset + count($items);
+
+        return [
+            'items' => $items,
+            'has_more' => $nextOffset < count($all),
+            'next_offset' => $nextOffset,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $customerIds
      * @return list<array{type: string, title: string, subtitle: ?string, url: string, at: string}>
      */
-    public function activityFeed(User $reseller, array $customerIds): array
+    private function buildActivityFeedItems(User $reseller, array $customerIds): array
     {
         $items = collect();
 
         $recentInvoices = $this->scope->managedInvoicesQuery($reseller)
             ->with('user')
             ->latest()
-            ->limit(5)
+            ->limit(50)
             ->get();
 
         foreach ($recentInvoices as $invoice) {
@@ -301,7 +329,7 @@ class ResellerAnalyticsService
         $recentServices = $this->scope->managedServicesQuery($reseller)
             ->with('user')
             ->latest()
-            ->limit(5)
+            ->limit(50)
             ->get();
 
         foreach ($recentServices as $service) {
@@ -318,7 +346,7 @@ class ResellerAnalyticsService
         $recentOrders = ResellerDomainOrder::query()
             ->forManagedCustomers($reseller)
             ->latest()
-            ->limit(4)
+            ->limit(30)
             ->get();
 
         foreach ($recentOrders as $order) {
@@ -336,7 +364,7 @@ class ResellerAnalyticsService
             $recentTickets = Ticket::query()
                 ->whereIn('user_id', $customerIds)
                 ->latest()
-                ->limit(3)
+                ->limit(30)
                 ->get();
 
             foreach ($recentTickets as $ticket) {
@@ -351,7 +379,21 @@ class ResellerAnalyticsService
             }
         }
 
-        return $items->sortByDesc('sort')->take(12)->values()->all();
+        return $items
+            ->sortByDesc('sort')
+            ->take(self::ACTIVITY_FEED_MAX_ITEMS)
+            ->values()
+            ->map(fn (array $item) => collect($item)->except('sort')->all())
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $customerIds
+     * @return list<array{type: string, title: string, subtitle: ?string, url: string, at: string}>
+     */
+    public function activityFeed(User $reseller, array $customerIds): array
+    {
+        return $this->paginatedActivityFeed($reseller, $customerIds)['items'];
     }
 
     private function cachedUnlinkedDirectAdminCount(User $reseller): int

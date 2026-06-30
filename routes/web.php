@@ -53,6 +53,7 @@ use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\CustomerOrderController;
 use App\Http\Controllers\Reseller\CustomerPaymentController;
+use App\Http\Controllers\Reseller\DashboardActivityController;
 use App\Http\Controllers\Reseller\DashboardDirectAdminController;
 use App\Http\Controllers\Reseller\DeveloperController;
 use App\Http\Controllers\Reseller\DomainPricingController;
@@ -386,6 +387,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/dashboard/directadmin-live', [DashboardDirectAdminController::class, 'live'])
             ->middleware('throttle:30,1')
             ->name('reseller.dashboard.directadmin-live');
+
+        Route::get('reseller/dashboard/activity', DashboardActivityController::class)
+            ->middleware('throttle:60,1')
+            ->name('reseller.dashboard.activity');
 
         Route::resource('reseller/tickets', App\Http\Controllers\Reseller\TicketController::class)
             ->only(['index', 'show', 'create', 'store'])
