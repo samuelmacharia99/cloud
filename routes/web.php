@@ -52,6 +52,7 @@ use App\Http\Controllers\Reseller\CartController;
 use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
 use App\Http\Controllers\Reseller\CustomerOrderController;
+use App\Http\Controllers\Reseller\CustomerPaymentController;
 use App\Http\Controllers\Reseller\DashboardDirectAdminController;
 use App\Http\Controllers\Reseller\DeveloperController;
 use App\Http\Controllers\Reseller\DomainPricingController;
@@ -419,6 +420,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('reseller/customer-invoices/{invoice}/cancel', [CustomerInvoiceController::class, 'cancel'])->name('reseller.customer-invoices.cancel');
         Route::post('reseller/customer-invoices/{invoice}/resend', [CustomerInvoiceController::class, 'resend'])->name('reseller.customer-invoices.resend');
         Route::get('reseller/customer-invoices/{invoice}/download', [CustomerInvoiceController::class, 'download'])->name('reseller.customer-invoices.download');
+
+        Route::get('reseller/customer-payments', [CustomerPaymentController::class, 'index'])->name('reseller.customer-payments.index');
 
         Route::get('reseller/customer-orders/hosting', [CustomerOrderController::class, 'createHosting'])->name('reseller.customer-orders.hosting.create');
         Route::post('reseller/customer-orders/hosting', [CustomerOrderController::class, 'storeHosting'])->name('reseller.customer-orders.hosting.store');

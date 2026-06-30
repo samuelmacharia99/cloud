@@ -69,28 +69,46 @@
 
     <x-service-enforcement-panel :insight="$enforcementInsight" />
 
-    @if (!empty($managementLinks['username']) || !empty($managementLinks['panel_url']))
+    @if (!empty($managementLinks['username']) || !empty($managementLinks['panel_url']) || ($managementLinks['driver'] ?? '') === 'directadmin')
         <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-            <h2 class="font-semibold mb-3">Technical details</h2>
+            <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <h2 class="font-semibold">Hosting account</h2>
+                @if ($service->user)
+                    <form method="POST" action="{{ route('reseller.customers.impersonate', $service->user) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="text-sm text-purple-600 font-medium">Open customer hosting panel →</button>
+                    </form>
+                @endif
+            </div>
             <dl class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                 @if ($managementLinks['driver'])
                     <div><dt class="text-slate-500">Driver</dt><dd>{{ $managementLinks['driver'] }}</dd></div>
                 @endif
                 @if ($managementLinks['username'])
-                    <div><dt class="text-slate-500">Username</dt><dd>{{ $managementLinks['username'] }}</dd></div>
+                    <div><dt class="text-slate-500">Username</dt><dd class="font-mono">{{ $managementLinks['username'] }}</dd></div>
                 @endif
                 @if ($managementLinks['domain'])
                     <div><dt class="text-slate-500">Primary domain</dt><dd>{{ $managementLinks['domain'] }}</dd></div>
                 @endif
+                @if (! empty($managementLinks['package']))
+                    <div><dt class="text-slate-500">Package</dt><dd>{{ $managementLinks['package'] }}</dd></div>
+                @endif
+                @if (! empty($managementLinks['node_name']))
+                    <div><dt class="text-slate-500">Server</dt><dd>{{ $managementLinks['node_name'] }}</dd></div>
+                @endif
                 @if ($managementLinks['ip_address'])
                     <div><dt class="text-slate-500">IP</dt><dd>{{ $managementLinks['ip_address'] }}</dd></div>
                 @endif
+                <div><dt class="text-slate-500">Auto-billing</dt><dd>{{ ($managementLinks['billing_ready'] ?? false) ? 'Connected' : 'Needs catalog package' }}</dd></div>
             </dl>
             @if ($managementLinks['panel_url'])
-                <a href="{{ $managementLinks['panel_url'] }}" target="_blank" rel="noopener" class="inline-block mt-4 text-sm text-purple-600">Open hosting panel →</a>
+                <a href="{{ $managementLinks['panel_url'] }}" target="_blank" rel="noopener" class="inline-block mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg">Open DirectAdmin panel</a>
             @endif
             @if ($managementLinks['container_deployment'])
                 <p class="text-xs text-slate-500 mt-2">Container deployment #{{ $managementLinks['container_deployment'] }} — customer manages via their portal.</p>
+            @endif
+            @if (! ($managementLinks['billing_ready'] ?? true) && ($managementLinks['driver'] ?? '') === 'directadmin')
+                <p class="text-xs text-amber-600 mt-3">Connect a catalog package from the <a href="{{ route('reseller.customers.index') }}" class="underline">customer directory</a> to enable auto-billing.</p>
             @endif
         </div>
     @endif

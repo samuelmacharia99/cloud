@@ -29,7 +29,7 @@
             </p>
         </div>
         <div class="flex gap-2">
-            <a href="{{ route('reseller.catalog.edit', $catalogItem) }}" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+            <a href="{{ route('reseller.catalog.edit', $catalogItem) }}" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
                 Edit
             </a>
             <form method="POST" action="{{ route('reseller.catalog.destroy', $catalogItem) }}" class="inline" data-confirm='Are you sure?'>

@@ -180,7 +180,7 @@ class ResellerCustomerBillingTest extends TestCase
         $response = $this->actingAs($reseller)->get(route('dashboard'));
 
         $response->assertOk();
-        $response->assertSee('Action queue');
+        $response->assertSee('Needs your attention');
         $response->assertSee('Service slots');
     }
 

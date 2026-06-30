@@ -14,6 +14,7 @@ use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\UploadBrandingFileRequest;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
+use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerNameserverService;
 use App\Services\ResellerPublicApiService;
@@ -23,12 +24,13 @@ use App\Services\TalksasaSmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class SettingController extends Controller
 {
-    private const SETTINGS_TABS = ['payment', 'sms', 'email', 'branding', 'nameservers'];
+    private const SETTINGS_TABS = ['payment', 'sms', 'email', 'branding', 'nameservers', 'hosting'];
 
     public function __construct(
         private ResellerSettingsService $settingsService,
@@ -45,6 +47,13 @@ class SettingController extends Controller
     {
         $user = auth()->user();
 
+        $daService = app(ResellerDirectAdminService::class);
+        $hasDa = $daService->hasDirectAdminBinding($user);
+        $unlinkedDa = 0;
+        if ($hasDa) {
+            $unlinkedDa = (int) Cache::get('reseller_da_unlinked_count:'.$user->id, 0);
+        }
+
         return view('reseller.settings.index', [
             'user' => $user,
             'mpesaSettings' => $this->settingsService->getMpesaSettings($user),
@@ -60,6 +69,12 @@ class SettingController extends Controller
                 ? $this->publicApi->portalBaseUrl($user).'/api/v1/public'
                 : null,
             'activeSettingsTab' => $this->resolveSettingsTab($request),
+            'hostingSettings' => [
+                'connected' => $hasDa,
+                'username' => $user->directadmin_username,
+                'node_name' => $user->resellerNode?->name,
+                'unlinked_count' => $unlinkedDa,
+            ],
         ]);
     }
 

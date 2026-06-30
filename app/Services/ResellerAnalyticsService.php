@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
 use App\Models\Domain;
-use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerProduct;
@@ -13,6 +12,7 @@ use App\Models\Service;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class ResellerAnalyticsService
 {
@@ -30,75 +30,74 @@ class ResellerAnalyticsService
     {
         $reseller->loadMissing('resellerPackage', 'wallet');
 
-        $managedServices = $this->scope->managedServicesQuery($reseller)
-            ->with(['user', 'product'])
-            ->get();
+        $servicesQuery = $this->scope->managedServicesQuery($reseller);
+        $invoicesQuery = $this->scope->managedInvoicesQuery($reseller);
+        $customerIds = $this->scope->managedCustomerIds($reseller);
 
-        $managedCustomers = $this->scope->managedCustomersQuery($reseller)
-            ->orderBy('name')
-            ->get();
+        $serviceCounts = (clone $servicesQuery)
+            ->selectRaw('status, COUNT(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
 
-        $customerIds = $managedCustomers->pluck('id');
+        $activeServices = (int) ($serviceCounts[ServiceStatus::Active->value] ?? $serviceCounts['active'] ?? 0);
+        $suspendedServices = (int) ($serviceCounts[ServiceStatus::Suspended->value] ?? $serviceCounts['suspended'] ?? 0);
+        $totalServices = (int) $serviceCounts->sum();
 
-        $managedInvoices = $this->scope->managedInvoicesQuery($reseller)
-            ->with(['user', 'payments'])
-            ->get();
-
-        $paidInvoices = $managedInvoices->where('status', InvoiceStatus::Paid);
-        $totalRevenue = (float) $paidInvoices->sum('total');
-        $outstandingBalance = $this->billing->customerOutstandingTotal($reseller);
-
-        $commissionRate = $this->commissionRate($reseller);
-        $totalCommission = $totalRevenue * ($commissionRate / 100);
-
-        $monthlyRevenue = $this->monthlyRevenueSeries($customerIds);
         $invoiceStatus = [
-            'paid' => $managedInvoices->where('status', InvoiceStatus::Paid)->count(),
-            'unpaid' => $managedInvoices->where('status', InvoiceStatus::Unpaid)->count(),
-            'overdue' => $managedInvoices->where('status', InvoiceStatus::Overdue)->count(),
+            'paid' => (clone $invoicesQuery)->where('status', InvoiceStatus::Paid)->count(),
+            'unpaid' => (clone $invoicesQuery)->where('status', InvoiceStatus::Unpaid)->count(),
+            'overdue' => (clone $invoicesQuery)->where('status', InvoiceStatus::Overdue)->count(),
         ];
 
-        $billingHealth = $this->billingHealth($reseller);
-        $actionQueue = $this->actionQueue($reseller, $customerIds, $managedInvoices);
-        $marginSummary = $this->marginSummary($reseller);
+        $totalRevenue = (float) (clone $invoicesQuery)->where('status', InvoiceStatus::Paid)->sum('total');
+        $revenue30d = (float) Payment::query()
+            ->where('status', 'completed')
+            ->whereHas('invoice', fn ($query) => $query->whereIn('user_id', $customerIds ?: [0]))
+            ->where('created_at', '>=', now()->subDays(30))
+            ->sum('amount');
+
+        $outstandingBalance = $this->billing->customerOutstandingTotal($reseller);
+        $userCountBreakdown = $reseller->getResellerUserCountBreakdown();
+        $portalCustomerCount = $this->scope->managedCustomerCount($reseller);
+
+        $billingHealth = $this->billingHealthSnapshot($reseller);
         $diskUsage = app(ResellerDiskUsageService::class);
         $diskPoolGb = $diskUsage->diskPoolGb($reseller);
         $diskUsageSnapshot = $diskUsage->collectCurrentUsage($reseller);
         $diskPoolPercent = $diskUsage->poolUsagePercent($reseller, $diskUsageSnapshot);
-        $userCountBreakdown = $reseller->getResellerUserCountBreakdown();
-        $ledgerMargin30d = $this->margins->ledgerTotals(
-            $reseller,
-            now()->subDays(30)->toDateString(),
-            now()->toDateString(),
-        );
 
         $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelData($reseller);
+        $daBinding = app(ResellerDirectAdminService::class);
+        $hasDa = $daBinding->hasDirectAdminBinding($reseller);
+        $unlinkedDaCount = $hasDa ? $this->cachedUnlinkedDirectAdminCount($reseller) : 0;
 
         $maxServices = $reseller->resellerPackage?->max_services ?? 0;
+        $onboarding = $this->onboardingChecklist($reseller, $hasDa, $unlinkedDaCount);
 
         return [
             'resellerPackage' => $reseller->resellerPackage,
             'maxServices' => $maxServices,
-            'activeServices' => $managedServices->filter(fn ($service) => $service->status === ServiceStatus::Active)->count(),
-            'suspendedServices' => $managedServices->filter(fn ($service) => $service->status === ServiceStatus::Suspended)->count(),
-            'totalServices' => $managedServices->count(),
-            'managedCustomers' => $managedCustomers,
-            'managedServices' => $managedServices->sortByDesc('created_at')->take(8)->values(),
+            'activeServices' => $activeServices,
+            'suspendedServices' => $suspendedServices,
+            'totalServices' => $totalServices,
+            'managedCustomers' => $this->scope->managedCustomersQuery($reseller)->orderBy('name')->limit(6)->get(),
+            'managedServices' => (clone $servicesQuery)->with(['user', 'product'])->latest()->limit(8)->get(),
             'totalRevenue' => $totalRevenue,
+            'revenue30d' => $revenue30d,
             'outstandingBalance' => $outstandingBalance,
-            'commissionRate' => $commissionRate,
-            'totalCommission' => $totalCommission,
-            'recentInvoices' => $managedInvoices->sortByDesc('created_at')->take(5)->values(),
-            'monthlyRevenue' => $monthlyRevenue,
+            'recentInvoices' => (clone $invoicesQuery)->with(['user', 'payments'])->latest()->limit(5)->get(),
+            'monthlyRevenue' => $this->monthlyRevenueSeries($customerIds),
             'invoiceStatus' => $invoiceStatus,
             'customerCount' => $userCountBreakdown['count'],
             'hostedUserCountSource' => $userCountBreakdown['source'],
-            'portalCustomerCount' => $managedCustomers->count(),
+            'portalCustomerCount' => $portalCustomerCount,
+            'unlinkedDaCount' => $unlinkedDaCount,
+            'hasDirectAdmin' => $hasDa,
             'directAdminDiskIncludesAllUsers' => $reseller->resellerUserCountUsesDirectAdmin(),
             'billingHealth' => $billingHealth,
-            'actionQueue' => $actionQueue,
-            'marginSummary' => $marginSummary,
-            'ledgerMargin30d' => $ledgerMargin30d,
+            'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth),
+            'activityFeed' => $this->activityFeed($reseller, $customerIds),
+            'onboarding' => $onboarding,
             'registrationInviteUrl' => app(ResellerBrandingResolver::class)->signedRegistrationUrl($reseller),
             'packageExpiresAt' => $reseller->package_expires_at,
             'daysUntilPackageExpiry' => $reseller->package_expires_at
@@ -110,6 +109,61 @@ class ResellerAnalyticsService
             'diskContainerGb' => $diskUsageSnapshot['container_used_gb'],
             'diskPoolPercent' => $diskPoolPercent,
             'directAdminMonitor' => $directAdminMonitor,
+            'showStaticDiskBars' => ! ($directAdminMonitor['connected'] ?? false),
+        ];
+    }
+
+    /**
+     * Lightweight billing health for layout sidebar (no heavy queries).
+     *
+     * @return array<string, mixed>
+     */
+    public function billingHealthSnapshot(User $reseller): array
+    {
+        $reseller->loadMissing('resellerPackage');
+
+        $pendingOwnInvoice = $this->packageSubscription->pendingSubscriptionInvoice($reseller);
+        $status = 'active';
+        $message = 'Your reseller account is in good standing.';
+        $severity = 'success';
+        $sidebarLabel = 'Account active';
+
+        if ($reseller->isResellerSuspended()) {
+            $status = 'suspended';
+            $message = 'Your account is suspended. Pay your subscription invoice or contact support.';
+            $severity = 'danger';
+            $sidebarLabel = 'Account suspended';
+        } elseif ($pendingOwnInvoice) {
+            $status = 'billing_due';
+            $message = 'You have an unpaid platform subscription invoice.';
+            $severity = 'warning';
+            $sidebarLabel = 'Subscription due';
+        } elseif ($reseller->package_expires_at && $reseller->package_expires_at->isPast()) {
+            $status = 'expired';
+            $message = 'Your reseller package has expired.';
+            $severity = 'danger';
+            $sidebarLabel = 'Package expired';
+        } elseif ($reseller->package_expires_at && $reseller->package_expires_at->lte(now()->addDays(7))) {
+            $status = 'expiring_soon';
+            $message = 'Your package expires soon. Renew to avoid interruption.';
+            $severity = 'warning';
+            $sidebarLabel = 'Renewal soon';
+        } elseif (! $reseller->reseller_package_id) {
+            $status = 'no_package';
+            $message = 'Subscribe to a reseller package to unlock provisioning.';
+            $severity = 'warning';
+            $sidebarLabel = 'No package';
+        }
+
+        return [
+            'status' => $status,
+            'message' => $message,
+            'severity' => $severity,
+            'sidebar_label' => $sidebarLabel,
+            'pending_own_invoice' => $pendingOwnInvoice,
+            'pending_own_invoice_url' => $pendingOwnInvoice
+                ? route('reseller.invoices.show', $pendingOwnInvoice)
+                : null,
         ];
     }
 
@@ -152,60 +206,204 @@ class ResellerAnalyticsService
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array{steps: list<array<string, mixed>>, completed: int, total: int, is_complete: bool}
      */
-    private function billingHealth(User $reseller): array
+    public function onboardingChecklist(User $reseller, ?bool $hasDa = null, ?int $unlinkedDaCount = null): array
     {
-        $pendingOwnInvoice = $this->packageSubscription->pendingSubscriptionInvoice($reseller);
-        $status = 'active';
-        $message = 'Your reseller account is in good standing.';
-        $severity = 'success';
+        $settings = app(ResellerSettingsService::class);
+        $mpesa = $settings->getMpesaSettings($reseller);
+        $branding = $settings->getBrandingSettings($reseller);
+        $hasDa ??= app(ResellerDirectAdminService::class)->hasDirectAdminBinding($reseller);
+        $unlinkedDaCount ??= $hasDa ? $this->cachedUnlinkedDirectAdminCount($reseller) : 0;
 
-        if ($reseller->isResellerSuspended()) {
-            $status = 'suspended';
-            $message = 'Your account is suspended. Pay your subscription invoice or contact support.';
-            $severity = 'danger';
-        } elseif ($pendingOwnInvoice) {
-            $status = 'billing_due';
-            $message = 'You have an unpaid platform subscription invoice.';
-            $severity = 'warning';
-        } elseif ($reseller->package_expires_at && $reseller->package_expires_at->isPast()) {
-            $status = 'expired';
-            $message = 'Your reseller package has expired.';
-            $severity = 'danger';
-        } elseif ($reseller->package_expires_at && $reseller->package_expires_at->lte(now()->addDays(7))) {
-            $status = 'expiring_soon';
-            $message = 'Your package expires soon. Renew to avoid interruption.';
-            $severity = 'warning';
-        } elseif (! $reseller->reseller_package_id) {
-            $status = 'no_package';
-            $message = 'Subscribe to a reseller package to unlock provisioning.';
-            $severity = 'warning';
-        }
+        $hostingCatalogCount = ResellerProduct::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->count();
+
+        $steps = [
+            [
+                'key' => 'package',
+                'label' => 'Subscribe to a reseller package',
+                'done' => (bool) $reseller->reseller_package_id,
+                'url' => route('reseller.packages.index'),
+            ],
+            [
+                'key' => 'branding',
+                'label' => 'Configure branding and signup link',
+                'done' => filled($branding['company_name'] ?? null) || filled($branding['custom_domain'] ?? null),
+                'url' => route('reseller.settings.index', ['tab' => 'branding']),
+            ],
+            [
+                'key' => 'payments',
+                'label' => 'Set up customer payment (M-Pesa)',
+                'done' => filled($mpesa['business_shortcode'] ?? null),
+                'url' => route('reseller.settings.index', ['tab' => 'payment']),
+            ],
+            [
+                'key' => 'catalog',
+                'label' => 'Add shared hosting to your catalog',
+                'done' => $hostingCatalogCount > 0,
+                'url' => route('reseller.catalog.index'),
+            ],
+            [
+                'key' => 'directadmin',
+                'label' => 'Connect DirectAdmin (via platform admin)',
+                'done' => $hasDa,
+                'url' => route('reseller.settings.index', ['tab' => 'hosting']),
+            ],
+            [
+                'key' => 'link_accounts',
+                'label' => 'Link all DirectAdmin users to the platform',
+                'done' => ! $hasDa || $unlinkedDaCount === 0,
+                'url' => route('reseller.customers.index', ['link' => 'unlinked']),
+                'optional' => ! $hasDa,
+            ],
+        ];
+
+        $required = collect($steps)->reject(fn ($step) => ($step['optional'] ?? false) && ! $hasDa);
+        $completed = $required->filter(fn ($step) => $step['done'])->count();
 
         return [
-            'status' => $status,
-            'message' => $message,
-            'severity' => $severity,
-            'pending_own_invoice' => $pendingOwnInvoice,
-            'pending_own_invoice_url' => $pendingOwnInvoice
-                ? route('reseller.invoices.show', $pendingOwnInvoice)
-                : null,
+            'steps' => $steps,
+            'completed' => $completed,
+            'total' => $required->count(),
+            'is_complete' => $completed >= $required->count(),
         ];
     }
 
     /**
-     * @param  Collection<int, Invoice>  $managedInvoices
+     * @param  list<int>  $customerIds
+     * @return list<array{type: string, title: string, subtitle: ?string, url: string, at: string}>
+     */
+    public function activityFeed(User $reseller, array $customerIds): array
+    {
+        $items = collect();
+
+        $recentInvoices = $this->scope->managedInvoicesQuery($reseller)
+            ->with('user')
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        foreach ($recentInvoices as $invoice) {
+            $items->push([
+                'type' => 'invoice',
+                'title' => "Invoice {$invoice->invoice_number}",
+                'subtitle' => ($invoice->user?->name ?? 'Customer').' · KSH '.number_format((float) $invoice->total, 2),
+                'url' => route('reseller.customer-invoices.show', $invoice),
+                'at' => $invoice->created_at?->toIso8601String() ?? now()->toIso8601String(),
+                'sort' => $invoice->created_at?->timestamp ?? 0,
+            ]);
+        }
+
+        $recentServices = $this->scope->managedServicesQuery($reseller)
+            ->with('user')
+            ->latest()
+            ->limit(5)
+            ->get();
+
+        foreach ($recentServices as $service) {
+            $items->push([
+                'type' => 'service',
+                'title' => $service->name ?? 'Service',
+                'subtitle' => $service->user?->name,
+                'url' => route('reseller.services.show', $service),
+                'at' => $service->created_at?->toIso8601String() ?? now()->toIso8601String(),
+                'sort' => $service->created_at?->timestamp ?? 0,
+            ]);
+        }
+
+        $recentOrders = ResellerDomainOrder::query()
+            ->forManagedCustomers($reseller)
+            ->latest()
+            ->limit(4)
+            ->get();
+
+        foreach ($recentOrders as $order) {
+            $items->push([
+                'type' => 'domain_order',
+                'title' => "Domain order: {$order->domain}",
+                'subtitle' => ucfirst((string) $order->status),
+                'url' => route('reseller.domain-orders.index'),
+                'at' => $order->created_at?->toIso8601String() ?? now()->toIso8601String(),
+                'sort' => $order->created_at?->timestamp ?? 0,
+            ]);
+        }
+
+        if ($customerIds !== []) {
+            $recentTickets = Ticket::query()
+                ->whereIn('user_id', $customerIds)
+                ->latest()
+                ->limit(3)
+                ->get();
+
+            foreach ($recentTickets as $ticket) {
+                $items->push([
+                    'type' => 'ticket',
+                    'title' => $ticket->subject,
+                    'subtitle' => ucfirst((string) $ticket->status),
+                    'url' => route('reseller.tickets.show', $ticket),
+                    'at' => $ticket->created_at?->toIso8601String() ?? now()->toIso8601String(),
+                    'sort' => $ticket->created_at?->timestamp ?? 0,
+                ]);
+            }
+        }
+
+        return $items->sortByDesc('sort')->take(12)->values()->all();
+    }
+
+    private function cachedUnlinkedDirectAdminCount(User $reseller): int
+    {
+        return (int) Cache::remember(
+            'reseller_da_unlinked_count:'.$reseller->id,
+            300,
+            function () use ($reseller) {
+                $result = app(ResellerHostedAccountReconciliationService::class)->reconcileReseller($reseller);
+
+                return (int) ($result['unlinked_count'] ?? 0);
+            },
+        );
+    }
+
+    /**
+     * @param  list<int>  $customerIds
+     * @param  array<string, mixed>  $billingHealth
      * @return list<array{label: string, count: int, url: string, severity: string}>
      */
-    private function actionQueue(User $reseller, Collection $customerIds, Collection $managedInvoices): array
+    private function actionQueue(User $reseller, array $customerIds, int $unlinkedDaCount, array $billingHealth): array
     {
         $queue = [];
+        $customerIdCollection = collect($customerIds);
+        $invoicesQuery = $this->scope->managedInvoicesQuery($reseller);
 
-        $overdueCount = $managedInvoices
-            ->filter(fn ($inv) => in_array($inv->status, [InvoiceStatus::Unpaid, InvoiceStatus::Overdue], true)
-                && $inv->getAmountRemaining() > 0
-                && $inv->due_date && $inv->due_date->isPast())
+        if (($billingHealth['status'] ?? '') === 'billing_due' && ! empty($billingHealth['pending_own_invoice_url'])) {
+            $queue[] = [
+                'label' => 'Platform subscription invoice is unpaid',
+                'count' => 1,
+                'url' => $billingHealth['pending_own_invoice_url'],
+                'severity' => 'danger',
+            ];
+        }
+
+        if ($reseller->wallet?->isLowBalance()) {
+            $queue[] = [
+                'label' => 'Wallet balance is low — top up for domains and wholesale orders',
+                'count' => 1,
+                'url' => route('reseller.wallet.index'),
+                'severity' => 'warning',
+            ];
+        }
+
+        $overdueCount = (clone $invoicesQuery)
+            ->where(function ($query) {
+                $query->where('status', InvoiceStatus::Overdue)
+                    ->orWhere(function ($unpaid) {
+                        $unpaid->where('status', InvoiceStatus::Unpaid)
+                            ->where('due_date', '<', now());
+                    });
+            })
             ->count();
 
         if ($overdueCount > 0) {
@@ -217,9 +415,7 @@ class ResellerAnalyticsService
             ];
         }
 
-        $unpaidCount = $managedInvoices
-            ->filter(fn ($inv) => $inv->status === InvoiceStatus::Unpaid && $inv->getAmountRemaining() > 0)
-            ->count();
+        $unpaidCount = (clone $invoicesQuery)->where('status', InvoiceStatus::Unpaid)->count();
 
         if ($unpaidCount > 0 && $overdueCount < $unpaidCount) {
             $queue[] = [
@@ -231,7 +427,7 @@ class ResellerAnalyticsService
         }
 
         $openTickets = Ticket::query()
-            ->whereIn('user_id', $customerIds->all() ?: [0])
+            ->whereIn('user_id', $customerIdCollection->all() ?: [0])
             ->where('status', '!=', 'closed')
             ->count();
 
@@ -258,7 +454,7 @@ class ResellerAnalyticsService
             ];
         }
 
-        $expiringDomains = $this->expiringDomainsCount($reseller, $customerIds);
+        $expiringDomains = $this->expiringDomainsCount($reseller, $customerIdCollection);
 
         if ($expiringDomains > 0) {
             $queue[] = [
@@ -278,7 +474,7 @@ class ResellerAnalyticsService
                 $queue[] = [
                     'label' => sprintf('Disk pool at %s%% (%s / %s GB)', rtrim(rtrim(number_format($percent, 1), '0'), '.'), number_format($usage['total_used_gb'], 1), $poolGb),
                     'count' => 1,
-                    'url' => route('reseller.wallet.index'),
+                    'url' => route('reseller.packages.index'),
                     'severity' => $percent >= 100 ? 'danger' : 'warning',
                 ];
             }
@@ -297,18 +493,29 @@ class ResellerAnalyticsService
             ];
         }
 
-        if ($reseller->directadmin_username && app(ResellerDirectAdminService::class)->hasDirectAdminBinding($reseller)) {
-            $reconciliation = app(ResellerHostedAccountReconciliationService::class)->reconcileReseller($reseller);
-            $unlinked = (int) ($reconciliation['unlinked_count'] ?? 0);
+        if ($unlinkedDaCount > 0) {
+            $queue[] = [
+                'label' => "{$unlinkedDaCount} DirectAdmin account(s) not linked to the platform",
+                'count' => $unlinkedDaCount,
+                'url' => route('reseller.customers.index', ['link' => 'unlinked']),
+                'severity' => 'warning',
+            ];
+        }
 
-            if ($unlinked > 0) {
-                $queue[] = [
-                    'label' => "{$unlinked} DirectAdmin account(s) not linked to the platform",
-                    'count' => $unlinked,
-                    'url' => route('reseller.customers.index', ['link' => 'unlinked']),
-                    'severity' => 'warning',
-                ];
-            }
+        $catalogWithoutDaPackage = ResellerProduct::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->whereNull('direct_admin_package_name')
+            ->count();
+
+        if ($catalogWithoutDaPackage > 0 && app(ResellerDirectAdminService::class)->hasDirectAdminBinding($reseller)) {
+            $queue[] = [
+                'label' => "{$catalogWithoutDaPackage} catalog item(s) missing DirectAdmin package mapping",
+                'count' => $catalogWithoutDaPackage,
+                'url' => route('reseller.catalog.index'),
+                'severity' => 'info',
+            ];
         }
 
         return $queue;
@@ -335,12 +542,11 @@ class ResellerAnalyticsService
     }
 
     /**
-     * @param  Collection<int, int>|array<int, int>  $customerIds
+     * @param  list<int>  $customerIds
      * @return list<float>
      */
-    private function monthlyRevenueSeries(Collection|array $customerIds): array
+    private function monthlyRevenueSeries(array $customerIds): array
     {
-        $ids = $customerIds instanceof Collection ? $customerIds->all() : $customerIds;
         $series = [];
 
         for ($i = 5; $i >= 0; $i--) {
@@ -349,7 +555,7 @@ class ResellerAnalyticsService
 
             $series[] = (float) Payment::query()
                 ->where('status', 'completed')
-                ->whereHas('invoice', fn ($query) => $query->whereIn('user_id', $ids ?: [0]))
+                ->whereHas('invoice', fn ($query) => $query->whereIn('user_id', $customerIds ?: [0]))
                 ->whereBetween('created_at', [$start, $end])
                 ->sum('amount');
         }

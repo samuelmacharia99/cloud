@@ -20,7 +20,7 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">My Catalog</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">Create and manage products for your customers.</p>
         </div>
-        <a href="{{ route('reseller.catalog.create') }}" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+        <a href="{{ route('reseller.catalog.create') }}" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
             + Add to Catalog
         </a>
     </div>
@@ -148,7 +148,7 @@
                 </svg>
                 <h3 class="mt-4 text-lg font-semibold text-slate-900 dark:text-white">No catalog items yet</h3>
                 <p class="mt-1 text-slate-600 dark:text-slate-400">Get started by adding your first product to your catalog.</p>
-                <a href="{{ route('reseller.catalog.create') }}" class="mt-4 inline-block px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                <a href="{{ route('reseller.catalog.create') }}" class="mt-4 inline-block px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
                     Add First Product
                 </a>
             </div>

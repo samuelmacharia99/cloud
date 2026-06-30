@@ -78,6 +78,12 @@
                 <span>Branding</span>
             </button>
 
+            <!-- Hosting / DirectAdmin Tab -->
+            <button type="button" @click="setTab('hosting')" :class="activeTab === 'hosting' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"/></svg>
+                <span>Hosting</span>
+            </button>
+
             <!-- Nameservers Tab -->
             <button type="button" @click="setTab('nameservers')" :class="activeTab === 'nameservers' ? 'border-b-2 border-cyan-500 text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="flex-1 px-6 py-4 font-medium transition flex items-center justify-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -810,6 +816,11 @@
                 </div>
             </div>
 
+            <!-- Hosting Tab Content -->
+            <div x-show="activeTab === 'hosting'" x-transition class="space-y-6">
+                @include('reseller.settings.partials.hosting-directadmin')
+            </div>
+
             <!-- Nameservers Tab Content -->
             <div x-show="activeTab === 'nameservers'" x-transition class="space-y-6">
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
@@ -890,7 +901,7 @@
 
 <script>
 function settingsTabs(initialTab) {
-    const allowed = ['payment', 'sms', 'email', 'branding', 'nameservers'];
+    const allowed = ['payment', 'sms', 'email', 'branding', 'nameservers', 'hosting'];
 
     return {
         activeTab: allowed.includes(initialTab) ? initialTab : 'payment',

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Domain;
 use App\Models\Invoice;
+use App\Models\Payment;
 use App\Models\Service;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,6 +32,17 @@ class ResellerScopeService
             $query->where('reseller_id', $reseller->id)
                 ->orWhereHas('user', fn (Builder $userQuery) => $userQuery->where('reseller_id', $reseller->id));
         });
+    }
+
+    /**
+     * @return Builder<Payment>
+     */
+    public function managedPaymentsQuery(User $reseller): Builder
+    {
+        $customerIds = $this->managedCustomerIds($reseller);
+
+        return Payment::query()
+            ->whereHas('invoice', fn (Builder $query) => $query->whereIn('user_id', $customerIds ?: [0]));
     }
 
     /**

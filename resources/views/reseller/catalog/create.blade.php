@@ -23,10 +23,10 @@
     <!-- Mode Toggle -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <div class="flex gap-4">
-            <button @click="mode = 'admin'; $nextTick(() => selectProduct()); $nextTick(() => calculateMargin())" :class="{ 'bg-blue-600 text-white': mode === 'admin', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'admin' }" class="px-6 py-2 font-medium rounded-lg transition">
+            <button @click="mode = 'admin'; $nextTick(() => selectProduct()); $nextTick(() => calculateMargin())" :class="{ 'bg-purple-600 text-white': mode === 'admin', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'admin' }" class="px-6 py-2 font-medium rounded-lg transition">
                 Add from Admin Catalog
             </button>
-            <button @click="mode = 'custom'" :class="{ 'bg-blue-600 text-white': mode === 'custom', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'custom' }" class="px-6 py-2 font-medium rounded-lg transition">
+            <button @click="mode = 'custom'" :class="{ 'bg-purple-600 text-white': mode === 'custom', 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300': mode !== 'custom' }" class="px-6 py-2 font-medium rounded-lg transition">
                 Create Custom Product
             </button>
         </div>
@@ -321,7 +321,7 @@
                 <a href="{{ route('reseller.catalog.index') }}" class="px-6 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-medium transition">
                     Cancel
                 </a>
-                <button type="submit" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                <button type="submit" class="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition">
                     Add to Catalog
                 </button>
             </div>

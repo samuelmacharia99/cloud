@@ -97,9 +97,12 @@ class ManagedServiceController extends Controller
             'driver' => $driver,
             'username' => $meta['username'] ?? $service->credentials['username'] ?? null,
             'domain' => $meta['domain'] ?? null,
+            'package' => $meta['package_name'] ?? $meta['package'] ?? null,
+            'node_name' => $meta['node_name'] ?? null,
             'ip_address' => $meta['ip_address'] ?? null,
             'panel_url' => $service->getDirectAdminPanelUrl(),
             'container_deployment' => $service->containerDeployment?->id,
+            'billing_ready' => ! empty($meta['reseller_product_id']),
         ];
     }
 

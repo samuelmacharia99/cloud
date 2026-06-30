@@ -11,6 +11,7 @@ use App\Services\EmailDeliveryService;
 use App\Services\EmailRateLimiter;
 use App\Services\NotificationPreferenceService;
 use App\Services\NotificationService;
+use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerDomainTransferService;
 use App\Services\ResellerMailService;
@@ -88,11 +89,13 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            $wallet = auth()->user()->wallet;
+            $reseller = auth()->user();
+            $wallet = $reseller->wallet;
             $view->with('resellerCurrency', 'KSH');
             $view->with('walletBalance', $wallet?->balance ?? 0);
             $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
             $view->with('walletCurrency', 'KSH');
+            $view->with('resellerBillingHealth', app(ResellerAnalyticsService::class)->billingHealthSnapshot($reseller));
         });
     }
 
