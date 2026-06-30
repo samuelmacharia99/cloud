@@ -275,6 +275,16 @@ class ResellerHostedAccountLinkService
             ]);
         }
 
+        $existingCustomer = User::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('is_reseller', false)
+            ->whereRaw('LOWER(email) = ?', [strtolower(trim((string) $email))])
+            ->first();
+
+        if ($existingCustomer) {
+            return $existingCustomer;
+        }
+
         $validator = Validator::make([
             'name' => $options['name'] ?? $entry['name'] ?? $entry['domain'] ?? 'Hosting customer',
             'email' => $email,

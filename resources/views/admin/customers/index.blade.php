@@ -140,19 +140,21 @@
         </div>
     </form>
 
-    <!-- Table -->
+    @if ($usesDirectAdminDirectory ?? false)
     <div
-        class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
-        @if ($usesDirectAdminDirectory ?? false)
-            x-data="directAdminCustomerDirectory(@js([
-                'listingsByReseller' => ($catalogListingsByReseller ?? collect())->mapWithKeys(fn ($listings, $resellerId) => [(string) $resellerId => $listings->map(fn ($l) => ['id' => $l->id, 'name' => $l->name])->values()])->all(),
-                'customersByReseller' => ($managedCustomersByReseller ?? collect())->mapWithKeys(fn ($customers, $resellerId) => [(string) $resellerId => $customers->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values()])->all(),
-                'linkUrl' => route('admin.directadmin-accounts.link'),
-                'isAdmin' => true,
-            ]))"
-            @open-da-link-modal.window="openLink($event.detail)"
-        @endif
+        x-data="directAdminCustomerDirectory(@js([
+            'listingsByReseller' => ($catalogListingsByReseller ?? collect())->mapWithKeys(fn ($listings, $resellerId) => [(string) $resellerId => $listings->map(fn ($l) => ['id' => $l->id, 'name' => $l->name])->values()])->all(),
+            'customersByReseller' => ($managedCustomersByReseller ?? collect())->mapWithKeys(fn ($customers, $resellerId) => [(string) $resellerId => $customers->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values()])->all(),
+            'linkUrl' => route('admin.directadmin-accounts.link'),
+            'isAdmin' => true,
+        ]))"
+        @open-da-link-modal.window="openLink($event.detail)"
+        class="space-y-4"
     >
+    @endif
+
+    <!-- Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -464,7 +466,6 @@
         </div>
     </div>
 
-    <!-- Pagination -->
     @if ($usesDirectAdminDirectory ?? false)
         <div x-show="linkModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
             <div class="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-lg p-6" @click.outside="linkModalOpen = false">
@@ -522,8 +523,9 @@
                 </form>
             </div>
         </div>
+    </div>
 
-        <script>
+    <script>
             function directAdminCustomerDirectory(config) {
                 return {
                     linkModalOpen: false,

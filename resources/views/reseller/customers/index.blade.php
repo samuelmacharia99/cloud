@@ -115,26 +115,28 @@
         </div>
     </form>
 
-    <!-- Table -->
+    @if ($usesDirectAdminDirectory ?? false)
     <div
-        class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
-        @if ($usesDirectAdminDirectory ?? false)
-            x-data="directAdminCustomerDirectory(@js([
-                'listings' => ($catalogListings ?? collect())->map(fn ($l) => ['id' => $l->id, 'name' => $l->name])->values(),
-                'customers' => ($managedCustomers ?? collect())->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values(),
-                'linkUrl' => route('reseller.directadmin-accounts.link'),
-                'isAdmin' => false,
-                'reopenLink' => session('open_da_link') ? [
-                    'da_username' => session('open_da_link'),
-                    'display_name' => old('name'),
-                    'display_email' => old('email'),
-                    'customer_id' => old('customer_id'),
-                    'matched_listing_id' => old('reseller_product_id'),
-                ] : null,
-            ]))"
-            @open-da-link-modal.window="openLink($event.detail)"
-        @endif
+        x-data="directAdminCustomerDirectory(@js([
+            'listings' => ($catalogListings ?? collect())->map(fn ($l) => ['id' => $l->id, 'name' => $l->name])->values(),
+            'customers' => ($managedCustomers ?? collect())->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'email' => $c->email])->values(),
+            'linkUrl' => route('reseller.directadmin-accounts.link'),
+            'isAdmin' => false,
+            'reopenLink' => session('open_da_link') ? [
+                'da_username' => session('open_da_link'),
+                'display_name' => old('name'),
+                'display_email' => old('email'),
+                'customer_id' => old('customer_id'),
+                'matched_listing_id' => old('reseller_product_id'),
+            ] : null,
+        ]))"
+        @open-da-link-modal.window="openLink($event.detail)"
+        class="space-y-4"
     >
+    @endif
+
+    <!-- Table -->
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full">
                 <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-800">
@@ -231,9 +233,8 @@
         </div>
     </div>
 
-    <!-- Pagination -->
     @if ($usesDirectAdminDirectory ?? false)
-        <form method="POST" action="{{ route('reseller.directadmin-accounts.bulk-link') }}" id="bulk-da-link-form" class="flex flex-wrap items-center gap-3 mb-4">
+        <form method="POST" action="{{ route('reseller.directadmin-accounts.bulk-link') }}" id="bulk-da-link-form" class="flex flex-wrap items-center gap-3">
             @csrf
             <input type="hidden" name="link" value="{{ request('link', 'unlinked') }}">
             @if (request('search'))
@@ -316,8 +317,9 @@
                 </form>
             </div>
         </div>
+    </div>
 
-        <script>
+    <script>
             function directAdminCustomerDirectory(config) {
                 return {
                     linkModalOpen: false,

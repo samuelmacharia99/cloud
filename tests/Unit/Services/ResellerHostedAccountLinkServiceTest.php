@@ -101,6 +101,44 @@ class ResellerHostedAccountLinkServiceTest extends TestCase
         $this->assertSame(5000.0, (float) $updated->custom_price);
     }
 
+    public function test_link_account_reuses_existing_reseller_customer_when_email_matches(): void
+    {
+        [$reseller] = $this->mockResellerWithDirectAdmin('meklasimport', [
+            'username' => 'meklasimport',
+            'domain' => 'meklasimporters.co.ke',
+            'package' => 'starter',
+            'email' => 'shared@example.test',
+            'name' => 'Meklas Import',
+            'suspended' => false,
+        ]);
+
+        $existingCustomer = User::factory()->customer()->create([
+            'reseller_id' => $reseller->id,
+            'email' => 'shared@example.test',
+            'name' => 'Joyful Customer',
+        ]);
+
+        ResellerProduct::query()->create([
+            'reseller_id' => $reseller->id,
+            'type' => 'shared_hosting',
+            'name' => 'Starter',
+            'direct_admin_package_name' => 'starter',
+            'monthly_price' => 1000,
+            'yearly_price' => 10000,
+            'is_active' => true,
+        ]);
+
+        $result = app(ResellerHostedAccountLinkService::class)->linkAccount($reseller, 'meklasimport', [
+            'billing_cycle' => 'annual',
+            'country' => 'KE',
+        ]);
+
+        $this->assertSame($existingCustomer->id, $result['customer']->id);
+        $this->assertSame('meklasimport', $result['service']->external_reference);
+        $this->assertSame(1, User::query()->where('reseller_id', $reseller->id)->where('email', 'shared@example.test')->count());
+        $this->assertSame(1, $existingCustomer->fresh()->services()->count());
+    }
+
     /**
      * @return array{0: User, 1: DirectAdminService&MockInterface}
      */
