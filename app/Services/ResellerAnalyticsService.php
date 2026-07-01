@@ -47,18 +47,24 @@ class ResellerAnalyticsService
         $suspendedServices = (int) ($serviceCounts[ServiceStatus::Suspended->value] ?? $serviceCounts['suspended'] ?? 0);
         $totalServices = (int) $serviceCounts->sum();
 
+        $invoiceStatusCounts = (clone $invoicesQuery)
+            ->selectRaw('status, COUNT(*) as aggregate')
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
         $invoiceStatus = [
-            'paid' => (clone $invoicesQuery)->where('status', InvoiceStatus::Paid)->count(),
-            'unpaid' => (clone $invoicesQuery)->where('status', InvoiceStatus::Unpaid)->count(),
-            'overdue' => (clone $invoicesQuery)->where('status', InvoiceStatus::Overdue)->count(),
+            'paid' => (int) ($invoiceStatusCounts[InvoiceStatus::Paid->value] ?? $invoiceStatusCounts['paid'] ?? 0),
+            'unpaid' => (int) ($invoiceStatusCounts[InvoiceStatus::Unpaid->value] ?? $invoiceStatusCounts['unpaid'] ?? 0),
+            'overdue' => (int) ($invoiceStatusCounts[InvoiceStatus::Overdue->value] ?? $invoiceStatusCounts['overdue'] ?? 0),
         ];
 
         $totalRevenue = (float) (clone $invoicesQuery)->where('status', InvoiceStatus::Paid)->sum('total');
-        $revenue30d = (float) Payment::query()
-            ->where('status', 'completed')
-            ->whereHas('invoice', fn ($query) => $query->whereIn('user_id', $customerIds ?: [0]))
-            ->where('created_at', '>=', now()->subDays(30))
-            ->sum('amount');
+        $paymentStats = app(ResellerDashboardPaymentStats::class);
+        $revenue30d = $paymentStats->totalForRange(
+            $customerIds,
+            now()->subDays(30)->startOfDay(),
+            now()->endOfDay(),
+        );
 
         $outstandingBalance = $this->billing->customerOutstandingTotal($reseller);
         $userCountBreakdown = $reseller->getResellerUserCountBreakdown();
@@ -70,14 +76,13 @@ class ResellerAnalyticsService
         $diskUsageSnapshot = $diskUsage->collectCurrentUsage($reseller);
         $diskPoolPercent = $diskUsage->poolUsagePercent($reseller, $diskUsageSnapshot);
 
-        $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelData($reseller);
+        $directAdminMonitor = app(ResellerDirectAdminMonitorService::class)->panelShell($reseller);
         $daBinding = app(ResellerDirectAdminService::class);
         $hasDa = $daBinding->hasDirectAdminBinding($reseller);
         $unlinkedDaCount = $hasDa ? $this->cachedUnlinkedDirectAdminCount($reseller) : 0;
 
         $maxServices = $reseller->resellerPackage?->max_services ?? 0;
         $onboarding = $this->onboardingChecklist($reseller, $hasDa, $unlinkedDaCount);
-        $activityPage = $this->paginatedActivityFeed($reseller, $customerIds);
 
         return [
             'resellerPackage' => $reseller->resellerPackage,
@@ -91,7 +96,7 @@ class ResellerAnalyticsService
             'revenue30d' => $revenue30d,
             'outstandingBalance' => $outstandingBalance,
             'recentInvoices' => (clone $invoicesQuery)->with(['user', 'payments'])->latest()->limit(5)->get(),
-            'monthlyRevenue' => $this->monthlyRevenueSeries($customerIds),
+            'monthlyRevenue' => $paymentStats->monthlySeries($customerIds),
             'invoiceStatus' => $invoiceStatus,
             'customerCount' => $userCountBreakdown['count'],
             'hostedUserCountSource' => $userCountBreakdown['source'],
@@ -100,10 +105,11 @@ class ResellerAnalyticsService
             'hasDirectAdmin' => $hasDa,
             'directAdminDiskIncludesAllUsers' => $reseller->resellerUserCountUsesDirectAdmin(),
             'billingHealth' => $billingHealth,
-            'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth),
-            'activityFeed' => $activityPage['items'],
-            'activityFeedHasMore' => $activityPage['has_more'],
-            'activityFeedNextOffset' => $activityPage['next_offset'],
+            'actionQueue' => $this->actionQueue($reseller, $customerIds, $unlinkedDaCount, $billingHealth, $diskUsageSnapshot, $diskPoolGb),
+            'activityFeed' => [],
+            'activityFeedHasMore' => true,
+            'activityFeedNextOffset' => 0,
+            'activityFeedLazy' => true,
             'onboarding' => $onboarding,
             'registrationInviteUrl' => app(ResellerBrandingResolver::class)->signedRegistrationUrl($reseller),
             'packageExpiresAt' => $reseller->package_expires_at,
@@ -400,7 +406,7 @@ class ResellerAnalyticsService
     {
         return (int) Cache::remember(
             'reseller_da_unlinked_count:'.$reseller->id,
-            300,
+            600,
             function () use ($reseller) {
                 $result = app(ResellerHostedAccountReconciliationService::class)->reconcileReseller($reseller);
 
@@ -412,10 +418,17 @@ class ResellerAnalyticsService
     /**
      * @param  list<int>  $customerIds
      * @param  array<string, mixed>  $billingHealth
+     * @param  array{directadmin_used_gb: float, container_used_gb: float, total_used_gb: float}|null  $diskUsageSnapshot
      * @return list<array{label: string, count: int, url: string, severity: string}>
      */
-    private function actionQueue(User $reseller, array $customerIds, int $unlinkedDaCount, array $billingHealth): array
-    {
+    private function actionQueue(
+        User $reseller,
+        array $customerIds,
+        int $unlinkedDaCount,
+        array $billingHealth,
+        ?array $diskUsageSnapshot = null,
+        ?int $diskPoolGb = null,
+    ): array {
         $queue = [];
         $customerIdCollection = collect($customerIds);
         $invoicesQuery = $this->scope->managedInvoicesQuery($reseller);
@@ -508,9 +521,9 @@ class ResellerAnalyticsService
         }
 
         $diskUsage = app(ResellerDiskUsageService::class);
-        $poolGb = $diskUsage->diskPoolGb($reseller);
+        $poolGb = $diskPoolGb ?? $diskUsage->diskPoolGb($reseller);
         if ($poolGb > 0) {
-            $usage = $diskUsage->collectCurrentUsage($reseller);
+            $usage = $diskUsageSnapshot ?? $diskUsage->collectCurrentUsage($reseller);
             $percent = $diskUsage->poolUsagePercent($reseller, $usage);
             if ($percent !== null && $percent >= 90) {
                 $queue[] = [

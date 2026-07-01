@@ -2,6 +2,7 @@
     $m = $directAdminMonitor ?? [];
     $chart = $m['chart'] ?? ['labels' => [], 'payments' => [], 'disk_gb' => [], 'hosted_users' => []];
     $connected = (bool) ($m['is_connected'] ?? false);
+    $deferLoad = (bool) ($m['defer_load'] ?? false);
 @endphp
 
 <div
@@ -9,7 +10,11 @@
     @if ($connected)
         x-data="resellerDirectAdminLive(@js([
             'live_url' => $m['live_url'] ?? '',
+            'panel_url' => $m['panel_url'] ?? '',
+            'defer_load' => $deferLoad,
             'payments_today' => $m['payments_today'] ?? 0,
+            'payments_7d' => $m['payments_7d'] ?? 0,
+            'payments_30d' => $m['payments_30d'] ?? 0,
             'disk_used_gb' => $m['disk_used_gb'] ?? null,
             'disk_pool_gb' => $m['disk_pool_gb'] ?? 0,
             'disk_pool_percent' => $m['disk_pool_percent'] ?? null,
@@ -18,6 +23,7 @@
             'api_reachable' => $m['api_reachable'] ?? false,
             'provisioning_ready' => $m['provisioning_ready'] ?? false,
             'updated_at' => $m['updated_at'] ?? now()->toIso8601String(),
+            'chart' => $chart,
         ]))"
         x-init="init()"
     @endif
@@ -77,7 +83,17 @@
             <p class="text-sm text-slate-500 mt-2 max-w-md mx-auto">Ask your platform admin to connect your reseller account on the Node tab. Once linked, this panel shows live disk, accounts, and payment trends.</p>
         </div>
     @else
-        <div class="p-6 space-y-6">
+        <div class="p-6 space-y-6 relative">
+            <div
+                x-show="panelLoading"
+                x-cloak
+                class="absolute inset-0 z-10 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 rounded-b-xl"
+            >
+                <div class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                    <svg class="w-5 h-5 animate-spin text-violet-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                    Loading server metrics…
+                </div>
+            </div>
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <div class="rounded-xl border border-violet-200/70 dark:border-violet-900/50 bg-violet-50/50 dark:bg-violet-950/30 p-4">
                     <p class="text-xs font-medium text-violet-700 dark:text-violet-300">Payments today</p>
@@ -114,8 +130,8 @@
                 </div>
                 <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50 p-4">
                     <p class="text-xs font-medium text-slate-600 dark:text-slate-300">30-day collections</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">KES {{ number_format($m['payments_30d'] ?? 0, 0) }}</p>
-                    <p class="text-[11px] text-slate-500 mt-1">7d: KES {{ number_format($m['payments_7d'] ?? 0, 0) }}</p>
+                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1" x-text="formatKes(payments30d)"></p>
+                    <p class="text-[11px] text-slate-500 mt-1">7d: <span x-text="formatKes(payments7d)"></span></p>
                 </div>
             </div>
 
@@ -148,12 +164,18 @@ window.resellerDirectAdminLive = function (config) {
         apiReachable: config.api_reachable || false,
         provisioningReady: config.provisioning_ready || false,
         paymentsToday: config.payments_today || 0,
+        payments7d: config.payments_7d || 0,
+        payments30d: config.payments_30d || 0,
         diskUsedGb: config.disk_used_gb,
         diskPoolGb: config.disk_pool_gb || 0,
         diskPoolPercent: config.disk_pool_percent,
         hostedUserCount: config.hosted_user_count,
         maxUsers: config.max_users || 0,
         liveUrl: config.live_url,
+        panelUrl: config.panel_url,
+        deferLoad: Boolean(config.defer_load),
+        panelLoading: Boolean(config.defer_load),
+        chartConfig: config.chart || { labels: [], payments: [], disk_gb: [], hosted_users: [] },
         pollTimer: null,
         polling: false,
         lastUpdated: config.updated_at ? new Date(config.updated_at) : new Date(),
@@ -196,10 +218,58 @@ window.resellerDirectAdminLive = function (config) {
             return 'KES ' + Number(amount || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
         },
         init() {
-            this.pollTimer = setInterval(() => this.refresh(), 45000);
+            if (this.deferLoad && this.panelUrl) {
+                this.loadPanel().then(() => {
+                    this.pollTimer = setInterval(() => this.refresh(), 45000);
+                });
+            } else {
+                this.bootChart();
+                this.pollTimer = setInterval(() => this.refresh(), 45000);
+            }
         },
         destroy() {
             if (this.pollTimer) clearInterval(this.pollTimer);
+        },
+        applyPanel(data) {
+            this.apiReachable = data.api_reachable;
+            this.provisioningReady = data.provisioning_ready;
+            this.paymentsToday = data.payments_today ?? 0;
+            this.payments7d = data.payments_7d ?? 0;
+            this.payments30d = data.payments_30d ?? 0;
+            this.diskUsedGb = data.disk_used_gb;
+            this.diskPoolGb = data.disk_pool_gb || 0;
+            this.diskPoolPercent = data.disk_pool_percent;
+            this.hostedUserCount = data.hosted_user_count;
+            this.maxUsers = data.max_users || 0;
+            this.lastUpdated = data.updated_at ? new Date(data.updated_at) : new Date();
+            if (data.chart) {
+                this.chartConfig = data.chart;
+            }
+        },
+        async loadPanel() {
+            if (!this.panelUrl) {
+                this.panelLoading = false;
+                return;
+            }
+            this.panelLoading = true;
+            try {
+                const res = await fetch(this.panelUrl, {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (res.ok) {
+                    this.applyPanel(await res.json());
+                    this.bootChart();
+                }
+            } catch (e) {
+                /* silent */
+            } finally {
+                this.panelLoading = false;
+            }
+        },
+        bootChart() {
+            if (typeof window.initResellerDaMonitorChart === 'function') {
+                window.initResellerDaMonitorChart(this.chartConfig);
+            }
         },
         applyLive(data) {
             this.apiReachable = data.api_reachable;
@@ -235,14 +305,13 @@ window.resellerDirectAdminLive = function (config) {
 
 @if ($connected)
 (function () {
-    const chartConfig = @json($chart);
     const canvasId = 'resellerDaMonitorChart';
 
     function normalizeSeries(values) {
         return (values || []).map((value) => (value === null || value === undefined ? NaN : Number(value)));
     }
 
-    function initResellerDaMonitorChart() {
+    window.initResellerDaMonitorChart = function (chartConfig) {
         const canvas = document.getElementById(canvasId);
         if (!canvas || typeof Chart === 'undefined') {
             return false;
@@ -252,6 +321,8 @@ window.resellerDirectAdminLive = function (config) {
         if (!ctx) {
             return false;
         }
+
+        chartConfig = chartConfig || { labels: [], payments: [], disk_gb: [], hosted_users: [] };
 
         if (window.resellerDaMonitorChart instanceof Chart) {
             window.resellerDaMonitorChart.destroy();
@@ -347,7 +418,7 @@ window.resellerDirectAdminLive = function (config) {
         });
 
         return true;
-    }
+    };
 
     window.updateResellerDaMonitorChart = function (data) {
         const chart = window.resellerDaMonitorChart;
@@ -365,20 +436,14 @@ window.resellerDirectAdminLive = function (config) {
         chart.update('none');
     };
 
-    function bootChart(retries) {
-        if (initResellerDaMonitorChart()) return;
+    @if (! $deferLoad)
+    (function bootChart(retries) {
+        if (window.initResellerDaMonitorChart(@json($chart))) return;
         if (retries > 0) {
             setTimeout(() => bootChart(retries - 1), 100);
         }
-    }
-
-    if (document.getElementById(canvasId)) {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => bootChart(20));
-        } else {
-            bootChart(20);
-        }
-    }
+    })(20);
+    @endif
 })();
 @endif
 </script>

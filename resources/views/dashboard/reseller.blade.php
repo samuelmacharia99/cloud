@@ -87,11 +87,16 @@
                 x-data="resellerActivityFeed(@js([
                     'initial' => $activityFeed ?? [],
                     'hasMore' => $activityFeedHasMore ?? false,
-                    'nextOffset' => $activityFeedNextOffset ?? 10,
+                    'nextOffset' => $activityFeedNextOffset ?? 0,
                     'loadUrl' => route('reseller.dashboard.activity'),
+                    'lazy' => $activityFeedLazy ?? false,
                 ]))"
+                x-init="init()"
             >
-                <template x-if="items.length === 0">
+                <template x-if="initialLoading">
+                    <p class="text-sm text-slate-500 text-center py-8">Loading recent activity…</p>
+                </template>
+                <template x-if="!initialLoading && items.length === 0">
                     <p class="text-sm text-slate-500 text-center py-8">No recent activity yet. Create a customer or invoice to get started.</p>
                 </template>
                 <template x-for="(item, index) in items" :key="item.at + '-' + item.url + '-' + index">
@@ -103,7 +108,7 @@
                         <span class="text-[10px] uppercase tracking-wide text-slate-400 shrink-0" x-text="item.type.replace(/_/g, ' ')"></span>
                     </a>
                 </template>
-                <div class="flex justify-center mt-4" x-show="hasMore">
+                <div class="flex justify-center mt-4" x-show="hasMore && !initialLoading">
                     <button
                         type="button"
                         @click="loadMore()"
@@ -161,9 +166,15 @@
         return {
             items: config.initial || [],
             hasMore: config.hasMore || false,
-            nextOffset: config.nextOffset || 10,
+            nextOffset: config.nextOffset || 0,
             loading: false,
+            initialLoading: Boolean(config.lazy) && (config.initial || []).length === 0,
             loadUrl: config.loadUrl,
+            init() {
+                if (config.lazy && this.items.length === 0) {
+                    this.loadMore();
+                }
+            },
             async loadMore() {
                 if (this.loading || ! this.hasMore) {
                     return;
@@ -191,6 +202,7 @@
                     console.error(error);
                 } finally {
                     this.loading = false;
+                    this.initialLoading = false;
                 }
             },
         };

@@ -12,4 +12,9 @@ class DashboardDirectAdminController extends Controller
     {
         return response()->json($monitor->liveSnapshot(auth()->user()));
     }
+
+    public function panel(ResellerDirectAdminMonitorService $monitor): JsonResponse
+    {
+        return response()->json($monitor->panelData(auth()->user()));
+    }
 }

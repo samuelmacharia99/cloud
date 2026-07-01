@@ -7,7 +7,6 @@ use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceNumberService;
 use App\Services\Billing\InvoiceSettlementService;
@@ -163,10 +162,19 @@ class ResellerCustomerBillingService
 
         $this->scope->managedInvoicesQuery($reseller)
             ->whereIn('status', [InvoiceStatus::Unpaid, InvoiceStatus::Overdue])
-            ->with('payments')
-            ->chunkById(100, function ($invoices) use (&$total) {
+            ->withSum(['payments as completed_payments_sum' => fn ($query) => $query->where('status', 'completed')], 'amount')
+            ->withSum('credits as credits_sum', 'amount_applied')
+            ->select(['id', 'total', 'wallet_amount_applied'])
+            ->chunkById(200, function ($invoices) use (&$total) {
                 foreach ($invoices as $invoice) {
-                    $total += $invoice->getAmountRemaining();
+                    $remaining = max(0, round(
+                        (float) $invoice->total
+                        - (float) ($invoice->wallet_amount_applied ?? 0)
+                        - (float) ($invoice->completed_payments_sum ?? 0)
+                        - (float) ($invoice->credits_sum ?? 0),
+                        2
+                    ));
+                    $total += $remaining;
                 }
             });
 

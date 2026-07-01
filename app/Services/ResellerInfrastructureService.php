@@ -17,7 +17,7 @@ class ResellerInfrastructureService
     /**
      * @return array<string, mixed>
      */
-    public function buildDashboard(User $reseller, bool $refresh = false): array
+    public function buildDashboard(User $reseller, bool $refresh = false, bool $includePackages = true): array
     {
         $reseller->loadMissing('resellerNode', 'resellerPackage');
 
@@ -48,11 +48,15 @@ class ResellerInfrastructureService
                     $packagesError = $verification['success'] ? null : $verification['message'];
                     $hostedUserCount = $verification['hosted_user_count'];
                     $diskUsedMb = $verification['disk_used_mb'];
+                    $this->resellerDirectAdmin->flushMetricsCache($reseller);
                 }
             } else {
-                $packageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
-                $packages = $packageResult['packages'];
-                $packagesError = $packageResult['error'];
+                if ($includePackages) {
+                    $packageResult = $this->resellerDirectAdmin->listAssignablePackages($reseller);
+                    $packages = $packageResult['packages'];
+                    $packagesError = $packageResult['error'];
+                }
+
                 $hostedUserCount = $this->resellerDirectAdmin->fetchHostedUserCount($reseller);
                 $diskUsedMb = $this->resellerDirectAdmin->fetchTotalHostedDiskMb($reseller);
             }

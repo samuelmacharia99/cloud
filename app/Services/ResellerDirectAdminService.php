@@ -8,10 +8,16 @@ use App\Models\User;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
 use App\Services\Provisioning\DirectAdminService;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class ResellerDirectAdminService
 {
+    private const METRICS_CACHE_SECONDS = 90;
+
+    /** @var array<string, int|float|null> */
+    private array $requestMetricCache = [];
+
     /**
      * @return Collection<int, Node>
      */
@@ -359,13 +365,15 @@ class ResellerDirectAdminService
             return null;
         }
 
-        $da = $this->directAdmin($reseller);
+        return $this->rememberMetric($reseller, 'hosted_user_count', function () use ($reseller) {
+            $da = $this->directAdmin($reseller);
 
-        if (! $da) {
-            return null;
-        }
+            if (! $da) {
+                return null;
+            }
 
-        return $da->countUsersOwnedByReseller($reseller->directadmin_username);
+            return $da->countUsersOwnedByReseller($reseller->directadmin_username);
+        });
     }
 
     public function fetchHostedUserCountOnNode(User $reseller, Node $node): ?int
@@ -393,13 +401,45 @@ class ResellerDirectAdminService
             return null;
         }
 
-        $da = $this->directAdmin($reseller);
+        return $this->rememberMetric($reseller, 'disk_used_mb', function () use ($reseller) {
+            $da = $this->directAdmin($reseller);
 
-        if (! $da) {
-            return null;
+            if (! $da) {
+                return null;
+            }
+
+            return $da->sumDiskUsageMbForResellerUsers($reseller->directadmin_username);
+        });
+    }
+
+    /**
+     * @template T
+     *
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    private function rememberMetric(User $reseller, string $metric, callable $callback): mixed
+    {
+        $memoryKey = "{$reseller->id}:{$metric}";
+        if (array_key_exists($memoryKey, $this->requestMetricCache)) {
+            return $this->requestMetricCache[$memoryKey];
         }
 
-        return $da->sumDiskUsageMbForResellerUsers($reseller->directadmin_username);
+        $cacheKey = "reseller_da_metric:{$reseller->id}:{$metric}";
+
+        /** @var T $value */
+        $value = Cache::remember($cacheKey, self::METRICS_CACHE_SECONDS, $callback);
+        $this->requestMetricCache[$memoryKey] = $value;
+
+        return $value;
+    }
+
+    public function flushMetricsCache(User $reseller): void
+    {
+        foreach (['hosted_user_count', 'disk_used_mb'] as $metric) {
+            Cache::forget("reseller_da_metric:{$reseller->id}:{$metric}");
+            unset($this->requestMetricCache["{$reseller->id}:{$metric}"]);
+        }
     }
 
     public function fetchTotalHostedDiskMbOnNode(User $reseller, Node $node): ?float

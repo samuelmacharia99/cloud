@@ -95,7 +95,9 @@ class AppServiceProvider extends ServiceProvider
             $view->with('walletBalance', $wallet?->balance ?? 0);
             $view->with('walletIsLow', $wallet?->isLowBalance() ?? false);
             $view->with('walletCurrency', 'KSH');
-            $view->with('resellerBillingHealth', app(ResellerAnalyticsService::class)->billingHealthSnapshot($reseller));
+            if (! array_key_exists('billingHealth', $view->getData())) {
+                $view->with('resellerBillingHealth', app(ResellerAnalyticsService::class)->billingHealthSnapshot($reseller));
+            }
         });
     }
 
