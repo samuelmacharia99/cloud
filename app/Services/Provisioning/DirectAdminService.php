@@ -181,6 +181,15 @@ class DirectAdminService
         }
 
         try {
+            $skippedUnlimited = $this->catalogUnlimitedFields($package);
+            if ($skippedUnlimited !== []) {
+                Log::warning('DirectAdmin package push omitting unlimited catalog fields (will not overwrite server limits)', [
+                    'node_id' => $this->node?->id,
+                    'package' => $package->name,
+                    'skipped_fields' => $skippedUnlimited,
+                ]);
+            }
+
             $payload = array_merge(
                 $this->buildUserPackageManagePayload($package),
                 [
@@ -231,9 +240,11 @@ class DirectAdminService
      */
     public function buildUserPackageManagePayload(DirectAdminPackage $package): array
     {
+        $bandwidthGb = $package->bandwidth_quota !== null ? (float) $package->bandwidth_quota : null;
+
         $payload = array_merge(
             $this->megabyteLimitFields('quota', 'uquota', (float) $package->disk_quota),
-            $this->megabyteLimitFields('bandwidth', 'ubandwidth', (float) ($package->bandwidth_quota ?? 0)),
+            $this->megabyteLimitFields('bandwidth', 'ubandwidth', $bandwidthGb),
             $this->quantityLimitFields('vdomains', 'uvdomains', $package->num_domains),
             $this->quantityLimitFields('ftp', 'uftp', $package->num_ftp),
             $this->quantityLimitFields('mysql', 'umysql', $package->num_databases),
@@ -1771,10 +1782,45 @@ class DirectAdminService
     /**
      * @return array<string, string|int>
      */
-    private function megabyteLimitFields(string $quantityField, string $unlimitedField, float $gigabytes): array
+    /**
+     * @return list<string>
+     */
+    private function catalogUnlimitedFields(DirectAdminPackage $package): array
     {
-        if ($gigabytes < 0) {
-            return [$unlimitedField => 'ON'];
+        $skipped = [];
+
+        if ((float) $package->disk_quota < 0) {
+            $skipped[] = 'disk_quota';
+        }
+
+        if ($package->bandwidth_quota !== null && (float) $package->bandwidth_quota < 0) {
+            $skipped[] = 'bandwidth_quota';
+        }
+
+        foreach ([
+            'num_domains' => 'vdomains',
+            'num_ftp' => 'ftp',
+            'num_databases' => 'mysql',
+            'num_email_accounts' => 'nemails',
+            'num_subdomains' => 'nsubdomains',
+        ] as $attribute => $label) {
+            $value = $package->{$attribute};
+
+            if ($value === null || (int) $value < 0) {
+                $skipped[] = $label;
+            }
+        }
+
+        return $skipped;
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function megabyteLimitFields(string $quantityField, string $unlimitedField, ?float $gigabytes): array
+    {
+        if ($gigabytes === null || $gigabytes < 0) {
+            return [];
         }
 
         return [
@@ -1789,7 +1835,7 @@ class DirectAdminService
     private function quantityLimitFields(string $quantityField, string $unlimitedField, ?int $value): array
     {
         if ($value === null || $value < 0) {
-            return [$unlimitedField => 'ON'];
+            return [];
         }
 
         return [

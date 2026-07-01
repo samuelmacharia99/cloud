@@ -2,6 +2,7 @@
 
 namespace App\Services\PaymentGateway;
 
+use App\Enums\InvoiceStatus;
 use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -568,6 +569,153 @@ class MpesaService implements PaymentGatewayInterface
                 'message' => 'Callback processing failed',
             ];
         }
+    }
+
+    /**
+     * Handle M-Pesa C2B validation and confirmation callbacks (PayBill).
+     *
+     * @return array<string, mixed>
+     */
+    public function handleC2bCallback(array $data): array
+    {
+        $transId = (string) ($data['TransID'] ?? '');
+        $billRef = trim((string) ($data['BillRefNumber'] ?? ''));
+        $amount = (float) ($data['TransAmount'] ?? 0);
+        $msisdn = (string) ($data['MSISDN'] ?? '');
+
+        if ($transId === '') {
+            return ['success' => false, 'message' => 'Missing TransID'];
+        }
+
+        $validationKey = 'mpesa_c2b_validation:'.$transId;
+
+        if (! Cache::has($validationKey)) {
+            Cache::put($validationKey, true, now()->addHours(2));
+
+            $accepted = $this->validateC2bBillReference($billRef, $amount);
+
+            Log::info('M-Pesa C2B validation', [
+                'trans_id' => $transId,
+                'bill_ref' => $billRef,
+                'amount' => $amount,
+                'accepted' => $accepted,
+            ]);
+
+            return [
+                'validation_response' => true,
+                'accepted' => $accepted,
+                'message' => $accepted ? 'Accepted' : 'Rejected',
+            ];
+        }
+
+        if (Payment::query()
+            ->where('transaction_reference', $transId)
+            ->where('payment_method', 'mpesa')
+            ->exists()) {
+            return [
+                'success' => true,
+                'already_processed' => true,
+                'message' => 'C2B payment already processed',
+            ];
+        }
+
+        $invoice = Invoice::query()->where('invoice_number', $billRef)->first();
+
+        if (! $invoice) {
+            Log::warning('M-Pesa C2B confirmation: invoice not found', [
+                'trans_id' => $transId,
+                'bill_ref' => $billRef,
+            ]);
+
+            return ['success' => false, 'message' => 'Invoice not found'];
+        }
+
+        try {
+            $result = DB::transaction(function () use ($invoice, $transId, $amount, $msisdn) {
+                $pending = Payment::query()
+                    ->where('invoice_id', $invoice->id)
+                    ->where('payment_method', 'mpesa')
+                    ->where('status', PaymentStatus::Pending->value)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($pending && ($pending->transaction_reference === $transId
+                    || str_starts_with((string) $pending->transaction_reference, 'ws_CO_'))) {
+                    $lockedPayment = $pending;
+                } else {
+                    $lockedPayment = Payment::create([
+                        'user_id' => $invoice->user_id,
+                        'invoice_id' => $invoice->id,
+                        'amount' => $amount > 0 ? $amount : $invoice->getAmountRemaining(),
+                        'currency' => 'KES',
+                        'payment_method' => 'mpesa',
+                        'payment_purpose' => 'invoice_payment',
+                        'transaction_reference' => $transId,
+                        'status' => PaymentStatus::Pending->value,
+                        'notes' => json_encode([
+                            'source' => 'c2b',
+                            'msisdn' => $msisdn,
+                        ]),
+                    ]);
+
+                    $lockedPayment = Payment::whereKey($lockedPayment->id)->lockForUpdate()->first();
+                }
+
+                if ($lockedPayment->isCompleted()) {
+                    return [
+                        'success' => true,
+                        'payment_id' => $lockedPayment->id,
+                        'already_processed' => true,
+                    ];
+                }
+
+                $lockedPayment->update([
+                    'status' => PaymentStatus::Completed->value,
+                    'paid_at' => now(),
+                    'transaction_reference' => $transId,
+                    'notes' => json_encode([
+                        'source' => 'c2b',
+                        'msisdn' => $msisdn,
+                        'trans_amount' => $amount,
+                    ]),
+                ]);
+
+                return [
+                    'success' => true,
+                    'payment_id' => $lockedPayment->id,
+                ];
+            });
+
+            return $result;
+        } catch (\Throwable $e) {
+            Log::error('M-Pesa C2B confirmation failed', [
+                'trans_id' => $transId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'message' => 'C2B confirmation failed'];
+        }
+    }
+
+    private function validateC2bBillReference(string $billRef, float $amount): bool
+    {
+        if ($billRef === '') {
+            return false;
+        }
+
+        $invoice = Invoice::query()->where('invoice_number', $billRef)->first();
+
+        if (! $invoice || $invoice->isPaid() || $invoice->status === InvoiceStatus::Cancelled) {
+            return false;
+        }
+
+        if ($amount <= 0) {
+            return true;
+        }
+
+        $expected = (float) $invoice->getAmountRemaining();
+
+        return abs($expected - $amount) <= self::AMOUNT_TOLERANCE_KES || $amount >= $expected;
     }
 
     /**

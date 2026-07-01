@@ -210,20 +210,33 @@ class DomainPushService
     public function pushOrderUsingWallet(ResellerDomainOrder $order): void
     {
         $this->db->transaction(function () use ($order) {
-            $reseller = $order->reseller;
+            $locked = ResellerDomainOrder::query()
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->first();
 
-            $actionLabel = $order->isTransfer() ? 'transfer' : 'registration';
+            if (! $locked || $locked->status !== 'queued') {
+                return;
+            }
+
+            if ($locked->wallet_transaction_id || $locked->admin_order_id) {
+                return;
+            }
+
+            $reseller = $locked->reseller;
+
+            $actionLabel = $locked->isTransfer() ? 'transfer' : 'registration';
             $transaction = $this->walletService->debit(
                 $reseller,
-                $order->wholesale_amount,
-                "Domain {$actionLabel}: {$order->domain_name}{$order->extension}",
-                $order->id,
+                $locked->wholesale_amount,
+                "Domain {$actionLabel}: {$locked->domain_name}{$locked->extension}",
+                $locked->id,
                 'ResellerDomainOrder'
             );
 
-            $adminOrder = $this->createAdminOrderForDomain($order, $reseller, paidViaWallet: true);
+            $adminOrder = $this->createAdminOrderForDomain($locked, $reseller, paidViaWallet: true);
 
-            $order->update([
+            $locked->update([
                 'status' => 'pushed',
                 'pushed_at' => now(),
                 'wallet_transaction_id' => $transaction->id,
@@ -231,8 +244,8 @@ class DomainPushService
                 'admin_invoice_id' => $adminOrder->invoice_id,
             ]);
 
-            $this->markCustomerOrderSubmitted($order);
-            $this->notificationService->sendDomainPushedNotification($order);
+            $this->markCustomerOrderSubmitted($locked);
+            $this->notificationService->sendDomainPushedNotification($locked);
         });
 
         $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));
@@ -241,17 +254,26 @@ class DomainPushService
     public function pushAfterWholesalePaidViaInvoice(ResellerDomainOrder $order): void
     {
         $this->db->transaction(function () use ($order) {
-            $adminOrder = $this->createAdminOrderForDomain($order, $order->reseller, paidViaWallet: false);
+            $locked = ResellerDomainOrder::query()
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->first();
 
-            $order->update([
+            if (! $locked || $locked->status !== 'queued' || $locked->admin_order_id) {
+                return;
+            }
+
+            $adminOrder = $this->createAdminOrderForDomain($locked, $locked->reseller, paidViaWallet: false);
+
+            $locked->update([
                 'status' => 'pushed',
                 'pushed_at' => now(),
                 'admin_order_id' => $adminOrder->id,
                 'admin_invoice_id' => $adminOrder->invoice_id,
             ]);
 
-            $this->markCustomerOrderSubmitted($order);
-            $this->notificationService->sendDomainPushedNotification($order);
+            $this->markCustomerOrderSubmitted($locked);
+            $this->notificationService->sendDomainPushedNotification($locked);
         });
 
         $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));
@@ -264,16 +286,26 @@ class DomainPushService
         }
 
         $this->db->transaction(function () use ($order) {
-            $adminOrder = $this->createAdminOrderForDomain($order, $order->customer, paidViaWallet: false);
+            $locked = ResellerDomainOrder::query()
+                ->whereKey($order->id)
+                ->lockForUpdate()
+                ->first();
 
-            $order->update([
+            if (! $locked || $locked->status !== 'queued' || $locked->admin_order_id) {
+                return;
+            }
+
+            $adminOrder = $this->createAdminOrderForDomain($locked, $locked->customer, paidViaWallet: false);
+
+            $locked->update([
                 'status' => 'pushed',
                 'pushed_at' => now(),
                 'admin_order_id' => $adminOrder->id,
                 'admin_invoice_id' => $adminOrder->invoice_id,
             ]);
 
-            $this->markCustomerOrderSubmitted($order);
+            $this->markCustomerOrderSubmitted($locked);
+            $this->notificationService->sendDomainPushedNotification($locked);
         });
 
         $this->attemptAutoRegistrarFulfillment($order->fresh(['domain.domainExtension.registrarModel']));

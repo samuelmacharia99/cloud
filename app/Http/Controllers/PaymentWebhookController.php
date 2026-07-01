@@ -10,7 +10,6 @@ use App\Services\DomainPushService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
-use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Http\Request;
@@ -29,8 +28,14 @@ class PaymentWebhookController extends Controller
         }
 
         try {
+            $data = $request->all();
             $gateway = PaymentGatewayFactory::make('mpesa');
-            $result = $gateway->handleCallback($request->all());
+
+            if ($this->isC2bPayload($data)) {
+                return $this->handleC2bCallback($gateway, $data);
+            }
+
+            $result = $gateway->handleCallback($data);
 
             if (isset($result['wallet_topup']) || isset($result['credit_topup'])) {
                 return response('', 200);
@@ -59,6 +64,55 @@ class PaymentWebhookController extends Controller
 
             return response('', 200);
         }
+    }
+
+    private function isC2bPayload(array $data): bool
+    {
+        return isset($data['TransID']) && ! isset($data['Body']['stkCallback']);
+    }
+
+    /**
+     * @param  \App\Services\PaymentGateway\PaymentGatewayInterface  $gateway
+     */
+    private function handleC2bCallback($gateway, array $data)
+    {
+        if (! method_exists($gateway, 'handleC2bCallback')) {
+            Log::warning('C2B callback received but gateway does not support it');
+
+            return response('', 400);
+        }
+
+        $result = $gateway->handleC2bCallback($data);
+
+        if (! empty($result['validation_response'])) {
+            return response()->json([
+                'ResultCode' => ($result['accepted'] ?? false) ? '0' : 'C2B00016',
+                'ResultDesc' => $result['message'] ?? 'Rejected',
+            ]);
+        }
+
+        if (isset($result['wallet_topup']) || isset($result['credit_topup'])) {
+            return response('', 200);
+        }
+
+        if (isset($result['payment_id'])) {
+            $payment = Payment::with('invoice.user')->find($result['payment_id']);
+
+            if ($payment?->invoice) {
+                $shouldSettle = ($result['success'] ?? false)
+                    && empty($result['already_processed']);
+
+                if (! $shouldSettle && $payment->isCompleted() && ! $payment->invoice->isPaid()) {
+                    $shouldSettle = true;
+                }
+
+                if ($shouldSettle) {
+                    $this->handleCompletedInvoicePayment($payment);
+                }
+            }
+        }
+
+        return response('', 200);
     }
 
     private function isValidMpesaCallback(Request $request): bool
@@ -164,19 +218,6 @@ class PaymentWebhookController extends Controller
         } catch (\Exception $e) {
             Log::error('Reseller domain renewal push failed from webhook', [
                 'invoice_id' => $invoice->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function provisionCustomerServices(Payment $payment): void
-    {
-        try {
-            app(InvoiceProvisioningService::class)
-                ->provisionPendingServicesForInvoice($payment->invoice);
-        } catch (\Exception $e) {
-            Log::error('Customer service provisioning failed from webhook', [
-                'payment_id' => $payment->id,
                 'error' => $e->getMessage(),
             ]);
         }

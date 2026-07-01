@@ -11,7 +11,14 @@ class EmailWebhookController extends Controller
     public function bounce(Request $request, EmailDeliveryService $emailDelivery)
     {
         $token = config('services.email_bounce.token', env('EMAIL_BOUNCE_TOKEN'));
-        if ($token && $request->header('X-Email-Bounce-Token') !== $token) {
+
+        if ($token === '') {
+            if (app()->environment('production')) {
+                Log::warning('Email bounce webhook rejected: token not configured');
+
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+        } elseif (! hash_equals($token, (string) $request->header('X-Email-Bounce-Token', ''))) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
 

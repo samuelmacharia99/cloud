@@ -117,16 +117,19 @@ class ResellerManagedServiceUpdateService
                 $this->applyResellerDirectAdminPackageChange($reseller, $service, $listing);
                 $appliedOnServer = true;
                 $updates['product_id'] = $targetProduct->id;
+                $updates['name'] = $targetProduct->name;
                 $updates['service_meta'] = array_merge($meta, $listing->directAdminPackageMeta());
                 $updates['provisioning_driver_key'] = 'directadmin';
             } elseif ($targetProduct->directAdminPackage) {
                 $deferAdminProductUpgrade = true;
             } else {
                 $updates['product_id'] = $targetProduct->id;
+                $updates['name'] = $targetProduct->name;
                 $updates['provisioning_driver_key'] = $targetProduct->provisioning_driver_key;
             }
         } elseif ($packageChanged) {
             $updates['product_id'] = $targetProduct->id;
+            $updates['name'] = $targetProduct->name;
             $updates['provisioning_driver_key'] = $targetProduct->provisioning_driver_key;
 
             if ($listing->usesDirectAdminPackage()) {

@@ -156,6 +156,7 @@ class SettingSeeder extends Seeder
             ['key' => 'directadmin_api_user', 'value' => 'admin', 'description' => 'DirectAdmin admin username'],
             ['key' => 'directadmin_api_password', 'value' => '', 'description' => 'DirectAdmin admin password'],
             ['key' => 'directadmin_default_package', 'value' => 'default', 'description' => 'Default DirectAdmin package for hosting accounts'],
+            ['key' => 'directadmin_auto_push_package_limits', 'value' => '0', 'description' => 'When enabled, provisioning/upgrades rewrite DirectAdmin user package templates from the local catalog. Leave disabled to avoid overwriting server limits.'],
 
             // Cloudflare DNS
             ['key' => 'cloudflare_enabled', 'value' => 'false', 'description' => 'Enable Cloudflare managed DNS for customers'],

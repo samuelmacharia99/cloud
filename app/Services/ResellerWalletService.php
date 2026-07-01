@@ -66,6 +66,19 @@ class ResellerWalletService
         string $type = 'domain_debit',
     ): WalletTransaction {
         return $this->db->transaction(function () use ($reseller, $amount, $description, $refId, $refType, $type) {
+            if ($refId !== null && $refType !== null) {
+                $existing = WalletTransaction::query()
+                    ->where('reference_id', $refId)
+                    ->where('reference_type', $refType)
+                    ->where('type', $type)
+                    ->where('status', 'completed')
+                    ->first();
+
+                if ($existing) {
+                    return $existing;
+                }
+            }
+
             $wallet = $this->getOrCreate($reseller);
 
             $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();

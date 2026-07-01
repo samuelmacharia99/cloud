@@ -50,7 +50,7 @@ class ProvisioningService
             }
 
             // Send service activated notification (only if not already sent by the driver)
-            if ($service->status === 'active' && ! $service->containerDeployment) {
+            if ($service->status === 'active' && $driver !== 'container') {
                 app(NotificationService::class)->notifyServiceActivated($service->fresh());
             }
         } catch (\Exception $e) {
@@ -78,12 +78,12 @@ class ProvisioningService
             $suspended = false;
 
             if ($driver === 'directadmin' && $hasReference) {
-                $node = $this->resolveDirectAdminNode($service);
-                if (! $node) {
-                    throw new \Exception('Service has no DirectAdmin node assigned');
+                $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+                $daService = $resellerDirectAdmin->directAdminForService($service);
+                if (! $daService) {
+                    throw new \Exception('DirectAdmin API is not configured for this service');
                 }
 
-                $daService = new DirectAdminService($node);
                 $suspended = $daService->suspendAccount($service);
                 if (! $suspended) {
                     throw new \Exception('DirectAdmin API failed to suspend account');
@@ -139,12 +139,12 @@ class ProvisioningService
             $hasReference = $service->external_reference || ($service->service_meta['username'] ?? null);
 
             if ($driver === 'directadmin' && $hasReference) {
-                $node = $this->resolveDirectAdminNode($service);
-                if (! $node) {
-                    throw new \Exception('Service has no DirectAdmin node assigned');
+                $resellerDirectAdmin = app(ResellerDirectAdminService::class);
+                $daService = $resellerDirectAdmin->directAdminForService($service);
+                if (! $daService) {
+                    throw new \Exception('DirectAdmin API is not configured for this service');
                 }
 
-                $daService = new DirectAdminService($node);
                 $unsuspended = $daService->unsuspendAccount($service);
                 if (! $unsuspended) {
                     throw new \Exception('DirectAdmin API failed to unsuspend account');

@@ -14,7 +14,7 @@ class ExpireDomainRenewalOrdersCommand extends BaseCronCommand
     protected function handleCron(): string
     {
         $renewalService = new DomainRenewalService;
-        $expiredOrders = DomainRenewalOrder::where('status', 'pending')
+        $expiredOrders = DomainRenewalOrder::whereIn('status', ['pending', 'invoiced'])
             ->where('expires_at', '<=', now())
             ->get();
 

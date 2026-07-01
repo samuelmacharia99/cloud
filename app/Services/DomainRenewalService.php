@@ -124,14 +124,33 @@ class DomainRenewalService
 
         $adminOrder = null;
         $adminInvoice = null;
+        $shouldNotify = false;
 
-        DB::transaction(function () use ($renewalOrder, &$adminOrder, &$adminInvoice) {
-            $renewalOrder->loadMissing('invoice');
-            $domain = $renewalOrder->domain;
-            $customer = $renewalOrder->user;
-            $customerInvoicePaid = $renewalOrder->invoice?->isPaid() ?? false;
+        DB::transaction(function () use ($renewalOrder, &$adminOrder, &$adminInvoice, &$shouldNotify) {
+            $locked = DomainRenewalOrder::query()
+                ->whereKey($renewalOrder->id)
+                ->lockForUpdate()
+                ->first();
 
-            $tax = TaxService::calculateForUser((float) $renewalOrder->amount, $customer);
+            if (! $locked || in_array($locked->status, ['pushed', 'completed'], true)) {
+                return;
+            }
+
+            if ($locked->admin_order_id) {
+                $locked->update([
+                    'status' => 'pushed',
+                    'pushed_at' => $locked->pushed_at ?? now(),
+                ]);
+
+                return;
+            }
+
+            $locked->loadMissing('invoice');
+            $domain = $locked->domain;
+            $customer = $locked->user;
+            $customerInvoicePaid = $locked->invoice?->isPaid() ?? false;
+
+            $tax = TaxService::calculateForUser((float) $locked->amount, $customer);
 
             $adminOrder = Order::create([
                 'user_id' => $customer->id,
@@ -158,21 +177,23 @@ class DomainRenewalService
             InvoiceItem::create([
                 'invoice_id' => $adminInvoice->id,
                 'domain_id' => $domain->id,
-                'description' => "Renew {$domain->name}{$domain->extension} for {$renewalOrder->years} year".($renewalOrder->years > 1 ? 's' : ''),
+                'description' => "Renew {$domain->name}{$domain->extension} for {$locked->years} year".($locked->years > 1 ? 's' : ''),
                 'quantity' => 1,
-                'unit_price' => $renewalOrder->amount,
-                'amount' => $renewalOrder->amount,
+                'unit_price' => $locked->amount,
+                'amount' => $locked->amount,
             ]);
 
             $adminOrder->update(['invoice_id' => $adminInvoice->id]);
 
-            $renewalOrder->update([
+            $locked->update([
                 'admin_order_id' => $adminOrder->id,
                 'admin_invoice_id' => $adminInvoice->id,
                 'status' => 'pushed',
                 'pushed_at' => now(),
-                'paid_at' => $customerInvoicePaid ? ($renewalOrder->invoice?->paid_date ?? now()) : null,
+                'paid_at' => $customerInvoicePaid ? ($locked->invoice?->paid_date ?? now()) : null,
             ]);
+
+            $shouldNotify = true;
         });
 
         try {
@@ -182,7 +203,7 @@ class DomainRenewalService
             report($e);
         }
 
-        if ($adminOrder && $adminInvoice) {
+        if ($shouldNotify && $adminOrder && $adminInvoice) {
             try {
                 app(NotificationService::class)->notifyAdminDomainRenewalPushed($renewalOrder->fresh(), $adminOrder, $adminInvoice);
             } catch (\Throwable $e) {

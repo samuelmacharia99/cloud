@@ -9,6 +9,16 @@ use Tests\TestCase;
 
 class ResellerNameserverServiceTest extends TestCase
 {
+    private function mockNodeNameserverService(): NodeNameserverService
+    {
+        $nodeService = $this->createMock(NodeNameserverService::class);
+        $nodeService->method('normalize')->willReturnCallback(
+            fn (?string $ns1, ?string $ns2, ?string $ns3, ?string $ns4) => (new NodeNameserverService)->normalize($ns1, $ns2, $ns3, $ns4)
+        );
+
+        return $nodeService;
+    }
+
     public function test_defaults_for_reseller_use_platform_when_configured(): void
     {
         $reseller = new User([
@@ -20,7 +30,7 @@ class ResellerNameserverServiceTest extends TestCase
             ],
         ]);
 
-        $nodeService = $this->createMock(NodeNameserverService::class);
+        $nodeService = $this->mockNodeNameserverService();
         $nodeService->method('platformDefaults')->willReturn([
             'ns1' => 'ns1.platform.test',
             'ns2' => 'ns2.platform.test',
@@ -50,7 +60,7 @@ class ResellerNameserverServiceTest extends TestCase
             ],
         ]);
 
-        $service = new ResellerNameserverService($this->createMock(NodeNameserverService::class));
+        $service = new ResellerNameserverService($this->mockNodeNameserverService());
 
         $this->assertSame([
             'ns1' => 'ns1.reseller.test',
@@ -78,7 +88,7 @@ class ResellerNameserverServiceTest extends TestCase
         ]);
         $customer->setRelation('reseller', $reseller);
 
-        $service = new ResellerNameserverService($this->createMock(NodeNameserverService::class));
+        $service = new ResellerNameserverService($this->mockNodeNameserverService());
 
         $this->assertSame([
             'ns1' => 'ns1.reseller.test',
@@ -106,7 +116,7 @@ class ResellerNameserverServiceTest extends TestCase
         ]);
         $customer->setRelation('reseller', $reseller);
 
-        $service = new ResellerNameserverService($this->createMock(NodeNameserverService::class));
+        $service = new ResellerNameserverService($this->mockNodeNameserverService());
 
         $resolved = $service->resolveForCustomerItem($customer, [
             'type' => 'domain',
@@ -126,7 +136,7 @@ class ResellerNameserverServiceTest extends TestCase
             'reseller_id' => null,
         ]);
 
-        $nodeService = $this->createMock(NodeNameserverService::class);
+        $nodeService = $this->mockNodeNameserverService();
         $nodeService->method('platformDefaults')->willReturn([
             'ns1' => 'ns1.platform.test',
             'ns2' => 'ns2.platform.test',
@@ -154,7 +164,7 @@ class ResellerNameserverServiceTest extends TestCase
             ],
         ]);
 
-        $service = new ResellerNameserverService($this->createMock(NodeNameserverService::class));
+        $service = new ResellerNameserverService($this->mockNodeNameserverService());
 
         $parsed = $service->parseSubmitted([
             'use_default' => false,

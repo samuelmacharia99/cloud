@@ -69,6 +69,7 @@ class SchedulerHealthServiceTest extends TestCase
     public function test_reports_healthy_with_fresh_heartbeat(): void
     {
         Config::set('scheduler.enabled', true);
+        Config::set('cache.default', 'file');
         Cache::put('scheduler.last_heartbeat', now()->toIso8601String(), now()->addMinutes(5));
 
         CronJob::create([
@@ -81,7 +82,7 @@ class SchedulerHealthServiceTest extends TestCase
 
         $status = app(SchedulerHealthService::class)->status();
 
-        $this->assertTrue($status['healthy']);
+        $this->assertTrue($status['healthy'], implode('; ', $status['issues'] ?? []));
         $this->assertTrue($status['heartbeat_fresh']);
     }
 }

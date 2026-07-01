@@ -7,9 +7,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        DB::statement(
-            "ALTER TABLE sms_templates MODIFY recipient_type ENUM('customer', 'admin', 'reseller', 'both') NOT NULL DEFAULT 'customer'"
-        );
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::statement(
+                "ALTER TABLE sms_templates MODIFY recipient_type ENUM('customer', 'admin', 'reseller', 'both') NOT NULL DEFAULT 'customer'"
+            );
+        }
     }
 
     public function down(): void
@@ -18,8 +20,10 @@ return new class extends Migration
             ->where('recipient_type', 'reseller')
             ->update(['recipient_type' => 'admin']);
 
-        DB::statement(
-            "ALTER TABLE sms_templates MODIFY recipient_type ENUM('customer', 'admin', 'both') NOT NULL DEFAULT 'customer'"
-        );
+        if (in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+            DB::statement(
+                "ALTER TABLE sms_templates MODIFY recipient_type ENUM('customer', 'admin', 'both') NOT NULL DEFAULT 'customer'"
+            );
+        }
     }
 };

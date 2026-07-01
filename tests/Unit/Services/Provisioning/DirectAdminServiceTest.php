@@ -296,6 +296,40 @@ class DirectAdminServiceTest extends TestCase
         });
     }
 
+    public function test_ensure_user_package_omits_unlimited_catalog_fields(): void
+    {
+        Http::fake([
+            '*' => Http::response('error=0&text=Saved', 200),
+        ]);
+
+        $package = new DirectAdminPackage([
+            'name' => 'Broken',
+            'package_key' => 'broken',
+            'disk_quota' => -1,
+            'bandwidth_quota' => -1,
+            'num_domains' => -1,
+            'num_ftp' => 2,
+            'num_email_accounts' => 10,
+            'num_databases' => 3,
+            'num_subdomains' => -1,
+            'features' => ['php' => true, 'ssl' => true],
+        ]);
+
+        $result = (new DirectAdminService($this->createDirectAdminNode()))->ensureUserPackage($package);
+
+        $this->assertTrue($result['success']);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'CMD_API_MANAGE_USER_PACKAGES')
+                && ! isset($request['uquota'])
+                && ! isset($request['ubandwidth'])
+                && ! isset($request['uvdomains'])
+                && ! isset($request['unsubdomains'])
+                && $request['uftp'] === 'OFF'
+                && (int) $request['ftp'] === 2;
+        });
+    }
+
     public function test_get_packages_reads_quota_field_for_disk(): void
     {
         Http::fake(function ($request) {

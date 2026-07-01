@@ -486,7 +486,7 @@ class CustomerHostingUpgradeService
 
             $this->directAdminSetup->ensurePackageOnServer($directAdmin, $package, $ownerReseller);
 
-            $result = $directAdmin->changeUserPackage($username, $package->package_key);
+            $result = $directAdmin->changeUserPackage($username, $package->name);
 
             if (! $result['success']) {
                 throw new \RuntimeException($result['message']);
@@ -515,6 +515,7 @@ class CustomerHostingUpgradeService
 
         $service->update([
             'product_id' => $targetProduct->id,
+            'name' => $targetProduct->name,
             'provisioning_driver_key' => 'directadmin',
             'service_meta' => $meta,
             ...($billingCycle ? ['billing_cycle' => $billingCycle] : []),

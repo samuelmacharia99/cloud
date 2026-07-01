@@ -236,7 +236,7 @@
                             @foreach ($customer->services as $service)
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
                                     <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">
-                                        {{ $service->name }}
+                                        {{ $service->product?->name ?? $service->name }}
                                         @if(($service->product?->type === 'shared_hosting') && !empty($service->service_meta['username']))
                                             <div class="text-xs font-normal text-slate-500 dark:text-slate-400 mt-0.5">
                                                 <span class="font-mono">{{ $service->service_meta['username'] }}</span>

@@ -34,9 +34,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('backups/{backup}', [ContainerApiController::class, 'deleteBackup'])->name('api.container.backups.delete');
         });
 
-        // Container templates
-        Route::get('container-templates', [ContainerTemplateApiController::class, 'index'])->name('api.templates.index');
-        Route::get('container-templates/{template}', [ContainerTemplateApiController::class, 'show'])->name('api.templates.show');
+        // Container templates (admin only — may expose internal stack metadata)
+        Route::middleware('admin')->group(function () {
+            Route::get('container-templates', [ContainerTemplateApiController::class, 'index'])->name('api.templates.index');
+            Route::get('container-templates/{template}', [ContainerTemplateApiController::class, 'show'])->name('api.templates.show');
+        });
 
         // Admin-only node operations
         Route::middleware('admin')->prefix('nodes')->group(function () {

@@ -156,6 +156,16 @@ class DirectAdminSetupService
         DirectAdminPackage $package,
         ?string $ownerResellerUsername = null,
     ): void {
+        if (! $this->autoPushPackageLimitsEnabled()) {
+            \Log::info('Skipping DirectAdmin package limit push (auto-push disabled)', [
+                'package_id' => $package->id,
+                'package_name' => $package->name,
+                'node_id' => $package->node_id,
+            ]);
+
+            return;
+        }
+
         $result = $directAdmin->ensureUserPackage(
             $package,
             filled($ownerResellerUsername) ? $ownerResellerUsername : null,
@@ -164,6 +174,14 @@ class DirectAdminSetupService
         if (! $result['success']) {
             throw new \RuntimeException($result['message']);
         }
+    }
+
+    public function autoPushPackageLimitsEnabled(): bool
+    {
+        return filter_var(
+            Setting::getValue('directadmin_auto_push_package_limits', '0'),
+            FILTER_VALIDATE_BOOLEAN,
+        );
     }
 
     public function resolveCredentials(Service $service): array

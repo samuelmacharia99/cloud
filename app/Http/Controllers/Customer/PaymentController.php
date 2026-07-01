@@ -529,42 +529,6 @@ class PaymentController extends Controller
     }
 
     /**
-     * Webhook: M-Pesa callback
-     */
-    public function mpesaCallback(Request $request)
-    {
-        try {
-            $gateway = PaymentGatewayFactory::make('mpesa');
-            $result = $gateway->handleCallback($request->all());
-
-            // If payment was successful, trigger provisioning
-            if ($result['success'] && isset($result['payment_id'])) {
-                if (isset($result['wallet_topup']) || isset($result['credit_topup'])) {
-                    return response('', 200);
-                }
-
-                $payment = Payment::find($result['payment_id']);
-                if ($payment && $payment->invoice) {
-                    try {
-                        $this->processPaymentCompletion($payment, $payment->invoice);
-                    } catch (\Exception $e) {
-                        Log::error('Auto-provisioning failed from webhook', [
-                            'payment_id' => $payment->id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
-                }
-            }
-
-            return response('', 200);
-        } catch (\Exception $e) {
-            Log::error('M-Pesa callback error', ['error' => $e->getMessage()]);
-
-            return response('', 200);
-        }
-    }
-
-    /**
      * Webhook: Stripe webhook
      */
     public function stripeWebhook(Request $request)
