@@ -41,6 +41,17 @@
                         </span>
                     @endif
                 </div>
+                <div class="flex flex-wrap justify-end gap-2">
+                    <form method="POST" action="{{ route('admin.resellers.impersonate', $user) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
+                            Impersonate
+                        </button>
+                    </form>
+                    <a href="{{ route('admin.resellers.edit', $user) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
+                        Edit Reseller
+                    </a>
+                </div>
                 <form action="{{ route('admin.resellers.demote', $user) }}" method="POST" class="inline">
                     @csrf
                     <x-confirmation-dialog
