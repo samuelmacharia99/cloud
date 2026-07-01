@@ -669,6 +669,15 @@ class ResellerHostedAccountDirectoryService
      */
     private function sortRows(Collection $rows): Collection
     {
-        return $rows->sortBy(fn (array $row) => strtolower((string) ($row['display_name'] ?? '')))->values();
+        return $rows->sort(function (array $a, array $b) {
+            $aTime = $a['user']?->created_at?->getTimestamp() ?? 0;
+            $bTime = $b['user']?->created_at?->getTimestamp() ?? 0;
+
+            if ($aTime !== $bTime) {
+                return $bTime <=> $aTime;
+            }
+
+            return strcasecmp((string) ($a['display_name'] ?? ''), (string) ($b['display_name'] ?? ''));
+        })->values();
     }
 }

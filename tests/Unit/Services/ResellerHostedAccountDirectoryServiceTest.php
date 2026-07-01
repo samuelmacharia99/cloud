@@ -176,4 +176,35 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
         $this->assertSame('copyritefurniturekenya.com', $row['da_domain']);
         $this->assertSame('Gold', $row['da_package']);
     }
+
+    public function test_admin_directory_orders_customers_newest_first(): void
+    {
+        $older = User::factory()->customer()->create([
+            'name' => 'Older Customer',
+            'email' => 'older@example.test',
+            'created_at' => now()->subDays(10),
+        ]);
+        $newer = User::factory()->customer()->create([
+            'name' => 'Newer Customer',
+            'email' => 'newer@example.test',
+            'created_at' => now()->subDay(),
+        ]);
+
+        $result = app(ResellerHostedAccountDirectoryService::class)
+            ->paginatedForAdmin(Request::create('/admin/customers', 'GET'));
+
+        $items = collect($result['rows']->items());
+        $emails = $items->map(function ($row) {
+            if ($row instanceof User) {
+                return $row->email;
+            }
+
+            return $row['display_email'] ?? null;
+        })->filter()->values();
+
+        $this->assertGreaterThanOrEqual(2, $emails->count());
+        $this->assertSame('newer@example.test', $emails[0]);
+        $this->assertContains('older@example.test', $emails->all());
+        $this->assertLessThan($emails->search('older@example.test'), $emails->search('newer@example.test'));
+    }
 }
