@@ -122,4 +122,63 @@ class ServiceBillingDateRepairServiceTest extends TestCase
 
         $this->assertCount(0, app(ServiceBillingDateRepairService::class)->findAffected());
     }
+
+    public function test_mislinked_repair_skips_legitimate_new_period_renewal_invoice(): void
+    {
+        Carbon::setTestNow('2026-06-26');
+
+        $user = User::factory()->customer()->create();
+        $product = Product::factory()->create();
+
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'billing_cycle' => 'monthly',
+            'next_due_date' => '2026-07-01',
+        ]);
+
+        $paid = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => InvoiceStatus::Paid,
+            'due_date' => '2026-06-01',
+            'paid_date' => '2026-06-01',
+            'notes' => 'Auto-generated renewal invoice.',
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $paid->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Bronze — Monthly',
+            'quantity' => 1,
+            'unit_price' => 380,
+            'amount' => 380,
+        ]);
+
+        $currentRenewal = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => InvoiceStatus::Unpaid,
+            'due_date' => '2026-07-01',
+            'notes' => 'Auto-generated renewal invoice.',
+        ]);
+
+        $service->update(['invoice_id' => $currentRenewal->id]);
+
+        InvoiceItem::create([
+            'invoice_id' => $currentRenewal->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Bronze — Monthly',
+            'quantity' => 1,
+            'unit_price' => 380,
+            'amount' => 380,
+        ]);
+
+        $repair = app(ServiceBillingDateRepairService::class);
+
+        $this->assertCount(0, $repair->findMislinkedRenewalServices());
+
+        Carbon::setTestNow();
+    }
 }

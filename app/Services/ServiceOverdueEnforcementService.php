@@ -85,8 +85,8 @@ class ServiceOverdueEnforcementService
                     ->orWhere('service_meta->'.ResellerEnforcementService::META_SUSPENSION_REASON, ResellerEnforcementService::REASON_INVOICE_OVERDUE);
             })
             ->where(function (Builder $query) {
-                $query->whereHas('invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q))
-                    ->orWhereHas('invoiceItems.invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceConstraint($q));
+                $query->whereHas('invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceForCurrentPeriodConstraint($q))
+                    ->orWhereHas('invoiceItems.invoice', fn (Builder $q) => $this->applyPaidBillingInvoiceForCurrentPeriodConstraint($q));
             })
             ->whereDoesntHave('invoice', fn (Builder $q) => $this->applyOpenBillingInvoiceConstraint($q))
             ->whereDoesntHave('invoiceItems.invoice', fn (Builder $q) => $this->applyOpenBillingInvoiceConstraint($q));
@@ -102,7 +102,8 @@ class ServiceOverdueEnforcementService
         $today = now()->startOfDay();
 
         return $this->serviceHasUnpaidBillingInvoiceDue($service, $today)
-            || $this->serviceMatchesOverduePastGrace($service, $graceCutoff);
+            || $this->serviceMatchesOverduePastGrace($service, $graceCutoff)
+            || $this->serviceHasUnpaidBillingPeriod($service, $today);
     }
 
     public function canAutoUnsuspendForPaidInvoice(Service $service): bool
@@ -117,7 +118,39 @@ class ServiceOverdueEnforcementService
             return false;
         }
 
-        return ! $this->shouldSuspendForOverdueInvoice($service);
+        if ($this->shouldSuspendForOverdueInvoice($service)) {
+            return false;
+        }
+
+        return $this->hasPaidInvoiceForCurrentBillingPeriod($service);
+    }
+
+    /**
+     * Whether a paid renewal invoice exists for the service's current next_due_date period.
+     */
+    public function hasPaidInvoiceForCurrentBillingPeriod(Service $service): bool
+    {
+        if (! $service->next_due_date) {
+            return true;
+        }
+
+        $periodDue = $service->next_due_date->copy()->startOfDay()->toDateString();
+
+        return Invoice::query()
+            ->where('user_id', $service->user_id)
+            ->where('status', InvoiceStatus::Paid)
+            ->where(function (Builder $query) {
+                $query->whereNull('type')->orWhere('type', '!=', 'reseller_subscription');
+            })
+            ->whereDate('due_date', $periodDue)
+            ->where(function (Builder $query) use ($service) {
+                $query->whereHas('items', fn (Builder $q) => $q->where('service_id', $service->id));
+
+                if ($service->invoice_id) {
+                    $query->orWhere('id', $service->invoice_id);
+                }
+            })
+            ->exists();
     }
 
     public function clearInvoiceSuspensionMeta(Service $service): void
@@ -243,6 +276,28 @@ class ServiceOverdueEnforcementService
     {
         $this->applyBillingInvoiceScope($query);
         $query->where('status', InvoiceStatus::Paid);
+    }
+
+    private function applyPaidBillingInvoiceForCurrentPeriodConstraint(Builder $query): void
+    {
+        $this->applyPaidBillingInvoiceConstraint($query);
+        $query->whereColumn('invoices.due_date', 'services.next_due_date');
+    }
+
+    /**
+     * Service is past its billing date with no paid invoice for that period (e.g. open invoice was cancelled).
+     */
+    private function serviceHasUnpaidBillingPeriod(Service $service, Carbon $reference): bool
+    {
+        if (! $service->next_due_date) {
+            return false;
+        }
+
+        if ($service->next_due_date->copy()->startOfDay()->gt($reference)) {
+            return false;
+        }
+
+        return ! $this->hasPaidInvoiceForCurrentBillingPeriod($service);
     }
 
     private function applyOpenBillingInvoiceConstraint(Builder $query): void

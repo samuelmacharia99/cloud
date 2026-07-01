@@ -334,14 +334,25 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_can_auto_unsuspend_after_all_billing_invoices_are_paid(): void
+    public function test_cannot_auto_unsuspend_after_renewal_invoice_cancelled_without_payment(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-06-26'));
+
         $customer = User::factory()->create();
         $product = Product::factory()->create();
 
         $paidInvoice = Invoice::factory()->create([
             'user_id' => $customer->id,
             'status' => 'paid',
+            'due_date' => Carbon::parse('2026-05-25'),
+            'notes' => 'Auto-generated renewal invoice.',
+        ]);
+
+        $cancelledRenewal = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'cancelled',
+            'due_date' => Carbon::parse('2026-06-25'),
+            'notes' => "Auto-generated renewal invoice.\nCancelled: duplicate renewal after paid invoice #{$paidInvoice->invoice_number}.",
         ]);
 
         $service = Service::factory()->create([
@@ -349,9 +360,73 @@ class ServiceOverdueEnforcementServiceTest extends TestCase
             'product_id' => $product->id,
             'status' => ServiceStatus::Suspended,
             'invoice_id' => $paidInvoice->id,
+            'next_due_date' => Carbon::parse('2026-06-25'),
             'service_meta' => [
                 ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_INVOICE_OVERDUE,
             ],
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $paidInvoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Previous period',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $cancelledRenewal->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Renewal',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'amount' => 100,
+        ]);
+
+        $this->assertTrue($this->enforcement->shouldSuspendForOverdueInvoice($service));
+        $this->assertFalse($this->enforcement->canAutoUnsuspendForPaidInvoice($service));
+        $this->assertFalse(
+            $this->enforcement->suspendedServicesWithPaidBillingInvoiceQuery()->get()->contains('id', $service->id)
+        );
+
+        Carbon::setTestNow();
+    }
+
+    public function test_can_auto_unsuspend_after_all_billing_invoices_are_paid(): void
+    {
+        $customer = User::factory()->create();
+        $product = Product::factory()->create();
+
+        $dueDate = Carbon::parse('2026-06-25');
+
+        $paidInvoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'paid',
+            'due_date' => $dueDate,
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $product->id,
+            'status' => ServiceStatus::Suspended,
+            'invoice_id' => $paidInvoice->id,
+            'next_due_date' => $dueDate,
+            'service_meta' => [
+                ResellerEnforcementService::META_SUSPENSION_REASON => ResellerEnforcementService::REASON_INVOICE_OVERDUE,
+            ],
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $paidInvoice->id,
+            'service_id' => $service->id,
+            'product_id' => $product->id,
+            'description' => 'Renewal',
+            'quantity' => 1,
+            'unit_price' => 100,
+            'amount' => 100,
         ]);
 
         $this->assertTrue($this->enforcement->canAutoUnsuspendForPaidInvoice($service));

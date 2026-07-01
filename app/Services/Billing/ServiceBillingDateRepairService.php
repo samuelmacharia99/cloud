@@ -248,6 +248,12 @@ class ServiceBillingDateRepairService
                         continue;
                     }
 
+                    if ($this->openErroneousRenewalInvoices($service, $anchor)->doesntContain(
+                        fn (Invoice $invoice) => $invoice->id === $open->id
+                    )) {
+                        continue;
+                    }
+
                     $results[] = [
                         'service' => $service,
                         'anchor_invoice' => $anchor,
