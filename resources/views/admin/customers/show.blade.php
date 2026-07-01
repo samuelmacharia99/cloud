@@ -203,6 +203,9 @@
 
     <!-- Services Tab -->
     <div x-show="tab === 'services'" class="space-y-6">
+        @php
+            $customerDomainsByFqdn = $customer->domains->keyBy(fn ($d) => strtolower($d->fqdn()));
+        @endphp
         <!-- Action Buttons -->
         <div class="flex gap-3">
             <button @click="console.log('[Button] Add Service clicked'), addServiceModal = true" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
@@ -238,7 +241,13 @@
                                             <div class="text-xs font-normal text-slate-500 dark:text-slate-400 mt-0.5">
                                                 <span class="font-mono">{{ $service->service_meta['username'] }}</span>
                                                 @if(!empty($service->service_meta['domain']))
-                                                    &middot; <span class="font-mono">{{ $service->service_meta['domain'] }}</span>
+                                                    @php $serviceDomain = $customerDomainsByFqdn->get(strtolower($service->service_meta['domain'])); @endphp
+                                                    &middot;
+                                                    @if($serviceDomain)
+                                                        <a href="{{ route('admin.domains.show', $serviceDomain) }}" class="font-mono text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline">{{ $service->service_meta['domain'] }}</a>
+                                                    @else
+                                                        <span class="font-mono">{{ $service->service_meta['domain'] }}</span>
+                                                    @endif
                                                 @endif
                                             </div>
                                         @endif
@@ -305,7 +314,11 @@
                         <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                             @foreach ($customer->domains as $domain)
                                 <tr class="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
-                                    <td class="px-6 py-4 text-sm text-slate-900 dark:text-white font-medium">{{ $domain->name }}{{ $domain->extension }}</td>
+                                    <td class="px-6 py-4 text-sm font-medium">
+                                        <a href="{{ route('admin.domains.show', $domain) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline">
+                                            {{ $domain->fqdn() }}
+                                        </a>
+                                    </td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $domain->registered_at ? $domain->registered_at->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">{{ $domain->expires_at ? $domain->expires_at->format('M d, Y') : '-' }}</td>
                                     <td class="px-6 py-4">
@@ -317,7 +330,7 @@
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 text-right">
-                                        <span class="text-slate-500 dark:text-slate-400 text-sm font-medium">-</span>
+                                        <a href="{{ route('admin.domains.show', $domain) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-sm font-medium">View</a>
                                     </td>
                                 </tr>
                             @endforeach
