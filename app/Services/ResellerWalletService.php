@@ -57,9 +57,15 @@ class ResellerWalletService
         });
     }
 
-    public function debit(User $reseller, float $amount, string $description, ?int $refId = null, ?string $refType = null): WalletTransaction
-    {
-        return $this->db->transaction(function () use ($reseller, $amount, $description, $refId, $refType) {
+    public function debit(
+        User $reseller,
+        float $amount,
+        string $description,
+        ?int $refId = null,
+        ?string $refType = null,
+        string $type = 'domain_debit',
+    ): WalletTransaction {
+        return $this->db->transaction(function () use ($reseller, $amount, $description, $refId, $refType, $type) {
             $wallet = $this->getOrCreate($reseller);
 
             $wallet = ResellerWallet::where('id', $wallet->id)->lockForUpdate()->firstOrFail();
@@ -75,7 +81,7 @@ class ResellerWalletService
 
             return WalletTransaction::create([
                 'wallet_id' => $wallet->id,
-                'type' => 'domain_debit',
+                'type' => $type,
                 'amount' => $amount,
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,

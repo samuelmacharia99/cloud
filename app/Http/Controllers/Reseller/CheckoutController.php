@@ -322,14 +322,9 @@ class CheckoutController extends Controller
                 }
             }
 
-            \DB::commit();
-
-            // Link domain orders to this invoice for self-purchase push flow
             ResellerDomainOrder::whereIn('id', $domainOrders)->update([
                 'customer_invoice_id' => $invoice->id,
             ]);
-
-            session()->forget(CartController::CART_KEY);
 
             $paymentMethod = 'awaiting payment';
 
@@ -342,6 +337,10 @@ class CheckoutController extends Controller
                     $paymentMethod = 'wallet';
                 }
             }
+
+            \DB::commit();
+
+            session()->forget(CartController::CART_KEY);
 
             foreach (ResellerDomainOrder::whereIn('id', $domainOrders)->with('reseller', 'customer')->get() as $domainOrder) {
                 try {

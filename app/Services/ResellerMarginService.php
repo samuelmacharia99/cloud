@@ -15,6 +15,29 @@ use Illuminate\Support\Collection;
 class ResellerMarginService
 {
     /**
+     * Record whitelabel margin when a managed customer invoice is settled via credits.
+     */
+    public function recordFromSettledInvoice(User $reseller, Invoice $invoice): void
+    {
+        $invoice->loadMissing('items.product');
+
+        if (! $this->isManagedCustomerInvoice($reseller, $invoice)) {
+            return;
+        }
+
+        foreach ($invoice->items as $item) {
+            if (ResellerMarginEntry::where('invoice_id', $invoice->id)
+                ->whereNull('payment_id')
+                ->where('description', $item->description)
+                ->exists()) {
+                continue;
+            }
+
+            $this->recordLineItemMargin($reseller, $invoice, null, $item, 1.0);
+        }
+    }
+
+    /**
      * Record whitelabel margin earned when a managed customer payment completes.
      */
     public function recordFromPayment(User $reseller, Payment $payment): void
@@ -127,7 +150,7 @@ class ResellerMarginService
     private function recordLineItemMargin(
         User $reseller,
         Invoice $invoice,
-        Payment $payment,
+        ?Payment $payment,
         InvoiceItem $item,
         float $share,
     ): void {
@@ -140,7 +163,7 @@ class ResellerMarginService
             'reseller_id' => $reseller->id,
             'customer_id' => $invoice->user_id,
             'invoice_id' => $invoice->id,
-            'payment_id' => $payment->id,
+            'payment_id' => $payment?->id,
             'entry_type' => $type,
             'description' => $item->description,
             'retail_amount' => $retailPortion,
@@ -161,7 +184,7 @@ class ResellerMarginService
             if ($order) {
                 return [
                     'domain',
-                    (float) ($order->retail_amount ?: $retail),
+                    $retail,
                     (float) $order->wholesale_amount,
                 ];
             }

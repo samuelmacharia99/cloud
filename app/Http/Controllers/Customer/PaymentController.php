@@ -162,10 +162,8 @@ class PaymentController extends Controller
 
             // Send order notification when payment method is initiated
             try {
-                // Get the order for this invoice (orders are created alongside invoices)
-                $order = Order::where('user_id', $invoice->user_id)
-                    ->orderByDesc('created_at')
-                    ->first();
+                // Get the order for this invoice
+                $order = $invoice->order;
 
                 if ($order) {
                     $notificationService = app(NotificationService::class);
@@ -548,7 +546,7 @@ class PaymentController extends Controller
                 $payment = Payment::find($result['payment_id']);
                 if ($payment && $payment->invoice) {
                     try {
-                        $this->provisionServices($payment->invoice);
+                        $this->processPaymentCompletion($payment, $payment->invoice);
                     } catch (\Exception $e) {
                         Log::error('Auto-provisioning failed from webhook', [
                             'payment_id' => $payment->id,
@@ -607,7 +605,7 @@ class PaymentController extends Controller
 
                 if ($payment && $payment->invoice) {
                     try {
-                        $this->provisionServices($payment->invoice);
+                        $this->processPaymentCompletion($payment, $payment->invoice);
                     } catch (\Exception $e) {
                         Log::error('Auto-provisioning failed from webhook', [
                             'payment_id' => $payment->id,
@@ -645,9 +643,13 @@ class PaymentController extends Controller
             // If payment was successful, trigger provisioning
             if ($result['success'] && isset($result['payment_id'])) {
                 $payment = Payment::find($result['payment_id']);
+                if ($payment && $payment->payment_purpose === 'credit_topup') {
+                    return response()->json($result);
+                }
+
                 if ($payment && $payment->invoice) {
                     try {
-                        $this->provisionServices($payment->invoice);
+                        $this->processPaymentCompletion($payment, $payment->invoice);
                     } catch (\Exception $e) {
                         Log::error('Auto-provisioning failed from webhook', [
                             'payment_id' => $payment->id,

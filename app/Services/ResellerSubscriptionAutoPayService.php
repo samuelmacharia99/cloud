@@ -55,6 +55,10 @@ class ResellerSubscriptionAutoPayService
 
         $amountDue = $this->invoicePayments->amountDue($invoice);
         if ($amountDue <= 0) {
+            if ((float) $invoice->total <= 0) {
+                return $this->activateZeroBalanceSubscriptionInvoice($invoice, $reseller);
+            }
+
             return false;
         }
 
@@ -129,6 +133,37 @@ class ResellerSubscriptionAutoPayService
             return true;
         } catch (\Throwable $e) {
             Log::error('Reseller subscription auto-pay failed', [
+                'invoice_id' => $invoice->id,
+                'reseller_id' => $reseller->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function activateZeroBalanceSubscriptionInvoice(Invoice $invoice, User $reseller): bool
+    {
+        try {
+            $markedPaid = Invoice::withoutEvents(function () use ($invoice) {
+                return $this->invoicePayments->completeInvoiceIfFullyPaid($invoice);
+            });
+
+            if (! $markedPaid) {
+                return false;
+            }
+
+            $paidInvoice = $invoice->fresh();
+            app(ResellerPackageSubscriptionService::class)->activateFromPaidInvoice($paidInvoice);
+
+            Log::info('Reseller zero-balance subscription invoice activated', [
+                'invoice_id' => $paidInvoice->id,
+                'reseller_id' => $reseller->id,
+            ]);
+
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Failed to activate zero-balance subscription invoice', [
                 'invoice_id' => $invoice->id,
                 'reseller_id' => $reseller->id,
                 'error' => $e->getMessage(),

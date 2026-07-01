@@ -22,9 +22,10 @@ use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainTransferService;
+use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
-use App\Services\EmailVerificationService;
+use App\Services\RegistrationGuardService;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
@@ -572,8 +573,8 @@ class CheckoutController extends Controller
             }
 
             return redirect()
-                ->route('customer.invoices.show', $invoice)
-                ->with('success', 'Order placed successfully! Please pay your invoice to activate services.');
+                ->route('customer.payment.select-method', $invoice)
+                ->with('success', 'Order placed successfully! Choose a payment method to activate your services.');
         } catch (\Exception $e) {
             \Log::error("Checkout failed: {$e->getMessage()}");
 
@@ -896,7 +897,7 @@ class CheckoutController extends Controller
                 'agree_terms' => 'required|accepted',
             ]);
 
-            $displayName = app(\App\Services\RegistrationGuardService::class)->buildDisplayName(
+            $displayName = app(RegistrationGuardService::class)->buildDisplayName(
                 $request->input('first_name'),
                 $request->input('last_name'),
             );
@@ -1304,8 +1305,8 @@ class CheckoutController extends Controller
             }
 
             return redirect()
-                ->route('customer.invoices.show', $invoice)
-                ->with('success', 'Account created and order placed! Please pay your invoice to activate services.');
+                ->route('customer.payment.select-method', $invoice)
+                ->with('success', 'Account created and order placed! Choose a payment method to activate your services.');
         } catch (\Exception $e) {
             \Log::error("Checkout processing failed: {$e->getMessage()}");
 

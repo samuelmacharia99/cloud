@@ -548,8 +548,6 @@ class ResellerCustomerOrderService
             'auto_renew' => false,
         ], app(ResellerNameserverService::class)->domainColumnsForItem($reseller, $cartItem)));
 
-        $retailMargin = max(0, round($retailAmount - $wholesaleAmount, 2));
-
         $order = ResellerDomainOrder::create([
             'reseller_id' => $reseller->id,
             'customer_id' => $customer->id,
@@ -559,7 +557,7 @@ class ResellerCustomerOrderService
             'order_type' => ResellerDomainOrderType::Transfer,
             'years' => 1,
             'wholesale_amount' => $wholesaleAmount,
-            'retail_amount' => $retailMargin,
+            'retail_amount' => $retailAmount,
             'status' => 'queued',
             'push_mode' => 'auto',
             'queued_at' => now(),

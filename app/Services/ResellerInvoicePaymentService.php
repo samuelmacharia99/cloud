@@ -15,7 +15,7 @@ class ResellerInvoicePaymentService
 
     public function amountDue(Invoice $invoice): float
     {
-        return max(0, round((float) $invoice->total - (float) $invoice->wallet_amount_applied, 2));
+        return max(0, round($invoice->fresh()->getAmountRemaining(), 2));
     }
 
     /**
@@ -57,6 +57,7 @@ class ResellerInvoicePaymentService
                 : "Applied to invoice {$invoice->invoice_number}",
             $invoice->id,
             'Invoice',
+            $invoice->type === 'reseller_subscription' ? 'subscription_debit' : 'domain_debit',
         );
 
         $invoice->update([

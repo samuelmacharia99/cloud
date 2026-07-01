@@ -8,12 +8,14 @@ use App\Models\Invoice;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Service;
+use App\Models\User;
 use App\Services\CreditService;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerMarginService;
 use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -72,9 +74,13 @@ class InvoiceSettlementService
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
 
+        if (! $wasAlreadyPaid || $this->invoiceNeedsFinalization($invoice)) {
             $this->finalizePaidInvoice($invoice->fresh());
         }
+
+        $this->recordResellerMarginsForInvoice($invoice->fresh());
 
         return true;
     }
@@ -119,8 +125,80 @@ class InvoiceSettlementService
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
 
+        if (! $wasAlreadyPaid || $this->invoiceNeedsFinalization($invoice)) {
             $this->finalizePaidInvoice($invoice->fresh());
+        }
+
+        $this->recordResellerMarginsForInvoice($invoice->fresh(), $payment);
+    }
+
+    /**
+     * Whether post-payment side effects still need to run (e.g. webhook marked paid before settlement).
+     */
+    public function invoiceNeedsFinalization(Invoice $invoice): bool
+    {
+        $invoice->loadMissing('order', 'items');
+
+        if ($invoice->order instanceof Order
+            && ($invoice->order->payment_status !== 'paid' || $invoice->order->status !== 'paid')) {
+            return true;
+        }
+
+        if (Service::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('status', 'pending')
+            ->exists()) {
+            return true;
+        }
+
+        $serviceIds = $invoice->items->whereNotNull('service_id')->pluck('service_id');
+
+        if ($serviceIds->isNotEmpty()
+            && Service::query()->whereIn('id', $serviceIds)->where('status', 'pending')->exists()) {
+            return true;
+        }
+
+        if (DomainRenewalOrder::query()
+            ->where('invoice_id', $invoice->id)
+            ->where('status', 'invoiced')
+            ->exists()) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function recordResellerMarginsForInvoice(Invoice $invoice, ?Payment $payment = null): void
+    {
+        $invoice->loadMissing('user');
+        $customer = $invoice->user;
+
+        if (! $customer instanceof User || ! $customer->reseller_id) {
+            return;
+        }
+
+        $reseller = User::find($customer->reseller_id);
+
+        if (! $reseller || ! $reseller->is_reseller) {
+            return;
+        }
+
+        try {
+            $marginService = app(ResellerMarginService::class);
+
+            if ($payment) {
+                $marginService->recordFromPayment($reseller, $payment);
+            } else {
+                $marginService->recordFromSettledInvoice($reseller, $invoice);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Failed to record reseller margin after invoice settlement', [
+                'invoice_id' => $invoice->id,
+                'payment_id' => $payment?->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

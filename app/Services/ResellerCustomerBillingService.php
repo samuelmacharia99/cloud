@@ -20,7 +20,6 @@ class ResellerCustomerBillingService
         private ResellerScopeService $scope,
         private InvoiceProvisioningService $provisioning,
         private NotificationService $notifications,
-        private ResellerMarginService $margins,
     ) {}
 
     public function ensureManagedCustomer(User $reseller, User $customer): void
@@ -256,11 +255,5 @@ class ResellerCustomerBillingService
         }
 
         app(InvoiceSettlementService::class)->settleFromPayment($payment);
-
-        try {
-            $this->margins->recordFromPayment($reseller, $payment);
-        } catch (\Throwable $e) {
-            report($e);
-        }
     }
 }
