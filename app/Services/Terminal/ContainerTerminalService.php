@@ -343,14 +343,23 @@ class ContainerTerminalService
 
     private function commandTimeoutSeconds(string $command): int
     {
+        if (preg_match('/\bartisan\b/i', $command)
+            && preg_match('/\b(migrate(?::fresh|:reset|:rollback)?|db:seed|db:wipe|schema:dump|queue:work|schedule:run)\b/i', $command)) {
+            return (int) config('terminal.command_timeouts.artisan_long', 900);
+        }
+
+        if (preg_match('/\bartisan\b/i', $command)) {
+            return (int) config('terminal.command_timeouts.artisan', 600);
+        }
+
         if (preg_match('/\b(composer|npm|yarn|pnpm|pecl|wp)\b/i', $command)) {
-            return 300;
+            return (int) config('terminal.command_timeouts.build', 300);
         }
 
         if (preg_match('/\b(wget|curl|tar|unzip|git\s+clone)\b/i', $command)) {
-            return 120;
+            return (int) config('terminal.command_timeouts.network', 120);
         }
 
-        return 30;
+        return (int) config('terminal.command_timeouts.default', 30);
     }
 }
