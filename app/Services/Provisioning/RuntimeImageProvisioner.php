@@ -22,7 +22,8 @@ class RuntimeImageProvisioner
     {
         $runtimeConfig = config('containers.runtime_templates.'.$template->slug);
         $runtime = (string) ($runtimeConfig['runtime'] ?? $template->slug);
-        $tag = $this->normalizePhpTag($selectedVersion, (string) ($runtimeConfig['default_tag'] ?? '8.3'));
+        $phpVersion = $this->normalizePhpTag($selectedVersion, (string) ($runtimeConfig['default_tag'] ?? '8.3'));
+        $tag = $phpVersion;
         $revision = (int) config('containers.runtime_build_revision', 0);
         if ($revision > 0) {
             $tag .= '-r'.$revision;
@@ -35,7 +36,7 @@ class RuntimeImageProvisioner
             'image' => $image,
             'runtime' => $runtime,
             'tag' => $tag,
-            'php_version' => $tag,
+            'php_version' => $phpVersion,
         ];
     }
 
