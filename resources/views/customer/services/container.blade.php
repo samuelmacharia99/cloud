@@ -69,6 +69,10 @@
                 if (! empty($supportsGitRepository)) {
                     array_splice($containerTabs, array_search('database', $containerTabs, true) + 1, 0, 'github');
                 }
+                if (! empty($supportsPhpExtensions)) {
+                    $documentationIndex = array_search('documentation', $containerTabs, true);
+                    array_splice($containerTabs, $documentationIndex, 0, 'php-extensions');
+                }
                 $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
             @endphp
             <!-- Tab Navigation -->
@@ -86,6 +90,9 @@
                         @endif
                         <option value="domains">Domains</option>
                         <option value="backups">Backups</option>
+                        @if (!empty($supportsPhpExtensions))
+                            <option value="php-extensions">PHP Extensions</option>
+                        @endif
                         <option value="documentation">Documentation</option>
                     </select>
 
@@ -96,9 +103,13 @@
                         @if (!empty($supportsGitRepository))
                             <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">GitHub</button>
                         @endif
-                        @foreach ([['domains', 'Domains'], ['backups', 'Backups'], ['documentation', 'Docs']] as [$tabKey, $tabLabel])
+                        @foreach ([['domains', 'Domains'], ['backups', 'Backups']] as [$tabKey, $tabLabel])
                             <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
                         @endforeach
+                        @if (!empty($supportsPhpExtensions))
+                            <button @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">PHP Extensions</button>
+                        @endif
+                        <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">Docs</button>
                     </nav>
                 </div>
 
@@ -495,6 +506,15 @@
                             </div>
                         </div>
                     </template>
+
+                    <!-- PHP Extensions Tab -->
+                    @if (!empty($supportsPhpExtensions))
+                        <template x-if="hasVisited('php-extensions')">
+                            <div x-show="activeTab === 'php-extensions'">
+                                @include('customer.services.partials.php-extensions')
+                            </div>
+                        </template>
+                    @endif
 
                     <!-- Documentation Tab -->
                     <template x-if="hasVisited('documentation')">

@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
+use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
 use App\Jobs\InitializeContainerAppJob;
 use App\Jobs\PullContainerGitRepositoryJob;
 use App\Models\ContainerBackup;
-use App\Models\ContainerGitPull;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
+use App\Models\ContainerGitPull;
 use App\Models\ContainerMetric;
 use App\Models\DatabaseTemplate;
 use App\Models\Service;
@@ -24,6 +25,7 @@ use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitRepositoryService;
+use App\Services\Provisioning\ContainerPhpExtensionsService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
@@ -72,6 +74,11 @@ class ContainerController extends Controller
         $databaseContext = $this->buildDatabaseContext($service, $deployment);
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
         $isLaravelTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
+        $supportsPhpExtensions = app(ContainerPhpExtensionsService::class)
+            ->supportsTemplate($service->product?->containerTemplate?->slug);
+        $phpExtensionsPanel = $supportsPhpExtensions
+            ? app(ContainerPhpExtensionsService::class)->buildPanelState($service, $deployment)
+            : null;
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
         $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug);
@@ -113,6 +120,8 @@ class ContainerController extends Controller
             'databaseContext',
             'databaseConsoleEnabled',
             'isLaravelTemplate',
+            'supportsPhpExtensions',
+            'phpExtensionsPanel',
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',
@@ -357,6 +366,47 @@ class ContainerController extends Controller
         ]);
     }
 
+    public function updatePhpExtensions(
+        Service $service,
+        UpdateContainerPhpExtensionsRequest $request,
+        ContainerPhpExtensionsService $phpExtensionsService
+    ): RedirectResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if (! $phpExtensionsService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return back()->withErrors(['error' => 'PHP extensions are not supported for this container type.']);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $deployment->status !== 'running' || ! $deployment->node) {
+            return back()->withErrors(['error' => 'Start the container before enabling PHP extensions.']);
+        }
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            try {
+                $message = $phpExtensionsService->sync(
+                    $service,
+                    $deployment,
+                    $ssh,
+                    $request->input('extensions', [])
+                );
+            } finally {
+                $ssh->disconnect();
+            }
+
+            return redirect()
+                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'php-extensions'])
+                ->with('success', $message);
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to update PHP extensions for service {$service->id}: ".$e->getMessage());
+
+            return back()->withErrors(['error' => 'Failed to update PHP extensions: '.$e->getMessage()]);
+        }
+    }
+
     public function updateGitRepository(
         Service $service,
         UpdateContainerGitRepositoryRequest $request,
@@ -395,7 +445,7 @@ class ContainerController extends Controller
         Service $service,
         PullContainerGitRepositoryRequest $request,
         ContainerGitRepositoryService $gitRepositoryService
-    ): RedirectResponse|\Illuminate\Http\JsonResponse {
+    ): RedirectResponse|JsonResponse {
         abort_if($service->user_id !== auth()->id(), 403);
 
         if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
@@ -453,7 +503,7 @@ class ContainerController extends Controller
         }
     }
 
-    public function gitPullStatus(Service $service, ContainerGitRepositoryService $gitRepositoryService): \Illuminate\Http\JsonResponse
+    public function gitPullStatus(Service $service, ContainerGitRepositoryService $gitRepositoryService): JsonResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
 

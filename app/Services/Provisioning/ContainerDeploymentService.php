@@ -273,6 +273,7 @@ class ContainerDeploymentService
                 }
 
                 $this->appDirectory->normalizePermissions($ssh, $deployment);
+                $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
 
                 // Health behavior is template-configurable: strict templates fail on timeout,
                 // relaxed templates continue for smoother redeploys while still logging warnings.
@@ -1358,6 +1359,26 @@ class ContainerDeploymentService
         }
 
         $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
+        $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
+    }
+
+    private function syncPhpExtensionsIfSupported(SSHService $ssh, Service $service, ContainerDeployment $deployment): void
+    {
+        $extensions = app(ContainerPhpExtensionsService::class);
+        if (! $extensions->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return;
+        }
+
+        try {
+            $this->waitForContainerRunning($ssh, $deployment->container_name, 60);
+            $extensions->syncEnabledExtensions($service, $deployment, $ssh);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to sync enabled PHP extensions', [
+                'service_id' => $service->id,
+                'deployment_id' => $deployment->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function resolveHostAppPath($template, string $containerName): ?string

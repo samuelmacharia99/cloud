@@ -446,8 +446,12 @@ class LaravelAppInitializationService
         );
     }
 
-    public function ensureComposerRuntimeReady(SSHService $ssh, ContainerDeployment $deployment): void
+    public function ensureComposerRuntimeReady(SSHService $ssh, ContainerDeployment $deployment, ?Service $service = null): void
     {
+        if ($service) {
+            app(ContainerPhpExtensionsService::class)->syncEnabledExtensions($service, $deployment, $ssh);
+        }
+
         $this->ensurePhpExtension($ssh, $deployment, 'gmp', 'libgmp-dev');
     }
 
