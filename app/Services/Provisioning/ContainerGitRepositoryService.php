@@ -193,7 +193,7 @@ class ContainerGitRepositoryService
             $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
             $freshClone = ! $hasGit || $replaceExisting;
 
-            $this->runPullStep($pull, 'sync', function () use ($ssh, $hostAppPath, $settings, $freshClone, $pull) {
+            $this->runPullStep($pull, 'sync', function () use ($ssh, $service, $hostAppPath, $settings, $freshClone, $pull) {
                 $pull->appendLog(sprintf(
                     '%s branch %s from %s',
                     $freshClone ? 'Cloning' : 'Pulling',
