@@ -44,4 +44,17 @@ class ContainerAppDirectoryServiceTest extends TestCase
         $this->assertStringContainsString('/node_modules/.bin', $script);
         $this->assertStringContainsString('chmod u+x', $script);
     }
+
+    #[Test]
+    public function it_prepares_nested_project_roots_for_composer_install(): void
+    {
+        $service = new ContainerAppDirectoryService;
+        $script = $service->composerInstallPreparationScript('/app/core');
+
+        $this->assertStringContainsString("root='/app/core'", $script);
+        $this->assertStringContainsString('mkdir -p $root/vendor', $script);
+        $this->assertStringContainsString('chown -R $owner /app', $script);
+        $this->assertStringContainsString('chown -R $owner $root', $script);
+        $this->assertStringContainsString('chmod -R ug+rwX $root', $script);
+    }
 }

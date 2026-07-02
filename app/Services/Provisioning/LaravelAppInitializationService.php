@@ -121,6 +121,7 @@ class LaravelAppInitializationService
 
             $this->runStep($initialization, $ssh, $deployment, 'dependencies', function () use ($ssh, $deployment, $timeout) {
                 $this->ensureComposerRuntimeReady($ssh, $deployment);
+                $this->appDirectory->prepareProjectForComposer($ssh, $deployment);
                 $output = $this->dockerExec(
                     $ssh,
                     $deployment->container_name,
@@ -422,6 +423,8 @@ class LaravelAppInitializationService
             : $this->pathResolver->containerProjectRoot('');
 
         $this->ensureComposerRuntimeReady($ssh, $deployment);
+
+        app(ContainerAppDirectoryService::class)->prepareProjectForComposer($ssh, $deployment, $projectRoot);
 
         $composerArgs = 'install --no-interaction --no-progress --optimize-autoloader';
         if (config('containers.laravel_init.composer_no_dev', true)) {

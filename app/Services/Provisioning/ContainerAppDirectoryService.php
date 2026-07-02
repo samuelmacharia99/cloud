@@ -244,6 +244,36 @@ class ContainerAppDirectoryService
         }
     }
 
+    public function prepareProjectForComposer(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
+    {
+        $this->normalizePermissions($ssh, $deployment);
+
+        $containerName = escapeshellarg($deployment->container_name);
+        $script = $this->composerInstallPreparationScript($projectRoot);
+
+        try {
+            $ssh->exec('docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($script), 60);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException(
+                'Could not prepare project directory for Composer: '.$e->getMessage(),
+                previous: $e
+            );
+        }
+    }
+
+    public function composerInstallPreparationScript(string $projectRoot = '/app'): string
+    {
+        $root = rtrim($projectRoot, '/');
+
+        return 'root='.escapeshellarg($root).'; '
+            .'if id www-data >/dev/null 2>&1; then owner=www-data:www-data; else owner=33:33; fi; '
+            .'chown -R $owner /app; '
+            .'chown -R $owner $root; '
+            .'mkdir -p $root/vendor $root/storage $root/bootstrap/cache; '
+            .'chown -R $owner $root/vendor $root/storage $root/bootstrap/cache; '
+            .'chmod -R ug+rwX $root';
+    }
+
     public function normalizePermissions(SSHService $ssh, ContainerDeployment $deployment): void
     {
         $containerName = escapeshellarg($deployment->container_name);
