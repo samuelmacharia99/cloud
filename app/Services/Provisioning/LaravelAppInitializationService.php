@@ -120,10 +120,11 @@ class LaravelAppInitializationService
             });
 
             $this->runStep($initialization, $ssh, $deployment, 'dependencies', function () use ($ssh, $deployment, $timeout) {
+                $this->ensureComposerRuntimeReady($ssh, $deployment);
                 $output = $this->dockerExec(
                     $ssh,
                     $deployment->container_name,
-                    'set -e; cd /app; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
+                    'set -e; cd /app; '.$this->composerEnvironmentPrefix().$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
                     $timeout
                 );
 
@@ -420,6 +421,8 @@ class LaravelAppInitializationService
             ? $this->resolveProjectContainerRoot($ssh, $service, $deployment)
             : $this->pathResolver->containerProjectRoot('');
 
+        $this->ensureComposerRuntimeReady($ssh, $deployment);
+
         $composerArgs = 'install --no-interaction --no-progress --optimize-autoloader';
         if (config('containers.laravel_init.composer_no_dev', true)) {
             $composerArgs .= ' --no-dev';
@@ -432,9 +435,17 @@ class LaravelAppInitializationService
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd '.escapeshellarg($projectRoot).'; '.$authPrefix.$this->composerInvoke($composerArgs),
+            'set -e; cd '.escapeshellarg($projectRoot).'; '
+                .$this->composerEnvironmentPrefix()
+                .$authPrefix
+                .$this->composerInvoke($composerArgs),
             $timeout
         );
+    }
+
+    public function ensureComposerRuntimeReady(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $this->ensurePhpExtension($ssh, $deployment, 'gmp', 'libgmp-dev');
     }
 
     public function dockerExecPublic(
@@ -846,6 +857,44 @@ class LaravelAppInitializationService
         return $arguments === ''
             ? 'php '.self::COMPOSER_BIN
             : 'php '.self::COMPOSER_BIN.' '.$arguments;
+    }
+
+    private function composerEnvironmentPrefix(): string
+    {
+        return 'export GIT_CONFIG_COUNT=1; '
+            .'export GIT_CONFIG_KEY_0=safe.directory; '
+            .'export GIT_CONFIG_VALUE_0=*; ';
+    }
+
+    private function ensurePhpExtension(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $extension,
+        string $aptPackage
+    ): void {
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'php -m | grep -qx '.escapeshellarg($extension),
+                15
+            );
+
+            return;
+        } catch (\Throwable) {
+            // Extension missing — install on legacy runtime images.
+        }
+
+        $this->dockerExec(
+            $ssh,
+            $deployment->container_name,
+            'set -e; '
+                .'apt-get update -qq '
+                .'&& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends '.escapeshellarg($aptPackage).' '
+                .'&& docker-php-ext-install '.escapeshellarg($extension),
+            300,
+            asRoot: true
+        );
     }
 
     private function assertComposerAvailable(SSHService $ssh, ContainerDeployment $deployment): void

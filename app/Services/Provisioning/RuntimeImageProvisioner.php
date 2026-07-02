@@ -23,6 +23,10 @@ class RuntimeImageProvisioner
         $runtimeConfig = config('containers.runtime_templates.'.$template->slug);
         $runtime = (string) ($runtimeConfig['runtime'] ?? $template->slug);
         $tag = $this->normalizePhpTag($selectedVersion, (string) ($runtimeConfig['default_tag'] ?? '8.3'));
+        $revision = (int) config('containers.runtime_build_revision', 0);
+        if ($revision > 0) {
+            $tag .= '-r'.$revision;
+        }
 
         $registry = trim((string) config('containers.runtime_registry', 'talksasa'), '/');
         $image = "{$registry}/{$runtime}-runtime:{$tag}";

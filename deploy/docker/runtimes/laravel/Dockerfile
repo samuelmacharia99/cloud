@@ -13,7 +13,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     COMPOSER_HOME=/tmp/composer \
     PATH="/usr/local/bin:/usr/bin:/bin"
 
-RUN apt-get update \
+    RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
         unzip \
@@ -24,9 +24,11 @@ RUN apt-get update \
         libonig-dev \
         libxml2-dev \
         libicu-dev \
+        libgmp-dev \
     && docker-php-ext-configure intl \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
+        gmp \
         intl \
         mbstring \
         opcache \
@@ -34,6 +36,7 @@ RUN apt-get update \
         pdo_mysql \
         xml \
         zip \
+    && git config --system --add safe.directory '*' \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
