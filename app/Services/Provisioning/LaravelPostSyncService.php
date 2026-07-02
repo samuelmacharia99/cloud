@@ -41,12 +41,16 @@ class LaravelPostSyncService
         }
 
         if ($options->configureEnvironment) {
-            $messages[] = $this->initialization->configureApplicationEnvironment($service, $deployment, $ssh);
+            $messages[] = $this->initialization->writeApplicationEnvironment($service, $deployment, $ssh);
         }
 
         if ($options->runComposer) {
             $this->initialization->runComposerInstall($ssh, $deployment, null, $service);
             $messages[] = 'Composer dependencies installed.';
+        }
+
+        if ($options->configureEnvironment) {
+            $messages[] = $this->initialization->bootstrapApplicationEnvironment($service, $deployment, $ssh);
         }
 
         if ($options->runMigrations) {

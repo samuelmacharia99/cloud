@@ -229,12 +229,6 @@ class ContainerGitRepositoryService
             $commit = $this->readShortCommit($ssh, $hostAppPath);
 
             if ($this->isLaravelService($service) && $this->appDirectory->hasLaravelProject($ssh, $deployment)) {
-                $this->runPullStep($pull, 'environment', function () use ($service, $deployment, $ssh) {
-                    $message = $this->laravelInitialization->configureApplicationEnvironment($service, $deployment, $ssh);
-
-                    return $message;
-                });
-
                 if ($runComposer) {
                     $this->runPullStep($pull, 'composer', function () use ($ssh, $deployment, $timeout, $service) {
                         $this->laravelInitialization->runComposerInstall($ssh, $deployment, $timeout, $service);
@@ -244,6 +238,22 @@ class ContainerGitRepositoryService
                 } else {
                     $this->skipPullStep($pull, 'composer', 'Skipped by request.');
                 }
+
+                $this->runPullStep($pull, 'environment', function () use ($service, $deployment, $ssh) {
+                    $writeMessage = $this->laravelInitialization->writeApplicationEnvironment($service, $deployment, $ssh);
+
+                    try {
+                        $bootstrapMessage = $this->laravelInitialization->bootstrapApplicationEnvironment($service, $deployment, $ssh);
+
+                        return trim($writeMessage.' '.$bootstrapMessage);
+                    } catch (\RuntimeException $e) {
+                        if (str_contains($e->getMessage(), 'Composer dependencies are not installed')) {
+                            return $writeMessage.' Application key generation deferred until Composer dependencies are installed.';
+                        }
+
+                        throw $e;
+                    }
+                });
 
                 if ($runMigrations) {
                     $this->runPullStep($pull, 'migrations', function () use ($service, $ssh, $deployment) {
@@ -448,8 +458,8 @@ class ContainerGitRepositoryService
 
         if ($this->isLaravelService($service)) {
             $steps[] = $this->makeStep('runtime');
-            $steps[] = $this->makeStep('environment');
             $steps[] = $this->makeStep('composer');
+            $steps[] = $this->makeStep('environment');
             $steps[] = $this->makeStep('migrations');
         } else {
             $steps[] = $this->makeStep('post_pull');

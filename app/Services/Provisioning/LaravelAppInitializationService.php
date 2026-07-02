@@ -324,10 +324,17 @@ class LaravelAppInitializationService
 
     public function configureApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
+        $writeMessage = $this->writeApplicationEnvironment($service, $deployment, $ssh);
+        $bootstrapMessage = $this->bootstrapApplicationEnvironment($service, $deployment, $ssh);
+
+        return trim($writeMessage.' '.$bootstrapMessage);
+    }
+
+    public function writeApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
         $hostAppPath = $this->appDirectory->hostAppPath($deployment);
         $projectRoot = $this->resolveProjectContainerRoot($ssh, $service, $deployment);
-        $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues, $projectRoot);
         $relativeRoot = trim((string) (is_array($service->service_meta) ? ($service->service_meta['laravel_project_root'] ?? '') : ''), '/');
@@ -337,15 +344,45 @@ class LaravelAppInitializationService
         $ssh->upload($envContent, $envHostPath);
         $this->assertHostFileExists($ssh, $envHostPath);
 
-        $this->ensureApplicationKey($ssh, $deployment, $timeout, $projectRoot);
-        $this->clearCachedConfig($ssh, $deployment, $projectRoot);
-        $this->welcomePage->applyIfDefault($ssh, $deployment);
-
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
         $service->update(['service_meta' => $serviceMeta]);
 
-        return 'Laravel .env updated from deployment credentials and application key ensured.';
+        return 'Laravel .env updated from deployment credentials.';
+    }
+
+    public function bootstrapApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
+        $projectRoot = $this->resolveProjectContainerRoot($ssh, $service, $deployment);
+        $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
+
+        if (! $this->projectVendorIsReady($ssh, $deployment, $projectRoot)) {
+            throw new \RuntimeException(
+                'Composer dependencies are not installed yet. Run composer install before generating the application key.'
+            );
+        }
+
+        $this->ensureApplicationKey($ssh, $deployment, $timeout, $projectRoot);
+        $this->clearCachedConfig($ssh, $deployment, $projectRoot);
+        $this->welcomePage->applyIfDefault($ssh, $deployment);
+
+        return 'Application key ensured and configuration refreshed.';
+    }
+
+    private function projectVendorIsReady(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot): bool
+    {
+        try {
+            $this->dockerExec(
+                $ssh,
+                $deployment->container_name,
+                'test -f '.escapeshellarg(rtrim($projectRoot, '/').'/vendor/autoload.php'),
+                15
+            );
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public function syncApplicationDatabase(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
