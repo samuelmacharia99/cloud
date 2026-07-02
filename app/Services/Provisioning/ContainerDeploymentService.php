@@ -261,9 +261,10 @@ class ContainerDeploymentService
                 }
 
                 // Deploy container
-                $ssh->exec(
-                    "cd {$containerPath} && docker compose up -d",
-                    self::DEPLOY_TIMEOUT
+                $this->composeUp(
+                    $ssh,
+                    $containerPath,
+                    $this->runtimeImages->usesRuntimeImage($template)
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
@@ -915,6 +916,7 @@ class ContainerDeploymentService
         // Talksasa runtime images ship Composer, extensions, and entrypoint ownership fixes.
         if ($this->runtimeImages->usesRuntimeImage($template)) {
             $internalPort = (int) ($template->default_port ?: (($template->slug ?? null) === 'laravel' ? 8000 : 8080));
+            $compose['services'][$containerName]['pull_policy'] = 'never';
             $compose['services'][$containerName]['user'] = 'www-data';
             $compose['services'][$containerName]['working_dir'] = '/app';
 
@@ -1318,6 +1320,15 @@ class ContainerDeploymentService
         return $dockerImage;
     }
 
+    private function composeUp(SSHService $ssh, string $containerPath, bool $localRuntimeImage): void
+    {
+        $pullFlag = $localRuntimeImage ? ' --pull never' : '';
+        $ssh->exec(
+            "cd {$containerPath} && docker compose up -d{$pullFlag}",
+            self::DEPLOY_TIMEOUT
+        );
+    }
+
     private function resolveHostAppPath($template, string $containerName): ?string
     {
         if (! isset($template->volume_paths) || ! is_array($template->volume_paths)) {
@@ -1393,7 +1404,12 @@ class ContainerDeploymentService
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $deployment->update(['docker_compose_content' => $composeYaml]);
         $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
-        $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
+
+        if ($this->runtimeImages->usesRuntimeImage($template)) {
+            $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
+        }
+
+        $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template));
 
         return 'Application start command updated ('.$runtime->label.').';
     }
@@ -1438,7 +1454,12 @@ class ContainerDeploymentService
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $deployment->update(['docker_compose_content' => $composeYaml]);
         $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
-        $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
+
+        if ($this->runtimeImages->usesRuntimeImage($template)) {
+            $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
+        }
+
+        $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template));
         $this->waitForContainerRunning($ssh, $deployment->container_name);
 
         return 'Laravel document root updated ('.$documentRoot.').';

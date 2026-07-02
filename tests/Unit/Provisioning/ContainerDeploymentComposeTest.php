@@ -201,6 +201,7 @@ class ContainerDeploymentComposeTest extends TestCase
         );
 
         $this->assertStringContainsString("- /app\n", $yaml);
+        $this->assertStringContainsString('pull_policy: never', $yaml);
         $this->assertStringContainsString("- '-t'\n", $yaml);
     }
 }
