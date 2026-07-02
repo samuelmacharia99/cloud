@@ -74,7 +74,7 @@ class ContainerBackupService
 
                 // Restart container - stop and remove first to handle conflicts
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
+                $deploymentService->startComposeStack($ssh, $service, $deployment);
 
                 // Update backup record
                 $backup->update([
@@ -93,7 +93,7 @@ class ContainerBackupService
             } catch (Exception $e) {
                 // Make sure container is restarted even on backup failure
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 60);
+                $deploymentService->startComposeStack($ssh, $service, $deployment);
                 throw $e;
             } finally {
                 $ssh->disconnect();
@@ -128,6 +128,13 @@ class ContainerBackupService
             throw new Exception('Backup deployment or node not found');
         }
 
+        $deployment->loadMissing('service');
+        $service = $deployment->service;
+
+        if (! $service) {
+            throw new Exception('Backup service not found');
+        }
+
         try {
             $ssh = SSHService::forNode($node);
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -155,7 +162,7 @@ class ContainerBackupService
             );
 
             // Restart container
-            $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", 120);
+            $deploymentService->startComposeStack($ssh, $service, $deployment);
 
             // Wait a bit for health check
             sleep(5);

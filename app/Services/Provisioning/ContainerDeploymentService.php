@@ -535,8 +535,7 @@ class ContainerDeploymentService
                 // Stop and remove all containers/networks, then start fresh
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
 
-                // Now start the containers
-                $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml up -d", self::DEPLOY_TIMEOUT);
+                $this->startComposeStack($ssh, $service, $deployment, recreate: false);
 
                 $deployment->update([
                     'status' => 'running',
@@ -1320,13 +1319,45 @@ class ContainerDeploymentService
         return $dockerImage;
     }
 
-    private function composeUp(SSHService $ssh, string $containerPath, bool $localRuntimeImage): void
-    {
+    private function composeUp(
+        SSHService $ssh,
+        string $containerPath,
+        bool $localRuntimeImage,
+        bool $useExplicitComposeFile = false
+    ): void {
+        $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
         $pullFlag = $localRuntimeImage ? ' --pull never' : '';
         $ssh->exec(
-            "cd {$containerPath} && docker compose up -d{$pullFlag}",
+            "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}",
             self::DEPLOY_TIMEOUT
         );
+    }
+
+    /**
+     * Start the compose stack, building Talksasa runtime images locally when required.
+     */
+    public function startComposeStack(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+        bool $recreate = false
+    ): void {
+        $this->ensureComposeFileExists($ssh, $deployment);
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+        $usesRuntimeImage = $template && $this->runtimeImages->usesRuntimeImage($template);
+
+        if ($usesRuntimeImage) {
+            $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
+        }
+
+        if ($recreate) {
+            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
+        }
+
+        $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
     }
 
     private function resolveHostAppPath($template, string $containerName): ?string
