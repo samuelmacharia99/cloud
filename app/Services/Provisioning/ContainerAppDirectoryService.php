@@ -90,15 +90,7 @@ class ContainerAppDirectoryService
 
     public function hasLaravelProject(SSHService $ssh, ContainerDeployment $deployment): bool
     {
-        $artisanPath = escapeshellarg($this->hostAppPath($deployment).'/artisan');
-
-        try {
-            $ssh->exec('sh -lc '.escapeshellarg('test -f '.$artisanPath), 15);
-
-            return true;
-        } catch (\Throwable) {
-            return false;
-        }
+        return app(LaravelProjectPathResolver::class)->hasProjectForDeployment($ssh, $deployment);
     }
 
     public function isInitializeReady(SSHService $ssh, ContainerDeployment $deployment): bool
@@ -238,7 +230,7 @@ class ContainerAppDirectoryService
         $ownership = $this->inContainerPermissionNormalizationScript();
 
         try {
-            $ssh->exec('docker exec -u 0 '.$containerName.' sh -lc '.escapeshellarg($ownership), 60);
+            $ssh->exec('docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($ownership), 60);
         } catch (\Throwable $e) {
             \Log::warning('Failed to normalize /app ownership inside container', [
                 'container_name' => $deployment->container_name,
@@ -250,7 +242,7 @@ class ContainerAppDirectoryService
             $wwwDataUidScript = 'id -u www-data 2>/dev/null || echo 33';
             $chownScript = "chown -R \\\${uid}:\\\${uid} {$hostAppPath}";
             $ssh->exec(
-                'uid=$(docker exec -u 0 '.$containerName.' sh -lc '.escapeshellarg($wwwDataUidScript).'); '.$chownScript,
+                'uid=$(docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($wwwDataUidScript).'); '.$chownScript,
                 60
             );
         } catch (\Throwable $e) {

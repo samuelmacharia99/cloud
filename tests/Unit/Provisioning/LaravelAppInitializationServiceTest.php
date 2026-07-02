@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Services\Provisioning\ContainerAppDirectoryService;
 use App\Services\Provisioning\LaravelAppInitializationService;
+use App\Services\Provisioning\LaravelProjectPathResolver;
 use App\Services\Provisioning\LaravelWelcomePageService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,7 @@ class LaravelAppInitializationServiceTest extends TestCase
         $service = new LaravelAppInitializationService(
             new ContainerAppDirectoryService,
             new LaravelWelcomePageService,
+            new LaravelProjectPathResolver,
         );
         $method = new ReflectionMethod(LaravelAppInitializationService::class, 'quoteEnvValue');
         $method->setAccessible(true);
@@ -32,6 +34,7 @@ class LaravelAppInitializationServiceTest extends TestCase
         $service = new LaravelAppInitializationService(
             new ContainerAppDirectoryService,
             new LaravelWelcomePageService,
+            new LaravelProjectPathResolver,
         );
         $method = new ReflectionMethod(LaravelAppInitializationService::class, 'buildInitialSteps');
         $method->setAccessible(true);

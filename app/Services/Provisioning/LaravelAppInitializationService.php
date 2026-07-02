@@ -16,6 +16,7 @@ class LaravelAppInitializationService
     public function __construct(
         private ContainerAppDirectoryService $appDirectory,
         private LaravelWelcomePageService $welcomePage,
+        private LaravelProjectPathResolver $pathResolver,
     ) {}
 
     public const STEP_DEFINITIONS = [
@@ -226,8 +227,11 @@ class LaravelAppInitializationService
                 $ssh = SSHService::forNode($deployment->node);
                 try {
                     $appScaffolded = $this->appDirectory->hasLaravelProject($ssh, $deployment);
-                    $envConfigured = $this->remoteFileExists($ssh, $deployment, '/app/.env');
-                    $appKeySet = $appScaffolded && $this->envValuePresent($ssh, $deployment, 'APP_KEY');
+                    $projectRoot = $appScaffolded
+                        ? $this->resolveProjectContainerRoot($ssh, $service, $deployment)
+                        : '/app';
+                    $envConfigured = $appScaffolded && $this->remoteFileExists($ssh, $deployment, $projectRoot.'/.env');
+                    $appKeySet = $appScaffolded && $this->envValuePresent($ssh, $deployment, 'APP_KEY', $projectRoot);
                     $migrationsOk = $appScaffolded && $this->migrationsTableExists(
                         $ssh,
                         $deployment,
@@ -322,19 +326,24 @@ class LaravelAppInitializationService
     {
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
         $hostAppPath = $this->appDirectory->hostAppPath($deployment);
+        $projectRoot = $this->resolveProjectContainerRoot($ssh, $service, $deployment);
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
-        $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues);
-        $ssh->upload($envContent, $hostAppPath.'/.env');
+        $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues, $projectRoot);
+        $relativeRoot = trim((string) (is_array($service->service_meta) ? ($service->service_meta['laravel_project_root'] ?? '') : ''), '/');
+        $envHostPath = $relativeRoot === ''
+            ? $hostAppPath.'/.env'
+            : $hostAppPath.'/'.$relativeRoot.'/.env';
+        $ssh->upload($envContent, $envHostPath);
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd /app; test -f .env',
+            'set -e; cd '.escapeshellarg($projectRoot).'; test -f .env',
             30
         );
 
-        $this->ensureApplicationKey($ssh, $deployment, $timeout);
-        $this->clearCachedConfig($ssh, $deployment);
+        $this->ensureApplicationKey($ssh, $deployment, $timeout, $projectRoot);
+        $this->clearCachedConfig($ssh, $deployment, $projectRoot);
         $this->welcomePage->applyIfDefault($ssh, $deployment);
 
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -365,37 +374,41 @@ class LaravelAppInitializationService
         ?int $timeout = null
     ): void {
         $timeout ??= (int) config('containers.laravel_init.command_timeout_seconds', 600);
-        $this->runMigrationsWithRetry($ssh, $deployment, $timeout);
+        $this->runMigrationsWithRetry($ssh, $deployment, $timeout, $service);
 
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
         $serviceMeta['laravel_database_synced_at'] = now()->toIso8601String();
         $service->update(['service_meta' => $serviceMeta]);
     }
 
-    public function runComposerInstall(SSHService $ssh, ContainerDeployment $deployment, ?int $timeout = null): void
+    public function runComposerInstall(SSHService $ssh, ContainerDeployment $deployment, ?int $timeout = null, ?Service $service = null): void
     {
         $timeout ??= (int) config('containers.laravel_init.command_timeout_seconds', 600);
+        $projectRoot = $service
+            ? $this->resolveProjectContainerRoot($ssh, $service, $deployment)
+            : $this->pathResolver->containerProjectRoot('');
 
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd /app; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
+            'set -e; cd '.escapeshellarg($projectRoot).'; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
             $timeout
         );
     }
 
-    private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
+    private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout, Service $service): void
     {
         $maxAttempts = (int) config('containers.redeploy.migrate_max_attempts', 6);
         $delaySeconds = (int) config('containers.redeploy.migrate_retry_delay_seconds', 10);
         $lastError = null;
+        $projectRoot = $this->resolveProjectContainerRoot($ssh, $service, $deployment);
 
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
                 $this->dockerExec(
                     $ssh,
                     $deployment->container_name,
-                    'set -e; cd /app; php artisan migrate --force --no-interaction',
+                    'set -e; cd '.escapeshellarg($projectRoot).'; php artisan migrate --force --no-interaction',
                     $timeout
                 );
 
@@ -561,10 +574,10 @@ class LaravelAppInitializationService
         }
     }
 
-    private function envValuePresent(SSHService $ssh, ContainerDeployment $deployment, string $key): bool
+    private function envValuePresent(SSHService $ssh, ContainerDeployment $deployment, string $key, string $projectRoot = '/app'): bool
     {
         try {
-            $script = 'set -e; cd /app; val=$(grep -E "^'.addslashes($key).'=" .env | head -n1 | cut -d= -f2- | tr -d "\r"); test -n "$val"';
+            $script = 'set -e; cd '.escapeshellarg($projectRoot).'; val=$(grep -E "^'.addslashes($key).'=" .env | head -n1 | cut -d= -f2- | tr -d "\r"); test -n "$val"';
             $this->dockerExec($ssh, $deployment->container_name, $script, 20);
 
             return true;
@@ -610,14 +623,18 @@ class LaravelAppInitializationService
     /**
      * @param  array<string, string>  $envValues
      */
-    private function buildEnvFileContent(SSHService $ssh, ContainerDeployment $deployment, array $envValues): string
-    {
+    private function buildEnvFileContent(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        array $envValues,
+        string $projectRoot = '/app'
+    ): string {
         $example = '';
         try {
             $example = trim($this->dockerExec(
                 $ssh,
                 $deployment->container_name,
-                'set -e; cd /app; cat .env.example',
+                'set -e; cd '.escapeshellarg($projectRoot).'; cat .env.example',
                 30
             ));
         } catch (\Throwable) {
@@ -638,7 +655,7 @@ class LaravelAppInitializationService
             'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
         ];
 
-        $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY');
+        $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY', $projectRoot);
         if ($existingAppKey !== null && $existingAppKey !== '') {
             $replacements['APP_KEY'] = $existingAppKey;
         }
@@ -675,10 +692,14 @@ class LaravelAppInitializationService
         return implode("\n", $result)."\n";
     }
 
-    private function readExistingEnvValue(SSHService $ssh, ContainerDeployment $deployment, string $key): ?string
-    {
+    private function readExistingEnvValue(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $key,
+        string $projectRoot = '/app'
+    ): ?string {
         try {
-            $script = 'set -e; cd /app; test -f .env; grep -E "^'.preg_quote($key, '/').'=" .env | head -n1 | cut -d= -f2- | tr -d "\r"';
+            $script = 'set -e; cd '.escapeshellarg($projectRoot).'; test -f .env; grep -E "^'.preg_quote($key, '/').'=" .env | head -n1 | cut -d= -f2- | tr -d "\r"';
             $value = trim($this->dockerExec($ssh, $deployment->container_name, $script, 20));
 
             return $value === '' ? null : trim($value, "\"'");
@@ -687,32 +708,39 @@ class LaravelAppInitializationService
         }
     }
 
-    private function ensureApplicationKey(SSHService $ssh, ContainerDeployment $deployment, int $timeout): void
+    private function ensureApplicationKey(SSHService $ssh, ContainerDeployment $deployment, int $timeout, string $projectRoot = '/app'): void
     {
-        if ($this->envValuePresent($ssh, $deployment, 'APP_KEY')) {
+        if ($this->envValuePresent($ssh, $deployment, 'APP_KEY', $projectRoot)) {
             return;
         }
 
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd /app; php artisan key:generate --force --no-interaction',
+            'set -e; cd '.escapeshellarg($projectRoot).'; php artisan key:generate --force --no-interaction',
             $timeout
         );
     }
 
-    private function clearCachedConfig(SSHService $ssh, ContainerDeployment $deployment): void
+    private function clearCachedConfig(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
     {
         try {
             $this->dockerExec(
                 $ssh,
                 $deployment->container_name,
-                'set -e; cd /app; php artisan config:clear --no-interaction',
+                'set -e; cd '.escapeshellarg($projectRoot).'; php artisan config:clear --no-interaction',
                 30
             );
         } catch (\Throwable) {
-            // Non-fatal; a stale config cache should not block deployment sync.
+            // Config clear is best-effort when the app is not fully bootstrapped yet.
         }
+    }
+
+    private function resolveProjectContainerRoot(SSHService $ssh, Service $service, ContainerDeployment $deployment): string
+    {
+        $this->pathResolver->persistResolvedPaths($service, $ssh, $deployment);
+
+        return $this->pathResolver->projectRootFromServiceMeta($service);
     }
 
     private function quoteEnvValue(string $value): string

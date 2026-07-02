@@ -208,6 +208,10 @@ class ContainerGitRepositoryService
                 ];
             });
 
+            if ($this->isLaravelService($service)) {
+                $this->pathResolver()->persistResolvedPaths($service, $ssh, $deployment);
+            }
+
             $commit = $this->readShortCommit($ssh, $hostAppPath);
 
             if ($this->isLaravelService($service) && $this->appDirectory->hasLaravelProject($ssh, $deployment)) {
@@ -218,8 +222,8 @@ class ContainerGitRepositoryService
                 });
 
                 if ($runComposer) {
-                    $this->runPullStep($pull, 'composer', function () use ($ssh, $deployment, $timeout) {
-                        $this->laravelInitialization->runComposerInstall($ssh, $deployment, $timeout);
+                    $this->runPullStep($pull, 'composer', function () use ($ssh, $deployment, $timeout, $service) {
+                        $this->laravelInitialization->runComposerInstall($ssh, $deployment, $timeout, $service);
 
                         return 'Composer dependencies updated.';
                     });
@@ -264,7 +268,11 @@ class ContainerGitRepositoryService
                     return $message !== '' ? $message : 'Application runtime refreshed.';
                 });
             } else {
-                $this->skipPullStep($pull, 'runtime', 'Not required for Laravel containers.');
+                $this->runPullStep($pull, 'runtime', function () use ($service, $deployment, $ssh) {
+                    $message = $this->deploymentService->refreshLaravelServeCompose($service, $deployment, $ssh);
+
+                    return $message !== '' ? $message : 'Laravel web root refreshed.';
+                });
             }
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -517,8 +525,11 @@ class ContainerGitRepositoryService
         $git = $this->gitInvocation($hostAppPath);
 
         if ($freshClone) {
+            // Clear contents but keep the directory itself so a live container's
+            // /app bind mount is not destroyed (rm -rf on the mount target breaks docker exec).
             $script = 'set -e; '
-                ."rm -rf {$pathArg}; "
+                ."mkdir -p {$pathArg}; "
+                ."find {$pathArg} -mindepth 1 -maxdepth 1 -exec rm -rf {} +; "
                 ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg} 2>&1";
         } else {
             $script = 'set -e; '
@@ -553,5 +564,10 @@ class ContainerGitRepositoryService
     private function isLaravelService(Service $service): bool
     {
         return ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
+    }
+
+    private function pathResolver(): LaravelProjectPathResolver
+    {
+        return app(LaravelProjectPathResolver::class);
     }
 }

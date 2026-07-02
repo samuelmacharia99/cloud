@@ -15,7 +15,7 @@
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>Open the <strong>GitHub</strong> tab and paste your repository URL + branch.</li>
                 <li>Click <strong>Pull latest code</strong>. Talksasa runs <code class="font-mono text-xs">composer install</code> and <code class="font-mono text-xs">php artisan migrate</code> automatically.</li>
-                <li>Ensure your repo has a standard Laravel layout (<code class="font-mono text-xs">artisan</code>, <code class="font-mono text-xs">composer.json</code> at the root).</li>
+                <li>Ensure your repo has Laravel at the root (<code class="font-mono text-xs">artisan</code>, <code class="font-mono text-xs">composer.json</code>) or in a subdirectory such as <code class="font-mono text-xs">core/</code> with a front controller at <code class="font-mono text-xs">index.php</code>.</li>
                 <li>Set secrets (<code class="font-mono text-xs">APP_KEY</code>, mail, third-party APIs) via the Files tab or your repo's <code class="font-mono text-xs">.env</code>.</li>
             </ul>
         </div>

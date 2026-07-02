@@ -289,7 +289,10 @@ class ContainerTerminalService
         $templateSlug = $session->service?->product?->containerTemplate?->slug;
         $userFlag = ContainerDockerExecUserResolver::execUserFlag($templateSlug);
 
-        return 'docker exec '.$userFlag.escapeshellarg($containerName)
+        // Always set -w so exec does not inherit PID 1's cwd. After a failed Git
+        // sync the /app mount can be invalid and inherited cwd triggers:
+        // "current working directory is outside of container mount namespace root".
+        return 'docker exec '.$userFlag.'-w /app '.escapeshellarg($containerName)
             .' sh -c '.escapeshellarg($script);
     }
 

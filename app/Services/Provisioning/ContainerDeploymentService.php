@@ -233,6 +233,12 @@ class ContainerDeploymentService
                 }
 
                 $applicationRuntime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
+                $laravelDocumentRoot = ($template->slug ?? null) === 'laravel' && $hostAppPath
+                    ? app(LaravelProjectPathResolver::class)->resolveDocumentRoot($ssh, $hostAppPath)
+                    : null;
+                if ($laravelDocumentRoot !== null) {
+                    app(LaravelProjectPathResolver::class)->persistResolvedPaths($service, $ssh, $deployment);
+                }
                 $composeYaml = $this->renderCompose(
                     $template,
                     $containerName,
@@ -242,7 +248,8 @@ class ContainerDeploymentService
                     $deployment,
                     $selectedVersion,
                     $hostAppPath,
-                    $applicationRuntime
+                    $applicationRuntime,
+                    $laravelDocumentRoot
                 );
                 $deployment->update(['docker_compose_content' => $composeYaml]);
 
@@ -859,7 +866,7 @@ class ContainerDeploymentService
     /**
      * Render docker-compose.yml from template with optional database sidecar
      */
-    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null, ?ApplicationRuntime $applicationRuntime = null): string
+    private function renderCompose($template, string $containerName, int $port, array $envVars, ?DatabaseTemplate $databaseTemplate = null, ?ContainerDeployment $deployment = null, ?string $selectedVersion = null, ?string $hostAppPath = null, ?ApplicationRuntime $applicationRuntime = null, ?string $laravelDocumentRoot = null): string
     {
         // Determine resource limits (override > template)
         $cpuLimit = $deployment?->cpu_limit ?? $template->required_cpu_cores ?? 1.0;
@@ -911,12 +918,13 @@ class ContainerDeploymentService
             $compose['services'][$containerName]['working_dir'] = '/app';
 
             if (($template->slug ?? null) === 'laravel') {
+                $documentRoot = $laravelDocumentRoot ?: '/app/public';
                 $compose['services'][$containerName]['command'] = [
                     'php',
                     '-S',
                     "0.0.0.0:{$internalPort}",
                     '-t',
-                    '/app/public',
+                    $documentRoot,
                 ];
             } else {
                 $compose['services'][$containerName]['command'] = [
@@ -1344,6 +1352,51 @@ class ContainerDeploymentService
         $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
 
         return 'Application start command updated ('.$runtime->label.').';
+    }
+
+    public function refreshLaravelServeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
+    {
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+
+        if (($template->slug ?? null) !== 'laravel') {
+            return '';
+        }
+
+        $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name);
+        if (! $hostAppPath) {
+            return '';
+        }
+
+        $resolver = app(LaravelProjectPathResolver::class);
+        if (! $resolver->hasProject($ssh, $hostAppPath)) {
+            return '';
+        }
+
+        $resolved = $resolver->persistResolvedPaths($service, $ssh, $deployment);
+        $documentRoot = $resolved['document_root'] ?? $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+
+        $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $composeYaml = $this->renderCompose(
+            $template,
+            $deployment->container_name,
+            (int) $deployment->assigned_port,
+            $envVars,
+            $databaseTemplate,
+            $deployment,
+            $deployment->selected_version,
+            $hostAppPath,
+            null,
+            $documentRoot
+        );
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $deployment->update(['docker_compose_content' => $composeYaml]);
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+        $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
+
+        return 'Laravel document root updated ('.$documentRoot.').';
     }
 
     private function syncApplicationSource(SSHService $ssh, Service $service, $template, string $hostAppPath): void

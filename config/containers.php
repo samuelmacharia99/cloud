@@ -42,6 +42,8 @@ return [
             'public',
             'public/index.html',
         ],
+        // Relative segments under /app checked for artisan (ViserLab-style apps use "core").
+        'project_root_candidates' => ['', 'core', 'backend'],
         'welcome_template' => resource_path('container-templates/laravel/welcome.blade.php'),
     ],
 
