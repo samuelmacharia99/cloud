@@ -219,8 +219,29 @@ class ContainerAppDirectoryService
             .' else chown -R 33:33 /app; fi;'
             .'find /app '.$skipDependencyTrees.' -type d -exec chmod 775 {} + 2>/dev/null;'
             .'find /app '.$skipDependencyTrees.' -type f -exec chmod 664 {} + 2>/dev/null;'
-            .'chmod 775 /app/artisan 2>/dev/null || true; '
+            .'find /app -name artisan -type f -exec chmod 775 {} + 2>/dev/null || true; '
             .$this->nodeModulesBinPermissionRestoreScript();
+    }
+
+    public function normalizeLaravelPermissions(SSHService $ssh, ContainerDeployment $deployment, string $projectRoot = '/app'): void
+    {
+        $this->normalizePermissions($ssh, $deployment);
+
+        $containerName = escapeshellarg($deployment->container_name);
+        $root = rtrim($projectRoot, '/');
+        $script = 'chmod -R ug+rwx '.escapeshellarg($root.'/storage').' 2>/dev/null || true; '
+            .'chmod -R ug+rwx '.escapeshellarg($root.'/bootstrap/cache').' 2>/dev/null || true; '
+            .'chmod 775 '.escapeshellarg($root.'/artisan').' 2>/dev/null || true';
+
+        try {
+            $ssh->exec('docker exec -u 0 -w / '.$containerName.' sh -lc '.escapeshellarg($script), 60);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to normalize Laravel writable paths', [
+                'container_name' => $deployment->container_name,
+                'project_root' => $projectRoot,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function normalizePermissions(SSHService $ssh, ContainerDeployment $deployment): void

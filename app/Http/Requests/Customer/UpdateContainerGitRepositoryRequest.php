@@ -16,6 +16,10 @@ class UpdateContainerGitRepositoryRequest extends FormRequest
         return [
             'source_repo_url' => ['required', 'url', 'max:500'],
             'source_repo_branch' => ['nullable', 'string', 'max:120', 'regex:/^[A-Za-z0-9._\\/-]+$/'],
+            'source_repo_token' => ['nullable', 'string', 'max:500'],
+            'composer_github_token' => ['nullable', 'string', 'max:500'],
+            'remove_repo_token' => ['nullable', 'boolean'],
+            'remove_composer_auth' => ['nullable', 'boolean'],
         ];
     }
 

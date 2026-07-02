@@ -3,6 +3,8 @@
     $gitUrl = $gitRepository['url'] ?? '';
     $gitBranch = $gitRepository['branch'] ?? 'main';
     $gitSyncedAt = $gitRepository['synced_at'] ?? null;
+    $hasRepoToken = (bool) ($gitRepository['has_repo_token'] ?? false);
+    $hasComposerAuth = (bool) ($gitRepository['has_composer_auth'] ?? false);
 @endphp
 
 <style>
@@ -101,8 +103,8 @@
             </div>
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">GitHub repository</h3>
             <p class="text-sm text-slate-600 dark:text-slate-300 mt-2">
-                Connect a Git repository and pull the latest code into <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300">/app</code>
-                without using the terminal.
+                Connect a Git repository and pull the latest code into <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300">/app</code>.
+                For private GitHub repos, add a Personal Access Token below. Laravel deploys also run <strong>composer install</strong> and optional migrations automatically.
             </p>
         </div>
     </div>
@@ -131,6 +133,42 @@
                 placeholder="main"
                 class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/50 transition"
             >
+        </div>
+        <div>
+            <label for="source_repo_token" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">GitHub access token (private repos)</label>
+            <input
+                id="source_repo_token"
+                type="password"
+                name="source_repo_token"
+                value=""
+                placeholder="{{ $hasRepoToken ? 'Token saved — leave blank to keep' : 'ghp_… or fine-grained PAT' }}"
+                autocomplete="off"
+                class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500/50 transition"
+            >
+            @if ($hasRepoToken)
+                <label class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <input type="checkbox" name="remove_repo_token" value="1" class="rounded border-slate-300 dark:border-slate-600">
+                    Remove saved token
+                </label>
+            @endif
+        </div>
+        <div>
+            <label for="composer_github_token" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Composer GitHub token (private packages)</label>
+            <input
+                id="composer_github_token"
+                type="password"
+                name="composer_github_token"
+                value=""
+                placeholder="{{ $hasComposerAuth ? 'Token saved — leave blank to keep' : 'Optional — for private Composer deps' }}"
+                autocomplete="off"
+                class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition"
+            >
+            @if ($hasComposerAuth)
+                <label class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <input type="checkbox" name="remove_composer_auth" value="1" class="rounded border-slate-300 dark:border-slate-600">
+                    Remove saved Composer auth
+                </label>
+            @endif
         </div>
         <div class="lg:col-span-2">
             <button

@@ -349,7 +349,8 @@ class ContainerDeploymentService
                                 $service,
                                 $deployment->fresh(),
                                 $ssh,
-                                $options->shouldRunLaravelMigrations((string) ($template->slug ?? ''))
+                                $options->shouldRunLaravelMigrations((string) ($template->slug ?? '')),
+                                $options->isRedeploy,
                             );
 
                         if ($laravelDatabaseSyncMessage) {
@@ -991,6 +992,49 @@ class ContainerDeploymentService
     }
 
     /**
+     * Wait until the container is running (not restarting/exited).
+     */
+    public function waitForContainerRunning(SSHService $ssh, string $containerName, int $timeoutSeconds = 120): void
+    {
+        $this->waitForContainerHealth($ssh, $containerName, $timeoutSeconds);
+    }
+
+    public function waitForLaravelHttpHealth(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $timeoutSeconds = (int) config('containers.laravel_init.http_health_timeout_seconds', 90);
+        $containerName = $deployment->container_name;
+        $internalPort = 8000;
+        $checkScript = 'wget -q -O /dev/null http://127.0.0.1:'.$internalPort.'/ 2>/dev/null'
+            .' || curl -fsS -o /dev/null http://127.0.0.1:'.$internalPort.'/';
+
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / self::HEALTH_CHECK_DELAY));
+        $lastError = null;
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            try {
+                $this->waitForContainerRunning($ssh, $containerName, self::HEALTH_CHECK_DELAY * 2);
+                $ssh->exec(
+                    'docker exec -u www-data -w / '.escapeshellarg($containerName)
+                    .' sh -lc '.escapeshellarg($checkScript),
+                    15
+                );
+
+                return;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                if ($attempt < $maxAttempts - 1) {
+                    sleep(self::HEALTH_CHECK_DELAY);
+                }
+            }
+        }
+
+        throw new \RuntimeException(
+            'Laravel HTTP health check failed after '.$timeoutSeconds.' seconds'
+            .($lastError ? ': '.$lastError->getMessage() : '.')
+        );
+    }
+
+    /**
      * Wait for container to be healthy
      */
     private function waitForContainerHealth(SSHService $ssh, string $containerName, int $timeoutSeconds): void
@@ -1395,6 +1439,7 @@ class ContainerDeploymentService
         $deployment->update(['docker_compose_content' => $composeYaml]);
         $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
         $ssh->exec("cd {$containerPath} && docker compose up -d", self::DEPLOY_TIMEOUT);
+        $this->waitForContainerRunning($ssh, $deployment->container_name);
 
         return 'Laravel document root updated ('.$documentRoot.').';
     }

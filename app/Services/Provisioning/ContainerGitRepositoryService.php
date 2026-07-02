@@ -66,17 +66,24 @@ class ContainerGitRepositoryService
         ];
     }
 
-    public function connect(Service $service, string $repoUrl, string $branch): void
-    {
-        $repoUrl = $this->normalizeRepositoryUrl($repoUrl);
-        $branch = $this->normalizeBranch($branch);
-
-        $meta = is_array($service->service_meta) ? $service->service_meta : [];
-        $meta['source_repo_url'] = $repoUrl;
-        $meta['source_repo_branch'] = $branch;
-        $meta['source_repo_connected_at'] = now()->toIso8601String();
-
-        $service->update(['service_meta' => $meta]);
+    public function connect(
+        Service $service,
+        string $repoUrl,
+        string $branch,
+        ?string $repoToken = null,
+        ?string $composerGithubToken = null,
+        bool $removeRepoToken = false,
+        bool $removeComposerAuth = false,
+    ): void {
+        app(ContainerGitCredentialsService::class)->applyConnection(
+            $service,
+            $repoUrl,
+            $branch,
+            $repoToken,
+            $composerGithubToken,
+            $removeRepoToken,
+            $removeComposerAuth,
+        );
     }
 
     public function requestPull(
@@ -194,7 +201,7 @@ class ContainerGitRepositoryService
                     $this->maskRepositoryUrl($settings['url'])
                 ));
 
-                $output = $this->syncToHost($ssh, $hostAppPath, $settings['url'], $settings['branch'], $freshClone);
+                $output = $this->syncToHost($ssh, $service, $hostAppPath, $settings['url'], $settings['branch'], $freshClone);
                 if ($output !== '') {
                     $pull->appendLog($output);
                 }
@@ -210,6 +217,13 @@ class ContainerGitRepositoryService
 
             if ($this->isLaravelService($service)) {
                 $this->pathResolver()->persistResolvedPaths($service, $ssh, $deployment);
+
+                // Point PHP at the correct web root before composer/env steps (e.g. /app vs /app/public).
+                $this->runPullStep($pull, 'runtime', function () use ($service, $deployment, $ssh) {
+                    $message = $this->deploymentService->refreshLaravelServeCompose($service, $deployment, $ssh);
+
+                    return $message !== '' ? $message : 'Laravel web root refreshed.';
+                });
             }
 
             $commit = $this->readShortCommit($ssh, $hostAppPath);
@@ -232,10 +246,18 @@ class ContainerGitRepositoryService
                 }
 
                 if ($runMigrations) {
-                    $this->runPullStep($pull, 'migrations', function () use ($service, $ssh, $deployment, $timeout) {
-                        $this->laravelInitialization->runApplicationMigrations($service, $ssh, $deployment, $timeout);
+                    $this->runPullStep($pull, 'migrations', function () use ($service, $ssh, $deployment) {
+                        $message = app(LaravelPostSyncService::class)->run($service, $deployment, $ssh, new LaravelPostSyncOptions(
+                            refreshRuntime: false,
+                            configureEnvironment: false,
+                            runComposer: false,
+                            runMigrations: true,
+                            finalizeApplication: false,
+                            normalizePermissions: false,
+                            waitForDatabase: true,
+                        ));
 
-                        return 'Database migrations applied.';
+                        return $message !== '' ? $message : 'Database migrations applied.';
                     });
                 } else {
                     $this->skipPullStep($pull, 'migrations', 'Skipped by request.');
@@ -255,7 +277,16 @@ class ContainerGitRepositoryService
                 });
             }
 
-            $this->runPullStep($pull, 'permissions', function () use ($ssh, $deployment) {
+            $this->runPullStep($pull, 'permissions', function () use ($ssh, $deployment, $service) {
+                if ($this->isLaravelService($service) && $this->appDirectory->hasLaravelProject($ssh, $deployment)) {
+                    $projectRoot = $this->pathResolver()->projectRootFromServiceMeta($service);
+                    $postSync = app(LaravelPostSyncService::class);
+                    $postSync->finalizeApplication($ssh, $deployment, $projectRoot);
+                    $this->appDirectory->normalizeLaravelPermissions($ssh, $deployment, $projectRoot);
+
+                    return 'Laravel permissions and runtime caches finalized.';
+                }
+
                 $this->appDirectory->normalizePermissions($ssh, $deployment);
 
                 return 'File permissions normalized.';
@@ -268,11 +299,7 @@ class ContainerGitRepositoryService
                     return $message !== '' ? $message : 'Application runtime refreshed.';
                 });
             } else {
-                $this->runPullStep($pull, 'runtime', function () use ($service, $deployment, $ssh) {
-                    $message = $this->deploymentService->refreshLaravelServeCompose($service, $deployment, $ssh);
-
-                    return $message !== '' ? $message : 'Laravel web root refreshed.';
-                });
+                $this->skipPullStep($pull, 'runtime', 'Laravel web root refreshed after Git sync.');
             }
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -350,22 +377,13 @@ class ContainerGitRepositoryService
             return;
         }
 
-        try {
-            $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
-            $this->appDirectory->reclaimHostPathOwnershipForGit($ssh, $hostAppPath);
-            $this->syncToHost($ssh, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
+        $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
+        $this->appDirectory->reclaimHostPathOwnershipForGit($ssh, $hostAppPath);
+        $this->syncToHost($ssh, $service, $hostAppPath, $settings['url'], $settings['branch'], ! $hasGit);
 
-            $meta = is_array($service->service_meta) ? $service->service_meta : [];
-            $meta['source_repo_synced_at'] = now()->toIso8601String();
-            $service->update(['service_meta' => $meta]);
-        } catch (\Throwable $e) {
-            \Log::warning("Failed to sync application source for service {$service->id}", [
-                'service_id' => $service->id,
-                'branch' => $settings['branch'],
-                'error' => $e->getMessage(),
-            ]);
-            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
-        }
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $meta['source_repo_synced_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $meta]);
     }
 
     public function normalizeRepositoryUrl(string $url): string
@@ -429,6 +447,7 @@ class ContainerGitRepositoryService
         ];
 
         if ($this->isLaravelService($service)) {
+            $steps[] = $this->makeStep('runtime');
             $steps[] = $this->makeStep('environment');
             $steps[] = $this->makeStep('composer');
             $steps[] = $this->makeStep('migrations');
@@ -437,7 +456,10 @@ class ContainerGitRepositoryService
         }
 
         $steps[] = $this->makeStep('permissions');
-        $steps[] = $this->makeStep('runtime');
+
+        if (! $this->isLaravelService($service)) {
+            $steps[] = $this->makeStep('runtime');
+        }
 
         return $steps;
     }
@@ -495,32 +517,20 @@ class ContainerGitRepositoryService
 
     private function maskRepositoryUrl(string $url): string
     {
-        $parts = parse_url($url);
-        if (! is_array($parts)) {
-            return $url;
-        }
-
-        $user = $parts['user'] ?? null;
-        if ($user === null) {
-            return $url;
-        }
-
-        $host = $parts['host'] ?? '';
-        $path = $parts['path'] ?? '';
-        $query = isset($parts['query']) ? '?'.$parts['query'] : '';
-
-        return 'https://***@'.$host.$path.$query;
+        return app(ContainerGitCredentialsService::class)->maskRepositoryUrl($url);
     }
 
     private function syncToHost(
         SSHService $ssh,
+        Service $service,
         string $hostAppPath,
         string $repoUrl,
         string $branch,
         bool $freshClone
     ): string {
+        $authenticatedUrl = app(ContainerGitCredentialsService::class)->authenticatedCloneUrl($service, $repoUrl);
         $pathArg = escapeshellarg($hostAppPath);
-        $repoArg = escapeshellarg($repoUrl);
+        $repoArg = escapeshellarg($authenticatedUrl);
         $branchArg = escapeshellarg($branch);
         $git = $this->gitInvocation($hostAppPath);
 

@@ -44,6 +44,9 @@ return [
         ],
         // Relative segments under /app checked for artisan (ViserLab-style apps use "core").
         'project_root_candidates' => ['', 'core', 'backend'],
+        'composer_no_dev' => (bool) env('LARAVEL_COMPOSER_NO_DEV', true),
+        'require_http_health' => (bool) env('LARAVEL_REQUIRE_HTTP_HEALTH', true),
+        'http_health_timeout_seconds' => (int) env('LARAVEL_HTTP_HEALTH_TIMEOUT', 90),
         'welcome_template' => resource_path('container-templates/laravel/welcome.blade.php'),
     ],
 

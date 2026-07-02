@@ -8,10 +8,10 @@
         <div class="max-w-3xl">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Laravel application setup</h3>
             <p class="text-sm text-slate-600 dark:text-slate-300 mt-2">
-                <strong>Redeploy stack</strong> recreates the container runtime and keeps files in <code class="font-mono text-xs">/app</code>.
-                It does <strong>not</strong> install Laravel. Click <strong>Initialize Laravel app</strong> to scaffold a fresh project
-                (leftover files are cleared automatically), or set a Git repository at checkout and redeploy to pull code.
-                Use <strong>Reset database</strong> on redeploy to wipe MySQL and auto-sync Laravel <code class="font-mono text-xs">.env</code> when the app is already installed.
+                <strong>Recommended:</strong> connect a Git repository (GitHub tab) and redeploy or pull — Talksasa installs Composer dependencies, writes <code class="font-mono text-xs">.env</code>, and runs migrations automatically.
+                Use <strong>Initialize Laravel app</strong> only for a blank Laravel skeleton (no existing code).
+                <strong>Redeploy stack</strong> refreshes the runtime and re-syncs Git; composer runs again when Laravel is detected.
+                Use <strong>Reset database</strong> on redeploy to wipe MySQL and re-run migrations.
             </p>
         </div>
 

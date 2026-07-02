@@ -335,12 +335,7 @@ class LaravelAppInitializationService
             ? $hostAppPath.'/.env'
             : $hostAppPath.'/'.$relativeRoot.'/.env';
         $ssh->upload($envContent, $envHostPath);
-        $this->dockerExec(
-            $ssh,
-            $deployment->container_name,
-            'set -e; cd '.escapeshellarg($projectRoot).'; test -f .env',
-            30
-        );
+        $this->assertHostFileExists($ssh, $envHostPath);
 
         $this->ensureApplicationKey($ssh, $deployment, $timeout, $projectRoot);
         $this->clearCachedConfig($ssh, $deployment, $projectRoot);
@@ -388,12 +383,31 @@ class LaravelAppInitializationService
             ? $this->resolveProjectContainerRoot($ssh, $service, $deployment)
             : $this->pathResolver->containerProjectRoot('');
 
+        $composerArgs = 'install --no-interaction --no-progress --optimize-autoloader';
+        if (config('containers.laravel_init.composer_no_dev', true)) {
+            $composerArgs .= ' --no-dev';
+        }
+
+        $authPrefix = $service
+            ? app(ContainerGitCredentialsService::class)->composerAuthShellExport($service)
+            : '';
+
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd '.escapeshellarg($projectRoot).'; '.$this->composerInvoke('install --no-interaction --no-progress --optimize-autoloader'),
+            'set -e; cd '.escapeshellarg($projectRoot).'; '.$authPrefix.$this->composerInvoke($composerArgs),
             $timeout
         );
+    }
+
+    public function dockerExecPublic(
+        SSHService $ssh,
+        string $containerName,
+        string $script,
+        int $timeout,
+        bool $asRoot = false
+    ): string {
+        return $this->dockerExec($ssh, $containerName, $script, $timeout, $asRoot);
     }
 
     private function runMigrationsWithRetry(SSHService $ssh, ContainerDeployment $deployment, int $timeout, Service $service): void
@@ -763,6 +777,8 @@ class LaravelAppInitializationService
         int $timeout,
         bool $asRoot = false
     ): string {
+        app(ContainerDeploymentService::class)->waitForContainerRunning($ssh, $containerName);
+
         $userFlag = $asRoot ? '-u 0' : '-u www-data';
         $script = $this->wrapContainerScript($script);
 
@@ -770,6 +786,11 @@ class LaravelAppInitializationService
             'docker exec '.$userFlag.' -w /app '.escapeshellarg($containerName).' sh -lc '.escapeshellarg($script),
             $timeout
         );
+    }
+
+    private function assertHostFileExists(SSHService $ssh, string $hostPath): void
+    {
+        $ssh->exec('sh -lc '.escapeshellarg('test -f '.escapeshellarg($hostPath)), 15);
     }
 
     private function wrapContainerScript(string $script): string

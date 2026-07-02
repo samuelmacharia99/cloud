@@ -161,4 +161,46 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('working_dir: /app', $yaml);
         $this->assertStringContainsString('npm start', $yaml);
     }
+
+    #[Test]
+    public function render_compose_uses_custom_laravel_document_root(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'laravel',
+            'docker_image' => 'talksasa/laravel-runtime:8.3',
+            'default_port' => 8000,
+            'required_cpu_cores' => 0.5,
+            'required_ram_mb' => 512,
+            'volume_paths' => ['app_data' => '/app'],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(true);
+        $runtimeImages->method('resolveImageReference')->willReturn(['image' => 'talksasa/laravel-runtime:8.3']);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-1-service-12-laravel',
+            31012,
+            ['APP_ENV' => 'production'],
+            null,
+            null,
+            null,
+            '/opt/talksasa/containers/user-1-service-12-laravel/app',
+            null,
+            '/app'
+        );
+
+        $this->assertStringContainsString("- /app\n", $yaml);
+        $this->assertStringContainsString("- '-t'\n", $yaml);
+    }
 }

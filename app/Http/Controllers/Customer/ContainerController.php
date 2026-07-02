@@ -72,8 +72,15 @@ class ContainerController extends Controller
         $databaseConsoleEnabled = $this->isDatabaseConsoleEnabled();
         $isLaravelTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'laravel';
         $gitRepositoryService = app(ContainerGitRepositoryService::class);
+        $gitCredentialsService = app(ContainerGitCredentialsService::class);
         $supportsGitRepository = $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug);
-        $gitRepository = $supportsGitRepository ? $gitRepositoryService->repositorySettings($service) : null;
+        $gitRepository = $supportsGitRepository ? array_merge(
+            $gitRepositoryService->repositorySettings($service),
+            [
+                'has_repo_token' => $gitCredentialsService->hasRepositoryToken($service),
+                'has_composer_auth' => $gitCredentialsService->hasComposerAuth($service),
+            ]
+        ) : null;
         $containerLimits = $service->product->getIncludedContainerLimits(
             $service->product->containerTemplate,
             $deployment
@@ -364,7 +371,11 @@ class ContainerController extends Controller
             $gitRepositoryService->connect(
                 $service,
                 $request->input('source_repo_url'),
-                (string) $request->input('source_repo_branch', 'main')
+                (string) $request->input('source_repo_branch', 'main'),
+                $request->input('source_repo_token'),
+                $request->input('composer_github_token'),
+                $request->boolean('remove_repo_token'),
+                $request->boolean('remove_composer_auth'),
             );
 
             return redirect()
