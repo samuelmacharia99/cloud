@@ -7,19 +7,20 @@ use Exception;
 class SSHCommandException extends Exception
 {
     public function __construct(
-        string $command,
-        string $output = '',
-        string $errorMessage = '',
+        public readonly string $command,
+        public readonly string $output = '',
+        public readonly string $errorDetail = '',
         int $code = 0,
-        Exception $previous = null
+        ?Exception $previous = null
     ) {
         $message = "SSH command failed: {$command}";
-        if ($errorMessage) {
-            $message .= "\nError: {$errorMessage}";
+        if ($errorDetail !== '') {
+            $message .= "\nError: {$errorDetail}";
         }
-        if ($output) {
+        if ($output !== '') {
             $message .= "\nOutput: {$output}";
         }
+
         parent::__construct($message, $code, $previous);
     }
 }

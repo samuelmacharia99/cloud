@@ -22,6 +22,7 @@
                 <span x-show="connected" class="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 <span x-show="!connected" class="inline-block w-2 h-2 bg-red-500 rounded-full"></span>
                 <span x-text="statusLabel()"></span>
+                <span x-show="mode === 'http' && commandBusy" class="text-amber-400 ml-2">Running command…</span>
                 <span x-show="mode === 'http'" x-text="`CWD: ${cwd}`" class="ml-2"></span>
             </div>
             <div class="text-right">
@@ -81,12 +82,18 @@ function containerTerminal() {
         history: [],
         historyIndex: 0,
         commandCount: 0,
+        commandBusy: false,
+        commandProgressTimer: null,
         sessionExpires: null,
         expiryUpdateInterval: null,
 
         init() {},
 
         statusLabel() {
+            if (this.commandBusy) {
+                return this.mode === 'http' ? 'Running command (HTTP mode)' : 'Running command';
+            }
+
             if (!this.connected) {
                 return 'Disconnected';
             }
@@ -222,6 +229,7 @@ function containerTerminal() {
             this.mode = 'http';
             this.connected = true;
             this.terminal.write('⚠ Interactive WebSocket unavailable. Using HTTP command mode (one line at a time).\r\n');
+            this.terminal.write('\x1b[90m  Long commands (artisan, composer, npm) show progress lines while running.\x1b[0m\r\n');
             @if ($terminalTemplateSlug === 'laravel')
             this.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
             @elseif ($terminalTemplateSlug === 'nodejs')
@@ -400,6 +408,37 @@ function containerTerminal() {
                 .replace(/\s*(&&|\|\||;|\|)\s*$/g, '');
         },
 
+        isLongRunningCommand(command) {
+            return /\b(artisan|composer|npm|yarn|pnpm|pecl|migrate|db:seed|db:wipe)\b/i.test(command);
+        },
+
+        startCommandProgress(command) {
+            this.stopCommandProgress();
+            this.commandBusy = true;
+
+            if (!this.isLongRunningCommand(command)) {
+                return;
+            }
+
+            this.terminal.write(`\x1b[33m▶ Running:\x1b[0m ${command}\r\n`);
+            this.terminal.write('\x1b[90m   Please wait — output appears when the command finishes.\x1b[0m\r\n');
+
+            let elapsedSeconds = 0;
+            this.commandProgressTimer = setInterval(() => {
+                elapsedSeconds += 5;
+                this.terminal.write(`\x1b[90m   … still running (${elapsedSeconds}s)\x1b[0m\r\n`);
+            }, 5000);
+        },
+
+        stopCommandProgress() {
+            if (this.commandProgressTimer) {
+                clearInterval(this.commandProgressTimer);
+                this.commandProgressTimer = null;
+            }
+
+            this.commandBusy = false;
+        },
+
         async sendCommand(command) {
             command = this.normalizeCommand(command);
             this.terminal.write('\r\n');
@@ -409,11 +448,19 @@ function containerTerminal() {
                 return;
             }
 
+            if (this.commandBusy) {
+                this.terminal.write('\x1b[33m⚠ Another command is still running. Wait for it to finish.\x1b[0m\r\n');
+                this.writePrompt();
+                return;
+            }
+
             if (!this.sessionToken) {
                 this.terminal.write('❌ No active session\r\n');
                 this.writePrompt();
                 return;
             }
+
+            this.startCommandProgress(command);
 
             try {
                 const response = await fetch(`/my/services/{{ $service->id }}/terminal/execute`, {
@@ -442,12 +489,16 @@ function containerTerminal() {
                 } else {
                     if (data.output) {
                         this.terminal.write(formatOutput(data.output) + '\r\n');
+                    } else if (this.isLongRunningCommand(command)) {
+                        this.terminal.write('\x1b[90m(command completed with no output)\x1b[0m\r\n');
                     }
                     this.cwd = data.cwd || this.cwd;
                     this.commandCount++;
                 }
             } catch (error) {
                 this.terminal.write('❌ Error: ' + error.message + '\r\n');
+            } finally {
+                this.stopCommandProgress();
             }
 
             this.writePrompt();
@@ -522,6 +573,7 @@ function containerTerminal() {
             this.mode = null;
             this.sessionToken = null;
             this.inputBuffer = '';
+            this.stopCommandProgress();
             this.terminalVisible = false;
 
             if (this.expiryUpdateInterval) {

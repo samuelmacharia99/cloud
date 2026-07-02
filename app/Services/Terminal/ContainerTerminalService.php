@@ -2,6 +2,7 @@
 
 namespace App\Services\Terminal;
 
+use App\Exceptions\SSH\SSHCommandException;
 use App\Models\ContainerTerminalLog;
 use App\Models\ContainerTerminalSession;
 use App\Models\Service;
@@ -214,6 +215,33 @@ class ContainerTerminalService
             } finally {
                 $ssh->disconnect();
             }
+        } catch (SSHCommandException $e) {
+            \Log::error("Terminal command execution failed for session {$session->id}: ".$e->getMessage());
+
+            $displayOutput = $this->formatFailedCommandOutput($e);
+
+            ContainerTerminalLog::create([
+                'session_id' => $session->id,
+                'user_id' => $session->user_id,
+                'service_id' => $session->service_id,
+                'command' => $rawCommand,
+                'sanitized_command' => $sanitized,
+                'output' => $displayOutput,
+                'exit_code' => 1,
+                'cwd' => $session->cwd,
+                'ip_address' => $ip,
+                'is_blocked' => false,
+            ]);
+
+            $session->addToHistory($rawCommand);
+            $session->extendExpiry();
+
+            return [
+                'output' => $displayOutput,
+                'exit_code' => 1,
+                'cwd' => $session->cwd,
+                'blocked' => false,
+            ];
         } catch (Exception $e) {
             \Log::error("Terminal command execution failed for session {$session->id}: ".$e->getMessage());
 
@@ -361,5 +389,24 @@ class ContainerTerminalService
         }
 
         return (int) config('terminal.command_timeouts.default', 30);
+    }
+
+    private function formatFailedCommandOutput(SSHCommandException $e): string
+    {
+        $partialOutput = trim($e->output);
+        $errorDetail = trim($e->errorDetail);
+
+        if ($partialOutput !== '') {
+            $hint = 'Command failed before completion.';
+            if ($errorDetail === '' || str_contains(strtolower($errorDetail), 'status')) {
+                $hint = 'Command timed out or was interrupted. Partial output is shown below.';
+            }
+
+            return $partialOutput
+                ."\n\n⚠ {$hint}"
+                .($errorDetail !== '' ? "\n❌ {$errorDetail}" : '');
+        }
+
+        return '❌ '.$e->getMessage();
     }
 }
