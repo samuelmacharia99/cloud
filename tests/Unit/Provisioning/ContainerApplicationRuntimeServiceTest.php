@@ -212,6 +212,10 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'NODE_OPTIONS=--max-old-space-size=4096',
             $runtime->npmBuildShellCommand(null, true)
         );
+        $this->assertStringContainsString(
+            '/usr/local/bin/npm ci --include=dev --no-audit --no-fund',
+            $runtime->npmCiShellCommand()
+        );
         $this->assertSame(650, $runtime->nodeBuildHeapLimitMb(1000));
         $this->assertStringContainsString(
             'tailwindcss',

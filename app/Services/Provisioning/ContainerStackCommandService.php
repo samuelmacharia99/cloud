@@ -115,6 +115,14 @@ class ContainerStackCommandService
         }
     }
 
+    public function stopApplicationContainerForMaintenance(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName
+    ): void {
+        $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+    }
+
     /**
      * @return list<string>
      */
@@ -160,25 +168,36 @@ class ContainerStackCommandService
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
 
-                if ($this->nodeModulesNeedFreshInstall($ssh, $hostAppPath, $packageJson)) {
-                    $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv, true);
-                    $this->runOneOffInContainer(
-                        $ssh,
-                        $containerPath,
-                        $containerName,
-                        $this->runtimeService->npmCacheCleanShellCommand(),
-                        '/app',
-                        120,
-                        $buildEnv,
-                        true
-                    );
-                }
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    'rm -rf node_modules .next',
+                    '/app',
+                    120,
+                    $buildEnv,
+                    true
+                );
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $this->runtimeService->npmCacheCleanShellCommand(),
+                    '/app',
+                    120,
+                    $buildEnv,
+                    true
+                );
+
+                $installCommand = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
+                    ? $this->runtimeService->npmCiShellCommand()
+                    : $this->runtimeService->npmInstallShellCommand();
 
                 $this->runOneOffInContainer(
                     $ssh,
                     $containerPath,
                     $containerName,
-                    $this->runtimeService->npmInstallShellCommand(),
+                    $installCommand,
                     '/app',
                     $timeout,
                     $buildEnv,
@@ -215,7 +234,7 @@ class ContainerStackCommandService
 
             return ['Node dependencies updated.'];
         } catch (\Throwable $e) {
-            return ['Node post-pull step failed: '.$e->getMessage()];
+            throw new \RuntimeException('Node post-pull step failed: '.$e->getMessage(), 0, $e);
         }
     }
 
@@ -405,37 +424,6 @@ class ContainerStackCommandService
         }
 
         return $this->deploymentService()->resolveTemplateDockerImage($template, $deployment->selected_version);
-    }
-
-    private function nodeModulesNeedFreshInstall(SSHService $ssh, string $hostAppPath, ?string $packageJson): bool
-    {
-        if (! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/next')) {
-            return true;
-        }
-
-        if ($packageJson === null || trim($packageJson) === '') {
-            return false;
-        }
-
-        $data = json_decode($packageJson, true);
-        if (! is_array($data)) {
-            return true;
-        }
-
-        $devDependencies = $data['devDependencies'] ?? [];
-        if (! is_array($devDependencies) || $devDependencies === []) {
-            return false;
-        }
-
-        $probePackage = array_key_exists('tailwindcss', $devDependencies)
-            ? 'tailwindcss'
-            : (string) array_key_first($devDependencies);
-
-        if ($probePackage === '') {
-            return false;
-        }
-
-        return ! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage);
     }
 
     private function hostFileExists(SSHService $ssh, string $path): bool

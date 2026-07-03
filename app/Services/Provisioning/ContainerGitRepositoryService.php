@@ -193,7 +193,17 @@ class ContainerGitRepositoryService
             $hasGit = $this->hasGitCheckout($ssh, $hostAppPath);
             $freshClone = ! $hasGit || $replaceExisting;
 
-            $this->runPullStep($pull, 'sync', function () use ($ssh, $service, $hostAppPath, $settings, $freshClone, $pull) {
+            $this->runPullStep($pull, 'sync', function () use ($ssh, $service, $hostAppPath, $settings, $freshClone, $pull, $deployment) {
+                if ($freshClone) {
+                    $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+                    app(ContainerStackCommandService::class)->stopApplicationContainerForMaintenance(
+                        $ssh,
+                        $containerPath,
+                        $deployment->container_name
+                    );
+                    $pull->appendLog('Application container stopped before replacing /app contents.');
+                }
+
                 $pull->appendLog(sprintf(
                     '%s branch %s from %s',
                     $freshClone ? 'Cloning' : 'Pulling',

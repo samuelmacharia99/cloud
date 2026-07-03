@@ -540,6 +540,16 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand($this->npmInstallForProductionBuildCommand($force), 'development');
     }
 
+    public function npmCiShellCommand(bool $force = false): string
+    {
+        $forceFlag = $force ? ' --force' : '';
+
+        return $this->nodeCleanNpmCommand(
+            'ci --include=dev --no-audit --no-fund'.$forceFlag,
+            'development'
+        );
+    }
+
     public function npmCacheCleanShellCommand(): string
     {
         return $this->nodeCleanNpmCommand('cache clean --force');
