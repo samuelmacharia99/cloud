@@ -44,18 +44,18 @@ class ContainerOverageBillingService
             $deployment
         );
 
-        $nodeCpuCores = max(1, (int) ($deployment->node?->cpu_cores ?? 1));
+        $cpuLimitCores = max(0.1, (float) ($deployment->cpu_limit ?? $included['cpu'] ?? 1));
 
         $avgCpuPercent = ContainerMetric::averageCpuPercent($deployment, $from, $to);
-        $avgMemoryMb = ContainerMetric::averageMemoryMb($deployment, $from, $to);
+        $peakMemoryMb = ContainerMetric::peakMemoryMb($deployment, $from, $to);
         $avgDiskGb = ContainerMetric::averageDiskUsedGb($deployment, $from, $to);
 
-        $avgCpuCores = ($avgCpuPercent / 100) * $nodeCpuCores;
-        $avgMemoryGb = $avgMemoryMb / 1024;
+        $avgCpuCores = ($avgCpuPercent / 100) * $cpuLimitCores;
+        $peakMemoryGb = $peakMemoryMb / 1024;
         $includedMemoryGb = $included['memory_mb'] / 1024;
 
         $cpuOverageHours = max(0, $avgCpuCores - $included['cpu']) * $billingHours;
-        $memoryOverageGbHours = max(0, $avgMemoryGb - $includedMemoryGb) * $billingHours;
+        $memoryOverageGbHours = max(0, $peakMemoryGb - $includedMemoryGb) * $billingHours;
         $diskOverageGbHours = max(0, $avgDiskGb - $included['disk_gb']) * $billingHours;
 
         $cpuRate = (float) $product->cpu_overage_rate;
@@ -85,10 +85,10 @@ class ContainerOverageBillingService
                 $service,
                 $product,
                 sprintf(
-                    'RAM Overage — %s GB-hours (included: %s GB, avg usage: %s GB) @ KES %s/GB-hour',
+                    'RAM Overage — %s GB-hours (included: %s GB, peak usage: %s GB) @ KES %s/GB-hour',
                     $this->formatQuantity($memoryOverageGbHours),
                     $this->formatQuantity($includedMemoryGb),
-                    $this->formatQuantity($avgMemoryGb),
+                    $this->formatQuantity($peakMemoryGb),
                     $this->formatRate($ramRate)
                 ),
                 $memoryOverageGbHours,

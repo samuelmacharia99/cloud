@@ -857,6 +857,7 @@ class ContainerDeploymentService
         $compose['services']['db'] = array_filter([
             'image' => $db->docker_image,
             'restart' => 'unless-stopped',
+            'mem_limit' => '512M',
             'environment' => $dbEnv ?: null,
             'volumes' => ["db_data:{$mountPath}"],
         ]);
@@ -892,6 +893,8 @@ class ContainerDeploymentService
                     'restart' => $deployment?->restart_policy ?? 'unless-stopped',
                     'environment' => $envVars,
                     'ports' => ["{$port}:".$template->default_port],
+                    'mem_limit' => $memoryLimitStr,
+                    'cpus' => (float) $cpuLimit,
                     'deploy' => [
                         'resources' => [
                             'limits' => [
@@ -1527,29 +1530,21 @@ class ContainerDeploymentService
      */
     private function getContainerStatus(SSHService $ssh, string $containerName): array
     {
-        // Use docker inspect for compatibility across Docker versions.
-        // docker ps --format json is not universally supported and can cause false negatives.
-        $safeName = escapeshellarg($containerName);
-        $statusOutput = trim($ssh->exec(
-            "docker inspect --type container --format '{{.State.Status}}|{{.State.Running}}' {$safeName} 2>/dev/null || echo ''",
-            10
-        ));
+        $inspect = app(ContainerRuntimeInspector::class)->inspect($ssh, $containerName);
 
-        if ($statusOutput === '') {
+        if (($inspect['missing'] ?? false) === true) {
             \Log::debug('Container not found in docker inspect', ['container_name' => $containerName]);
 
             return [
                 'state' => 'unknown',
                 'running' => false,
+                'oom_killed' => false,
+                'exit_code' => null,
                 'internal_ip' => null,
             ];
         }
 
-        [$state, $runningRaw] = array_pad(explode('|', $statusOutput, 2), 2, '');
-        $state = trim($state) !== '' ? trim($state) : 'unknown';
-        $isRunning = strtolower(trim($runningRaw)) === 'true';
-
-        // Best-effort port info for diagnostics/UI (can be empty for internal-only services).
+        $safeName = escapeshellarg($containerName);
         $ports = trim($ssh->exec(
             "docker inspect --type container --format '{{json .NetworkSettings.Ports}}' {$safeName} 2>/dev/null || echo ''",
             10
@@ -1557,18 +1552,23 @@ class ContainerDeploymentService
 
         \Log::debug('Container status check', [
             'container_name' => $containerName,
-            'state' => $state,
-            'running' => $isRunning,
+            'state' => $inspect['state'],
+            'running' => $inspect['running'],
+            'oom_killed' => $inspect['oom_killed'],
             'ports' => $ports,
         ]);
 
         return [
-            'state' => $state,
-            'running' => $isRunning,
+            'state' => $inspect['state'],
+            'running' => $inspect['running'],
+            'oom_killed' => $inspect['oom_killed'],
+            'exit_code' => $inspect['exit_code'],
             'internal_ip' => $ports !== '' ? $ports : null,
             'full_data' => [
-                'state' => $state,
-                'running' => $isRunning,
+                'state' => $inspect['state'],
+                'running' => $inspect['running'],
+                'oom_killed' => $inspect['oom_killed'],
+                'exit_code' => $inspect['exit_code'],
                 'ports' => $ports,
             ],
         ];

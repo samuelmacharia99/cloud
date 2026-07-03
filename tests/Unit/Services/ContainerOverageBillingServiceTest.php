@@ -114,6 +114,7 @@ class ContainerOverageBillingServiceTest extends TestCase
             'service_id' => $service->id,
             'node_id' => $node->id,
             'status' => 'running',
+            'cpu_limit' => 4.0,
         ]);
 
         $period = $this->billing->resolveBillingPeriod($service);
@@ -121,6 +122,7 @@ class ContainerOverageBillingServiceTest extends TestCase
 
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
             'cpu_percentage' => 50,
             'memory_used_mb' => 1024,
             'memory_limit_mb' => 2048,
@@ -184,10 +186,12 @@ class ContainerOverageBillingServiceTest extends TestCase
             'service_id' => $service->id,
             'node_id' => $node->id,
             'status' => 'running',
+            'cpu_limit' => 4.0,
         ]);
 
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
             'cpu_percentage' => 25,
             'memory_used_mb' => 256,
             'memory_limit_mb' => 2048,
@@ -210,6 +214,84 @@ class ContainerOverageBillingServiceTest extends TestCase
 
         $this->assertCount(0, $invoice->items);
         $this->assertSame('1000.00', $invoice->total);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_ram_overage_uses_peak_memory_not_average(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-15 12:00:00'));
+
+        $user = User::factory()->create();
+        $node = Node::factory()->create(['cpu_cores' => 4]);
+
+        $product = Product::factory()->containerHosting()->create([
+            'resource_limits' => [
+                'cpu' => 2,
+                'memory' => 512,
+                'disk' => 10,
+            ],
+            'overage_enabled' => true,
+            'cpu_overage_rate' => 10,
+            'ram_overage_rate' => 5,
+            'disk_overage_rate' => 0,
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $user->id,
+            'product_id' => $product->id,
+            'node_id' => $node->id,
+            'billing_cycle' => 'monthly',
+            'next_due_date' => Carbon::parse('2026-04-01'),
+            'commenced_at' => Carbon::parse('2026-02-01'),
+            'status' => 'active',
+        ]);
+
+        $deployment = ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'node_id' => $node->id,
+            'status' => 'running',
+            'cpu_limit' => 1.0,
+            'memory_limit_mb' => 512,
+        ]);
+
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'cpu_percentage' => 10,
+            'memory_used_mb' => 256,
+            'memory_limit_mb' => 512,
+            'memory_percentage' => 50,
+            'disk_used_gb' => 2,
+            'recorded_at' => Carbon::parse('2026-03-10 10:00:00'),
+        ]);
+
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
+            'cpu_percentage' => 10,
+            'memory_used_mb' => 2048,
+            'memory_limit_mb' => 2048,
+            'memory_percentage' => 100,
+            'disk_used_gb' => 2,
+            'recorded_at' => Carbon::parse('2026-03-11 10:00:00'),
+        ]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'unpaid',
+            'subtotal' => 1000,
+            'tax' => 0,
+            'total' => 1000,
+        ]);
+
+        $this->billing->addOverageItemsToInvoice($invoice, $service);
+
+        $invoice->refresh();
+        $items = $invoice->items()->pluck('description')->all();
+
+        $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'RAM Overage')));
+        $this->assertTrue(collect($items)->contains(fn (string $line) => str_contains($line, 'peak usage: 2 GB')));
 
         Carbon::setTestNow();
     }

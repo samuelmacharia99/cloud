@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ServiceStatus;
 use App\Models\ContainerDeployment;
 use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerRuntimeInspector;
 use App\Services\SSH\SSHService;
 
 class AutoRestartContainersCommand extends BaseCronCommand
@@ -15,6 +17,12 @@ class AutoRestartContainersCommand extends BaseCronCommand
 
     private const MAX_RESTART_ATTEMPTS = 3;
 
+    public function __construct(
+        private ContainerRuntimeInspector $runtimeInspector,
+    ) {
+        parent::__construct();
+    }
+
     protected $signature = 'cron:auto-restart-containers';
 
     protected $description = 'Monitor and auto-restart failed containers (every 5 minutes)';
@@ -22,8 +30,9 @@ class AutoRestartContainersCommand extends BaseCronCommand
     protected function handleCron(): string
     {
         $deployments = ContainerDeployment::with('service.user', 'node')
-            ->where('status', 'running')
             ->where('auto_restart', true)
+            ->whereIn('status', ['running', 'stopped', 'failed', 'deploying'])
+            ->whereHas('service', fn ($query) => $query->where('status', ServiceStatus::Active))
             ->get();
 
         if ($deployments->isEmpty()) {
@@ -43,20 +52,15 @@ class AutoRestartContainersCommand extends BaseCronCommand
                 $ssh = SSHService::forNode($deployment->node);
 
                 try {
-                    $deploymentService = new ContainerDeploymentService;
+                    $deploymentService = app(ContainerDeploymentService::class);
                     $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
-                    $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-                    $statusCmd = "cd {$containerPath} && docker compose -f docker-compose.yml ps --format json 2>/dev/null | jq -r 'if type==\"array\" then (if length==0 then \"missing\" elif any(.[]; ((.State // \"\") | ascii_downcase | startswith(\"running\"))) then \"running\" else ((.[0].State // \"error\") | ascii_downcase) end) elif type==\"object\" then ((.State // \"error\") | ascii_downcase) else \"error\" end'";
-                    $status = trim($ssh->exec($statusCmd));
+                    $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
 
-                    if (str_starts_with($status, 'running')) {
-                        // Clear stale failure attempts once container is healthy again.
-                        if ($deployment->restart_attempts > 0) {
-                            $deployment->update([
-                                'restart_attempts' => 0,
-                                'last_status_check_at' => now(),
-                            ]);
+                    if (($inspect['running'] ?? false) === true) {
+                        if ($deployment->status !== 'running' || $deployment->restart_attempts > 0) {
+                            $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect);
+                            $deployment->update(['restart_attempts' => 0]);
                         }
 
                         continue;
@@ -64,13 +68,13 @@ class AutoRestartContainersCommand extends BaseCronCommand
 
                     $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id}...");
 
-                    $ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml restart", self::RESTART_TIMEOUT);
+                    $deploymentService->startComposeStack($ssh, $deployment->service, $deployment);
 
-                    sleep(2);
+                    sleep(3);
 
-                    $newStatus = trim($ssh->exec($statusCmd));
+                    $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
 
-                    if (str_starts_with($newStatus, 'running')) {
+                    if (($inspect['running'] ?? false) === true) {
                         if ($deployment->restart_attempts > 0) {
                             app(NotificationService::class)->notifyContainerAutoRestarted(
                                 $deployment->service,
@@ -78,10 +82,10 @@ class AutoRestartContainersCommand extends BaseCronCommand
                             );
                         }
 
+                        $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect);
                         $deployment->update([
                             'restart_attempts' => 0,
                             'last_restart_at' => now(),
-                            'last_status_check_at' => now(),
                         ]);
 
                         $this->line("  <fg=green>✓ Restarted</> deployment {$deployment->id}");
@@ -91,12 +95,25 @@ class AutoRestartContainersCommand extends BaseCronCommand
                         $deployment->refresh();
 
                         if ($deployment->restart_attempts >= self::MAX_RESTART_ATTEMPTS) {
-                            $deployment->service->update(['status' => 'failed']);
+                            $message = 'Container failed to restart after '.self::MAX_RESTART_ATTEMPTS.' attempts';
+                            $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect, $message);
+                            $deployment->update(['status' => 'failed']);
+
+                            $meta = is_array($deployment->service->service_meta)
+                                ? $deployment->service->service_meta
+                                : [];
+                            $deployment->service->update([
+                                'service_meta' => array_merge($meta, [
+                                    'container_restart_exhausted_at' => now()->toIso8601String(),
+                                    'container_restart_message' => $message,
+                                ]),
+                            ]);
+
                             $this->line("  <fg=red>✗ Failed</> deployment {$deployment->id} after {$deployment->restart_attempts} attempts");
 
                             app(NotificationService::class)->notifyContainerFailed(
                                 $deployment->service,
-                                'Container failed to restart after '.self::MAX_RESTART_ATTEMPTS.' attempts'
+                                $message
                             );
                             $notified++;
                             $failed++;

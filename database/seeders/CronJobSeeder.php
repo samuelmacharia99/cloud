@@ -130,6 +130,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Prune Container Metrics',
+                'description' => 'Deletes container metric samples older than 90 days.',
+                'command' => 'cron:prune-container-metrics',
+                'schedule' => '30 2 * * 0',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Auto-Restart Containers',
                 'description' => 'Monitors and auto-restarts failed containers with auto-restart enabled.',
                 'command' => 'cron:auto-restart-containers',
@@ -153,7 +160,7 @@ class CronJobSeeder extends Seeder
             [
                 'name' => 'Sync Service Live Status',
                 'description' => 'Probes DirectAdmin accounts and Docker containers to detect billing vs infrastructure status drift.',
-                'command' => 'cron:sync-service-live-status',
+                'command' => 'cron:sync-service-live-status --heal',
                 'schedule' => '*/15 * * * *',
                 'enabled' => true,
             ],

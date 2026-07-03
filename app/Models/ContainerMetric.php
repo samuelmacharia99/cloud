@@ -9,8 +9,13 @@ class ContainerMetric extends Model
 {
     public $timestamps = false;
 
+    public const SAMPLE_USAGE = 'usage';
+
+    public const SAMPLE_DOWNTIME = 'downtime';
+
     protected $fillable = [
         'container_deployment_id',
+        'sample_type',
         'cpu_percentage',
         'memory_used_mb',
         'memory_limit_mb',
@@ -49,28 +54,43 @@ class ContainerMetric extends Model
     }
 
     // Static helpers for billing calculations
+    public function scopeUsageSamples($query)
+    {
+        return $query->where('sample_type', self::SAMPLE_USAGE);
+    }
+
+    public function scopeInBillingPeriod($query, Carbon $from, Carbon $to)
+    {
+        return $query->whereBetween('recorded_at', [$from, $to]);
+    }
+
     public static function averageCpuPercent(ContainerDeployment $deployment, Carbon $from, Carbon $to): float
     {
-        $avg = self::where('container_deployment_id', $deployment->id)
-            ->whereBetween('recorded_at', [$from, $to])
+        $avg = self::query()
+            ->where('container_deployment_id', $deployment->id)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
             ->avg('cpu_percentage');
 
         return (float) ($avg ?? 0);
     }
 
-    public static function averageMemoryMb(ContainerDeployment $deployment, Carbon $from, Carbon $to): float
+    public static function peakMemoryMb(ContainerDeployment $deployment, Carbon $from, Carbon $to): float
     {
-        $avg = self::where('container_deployment_id', $deployment->id)
-            ->whereBetween('recorded_at', [$from, $to])
-            ->avg('memory_used_mb');
+        $peak = self::query()
+            ->where('container_deployment_id', $deployment->id)
+            ->inBillingPeriod($from, $to)
+            ->max('memory_used_mb');
 
-        return (float) ($avg ?? 0);
+        return (float) ($peak ?? 0);
     }
 
     public static function averageDiskUsedGb(ContainerDeployment $deployment, Carbon $from, Carbon $to): float
     {
-        $avg = self::where('container_deployment_id', $deployment->id)
-            ->whereBetween('recorded_at', [$from, $to])
+        $avg = self::query()
+            ->where('container_deployment_id', $deployment->id)
+            ->usageSamples()
+            ->inBillingPeriod($from, $to)
             ->avg('disk_used_gb');
 
         return (float) ($avg ?? 0);

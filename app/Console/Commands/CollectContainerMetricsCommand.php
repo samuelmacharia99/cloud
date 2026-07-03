@@ -2,9 +2,11 @@
 
 namespace App\Console\Commands;
 
+use App\Enums\ServiceStatus;
 use App\Models\ContainerDeployment;
 use App\Models\ContainerMetric;
 use App\Services\Provisioning\ContainerDeploymentService;
+use App\Services\Provisioning\ContainerRuntimeInspector;
 use App\Services\Provisioning\DockerStatsParser;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Cache;
@@ -16,15 +18,23 @@ class CollectContainerMetricsCommand extends BaseCronCommand
 
     protected $description = 'Collect Docker container metrics (CPU, memory, disk, I/O) via docker stats';
 
+    public function __construct(
+        private ContainerRuntimeInspector $runtimeInspector,
+    ) {
+        parent::__construct();
+    }
+
     protected function handleCron(): string
     {
         $collected = 0;
+        $downtimeSamples = 0;
         $failed = 0;
         $nodeErrors = [];
 
-        // Get all running deployments grouped by node
-        $deployments = ContainerDeployment::where('status', 'running')
-            ->with('node')
+        $deployments = ContainerDeployment::query()
+            ->whereHas('service', fn ($query) => $query->where('status', ServiceStatus::Active))
+            ->where('status', '!=', 'terminated')
+            ->with(['node', 'service'])
             ->get()
             ->groupBy('node_id');
 
@@ -43,8 +53,12 @@ class CollectContainerMetricsCommand extends BaseCronCommand
 
                 foreach ($nodeDeployments as $deployment) {
                     try {
-                        $this->collectMetric($ssh, $deployment);
-                        $collected++;
+                        $result = $this->collectMetric($ssh, $deployment);
+                        if ($result === 'usage') {
+                            $collected++;
+                        } elseif ($result === 'downtime') {
+                            $downtimeSamples++;
+                        }
                     } catch (\Throwable $e) {
                         $failed++;
                         $this->logMetricFailure($deployment, $e);
@@ -62,6 +76,9 @@ class CollectContainerMetricsCommand extends BaseCronCommand
         }
 
         $message = "Collected metrics for {$collected} containers";
+        if ($downtimeSamples > 0) {
+            $message .= ", {$downtimeSamples} downtime samples";
+        }
         if ($failed > 0) {
             $message .= ". Failed: {$failed}";
         }
@@ -73,29 +90,37 @@ class CollectContainerMetricsCommand extends BaseCronCommand
     }
 
     /**
-     * Collect metrics for a single container
+     * @return 'usage'|'downtime'|null
      */
-    private function collectMetric(SSHService $ssh, ContainerDeployment $deployment): void
+    private function collectMetric(SSHService $ssh, ContainerDeployment $deployment): ?string
     {
         $containerName = $deployment->container_name;
-        $nameArg = escapeshellarg($containerName);
+        $inspect = $this->runtimeInspector->inspect($ssh, $containerName);
 
-        $state = trim($ssh->exec(
-            "docker inspect -f '{{.State.Running}}' {$nameArg} 2>/dev/null || echo missing",
-            10
-        ));
-
-        if ($state !== 'true') {
-            $deployment->update([
-                'last_status_check_at' => now(),
-                'last_status_check_output' => $state === 'missing'
-                    ? 'Container not found on node during metrics collection'
-                    : 'Container not running on node during metrics collection',
+        if (($inspect['oom_killed'] ?? false) === true) {
+            Log::warning('Container was OOM-killed', [
+                'deployment_id' => $deployment->id,
+                'container_name' => $containerName,
+                'exit_code' => $inspect['exit_code'] ?? null,
             ]);
-
-            return;
         }
 
+        if (! ($inspect['running'] ?? false)) {
+            $detail = ($inspect['missing'] ?? false)
+                ? 'Container not found on node during metrics collection'
+                : (($inspect['oom_killed'] ?? false)
+                    ? 'Container stopped after OOM kill during metrics collection'
+                    : 'Container not running on node during metrics collection');
+
+            $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect, $detail);
+            $this->recordDowntimeSample($deployment, $inspect);
+
+            return 'downtime';
+        }
+
+        $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect);
+
+        $nameArg = escapeshellarg($containerName);
         $output = trim($ssh->exec(
             "docker stats {$nameArg} --no-stream --format '{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null || true",
             15
@@ -129,9 +154,9 @@ class CollectContainerMetricsCommand extends BaseCronCommand
 
         $diskUsedGb = $this->collectDiskUsedGb($ssh, $deployment);
 
-        // Create metric record
         ContainerMetric::create([
             'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_USAGE,
             'cpu_percentage' => $cpuPercent,
             'memory_used_mb' => $memUsedMb,
             'memory_limit_mb' => $memLimitMb,
@@ -141,6 +166,34 @@ class CollectContainerMetricsCommand extends BaseCronCommand
             'block_io_read_bytes' => $blockReadBytes,
             'block_io_write_bytes' => $blockWriteBytes,
             'disk_used_gb' => $diskUsedGb,
+            'recorded_at' => now(),
+        ]);
+
+        return 'usage';
+    }
+
+    /**
+     * @param  array<string, mixed>  $inspect
+     */
+    private function recordDowntimeSample(ContainerDeployment $deployment, array $inspect): void
+    {
+        $memoryLimitMb = (int) ($deployment->memory_limit_mb ?: 0);
+        if ($memoryLimitMb <= 0) {
+            $memoryLimitMb = (int) ($deployment->service?->product?->containerTemplate?->required_ram_mb ?? 256);
+        }
+
+        ContainerMetric::create([
+            'container_deployment_id' => $deployment->id,
+            'sample_type' => ContainerMetric::SAMPLE_DOWNTIME,
+            'cpu_percentage' => 0,
+            'memory_used_mb' => $memoryLimitMb,
+            'memory_limit_mb' => $memoryLimitMb,
+            'memory_percentage' => $memoryLimitMb > 0 ? 100 : 0,
+            'net_io_rx_bytes' => 0,
+            'net_io_tx_bytes' => 0,
+            'block_io_read_bytes' => 0,
+            'block_io_write_bytes' => 0,
+            'disk_used_gb' => 0,
             'recorded_at' => now(),
         ]);
     }
