@@ -1104,6 +1104,8 @@ class ContainerDeploymentService
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
                 if ($this->databaseSidecarIsReady($ssh, $pathArg, $databaseTemplate, $envVars)) {
+                    $this->ensureDatabaseCredentialsSynced($ssh, $containerPath, $databaseTemplate, $envVars);
+
                     return;
                 }
             } catch (\Throwable $e) {
@@ -1120,6 +1122,26 @@ class ContainerDeploymentService
         }
 
         throw new \RuntimeException('Database did not become ready within '.$timeoutSeconds.' seconds.');
+    }
+
+    private function ensureDatabaseCredentialsSynced(
+        SSHService $ssh,
+        string $containerPath,
+        DatabaseTemplate $databaseTemplate,
+        array $envVars
+    ): void {
+        if (! in_array($databaseTemplate->type, ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
+        try {
+            $this->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars);
+        } catch (\Throwable $e) {
+            \Log::warning('MySQL credential sync failed (may be first deploy)', [
+                'container_path' => $containerPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function waitForApplicationDatabaseAccess(
@@ -1275,6 +1297,49 @@ class ContainerDeploymentService
         );
 
         return true;
+    }
+
+    /**
+     * Sync MySQL/MariaDB user credentials inside a running db sidecar.
+     *
+     * MySQL only reads MYSQL_USER/MYSQL_PASSWORD on first init.
+     * After that, changing the compose env vars has no effect.
+     * This method connects as root and applies the credential change.
+     */
+    public function syncMysqlSidecarCredentials(
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $rootPassword = escapeshellarg((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+
+        $sql = sprintf(
+            'CREATE DATABASE IF NOT EXISTS %s; '
+            ."CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'; "
+            ."ALTER USER '%s'@'%%' IDENTIFIED BY '%s'; "
+            ."GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%%'; "
+            .'FLUSH PRIVILEGES;',
+            $this->mysqlQuoteIdentifier($database),
+            addslashes($username), addslashes($password),
+            addslashes($username), addslashes($password),
+            $this->mysqlQuoteIdentifier($database), addslashes($username)
+        );
+
+        $sqlArg = escapeshellarg($sql);
+
+        $ssh->exec(
+            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPassword} db mysql -u root -e {$sqlArg}",
+            30
+        );
+    }
+
+    private function mysqlQuoteIdentifier(string $name): string
+    {
+        return '`'.str_replace('`', '``', $name).'`';
     }
 
     private function isStrictHealthCheckEnabled($template): bool
@@ -1730,6 +1795,12 @@ class ContainerDeploymentService
             'DB_USERNAME' => $dbUser,
             'DB_PASSWORD' => $dbPassword,
             'DB_CONNECTION' => 'mysql',
+            'DATABASE_URL' => sprintf(
+                'mysql://%s:%s@db:3306/%s',
+                rawurlencode($dbUser),
+                rawurlencode($dbPassword),
+                rawurlencode($dbName)
+            ),
         ];
     }
 
