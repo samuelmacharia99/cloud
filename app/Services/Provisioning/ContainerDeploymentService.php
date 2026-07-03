@@ -1218,7 +1218,11 @@ class ContainerDeploymentService
     private function mysqlSidecarIsReady(SSHService $ssh, string $containerPathArg, array $envVars): bool
     {
         $password = escapeshellarg((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
-        $command = "cd {$containerPathArg} && docker compose exec -T -e MYSQL_PWD={$password} db mysqladmin ping -h localhost --silent";
+
+        // mysqladmin ping only checks if the daemon is up — it succeeds even with wrong credentials
+        // when connecting via the socket. Use a simple connection attempt as well.
+        $command = "cd {$containerPathArg} && docker compose exec -T db mysqladmin ping -h 127.0.0.1 --silent 2>/dev/null"
+            ." || cd {$containerPathArg} && docker compose exec -T -e MYSQL_PWD={$password} db mysqladmin ping -h localhost --silent";
 
         $ssh->exec($command, 20);
 
@@ -1312,7 +1316,7 @@ class ContainerDeploymentService
         array $envVars
     ): void {
         $pathArg = escapeshellarg($containerPath);
-        $rootPassword = escapeshellarg((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+        $rootPassword = (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? '');
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
@@ -1330,11 +1334,14 @@ class ContainerDeploymentService
         );
 
         $sqlArg = escapeshellarg($sql);
+        $rootPwArg = escapeshellarg($rootPassword);
 
-        $ssh->exec(
-            "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPassword} db mysql -u root -e {$sqlArg}",
-            30
-        );
+        $command = "cd {$pathArg} && ("
+            ."docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysql -u root -e {$sqlArg} 2>/dev/null"
+            ." || docker compose exec -T db mysql -u root -e {$sqlArg} 2>/dev/null"
+            .')';
+
+        $ssh->exec($command, 30);
     }
 
     private function mysqlQuoteIdentifier(string $name): string
