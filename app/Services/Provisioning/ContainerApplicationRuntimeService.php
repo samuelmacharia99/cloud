@@ -442,6 +442,38 @@ class ContainerApplicationRuntimeService
         return 'dist';
     }
 
+    /**
+     * Shell test that is true when a production build artifact is missing or incomplete.
+     */
+    public function packageJsonBuildArtifactMissingCheck(?string $packageJson): string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return '[ ! -d dist ]';
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return '[ ! -d dist ]';
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : []
+        );
+
+        if (isset($dependencies['next'])) {
+            return '[ ! -f .next/BUILD_ID ]';
+        }
+
+        if (isset($dependencies['nuxt'])) {
+            return '[ ! -d .output/server ]';
+        }
+
+        $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
+
+        return '[ ! -d '.$artifactDir.' ]';
+    }
+
     private const NODE_NPM_BIN = '/usr/local/bin/npm';
 
     private const NODE_CLEAN_ENV = 'HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit=';
@@ -603,9 +635,9 @@ class ContainerApplicationRuntimeService
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
         }
 
-        $artifactDir = $this->packageJsonBuildOutputDir($packageJson);
+        $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
 
-        return '[ -f package.json ] && { if [ ! -d '.$artifactDir.' ]; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

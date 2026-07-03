@@ -173,6 +173,26 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertStringContainsString('env -i HOME=/tmp', $bootstrap);
         $this->assertStringContainsString('/usr/local/bin/npm install --production=false --include=dev', $bootstrap);
         $this->assertStringContainsString('/usr/local/bin/npm run build', $bootstrap);
+        $this->assertStringContainsString('.next/BUILD_ID', $bootstrap);
+    }
+
+    #[Test]
+    public function it_rebuilds_next_js_when_artifact_directory_exists_without_build_id(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'build' => 'next build',
+                'start' => 'next start',
+            ],
+            'dependencies' => [
+                'next' => '14.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $bootstrap = $this->service->nodeBootstrap($packageJson);
+
+        $this->assertStringContainsString('[ ! -f .next/BUILD_ID ]', $bootstrap);
+        $this->assertStringNotContainsString('[ ! -d .next ]', $bootstrap);
     }
 
     #[Test]
