@@ -1326,6 +1326,7 @@ class ContainerDeploymentService
      * MySQL only reads MYSQL_USER/MYSQL_PASSWORD on first init.
      * After that, changing the compose env vars has no effect.
      * This method connects as root and applies the credential change.
+     * Falls back to --skip-grant-tables if root password is unknown.
      */
     public function syncMysqlSidecarCredentials(
         SSHService $ssh,
@@ -1350,15 +1351,70 @@ class ContainerDeploymentService
             $this->mysqlQuoteIdentifier($database), addslashes($username)
         );
 
+        $rootSql = sprintf(
+            "ALTER USER 'root'@'%%' IDENTIFIED BY '%s'; "
+            ."ALTER USER 'root'@'localhost' IDENTIFIED BY '%s'; "
+            .'%s '
+            .'FLUSH PRIVILEGES;',
+            addslashes($rootPassword),
+            addslashes($rootPassword),
+            $sql
+        );
+
         $sqlArg = escapeshellarg($sql);
         $rootPwArg = escapeshellarg($rootPassword);
 
-        $command = "cd {$pathArg} && ("
-            ."docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysql -u root -e {$sqlArg} 2>/dev/null"
-            ." || docker compose exec -T db mysql -u root -e {$sqlArg} 2>/dev/null"
-            .')';
+        // Attempt 1: use the env root password
+        try {
+            $ssh->exec(
+                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysql -u root -e {$sqlArg}",
+                20
+            );
 
-        $ssh->exec($command, 30);
+            return;
+        } catch (\Throwable) {
+        }
+
+        // Attempt 2: try passwordless root (some images allow socket auth)
+        try {
+            $ssh->exec(
+                "cd {$pathArg} && docker compose exec -T db mysql -u root -e {$sqlArg}",
+                20
+            );
+
+            return;
+        } catch (\Throwable) {
+        }
+
+        // Attempt 3: use --skip-grant-tables to reset both root and user passwords.
+        // Temporarily stop mysqld, run with skip-grant-tables, apply changes, then restart.
+        $rootSqlArg = escapeshellarg($rootSql);
+        $resetScript = <<<'BASH'
+set -e
+DB_CONTAINER=$(docker compose ps -q db)
+if [ -z "$DB_CONTAINER" ]; then echo "db container not found"; exit 1; fi
+docker compose stop db
+docker compose run --rm -d --name db_credential_repair \
+  --entrypoint "" \
+  db sh -c "exec mysqld --skip-grant-tables --skip-networking=false --user=mysql"
+for i in $(seq 1 20); do
+  if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi
+  sleep 1
+done
+docker exec db_credential_repair mysql -u root -e SQLPLACEHOLDER
+docker stop db_credential_repair 2>/dev/null || true
+docker rm -f db_credential_repair 2>/dev/null || true
+docker compose start db
+for i in $(seq 1 15); do
+  if docker compose exec -T -e MYSQL_PWD=ROOTPWPLACEHOLDER db mysqladmin ping --silent 2>/dev/null; then break; fi
+  sleep 1
+done
+BASH;
+        $resetScript = str_replace('SQLPLACEHOLDER', $rootSqlArg, $resetScript);
+        $resetScript = str_replace('ROOTPWPLACEHOLDER', $rootPwArg, $resetScript);
+        $scriptArg = escapeshellarg($resetScript);
+
+        $ssh->exec("cd {$pathArg} && bash -c {$scriptArg}", 90);
     }
 
     private function mysqlQuoteIdentifier(string $name): string
