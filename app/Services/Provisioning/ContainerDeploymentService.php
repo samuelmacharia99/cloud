@@ -1132,15 +1132,17 @@ class ContainerDeploymentService
         DatabaseTemplate $databaseTemplate,
         array $envVars
     ): void {
-        if (! in_array($databaseTemplate->type, ['mysql', 'mariadb'], true)) {
-            return;
-        }
-
         try {
-            $this->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars);
+            match ($databaseTemplate->type) {
+                'mysql', 'mariadb' => $this->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars),
+                'postgresql' => $this->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars),
+                'mongodb' => $this->syncMongodbSidecarCredentials($ssh, $containerPath, $envVars),
+                default => null,
+            };
         } catch (\Throwable $e) {
-            \Log::warning('MySQL credential sync failed (may be first deploy)', [
+            \Log::warning('Database credential sync failed (may be first deploy)', [
                 'container_path' => $containerPath,
+                'type' => $databaseTemplate->type,
                 'error' => $e->getMessage(),
             ]);
         }
@@ -1213,6 +1215,7 @@ class ContainerDeploymentService
         return match ($databaseTemplate->type) {
             'mysql', 'mariadb' => $this->mysqlSidecarIsReady($ssh, $containerPathArg, $envVars),
             'postgresql' => $this->postgresqlSidecarIsReady($ssh, $containerPathArg, $envVars),
+            'mongodb' => $this->mongodbSidecarIsReady($ssh, $containerPathArg),
             default => true,
         };
     }
@@ -1236,6 +1239,18 @@ class ContainerDeploymentService
         $user = escapeshellarg((string) ($envVars['POSTGRES_USER'] ?? $envVars['DB_USERNAME'] ?? 'appuser'));
         $password = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
         $command = "cd {$containerPathArg} && docker compose exec -T -e PGPASSWORD={$password} db pg_isready -U {$user} -h localhost";
+
+        $ssh->exec($command, 20);
+
+        return true;
+    }
+
+    private function mongodbSidecarIsReady(SSHService $ssh, string $containerPathArg): bool
+    {
+        $command = "cd {$containerPathArg} && ("
+            ."docker compose exec -T db mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null"
+            ." || docker compose exec -T db mongo --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null"
+            .')';
 
         $ssh->exec($command, 20);
 
@@ -1349,6 +1364,93 @@ class ContainerDeploymentService
     private function mysqlQuoteIdentifier(string $name): string
     {
         return '`'.str_replace('`', '``', $name).'`';
+    }
+
+    /**
+     * Sync PostgreSQL user credentials inside a running db sidecar.
+     *
+     * Like MySQL, the official postgres image only reads POSTGRES_USER/POSTGRES_PASSWORD
+     * on first init (when the data directory is empty). Subsequent env changes are ignored.
+     */
+    public function syncPostgresqlSidecarCredentials(
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
+        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
+        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
+        $adminUser = (string) ($envVars['POSTGRES_USER'] ?? 'postgres');
+
+        $sql = sprintf(
+            'DO $$ BEGIN '
+            ."IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s') THEN "
+            ."CREATE ROLE \"%s\" WITH LOGIN PASSWORD '%s'; "
+            .'END IF; END $$; '
+            ."ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s'; "
+            ."SELECT 'CREATE DATABASE \"%s\"' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '%s')\\gexec "
+            .'GRANT ALL PRIVILEGES ON DATABASE "%s" TO "%s";',
+            addcslashes($username, "'"),
+            addcslashes($username, '"'), addcslashes($password, "'"),
+            addcslashes($username, '"'), addcslashes($password, "'"),
+            addcslashes($database, '"'), addcslashes($database, "'"),
+            addcslashes($database, '"'), addcslashes($username, '"')
+        );
+
+        $sqlArg = escapeshellarg($sql);
+        $adminPassword = escapeshellarg((string) ($envVars['POSTGRES_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? ''));
+
+        $command = "cd {$pathArg} && docker compose exec -T -e PGPASSWORD={$adminPassword} db "
+            .'psql -U '.escapeshellarg($adminUser)." -d postgres -c {$sqlArg}";
+
+        $ssh->exec($command, 30);
+    }
+
+    /**
+     * Sync MongoDB user credentials inside a running db sidecar.
+     *
+     * The official mongo image only processes MONGO_INITDB_ROOT_USERNAME/PASSWORD
+     * on first init. This method uses mongosh to update or create the user.
+     */
+    public function syncMongodbSidecarCredentials(
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars
+    ): void {
+        $pathArg = escapeshellarg($containerPath);
+        $username = (string) ($envVars['MONGO_INITDB_ROOT_USERNAME'] ?? $envVars['DB_USERNAME'] ?? 'appuser');
+        $password = (string) ($envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? '');
+        $database = (string) ($envVars['MONGO_INITDB_DATABASE'] ?? $envVars['DB_DATABASE'] ?? 'appdb');
+
+        $jsScript = sprintf(
+            'db = db.getSiblingDB("admin"); '
+            .'try { db.updateUser("%s", { pwd: "%s", roles: [{ role: "root", db: "admin" }] }); } '
+            .'catch(e) { db.createUser({ user: "%s", pwd: "%s", roles: [{ role: "root", db: "admin" }] }); } '
+            .'db = db.getSiblingDB("%s"); '
+            .'try { db.updateUser("%s", { pwd: "%s", roles: [{ role: "dbOwner", db: "%s" }] }); } '
+            .'catch(e) { db.createUser({ user: "%s", pwd: "%s", roles: [{ role: "dbOwner", db: "%s" }] }); }',
+            addcslashes($username, '"\\'),
+            addcslashes($password, '"\\'),
+            addcslashes($username, '"\\'),
+            addcslashes($password, '"\\'),
+            addcslashes($database, '"\\'),
+            addcslashes($username, '"\\'),
+            addcslashes($password, '"\\'),
+            addcslashes($database, '"\\'),
+            addcslashes($username, '"\\'),
+            addcslashes($password, '"\\'),
+            addcslashes($database, '"\\')
+        );
+
+        $jsArg = escapeshellarg($jsScript);
+
+        $command = "cd {$pathArg} && ("
+            ."docker compose exec -T db mongosh --quiet --eval {$jsArg} 2>/dev/null"
+            ." || docker compose exec -T db mongo --quiet --eval {$jsArg} 2>/dev/null"
+            .')';
+
+        $ssh->exec($command, 30);
     }
 
     private function isStrictHealthCheckEnabled($template): bool
