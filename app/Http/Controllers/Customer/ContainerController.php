@@ -782,6 +782,59 @@ class ContainerController extends Controller
         }
     }
 
+    public function databaseSyncCredentials(Service $service): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['success' => false, 'message' => 'Invalid service type.'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['success' => false, 'message' => 'Container not deployed yet.'], 400);
+        }
+
+        if (! $deployment->isRunning()) {
+            return response()->json(['success' => false, 'message' => 'Container is not running. Start it first.'], 400);
+        }
+
+        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            return response()->json(['success' => false, 'message' => 'Container host is not properly configured.'], 400);
+        }
+
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        if (! $databaseContext['available']) {
+            return response()->json(['success' => false, 'message' => 'No database sidecar configured.'], 400);
+        }
+
+        $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $type = $databaseContext['type'];
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $deploymentService = app(ContainerDeploymentService::class);
+
+            match ($type) {
+                'mysql', 'mariadb' => $deploymentService->syncMysqlSidecarCredentials($ssh, $containerPath, $envVars),
+                'postgresql' => $deploymentService->syncPostgresqlSidecarCredentials($ssh, $containerPath, $envVars),
+                'mongodb' => $deploymentService->syncMongodbSidecarCredentials($ssh, $containerPath, $envVars),
+                default => null,
+            };
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Credentials synced successfully. Try testing the connection again.',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sync failed: '.$e->getMessage(),
+            ]);
+        }
+    }
+
     private function testMysqlConnection(SSHService $ssh, string $containerPath, array $envVars): string
     {
         $db = escapeshellarg((string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb'));

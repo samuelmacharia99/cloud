@@ -417,15 +417,25 @@
                                     @endif
                                 </div>
 
-                                <div class="flex items-center gap-4" x-data="{ testing: false, result: null }">
+                                <div class="flex items-center gap-4 flex-wrap" x-data="{ testing: false, syncing: false, result: null }">
                                     <button type="button"
                                         @click="testing = true; result = null; fetch('{{ route('customer.services.container.database.test', $service) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' } }).then(r => r.json()).then(data => { result = data; testing = false; }).catch(() => { result = { success: false, message: 'Network error' }; testing = false; })"
-                                        :disabled="testing"
+                                        :disabled="testing || syncing"
                                         class="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg font-medium transition inline-flex items-center gap-2">
                                         <svg x-show="testing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
                                         <svg x-show="!testing" class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m9.914-2.121-1.757 1.757a4.5 4.5 0 0 0-1.242-7.244l4.5-4.5a4.5 4.5 0 0 1 6.364 6.364l-1.757 1.757" /></svg>
                                         <span x-text="testing ? 'Testing...' : 'Test Connection'"></span>
                                     </button>
+                                    <template x-if="result && !result.success">
+                                        <button type="button"
+                                            @click="syncing = true; fetch('{{ route('customer.services.container.database.sync', $service) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' } }).then(r => r.json()).then(data => { result = data; syncing = false; }).catch(() => { result = { success: false, message: 'Network error' }; syncing = false; })"
+                                            :disabled="syncing"
+                                            class="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-lg font-medium transition inline-flex items-center gap-2">
+                                            <svg x-show="syncing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                            <svg x-show="!syncing" class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                                            <span x-text="syncing ? 'Syncing...' : 'Repair Credentials'"></span>
+                                        </button>
+                                    </template>
                                     <template x-if="result">
                                         <div class="flex items-center gap-2 text-sm">
                                             <template x-if="result.success">
