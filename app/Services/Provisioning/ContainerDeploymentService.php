@@ -1378,6 +1378,7 @@ class ContainerDeploymentService
 
         // Attempt 3: use --skip-grant-tables to reset both root and user passwords.
         // With skip-grant-tables, must FLUSH PRIVILEGES first to re-enable the grant system.
+        // The cleanup block ALWAYS runs (no set -e) to ensure db is restarted even on failure.
         $skipGrantSql = sprintf(
             'FLUSH PRIVILEGES; '
             ."ALTER USER 'root'@'%%' IDENTIFIED BY '%s'; "
@@ -1390,17 +1391,17 @@ class ContainerDeploymentService
         $skipGrantSqlArg = escapeshellarg($skipGrantSql);
 
         $resetScript = implode("\n", [
-            'set -e',
             "cd {$pathArg}",
-            'docker compose stop db',
             'docker rm -f db_credential_repair 2>/dev/null || true',
+            'docker compose stop db 2>/dev/null || true',
             'docker compose run --rm -d --name db_credential_repair --entrypoint "" db sh -c "exec mysqld --skip-grant-tables --skip-networking=false --user=mysql"',
             'for i in $(seq 1 25); do if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
-            "docker exec db_credential_repair mysql -u root -e {$skipGrantSqlArg}",
+            "REPAIR_RESULT=0; docker exec db_credential_repair mysql -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
             'docker stop db_credential_repair 2>/dev/null || true',
             'docker rm -f db_credential_repair 2>/dev/null || true',
             'docker compose start db',
             "for i in \$(seq 1 15); do if docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done",
+            'exit $REPAIR_RESULT',
         ]);
 
         $ssh->exec($resetScript, 120);
@@ -1570,6 +1571,10 @@ class ContainerDeploymentService
         $this->ensureComposeFileExists($ssh, $deployment);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+
+        // Clean up any stale credential repair container that may block volume access
+        @$ssh->exec('docker rm -f db_credential_repair 2>/dev/null', 10);
+
         $service->loadMissing('product.containerTemplate');
         $template = $service->product?->containerTemplate;
         $usesRuntimeImage = $template && $this->runtimeImages->usesRuntimeImage($template);
