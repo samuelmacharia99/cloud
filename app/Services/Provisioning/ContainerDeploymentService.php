@@ -1351,16 +1351,6 @@ class ContainerDeploymentService
             $this->mysqlQuoteIdentifier($database), addslashes($username)
         );
 
-        $rootSql = sprintf(
-            "ALTER USER 'root'@'%%' IDENTIFIED BY '%s'; "
-            ."ALTER USER 'root'@'localhost' IDENTIFIED BY '%s'; "
-            .'%s '
-            .'FLUSH PRIVILEGES;',
-            addslashes($rootPassword),
-            addslashes($rootPassword),
-            $sql
-        );
-
         $sqlArg = escapeshellarg($sql);
         $rootPwArg = escapeshellarg($rootPassword);
 
@@ -1387,34 +1377,33 @@ class ContainerDeploymentService
         }
 
         // Attempt 3: use --skip-grant-tables to reset both root and user passwords.
-        // Temporarily stop mysqld, run with skip-grant-tables, apply changes, then restart.
-        $rootSqlArg = escapeshellarg($rootSql);
-        $resetScript = <<<'BASH'
-set -e
-DB_CONTAINER=$(docker compose ps -q db)
-if [ -z "$DB_CONTAINER" ]; then echo "db container not found"; exit 1; fi
-docker compose stop db
-docker compose run --rm -d --name db_credential_repair \
-  --entrypoint "" \
-  db sh -c "exec mysqld --skip-grant-tables --skip-networking=false --user=mysql"
-for i in $(seq 1 20); do
-  if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi
-  sleep 1
-done
-docker exec db_credential_repair mysql -u root -e SQLPLACEHOLDER
-docker stop db_credential_repair 2>/dev/null || true
-docker rm -f db_credential_repair 2>/dev/null || true
-docker compose start db
-for i in $(seq 1 15); do
-  if docker compose exec -T -e MYSQL_PWD=ROOTPWPLACEHOLDER db mysqladmin ping --silent 2>/dev/null; then break; fi
-  sleep 1
-done
-BASH;
-        $resetScript = str_replace('SQLPLACEHOLDER', $rootSqlArg, $resetScript);
-        $resetScript = str_replace('ROOTPWPLACEHOLDER', $rootPwArg, $resetScript);
-        $scriptArg = escapeshellarg($resetScript);
+        // With skip-grant-tables, must FLUSH PRIVILEGES first to re-enable the grant system.
+        $skipGrantSql = sprintf(
+            'FLUSH PRIVILEGES; '
+            ."ALTER USER 'root'@'%%' IDENTIFIED BY '%s'; "
+            ."ALTER USER 'root'@'localhost' IDENTIFIED BY '%s'; "
+            .'%s',
+            addslashes($rootPassword),
+            addslashes($rootPassword),
+            $sql
+        );
+        $skipGrantSqlArg = escapeshellarg($skipGrantSql);
 
-        $ssh->exec("cd {$pathArg} && bash -c {$scriptArg}", 90);
+        $resetScript = implode("\n", [
+            'set -e',
+            "cd {$pathArg}",
+            'docker compose stop db',
+            'docker rm -f db_credential_repair 2>/dev/null || true',
+            'docker compose run --rm -d --name db_credential_repair --entrypoint "" db sh -c "exec mysqld --skip-grant-tables --skip-networking=false --user=mysql"',
+            'for i in $(seq 1 25); do if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
+            "docker exec db_credential_repair mysql -u root -e {$skipGrantSqlArg}",
+            'docker stop db_credential_repair 2>/dev/null || true',
+            'docker rm -f db_credential_repair 2>/dev/null || true',
+            'docker compose start db',
+            "for i in \$(seq 1 15); do if docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done",
+        ]);
+
+        $ssh->exec($resetScript, 120);
     }
 
     private function mysqlQuoteIdentifier(string $name): string
