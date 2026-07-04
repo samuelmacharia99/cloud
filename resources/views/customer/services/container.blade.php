@@ -417,6 +417,33 @@
                                     @endif
                                 </div>
 
+                                <div class="flex items-center gap-4" x-data="{ testing: false, result: null }">
+                                    <button type="button"
+                                        @click="testing = true; result = null; fetch('{{ route('customer.services.container.database.test', $service) }}', { method: 'POST', headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content, 'Accept': 'application/json' } }).then(r => r.json()).then(data => { result = data; testing = false; }).catch(() => { result = { success: false, message: 'Network error' }; testing = false; })"
+                                        :disabled="testing"
+                                        class="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-lg font-medium transition inline-flex items-center gap-2">
+                                        <svg x-show="testing" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                        <svg x-show="!testing" class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m9.914-2.121-1.757 1.757a4.5 4.5 0 0 0-1.242-7.244l4.5-4.5a4.5 4.5 0 0 1 6.364 6.364l-1.757 1.757" /></svg>
+                                        <span x-text="testing ? 'Testing...' : 'Test Connection'"></span>
+                                    </button>
+                                    <template x-if="result">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <template x-if="result.success">
+                                                <span class="inline-flex items-center gap-1 text-green-700 dark:text-green-400">
+                                                    <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                                                    <span x-text="result.message + (result.latency_ms ? ' (' + result.latency_ms + 'ms)' : '')"></span>
+                                                </span>
+                                            </template>
+                                            <template x-if="!result.success">
+                                                <span class="inline-flex items-center gap-1 text-red-700 dark:text-red-400">
+                                                    <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/></svg>
+                                                    <span x-text="result.message"></span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+
                                 <p class="text-sm text-slate-600 dark:text-slate-400">
                                     Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application container.
                                     For Laravel, tick <strong>Reset database</strong> on redeploy to wipe data and auto-update <code class="font-mono">/app/.env</code> plus migrations when the app is already installed.

@@ -681,6 +681,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/database/query', [App\Http\Controllers\Customer\ContainerController::class, 'databaseQuery'])->middleware('throttle:10,1')->name('customer.services.container.database.query');
         Route::post('my/services/{service}/container/database/import', [App\Http\Controllers\Customer\ContainerController::class, 'databaseImport'])->middleware('throttle:3,10')->name('customer.services.container.database.import');
         Route::get('my/services/{service}/container/database/history', [App\Http\Controllers\Customer\ContainerController::class, 'databaseHistory'])->middleware('throttle:20,1')->name('customer.services.container.database.history');
+        Route::post('my/services/{service}/container/database/test-connection', [App\Http\Controllers\Customer\ContainerController::class, 'databaseTestConnection'])->middleware('throttle:5,1')->name('customer.services.container.database.test');
 
         // Container file manager (throttled)
         Route::middleware(['throttle:60,1'])->group(function () {

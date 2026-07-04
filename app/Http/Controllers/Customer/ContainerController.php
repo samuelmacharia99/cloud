@@ -726,6 +726,108 @@ class ContainerController extends Controller
         return response()->json(['history' => $history]);
     }
 
+    public function databaseTestConnection(Service $service): JsonResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+
+        if ($service->product?->type !== 'container_hosting') {
+            return response()->json(['error' => 'Invalid service type'], 400);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment) {
+            return response()->json(['success' => false, 'message' => 'Container not deployed yet.'], 400);
+        }
+
+        if (! $deployment->isRunning()) {
+            return response()->json(['success' => false, 'message' => 'Container is not running. Start it first.'], 400);
+        }
+
+        if (! $deployment->node || ! $deployment->node->ssh_username || (! $deployment->node->ssh_password && ! $deployment->node->da_login_key)) {
+            return response()->json(['success' => false, 'message' => 'Container host is not properly configured.'], 400);
+        }
+
+        $databaseContext = $this->buildDatabaseContext($service, $deployment);
+        if (! $databaseContext['available']) {
+            return response()->json(['success' => false, 'message' => 'No database sidecar configured for this service.'], 400);
+        }
+
+        $containerPath = '/opt/talksasa/containers/'.$deployment->container_name;
+        $type = $databaseContext['type'];
+
+        try {
+            $ssh = SSHService::forNode($deployment->node);
+            $startTime = microtime(true);
+
+            $output = match ($type) {
+                'mysql', 'mariadb' => $this->testMysqlConnection($ssh, $containerPath, $deployment->env_values ?? []),
+                'postgresql' => $this->testPostgresqlConnection($ssh, $containerPath, $deployment->env_values ?? []),
+                'mongodb' => $this->testMongodbConnection($ssh, $containerPath, $deployment->env_values ?? []),
+                default => throw new \RuntimeException("Unsupported database type: {$type}"),
+            };
+
+            $latencyMs = round((microtime(true) - $startTime) * 1000);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Connection successful.',
+                'latency_ms' => $latencyMs,
+                'details' => $output,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Connection failed: '.$e->getMessage(),
+            ]);
+        }
+    }
+
+    private function testMysqlConnection(SSHService $ssh, string $containerPath, array $envVars): string
+    {
+        $db = escapeshellarg((string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb'));
+        $user = escapeshellarg((string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser'));
+        $password = escapeshellarg((string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''));
+
+        $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} db "
+            ."mysql --batch -u {$user} {$db} -e 'SELECT VERSION() AS version, CURRENT_USER() AS user, DATABASE() AS db'";
+
+        return trim($ssh->exec($command, 15));
+    }
+
+    private function testPostgresqlConnection(SSHService $ssh, string $containerPath, array $envVars): string
+    {
+        $db = escapeshellarg((string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb'));
+        $user = escapeshellarg((string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser'));
+        $password = escapeshellarg((string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? ''));
+
+        $command = "cd {$containerPath} && docker compose exec -T -e PGPASSWORD={$password} db "
+            ."psql -U {$user} -d {$db} -c \"SELECT version(), current_user, current_database()\"";
+
+        return trim($ssh->exec($command, 15));
+    }
+
+    private function testMongodbConnection(SSHService $ssh, string $containerPath, array $envVars): string
+    {
+        $username = (string) ($envVars['MONGO_INITDB_ROOT_USERNAME'] ?? $envVars['DB_USERNAME'] ?? 'appuser');
+        $password = (string) ($envVars['MONGO_INITDB_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? '');
+        $database = (string) ($envVars['MONGO_INITDB_DATABASE'] ?? $envVars['DB_DATABASE'] ?? 'appdb');
+
+        $uri = sprintf(
+            'mongodb://%s:%s@localhost:27017/%s?authSource=admin',
+            rawurlencode($username),
+            rawurlencode($password),
+            rawurlencode($database)
+        );
+        $uriArg = escapeshellarg($uri);
+
+        $command = "cd {$containerPath} && ("
+            ."docker compose exec -T db mongosh {$uriArg} --quiet --eval 'db.runCommand({connectionStatus:1}).authInfo' 2>/dev/null"
+            ." || docker compose exec -T db mongo {$uriArg} --quiet --eval 'db.runCommand({connectionStatus:1}).authInfo' 2>/dev/null"
+            .')';
+
+        return trim($ssh->exec($command, 15));
+    }
+
     /**
      * Get container logs
      */
