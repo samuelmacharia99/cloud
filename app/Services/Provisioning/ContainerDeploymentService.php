@@ -644,6 +644,8 @@ class ContainerDeploymentService
                 ]);
                 $deployment->increment('restart_attempts');
 
+                $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
+
                 \Log::info("Container restarted for service {$service->id}");
             } finally {
                 $ssh->disconnect();
@@ -1435,6 +1437,30 @@ class ContainerDeploymentService
 
         $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
         $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
+        $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
+    }
+
+    private function syncDatabaseCredentialsAfterStart(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment,
+        string $containerPath
+    ): void {
+        $databaseTemplate = $this->resolveDatabaseTemplateForService($service);
+        if (! $databaseTemplate) {
+            return;
+        }
+
+        $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
+
+        try {
+            $this->waitForDatabaseSidecar($ssh, $containerPath, $databaseTemplate, $envValues, 60);
+        } catch (\Throwable $e) {
+            \Log::warning('Database credential sync after start skipped: DB not ready', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function syncPhpExtensionsIfSupported(SSHService $ssh, Service $service, ContainerDeployment $deployment): void

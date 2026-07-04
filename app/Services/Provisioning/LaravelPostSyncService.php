@@ -64,6 +64,8 @@ class LaravelPostSyncService
             } catch (\Throwable $e) {
                 $messages[] = 'Migrations could not run automatically: '.$e->getMessage();
             }
+        } elseif (! $options->runMigrations) {
+            $this->syncDatabaseCredentialsOnly($service, $deployment, $ssh);
         }
 
         if ($options->finalizeApplication) {
@@ -138,5 +140,25 @@ class LaravelPostSyncService
             $databaseTemplate,
             $envValues
         );
+    }
+
+    private function syncDatabaseCredentialsOnly(Service $service, ContainerDeployment $deployment, SSHService $ssh): void
+    {
+        $databaseTemplate = $this->deploymentService->resolveDatabaseTemplateForService($service);
+        if (! $databaseTemplate) {
+            return;
+        }
+
+        $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
+
+        try {
+            $this->deploymentService->waitForDatabaseSidecar($ssh, $containerPath, $databaseTemplate, $envValues, 60);
+        } catch (\Throwable $e) {
+            \Log::warning('Database credential sync skipped during Laravel post-sync: DB not ready', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
