@@ -106,12 +106,20 @@
     @endif
 
     @if ($service->isSharedHosting() && ($daLivePackage ?? null) && strcasecmp($daLivePackage, $service->product->name) !== 0)
-        <div class="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 px-5 py-4">
-            <p class="text-sm font-semibold text-orange-950 dark:text-orange-100">DirectAdmin package mismatch</p>
-            <p class="text-sm text-orange-900 dark:text-orange-200 mt-1">
-                DirectAdmin reports <strong>{{ $daLivePackage }}</strong> but the platform product is <strong>{{ $service->product->name }}</strong>.
-                Use <strong>Upgrade Hosting</strong> to align the live package with the platform plan.
-            </p>
+        <div class="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 px-5 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm font-semibold text-orange-950 dark:text-orange-100">DirectAdmin package mismatch</p>
+                <p class="text-sm text-orange-900 dark:text-orange-200 mt-1">
+                    DirectAdmin reports <strong>{{ $daLivePackage }}</strong> but the platform product is <strong>{{ $service->product->name }}</strong>.
+                    Use <strong>Upgrade Hosting</strong> to change the live package, or sync the platform record if DirectAdmin is already correct.
+                </p>
+            </div>
+            <form method="POST" action="{{ route('admin.services.sync-hosting-plan', $service) }}" class="shrink-0">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm font-medium rounded-lg transition">
+                    Sync platform to DirectAdmin
+                </button>
+            </form>
         </div>
     @endif
 

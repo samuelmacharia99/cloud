@@ -473,14 +473,15 @@ class CustomerHostingUpgradeService
             ]);
         } else {
             $targetProduct->loadMissing('directAdminPackage');
-            $package = $targetProduct->directAdminPackage;
+            $nodeId = $this->resolveServiceNodeId($service);
 
-            if (! $package) {
-                throw new \RuntimeException('Target product has no DirectAdmin package.');
+            if ($nodeId === null) {
+                throw new \RuntimeException('Service is not linked to a hosting server.');
             }
 
-            $nodeId = $this->resolveServiceNodeId($service);
-            if ($nodeId === null || (int) $package->node_id !== $nodeId) {
+            $package = $this->resolveDirectAdminPackageForProductOnNode($targetProduct, $nodeId);
+
+            if (! $package) {
                 throw new \RuntimeException('Target plan is not available on this service\'s DirectAdmin server.');
             }
 
@@ -769,6 +770,135 @@ class CustomerHostingUpgradeService
                 || str_contains($productSlug, $key)
                 || str_contains($productName, $key);
         });
+    }
+
+    private function resolveDirectAdminPackageForProductOnNode(Product $product, int $nodeId): ?DirectAdminPackage
+    {
+        $product->loadMissing('directAdminPackage');
+
+        if ($product->directAdminPackage && (int) $product->directAdminPackage->node_id === $nodeId) {
+            return $product->directAdminPackage;
+        }
+
+        $linkedOnNode = DirectAdminPackage::query()
+            ->where('node_id', $nodeId)
+            ->where('is_active', true)
+            ->where('id', $product->direct_admin_package_id)
+            ->first();
+
+        if ($linkedOnNode) {
+            return $linkedOnNode;
+        }
+
+        $name = strtolower(trim($product->name));
+        $slug = strtolower(trim((string) $product->slug));
+
+        return DirectAdminPackage::query()
+            ->where('node_id', $nodeId)
+            ->where('is_active', true)
+            ->orderBy('disk_quota')
+            ->orderBy('name')
+            ->get()
+            ->first(function (DirectAdminPackage $package) use ($name, $slug) {
+                $packageName = strtolower(trim($package->name));
+                $packageKey = strtolower(trim((string) $package->package_key));
+
+                if ($packageName === $name) {
+                    return true;
+                }
+
+                if ($packageKey === '') {
+                    return false;
+                }
+
+                return $slug === $packageKey
+                    || str_contains($slug, $packageKey)
+                    || str_contains($name, $packageKey);
+            });
+    }
+
+    /**
+     * Align the platform product with the package DirectAdmin already reports for this account.
+     *
+     * @return array{changed: bool, product: Product, package: string}
+     */
+    public function syncPlatformProductFromDirectAdmin(Service $service): array
+    {
+        $service->loadMissing('product', 'node', 'user');
+
+        if ($service->product?->type !== 'shared_hosting') {
+            throw new \RuntimeException('Only shared hosting services can sync plans from DirectAdmin.');
+        }
+
+        $nodeId = $this->resolveServiceNodeId($service);
+        if ($nodeId === null) {
+            throw new \RuntimeException('Service is not linked to a hosting server.');
+        }
+
+        $this->reconcilePackageState($service);
+        $service->refresh();
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $livePackageName = trim((string) ($meta['directadmin_account']['package'] ?? ($meta['package_name'] ?? '')));
+
+        if ($livePackageName === '') {
+            throw new \RuntimeException('DirectAdmin package name is not available for this service.');
+        }
+
+        $package = DirectAdminPackage::query()
+            ->where('node_id', $nodeId)
+            ->where('is_active', true)
+            ->where(function ($query) use ($livePackageName) {
+                $normalized = strtolower($livePackageName);
+                $query->whereRaw('LOWER(name) = ?', [$normalized])
+                    ->orWhereRaw('LOWER(package_key) = ?', [$normalized]);
+            })
+            ->first();
+
+        if (! $package) {
+            throw new \RuntimeException(
+                "No platform package is mapped for DirectAdmin package \"{$livePackageName}\" on this server."
+            );
+        }
+
+        $product = Product::query()
+            ->where('is_active', true)
+            ->where('type', 'shared_hosting')
+            ->where('direct_admin_package_id', $package->id)
+            ->first()
+            ?? $this->resolveProductForDirectAdminPackage($package, $service);
+
+        if (! $product) {
+            throw new \RuntimeException(
+                "DirectAdmin package \"{$livePackageName}\" is not linked to a platform hosting product."
+            );
+        }
+
+        if ((int) $product->id === (int) $service->product_id
+            && strcasecmp((string) ($meta['package_name'] ?? ''), $package->name) === 0) {
+            return [
+                'changed' => false,
+                'product' => $product,
+                'package' => $package->name,
+            ];
+        }
+
+        $meta['package'] = $package->package_key;
+        $meta['package_name'] = $package->name;
+        unset($meta['reseller_product_id']);
+
+        $service->update([
+            'product_id' => $product->id,
+            'name' => $product->name,
+            'provisioning_driver_key' => 'directadmin',
+            'service_meta' => $meta,
+        ]);
+
+        return [
+            'changed' => true,
+            'product' => $product->fresh(),
+            'package' => $package->name,
+        ];
     }
 
     /**

@@ -705,6 +705,44 @@ class ServiceController extends Controller
         }
     }
 
+    public function syncHostingPlanFromDirectAdmin(Service $service)
+    {
+        $service->loadMissing('product', 'node');
+
+        if (! $service->isSharedHosting()) {
+            return back()->with('error', 'Only shared hosting services can sync plans from DirectAdmin.');
+        }
+
+        $service->normalizeDirectAdminProvisioning();
+
+        try {
+            $result = app(CustomerHostingUpgradeService::class)->syncPlatformProductFromDirectAdmin($service->fresh());
+
+            if ($result['changed']) {
+                AdminActivityService::log(
+                    'service.hosting_plan_sync',
+                    "Synced service #{$service->id} platform plan to {$result['product']->name} (DirectAdmin: {$result['package']})",
+                    $service,
+                    ['product_id' => $result['product']->id],
+                );
+
+                return back()->with(
+                    'success',
+                    "Platform plan updated to {$result['product']->name} to match DirectAdmin package \"{$result['package']}\"."
+                );
+            }
+
+            return back()->with('info', 'Platform plan already matches DirectAdmin.');
+        } catch (\Throwable $e) {
+            Log::warning('Hosting plan sync from DirectAdmin failed', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return back()->with('error', 'Could not sync platform plan from DirectAdmin: '.$e->getMessage());
+        }
+    }
+
     public function destroy(Request $request, Service $service, ServiceDeletionService $deletion)
     {
         try {
