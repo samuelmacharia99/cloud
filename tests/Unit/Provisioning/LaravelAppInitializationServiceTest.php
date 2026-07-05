@@ -45,4 +45,37 @@ class LaravelAppInitializationServiceTest extends TestCase
         $this->assertSame('validate', $steps[0]['key']);
         $this->assertSame('pending', $steps[0]['status']);
     }
+
+    #[Test]
+    public function it_preserves_custom_env_values_when_merging_platform_settings(): void
+    {
+        $service = new LaravelAppInitializationService(
+            new ContainerAppDirectoryService,
+            new LaravelWelcomePageService,
+            new LaravelProjectPathResolver,
+        );
+        $method = new ReflectionMethod(LaravelAppInitializationService::class, 'mergePlatformEnvIntoExisting');
+        $method->setAccessible(true);
+
+        $existing = <<<'ENV'
+APP_NAME="My Custom App"
+APP_KEY=base64:existing-key
+MAIL_MAILER=smtp
+MAIL_PASSWORD=secret-value
+DB_HOST=127.0.0.1
+ENV;
+
+        $merged = $method->invoke($service, $existing, [
+            'DB_HOST' => 'db',
+            'DB_DATABASE' => 'appdb',
+            'APP_URL' => 'https://app.example.test',
+        ]);
+
+        $this->assertStringContainsString('APP_NAME="My Custom App"', $merged);
+        $this->assertStringContainsString('APP_KEY=base64:existing-key', $merged);
+        $this->assertStringContainsString('MAIL_PASSWORD=secret-value', $merged);
+        $this->assertStringContainsString('DB_HOST=db', $merged);
+        $this->assertStringContainsString('DB_DATABASE=appdb', $merged);
+        $this->assertStringContainsString('APP_URL=https://app.example.test', $merged);
+    }
 }

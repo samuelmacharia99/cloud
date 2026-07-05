@@ -250,7 +250,12 @@ class ContainerGitRepositoryService
                 }
 
                 $this->runPullStep($pull, 'environment', function () use ($service, $deployment, $ssh) {
-                    $writeMessage = $this->laravelInitialization->writeApplicationEnvironment($service, $deployment, $ssh);
+                    $writeMessage = $this->laravelInitialization->writeApplicationEnvironment(
+                        $service,
+                        $deployment,
+                        $ssh,
+                        preserveExisting: true,
+                    );
 
                     try {
                         $bootstrapMessage = $this->laravelInitialization->bootstrapApplicationEnvironment($service, $deployment, $ssh);
@@ -562,14 +567,28 @@ class ContainerGitRepositoryService
                 ."find {$pathArg} -mindepth 1 -maxdepth 1 -exec rm -rf {} +; "
                 ."{$git} clone --depth=1 --branch {$branchArg} {$repoArg} {$pathArg} 2>&1";
         } else {
+            $backupEnv = $this->backupEnvFilesScript($pathArg);
+            $restoreEnv = $this->restoreEnvFilesScript($pathArg);
             $script = 'set -e; '
                 ."cd {$pathArg}; "
+                .$backupEnv
                 ."{$git} fetch --depth=1 origin {$branchArg} 2>&1; "
                 ."{$git} checkout -f {$branchArg} 2>&1; "
-                ."{$git} reset --hard FETCH_HEAD 2>&1";
+                ."{$git} reset --hard FETCH_HEAD 2>&1; "
+                .$restoreEnv;
         }
 
         return trim($ssh->exec('sh -lc '.escapeshellarg($script), 180));
+    }
+
+    private function backupEnvFilesScript(string $pathArg): string
+    {
+        return 'find '.$pathArg.' -maxdepth 4 -name .env -type f 2>/dev/null | while IFS= read -r f; do cp "$f" "$f.talksasa-backup"; done; ';
+    }
+
+    private function restoreEnvFilesScript(string $pathArg): string
+    {
+        return 'find '.$pathArg.' -maxdepth 4 -name .env.talksasa-backup -type f 2>/dev/null | while IFS= read -r f; do mv "$f" "${f%.talksasa-backup}"; done; ';
     }
 
     private function hasGitCheckout(SSHService $ssh, string $hostAppPath): bool

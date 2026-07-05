@@ -4,7 +4,8 @@
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
             <li>Order a <strong>Laravel Application</strong> container — MySQL is included as a sidecar.</li>
             <li>On the <strong>Overview</strong> tab, click <strong>Initialize Laravel app</strong> for a fresh skeleton, <em>or</em> connect GitHub and pull your existing repo.</li>
-            <li>Talksasa auto-writes database credentials into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code> when Laravel is detected.</li>
+            <li>Talksasa auto-writes database credentials into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code> on first setup.</li>
+            <li>Git pulls preserve your existing <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code>; only database and platform URL settings are refreshed.</li>
             <li>Bind your domain under <strong>Domains</strong>, then visit the site.</li>
         </ol>
     </div>

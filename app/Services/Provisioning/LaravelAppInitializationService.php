@@ -30,6 +30,22 @@ class LaravelAppInitializationService
         'permissions' => 'Apply file permissions',
     ];
 
+    /**
+     * Keys Talksasa owns (database sidecar, platform URL). Other .env values are left to the app owner.
+     *
+     * @var list<string>
+     */
+    private const PLATFORM_MANAGED_ENV_KEYS = [
+        'DB_CONNECTION',
+        'DB_HOST',
+        'DB_PORT',
+        'DB_DATABASE',
+        'DB_USERNAME',
+        'DB_PASSWORD',
+        'APP_URL',
+        'TALKSASA_CLOUD_URL',
+    ];
+
     public function requestInitialization(Service $service, User $user): ContainerAppInitialization
     {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
@@ -332,17 +348,34 @@ class LaravelAppInitializationService
         return trim($writeMessage.' '.$bootstrapMessage);
     }
 
-    public function writeApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
-    {
+    public function writeApplicationEnvironment(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $preserveExisting = false,
+    ): string {
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
         $hostAppPath = $this->appDirectory->hostAppPath($deployment);
         $projectRoot = $this->resolveProjectContainerRoot($ssh, $service, $deployment);
 
-        $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues, $projectRoot);
         $relativeRoot = trim((string) (is_array($service->service_meta) ? ($service->service_meta['laravel_project_root'] ?? '') : ''), '/');
         $envHostPath = $relativeRoot === ''
             ? $hostAppPath.'/.env'
             : $hostAppPath.'/'.$relativeRoot.'/.env';
+
+        $existingContent = $preserveExisting
+            ? $this->readExistingEnvFileFromHost($ssh, $envHostPath)
+            : null;
+
+        if ($preserveExisting && $existingContent !== null && trim($existingContent) !== '') {
+            $replacements = $this->platformEnvReplacements($ssh, $deployment, $envValues, $projectRoot, preserveUserSettings: true);
+            $envContent = $this->mergePlatformEnvIntoExisting($existingContent, $replacements);
+            $message = 'Laravel .env preserved; platform database and URL settings synced.';
+        } else {
+            $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues, $projectRoot);
+            $message = 'Laravel .env updated from deployment credentials.';
+        }
+
         $ssh->upload($envContent, $envHostPath);
         $this->assertHostFileExists($ssh, $envHostPath);
 
@@ -350,7 +383,7 @@ class LaravelAppInitializationService
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
         $service->update(['service_meta' => $serviceMeta]);
 
-        return 'Laravel .env updated from deployment credentials.';
+        return $message;
     }
 
     public function bootstrapApplicationEnvironment(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
@@ -710,24 +743,7 @@ class LaravelAppInitializationService
             $example = file_get_contents(base_path('.env.example')) ?: '';
         }
 
-        $replacements = [
-            'APP_NAME' => 'Talksasa App',
-            'APP_ENV' => $envValues['APP_ENV'] ?? 'production',
-            'APP_DEBUG' => $envValues['APP_DEBUG'] ?? 'false',
-            'APP_URL' => $deployment->getAccessUrl() ?? 'http://localhost',
-            'DB_CONNECTION' => $envValues['DB_CONNECTION'] ?? 'mysql',
-            'DB_HOST' => $envValues['DB_HOST'] ?? 'db',
-            'DB_PORT' => $envValues['DB_PORT'] ?? '3306',
-            'DB_DATABASE' => $envValues['DB_DATABASE'] ?? ($envValues['MYSQL_DATABASE'] ?? 'appdb'),
-            'DB_USERNAME' => $envValues['DB_USERNAME'] ?? ($envValues['MYSQL_USER'] ?? 'appuser'),
-            'DB_PASSWORD' => $envValues['DB_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? ''),
-            'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
-        ];
-
-        $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY', $projectRoot);
-        if ($existingAppKey !== null && $existingAppKey !== '') {
-            $replacements['APP_KEY'] = $existingAppKey;
-        }
+        $replacements = $this->platformEnvReplacements($ssh, $deployment, $envValues, $projectRoot);
 
         $lines = preg_split("/\r\n|\n|\r/", $example) ?: [];
         $seen = [];
@@ -759,6 +775,95 @@ class LaravelAppInitializationService
         }
 
         return implode("\n", $result)."\n";
+    }
+
+    /**
+     * @param  array<string, string>  $envValues
+     * @return array<string, string>
+     */
+    private function platformEnvReplacements(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        array $envValues,
+        string $projectRoot,
+        bool $preserveUserSettings = false,
+    ): array {
+        $replacements = [
+            'APP_NAME' => 'Talksasa App',
+            'APP_ENV' => $envValues['APP_ENV'] ?? 'production',
+            'APP_DEBUG' => $envValues['APP_DEBUG'] ?? 'false',
+            'APP_URL' => $deployment->getAccessUrl() ?? 'http://localhost',
+            'DB_CONNECTION' => $envValues['DB_CONNECTION'] ?? 'mysql',
+            'DB_HOST' => $envValues['DB_HOST'] ?? 'db',
+            'DB_PORT' => $envValues['DB_PORT'] ?? '3306',
+            'DB_DATABASE' => $envValues['DB_DATABASE'] ?? ($envValues['MYSQL_DATABASE'] ?? 'appdb'),
+            'DB_USERNAME' => $envValues['DB_USERNAME'] ?? ($envValues['MYSQL_USER'] ?? 'appuser'),
+            'DB_PASSWORD' => $envValues['DB_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? ''),
+            'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
+        ];
+
+        if ($preserveUserSettings) {
+            return array_intersect_key(
+                $replacements,
+                array_flip(self::PLATFORM_MANAGED_ENV_KEYS)
+            );
+        }
+
+        $existingAppKey = $this->readExistingEnvValue($ssh, $deployment, 'APP_KEY', $projectRoot);
+        if ($existingAppKey !== null && $existingAppKey !== '') {
+            $replacements['APP_KEY'] = $existingAppKey;
+        }
+
+        return $replacements;
+    }
+
+    /**
+     * @param  array<string, string>  $replacements
+     */
+    private function mergePlatformEnvIntoExisting(string $existingContent, array $replacements): string
+    {
+        $lines = preg_split("/\r\n|\n|\r/", $existingContent) ?: [];
+        $seen = [];
+        $result = [];
+
+        foreach ($lines as $line) {
+            if (! str_contains($line, '=') || str_starts_with(ltrim($line), '#')) {
+                $result[] = $line;
+
+                continue;
+            }
+
+            [$key] = explode('=', $line, 2);
+            $key = trim($key);
+            if ($key === '' || ! array_key_exists($key, $replacements)) {
+                $result[] = $line;
+
+                continue;
+            }
+
+            $result[] = $key.'='.$this->quoteEnvValue($replacements[$key]);
+            $seen[$key] = true;
+        }
+
+        foreach ($replacements as $key => $value) {
+            if (! isset($seen[$key])) {
+                $result[] = $key.'='.$this->quoteEnvValue($value);
+            }
+        }
+
+        return rtrim(implode("\n", $result))."\n";
+    }
+
+    private function readExistingEnvFileFromHost(SSHService $ssh, string $envHostPath): ?string
+    {
+        try {
+            $pathArg = escapeshellarg($envHostPath);
+            $content = trim($ssh->exec("[ -f {$pathArg} ] && cat {$pathArg} || true", 30));
+
+            return $content === '' ? null : $content;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function readExistingEnvValue(
