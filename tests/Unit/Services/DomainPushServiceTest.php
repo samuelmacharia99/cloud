@@ -167,6 +167,38 @@ class DomainPushServiceTest extends TestCase
         $this->assertStringContainsString('contract', $order->failure_reason);
     }
 
+    public function test_complete_order_creates_domain_when_missing_for_platform_registration(): void
+    {
+        $customer = User::factory()->create(['reseller_id' => null]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_id' => null,
+            'domain_name' => 'manualreg',
+            'extension' => '.co.ke',
+            'years' => 2,
+            'wholesale_amount' => 1500,
+            'retail_amount' => 1500,
+            'status' => 'pushed',
+            'pushed_at' => now(),
+        ]);
+
+        app(DomainPushService::class)->completeOrder($order, 'Manual registrar');
+
+        $order->refresh();
+        $this->assertSame('completed', $order->status);
+        $this->assertNotNull($order->domain_id);
+
+        $domain = Domain::find($order->domain_id);
+        $this->assertNotNull($domain);
+        $this->assertSame($customer->id, $domain->user_id);
+        $this->assertSame('manualreg', $domain->name);
+        $this->assertSame('.co.ke', $domain->extension);
+        $this->assertSame('active', $domain->status);
+        $this->assertSame('Manual registrar', $domain->registrar);
+    }
+
     public function test_customer_paid_domain_queues_when_wallet_is_low(): void
     {
         $reseller = User::factory()->create(['is_reseller' => true]);

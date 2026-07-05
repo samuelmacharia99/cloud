@@ -175,7 +175,10 @@ class WalletNotificationService
 
     public function sendDomainPushedNotification(ResellerDomainOrder $order): void
     {
-        $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerDomainPushed, 'pushed');
+        if (! $order->isPlatformOrder()) {
+            $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerDomainPushed, 'pushed');
+        }
+
         $this->notifyAdminDomainPush($order);
     }
 
@@ -301,14 +304,20 @@ class WalletNotificationService
     {
         $order->loadMissing('reseller', 'customer');
         $reseller = $order->reseller;
+
+        if (! $reseller) {
+            return;
+        }
+
         $customer = $order->customer;
+        $customerName = $customer?->name ?? 'customer';
         $domain = $order->fullDomainName();
         $walletUrl = route('reseller.wallet.index');
 
         $smsMessage = match ($event) {
-            NotificationEvent::ResellerNewCustomerOrder => "New domain order: {$domain} for {$customer->name}. Customer payment received. Top up your wallet ({$order->wholesale_amount} KES required) and push the order: {$walletUrl}",
-            NotificationEvent::ResellerDomainQueued => "Domain {$domain} for customer {$customer->name} is queued. Top up your wallet to process.",
-            NotificationEvent::ResellerDomainPushed => "Domain {$domain} for customer {$customer->name} has been pushed to admin. Amount debited: {$order->wholesale_amount} KES",
+            NotificationEvent::ResellerNewCustomerOrder => "New domain order: {$domain} for {$customerName}. Customer payment received. Top up your wallet ({$order->wholesale_amount} KES required) and push the order: {$walletUrl}",
+            NotificationEvent::ResellerDomainQueued => "Domain {$domain} for customer {$customerName} is queued. Top up your wallet to process.",
+            NotificationEvent::ResellerDomainPushed => "Domain {$domain} for customer {$customerName} has been pushed to admin. Amount debited: {$order->wholesale_amount} KES",
             default => "Domain order update: {$domain}",
         };
 
@@ -322,7 +331,7 @@ class WalletNotificationService
             $company = $this->brandingResolver->forReseller($reseller)['company_name'];
             $this->emailDelivery->sendTemplated($reseller, $event, [
                 'reseller_name' => $reseller->name,
-                'customer_name' => $customer->name,
+                'customer_name' => $customerName,
                 'domain_name' => $domain,
                 'wholesale_amount' => number_format((float) $order->wholesale_amount, 2).' KES',
                 'wallet_url' => $walletUrl,

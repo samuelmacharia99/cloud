@@ -553,7 +553,8 @@ class DomainPushService
     public function completeOrder(ResellerDomainOrder $order, string $registrar): void
     {
         $this->db->transaction(function () use ($order, $registrar) {
-            $domain = Domain::find($order->domain_id);
+            $order->refresh();
+            $domain = $this->resolveDomainForCompletion($order, $registrar);
 
             if ($domain && $order->isTransfer()) {
                 DomainTransferService::completeTransfer($domain, $registrar);
@@ -570,11 +571,11 @@ class DomainPushService
                 ]);
             }
 
-            if ($order->domain_id && $order->isRegistration()) {
+            if ($domain && $order->isRegistration()) {
                 Service::query()
                     ->where('user_id', $order->customer_id)
-                    ->where(function ($query) use ($order) {
-                        $query->whereJsonContains('service_meta->domain_id', $order->domain_id)
+                    ->where(function ($query) use ($domain, $order) {
+                        $query->whereJsonContains('service_meta->domain_id', $domain->id)
                             ->orWhere('name', $order->domain_name.$order->extension);
                     })
                     ->update(['status' => ServiceStatus::Active->value]);
@@ -587,8 +588,33 @@ class DomainPushService
                 'failure_reason' => null,
             ]);
 
-            $this->notificationService->sendDomainCompletedNotification($order);
+            $this->notificationService->sendDomainCompletedNotification($order->fresh(['domain']));
         });
+    }
+
+    protected function resolveDomainForCompletion(ResellerDomainOrder $order, string $registrar): ?Domain
+    {
+        $domain = $order->domain_id ? Domain::find($order->domain_id) : null;
+
+        if ($domain || ! $order->isRegistration() || ! $order->customer_id) {
+            return $domain;
+        }
+
+        $domain = Domain::create([
+            'user_id' => $order->customer_id,
+            'reseller_id' => $order->reseller_id,
+            'name' => $order->domain_name,
+            'extension' => $order->extension,
+            'type' => 'registration',
+            'status' => 'active',
+            'registrar' => $registrar,
+            'registered_at' => now(),
+            'expires_at' => now()->addYears(max(1, (int) $order->years)),
+        ]);
+
+        $order->update(['domain_id' => $domain->id]);
+
+        return $domain;
     }
 
     public function failOrdersForDomain(Domain $domain, string $reason): void

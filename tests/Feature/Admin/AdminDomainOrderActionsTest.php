@@ -240,6 +240,44 @@ class AdminDomainOrderActionsTest extends TestCase
         $this->assertNull($order->failed_at);
     }
 
+    public function test_admin_can_complete_platform_pushed_order_without_domain_record(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $customer = User::factory()->create(['reseller_id' => null]);
+
+        $order = ResellerDomainOrder::create([
+            'reseller_id' => null,
+            'customer_id' => $customer->id,
+            'domain_id' => null,
+            'domain_name' => 'platformmanual',
+            'extension' => '.com',
+            'years' => 1,
+            'wholesale_amount' => 1200,
+            'retail_amount' => 1200,
+            'status' => 'pushed',
+            'pushed_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.domain-orders.complete', $order), [
+                'registrar' => 'Manual registrar',
+            ])
+            ->assertRedirect(route('admin.domain-orders.index'))
+            ->assertSessionHas('success');
+
+        $order->refresh();
+        $this->assertSame('completed', $order->status);
+        $this->assertNotNull($order->domain_id);
+        $this->assertDatabaseHas('domains', [
+            'id' => $order->domain_id,
+            'user_id' => $customer->id,
+            'name' => 'platformmanual',
+            'extension' => '.com',
+            'status' => 'active',
+            'registrar' => 'Manual registrar',
+        ]);
+    }
+
     public function test_admin_can_delete_queued_order(): void
     {
         $admin = User::factory()->admin()->create();
