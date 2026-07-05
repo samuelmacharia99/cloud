@@ -321,6 +321,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/refresh-status', [ServiceController::class, 'refreshStatus'])->name('admin.services.refresh-status');
         Route::post('admin/services/{service}/test-directadmin', [ServiceController::class, 'testDirectAdminConnection'])->name('admin.services.test-directadmin');
         Route::post('admin/services/{service}/resend-credentials', [ServiceController::class, 'resendCredentials'])->name('admin.services.resend-credentials');
+        Route::get('admin/services/{service}/transfer-preview', [ServiceController::class, 'transferPreview'])->name('admin.services.transfer-preview');
+        Route::post('admin/services/{service}/transfer', [ServiceController::class, 'transfer'])->name('admin.services.transfer');
         Route::post('admin/services/{service}/upgrade-hosting', [ServiceController::class, 'upgradeHosting'])->name('admin.services.upgrade-hosting');
         Route::post('admin/services/{service}/reconcile-hosting', [ServiceController::class, 'reconcileHostingPackage'])->name('admin.services.reconcile-hosting');
 

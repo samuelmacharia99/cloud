@@ -15,6 +15,11 @@
     editDetailsModal: false,
     upgradeHostingModal: false,
     suspendModal: false,
+    transferModal: false,
+    transferPreviewLoading: false,
+    transferPreview: null,
+    transferTargetId: '{{ old('target_user_id', '') }}',
+    transferDomain: @json((bool) old('transfer_domain')),
     testConnectionModal: false,
     testConnectionLoading: false,
     testConnectionResult: null,
@@ -40,6 +45,26 @@
             this.testConnectionModal = true;
         } finally {
             this.testConnectionLoading = false;
+        }
+    },
+    async loadTransferPreview() {
+        if (!this.transferTargetId) {
+            this.transferPreview = null;
+            return;
+        }
+        this.transferPreviewLoading = true;
+        try {
+            const url = new URL('{{ route('admin.services.transfer-preview', $service) }}');
+            url.searchParams.set('target_user_id', this.transferTargetId);
+            const response = await fetch(url, {
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await response.json();
+            this.transferPreview = response.ok ? data : { error: data.error || 'Preview failed.' };
+        } catch (error) {
+            this.transferPreview = { error: 'Network error: ' + error.message };
+        } finally {
+            this.transferPreviewLoading = false;
         }
     }
 }">
@@ -582,6 +607,9 @@
                     <a href="{{ route('admin.customers.show', $service->user) }}" class="block mt-4 px-4 py-2 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900 text-sm font-medium rounded-lg transition text-center">
                         View Customer
                     </a>
+                    <button type="button" @click="transferModal = true; transferPreview = null;" class="block w-full mt-2 px-4 py-2 bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 hover:bg-violet-200 dark:hover:bg-violet-900 text-sm font-medium rounded-lg transition text-center">
+                        Transfer Service
+                    </button>
                 </div>
             </div>
 
@@ -670,6 +698,85 @@
                     Close
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Transfer Service Modal -->
+    <div x-show="transferModal" x-transition
+         class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+         @click.self="transferModal = false">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
+            <div class="p-6 border-b border-slate-200 dark:border-slate-800">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white">Transfer service</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                    Reassign service #{{ $service->id }} to another customer. Billing history stays with the previous owner.
+                </p>
+            </div>
+            <form method="POST" action="{{ route('admin.services.transfer', $service) }}">
+                @csrf
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label for="target_user_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">New customer</label>
+                        <select id="target_user_id" name="target_user_id" required x-model="transferTargetId" @change="loadTransferPreview()"
+                                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent">
+                            <option value="">Select a customer...</option>
+                            @foreach ($transferCustomers as $customer)
+                                <option value="{{ $customer->id }}" {{ old('target_user_id') == $customer->id ? 'selected' : '' }}>
+                                    {{ $customer->name }} ({{ $customer->email }})
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('target_user_id')
+                            <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    @if ($service->attachedDomainName())
+                        <label class="flex items-start gap-3 cursor-pointer">
+                            <input type="checkbox" name="transfer_domain" value="1" x-model="transferDomain"
+                                   class="mt-1 rounded border-slate-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500">
+                            <span class="text-sm text-slate-700 dark:text-slate-300">
+                                Also transfer attached domain <code class="font-mono text-xs">{{ $service->attachedDomainName() }}</code> if owned by the current customer
+                            </span>
+                        </label>
+                    @endif
+
+                    <div x-show="transferPreviewLoading" class="text-sm text-slate-500 dark:text-slate-400">Loading preview...</div>
+
+                    <div x-show="transferPreview?.error" class="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-4 py-3 text-sm text-red-800 dark:text-red-200" x-text="transferPreview?.error"></div>
+
+                    <div x-show="transferPreview && !transferPreview.error" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-4 py-3 space-y-2 text-sm">
+                        <p class="text-slate-900 dark:text-white">
+                            <span class="font-medium">From:</span>
+                            <span x-text="transferPreview?.from?.name"></span>
+                            <span class="text-slate-500 dark:text-slate-400" x-show="transferPreview?.from?.reseller" x-text="'(' + transferPreview?.from?.reseller + ')'"></span>
+                        </p>
+                        <p class="text-slate-900 dark:text-white">
+                            <span class="font-medium">To:</span>
+                            <span x-text="transferPreview?.to?.name"></span>
+                            <span class="text-slate-500 dark:text-slate-400" x-show="transferPreview?.to?.reseller" x-text="'(' + transferPreview?.to?.reseller + ')'"></span>
+                        </p>
+                        <template x-if="transferPreview?.warnings?.length">
+                            <ul class="list-disc list-inside text-amber-700 dark:text-amber-300 space-y-1 pt-1">
+                                <template x-for="warning in transferPreview.warnings" :key="warning">
+                                    <li x-text="warning"></li>
+                                </template>
+                            </ul>
+                        </template>
+                    </div>
+                </div>
+                <div class="p-6 border-t border-slate-200 dark:border-slate-800 flex gap-3">
+                    <button type="button" @click="transferModal = false"
+                            class="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 font-medium transition">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="flex-1 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium transition"
+                            :disabled="!transferTargetId">
+                        Transfer service
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

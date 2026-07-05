@@ -108,6 +108,16 @@ class ServicePolicy
     }
 
     /**
+     * Only admin can transfer services between customers.
+     */
+    public function transfer(User $user, Service $service): Response
+    {
+        return $user->is_admin
+            ? Response::allow()
+            : Response::deny('Only administrators can transfer services.');
+    }
+
+    /**
      * Customer can manage container lifecycle for their own services. Admin can manage any.
      */
     public function manageContainer(User $user, Service $service): Response

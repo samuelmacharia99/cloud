@@ -26,6 +26,7 @@ use App\Services\ServiceDeletionService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\ServiceInfrastructureProbeService;
 use App\Services\ServiceStatusSyncService;
+use App\Services\ServiceTransferService;
 use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -235,6 +236,13 @@ class ServiceController extends Controller
 
         $infrastructureAbsent = app(ServiceInfrastructureProbeService::class)->infrastructureAlreadyAbsent($service);
 
+        $transferCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->where('id', '!=', $service->user_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email', 'reseller_id']);
+
         return view('admin.services.show', compact(
             'service',
             'sameTypeProducts',
@@ -247,7 +255,62 @@ class ServiceController extends Controller
             'daLivePackage',
             'hasStaleOverlimitFlags',
             'infrastructureAbsent',
+            'transferCustomers',
         ));
+    }
+
+    public function transferPreview(Request $request, Service $service, ServiceTransferService $transferService)
+    {
+        $this->authorize('transfer', $service);
+
+        $validated = $request->validate([
+            'target_user_id' => 'required|exists:users,id',
+        ]);
+
+        $targetCustomer = User::findOrFail($validated['target_user_id']);
+
+        try {
+            return response()->json($transferService->preview($service, $targetCustomer));
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+    }
+
+    public function transfer(Request $request, Service $service, ServiceTransferService $transferService)
+    {
+        $this->authorize('transfer', $service);
+
+        $validated = $request->validate([
+            'target_user_id' => 'required|exists:users,id',
+            'transfer_domain' => 'sometimes|boolean',
+        ]);
+
+        $targetCustomer = User::findOrFail($validated['target_user_id']);
+
+        try {
+            $result = $transferService->transfer(
+                $service,
+                $targetCustomer,
+                $request->boolean('transfer_domain'),
+            );
+
+            $flash = "Service transferred from {$result['from_customer']} to {$result['to_customer']}.";
+
+            if ($result['domain_transferred']) {
+                $flash .= ' Attached domain moved with the service.';
+            }
+
+            $warnings = array_merge($result['catalog_warnings'], $result['da_warnings']);
+            if ($warnings !== []) {
+                $flash .= ' Warnings: '.implode(' ', $warnings);
+            }
+
+            return redirect()
+                ->route('admin.services.show', $service)
+                ->with('success', $flash);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
     }
 
     public function provision(Service $service)
