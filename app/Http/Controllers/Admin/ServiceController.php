@@ -30,6 +30,7 @@ use App\Services\ServiceTransferService;
 use App\Services\TaxService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -748,11 +749,32 @@ class ServiceController extends Controller
             });
 
         if ($request->filled('search')) {
-            $query->where(function ($q) use ($request) {
-                $q->where('id', 'like', "%{$request->search}%")
-                    ->orWhereHas('user', function ($userQuery) use ($request) {
-                        $userQuery->where('name', 'like', "%{$request->search}%");
+            $search = trim((string) $request->search);
+
+            $query->where(function ($q) use ($search) {
+                $q->where('id', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%")
+                    ->orWhere('service_meta->domain', 'like', "%{$search}%")
+                    ->orWhere('service_meta->primary_domain', 'like', "%{$search}%")
+                    ->orWhereHas('user', function ($userQuery) use ($search) {
+                        $userQuery->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('containerDeployment', function ($deploymentQuery) use ($search) {
+                        $deploymentQuery->where('domain', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('containerDeployment.domains', function ($domainQuery) use ($search) {
+                        $domainQuery->where('domain', 'like', "%{$search}%");
                     });
+
+                $matchingDomainIds = $this->domainIdsMatchingSearch($search);
+
+                if ($matchingDomainIds->isNotEmpty()) {
+                    $q->orWhere(function ($domainLinkQuery) use ($matchingDomainIds) {
+                        foreach ($matchingDomainIds as $domainId) {
+                            $domainLinkQuery->orWhere('service_meta->domain_id', $domainId);
+                        }
+                    });
+                }
             });
         }
 
@@ -775,6 +797,31 @@ class ServiceController extends Controller
         }
 
         return $query;
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    private function domainIdsMatchingSearch(string $search): Collection
+    {
+        return Domain::query()
+            ->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%");
+
+                if (str_contains($search, '.')) {
+                    $parts = explode('.', ltrim($search, '.'), 2);
+                    $sld = $parts[0] ?? '';
+                    $tld = $parts[1] ?? '';
+
+                    if ($sld !== '' && $tld !== '') {
+                        $q->orWhere(function ($domainQ) use ($sld, $tld) {
+                            $domainQ->where('name', 'like', "%{$sld}%")
+                                ->where('extension', 'like', '%.'.$tld.'%');
+                        });
+                    }
+                }
+            })
+            ->pluck('id');
     }
 
     /**
