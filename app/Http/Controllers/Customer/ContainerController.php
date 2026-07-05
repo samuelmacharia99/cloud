@@ -1763,9 +1763,12 @@ class ContainerController extends Controller
         try {
             $cronService->create($service, $request->only('name', 'schedule', 'command'));
 
-            return back()->with('success', 'Cron job created.')->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->with('success', 'Cron job created.');
         } catch (\InvalidArgumentException $e) {
-            return back()->withErrors(['cron' => $e->getMessage()])->withInput()->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->withErrors(['cron' => $e->getMessage()])
+                ->withInput();
         }
     }
 
@@ -1790,9 +1793,12 @@ class ContainerController extends Controller
                 'enabled' => $request->boolean('enabled'),
             ]);
 
-            return back()->with('success', 'Cron job updated.')->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->with('success', 'Cron job updated.');
         } catch (\InvalidArgumentException $e) {
-            return back()->withErrors(['cron' => $e->getMessage()])->withInput()->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->withErrors(['cron' => $e->getMessage()])
+                ->withInput();
         }
     }
 
@@ -1805,10 +1811,20 @@ class ContainerController extends Controller
         try {
             $cronService->delete($cronJob);
 
-            return back()->with('success', 'Cron job deleted.')->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->with('success', 'Cron job deleted.');
         } catch (\InvalidArgumentException $e) {
-            return back()->withErrors(['cron' => $e->getMessage()])->withFragment('cron');
+            return $this->redirectToContainerTab($service, 'cron')
+                ->withErrors(['cron' => $e->getMessage()]);
         }
+    }
+
+    private function redirectToContainerTab(Service $service, string $tab): RedirectResponse
+    {
+        return redirect()->route('customer.services.container.show', [
+            'service' => $service,
+            'tab' => $tab,
+        ]);
     }
 
     public function destroy(Request $request, Service $service, CustomerServiceCancellationService $cancellation): RedirectResponse

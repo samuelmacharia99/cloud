@@ -73,9 +73,7 @@
                     $documentationIndex = array_search('documentation', $containerTabs, true);
                     array_splice($containerTabs, $documentationIndex, 0, 'php-extensions');
                 }
-                $initialTab = in_array(request('tab'), $containerTabs, true)
-                    ? request('tab')
-                    : (request()->fragment() === 'cron' && in_array('cron', $containerTabs, true) ? 'cron' : 'overview');
+                $initialTab = in_array(request('tab'), $containerTabs, true) ? request('tab') : 'overview';
             @endphp
             <!-- Tab Navigation -->
             <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg mb-8 pb-20 md:pb-0" x-data="containerTabs(@js($initialTab))" x-init="init()" @container-set-tab.window="setTab($event.detail)">
