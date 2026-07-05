@@ -17,6 +17,7 @@ use App\Services\AdminAccountWelcomeService;
 use App\Services\AdminActivityService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerEnforcementService;
 use App\Services\ResellerInfrastructureService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerScopeService;
@@ -178,6 +179,43 @@ class ResellerController extends Controller
                 ->route('admin.resellers.show', ['user' => $user, 'tab' => 'wallet'])
                 ->with('error', 'Wallet adjustment failed: '.$e->getMessage());
         }
+    }
+
+    public function enforceSuspension(User $user)
+    {
+        abort_if(! $user->is_reseller, 404);
+
+        $enforcement = app(ResellerEnforcementService::class);
+
+        if (! $enforcement->isSuspensionEnabled()) {
+            return redirect()
+                ->route('admin.resellers.show', $user)
+                ->with('error', 'Reseller auto-suspend is disabled in platform settings.');
+        }
+
+        if ($enforcement->shouldSuspendReseller($user)) {
+            $enforcement->enforceOverdueSuspension($user->fresh());
+
+            return redirect()
+                ->route('admin.resellers.show', $user)
+                ->with('success', 'Billing suspension enforced on the platform and DirectAdmin (when linked).');
+        }
+
+        if ($user->isResellerSuspended()) {
+            if ($enforcement->retryDirectAdminSuspendIfNeeded($user->fresh())) {
+                return redirect()
+                    ->route('admin.resellers.show', $user)
+                    ->with('success', 'DirectAdmin suspension sync completed.');
+            }
+
+            return redirect()
+                ->route('admin.resellers.show', $user)
+                ->with('warning', 'Reseller is already suspended on the platform. DirectAdmin sync could not be completed — check node API credentials and reseller username.');
+        }
+
+        return redirect()
+            ->route('admin.resellers.show', $user)
+            ->with('warning', 'Reseller is not eligible for suspension yet (billing is current or still within the grace period).');
     }
 
     public function testDirectAdminBinding(Request $request, User $user)

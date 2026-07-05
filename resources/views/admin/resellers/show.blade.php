@@ -40,8 +40,30 @@
                             Active Reseller
                         </span>
                     @endif
+                    @if ($user->directAdminSyncFailed())
+                        <span class="inline-block px-3 py-1 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 rounded-full text-sm font-medium">
+                            DirectAdmin sync failed
+                        </span>
+                    @endif
                 </div>
+                @if ($user->directAdminSyncFailed())
+                    <div class="max-w-md ml-auto rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+                        Platform suspension is active, but the reseller account could not be suspended on DirectAdmin
+                        @if ($user->directadmin_username)
+                            (<code class="font-mono">{{ $user->directadmin_username }}</code>).
+                        @else
+                            .
+                        @endif
+                        Verify node admin API credentials, then use <strong>Enforce suspension</strong>.
+                    </div>
+                @endif
                 <div class="flex flex-wrap justify-end gap-2">
+                    <form method="POST" action="{{ route('admin.resellers.enforce-suspension', $user) }}" class="inline">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition text-sm">
+                            Enforce suspension
+                        </button>
+                    </form>
                     <form method="POST" action="{{ route('admin.resellers.impersonate', $user) }}" class="inline">
                         @csrf
                         <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
@@ -221,6 +243,11 @@
                                 <p class="text-slate-600 dark:text-slate-400 mb-1">DirectAdmin</p>
                                 @if ($user->directadmin_username)
                                     <p class="text-slate-900 dark:text-white font-mono font-medium">{{ $user->directadmin_username }}</p>
+                                    @if ($user->directAdminSyncFailed())
+                                        <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                                            Last DirectAdmin suspend sync failed {{ $user->reseller_directadmin_sync_failed_at?->diffForHumans() }}.
+                                        </p>
+                                    @endif
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
                                         Node:
                                         {{ $user->resellerNode?->name ?? 'Auto-detect from services' }}

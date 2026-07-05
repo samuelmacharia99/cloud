@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\ResellerEnforcementService;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -18,6 +19,10 @@ class EnforceResellerLimits
         if (! $user || ! $user->isReseller()) {
             return $next($request);
         }
+
+        $enforcement = app(ResellerEnforcementService::class);
+        $enforcement->enforceOverdueSuspension($user->fresh());
+        $user->refresh();
 
         if ($user->isResellerSuspended()) {
             return redirect()

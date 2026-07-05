@@ -244,4 +244,35 @@ class ResellerEnforcementServiceTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_enforce_overdue_suspension_suspends_eligible_reseller(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-15'));
+
+        $reseller = User::factory()->reseller()->create([
+            'package_expires_at' => now()->addMonth(),
+        ]);
+
+        Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'type' => 'reseller_subscription',
+            'status' => 'overdue',
+            'due_date' => Carbon::parse('2026-06-01'),
+        ]);
+
+        $this->assertTrue($this->enforcement->enforceOverdueSuspension($reseller->fresh()));
+        $this->assertTrue($reseller->fresh()->isResellerSuspended());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_enforce_overdue_suspension_is_noop_when_billing_current(): void
+    {
+        $reseller = User::factory()->reseller()->create([
+            'package_expires_at' => now()->addMonth(),
+        ]);
+
+        $this->assertFalse($this->enforcement->enforceOverdueSuspension($reseller));
+        $this->assertFalse($reseller->fresh()->isResellerSuspended());
+    }
 }

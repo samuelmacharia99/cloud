@@ -196,6 +196,55 @@ class ResellerEnforcementService
             ->exists();
     }
 
+    /**
+     * Suspend overdue resellers immediately (cron, mark-overdue, middleware, admin action).
+     * Returns true when a new platform suspension was applied.
+     */
+    public function enforceOverdueSuspension(User $reseller): bool
+    {
+        if (! $this->isSuspensionEnabled()) {
+            return false;
+        }
+
+        if ($reseller->isResellerSuspended()) {
+            $this->retryDirectAdminSuspendIfNeeded($reseller);
+
+            return false;
+        }
+
+        if (! $this->shouldSuspendReseller($reseller)) {
+            return false;
+        }
+
+        $this->suspendReseller($reseller);
+
+        return true;
+    }
+
+    public function retryDirectAdminSuspendIfNeeded(User $reseller): bool
+    {
+        if (! filled($reseller->directadmin_username) || ! $reseller->directAdminSyncFailed()) {
+            return false;
+        }
+
+        if (! $reseller->isResellerSuspended()) {
+            $reseller->update(['reseller_directadmin_sync_failed_at' => null]);
+
+            return false;
+        }
+
+        if ($this->resellerDirectAdmin->suspendResellerAccount($reseller->fresh())) {
+            $reseller->update(['reseller_directadmin_sync_failed_at' => null]);
+            Log::info('DirectAdmin reseller suspend retry succeeded', [
+                'reseller_id' => $reseller->id,
+            ]);
+
+            return true;
+        }
+
+        return false;
+    }
+
     public function suspendReseller(User $reseller, string $reason = self::REASON_RESELLER_OVERDUE): int
     {
         if ($reseller->isResellerSuspended()) {
@@ -205,6 +254,7 @@ class ResellerEnforcementService
         $reseller->update([
             'reseller_suspended_at' => now(),
             'reseller_suspension_reason' => $reason,
+            'reseller_directadmin_sync_failed_at' => null,
         ]);
 
         Log::warning('Reseller account suspended', [
@@ -217,11 +267,14 @@ class ResellerEnforcementService
             $this->suspensionReasonLabel($reason),
         );
 
-        if (! $this->resellerDirectAdmin->suspendResellerAccount($reseller)) {
-            Log::warning('DirectAdmin reseller suspend skipped or failed', [
-                'reseller_id' => $reseller->id,
-                'directadmin_username' => $reseller->directadmin_username,
-            ]);
+        if (filled($reseller->directadmin_username)) {
+            if (! $this->resellerDirectAdmin->suspendResellerAccount($reseller->fresh())) {
+                $reseller->update(['reseller_directadmin_sync_failed_at' => now()]);
+                Log::warning('DirectAdmin reseller suspend skipped or failed', [
+                    'reseller_id' => $reseller->id,
+                    'directadmin_username' => $reseller->directadmin_username,
+                ]);
+            }
         }
 
         if (! $this->isCascadeEnabled()) {
@@ -240,15 +293,19 @@ class ResellerEnforcementService
         $reseller->update([
             'reseller_suspended_at' => null,
             'reseller_suspension_reason' => null,
+            'reseller_directadmin_sync_failed_at' => null,
         ]);
 
         Log::info('Reseller account unsuspended', ['reseller_id' => $reseller->id]);
 
-        if (! $this->resellerDirectAdmin->unsuspendResellerAccount($reseller)) {
-            Log::info('DirectAdmin reseller unsuspend skipped or failed', [
-                'reseller_id' => $reseller->id,
-                'directadmin_username' => $reseller->directadmin_username,
-            ]);
+        if (filled($reseller->directadmin_username)) {
+            if (! $this->resellerDirectAdmin->unsuspendResellerAccount($reseller->fresh())) {
+                $reseller->update(['reseller_directadmin_sync_failed_at' => now()]);
+                Log::info('DirectAdmin reseller unsuspend skipped or failed', [
+                    'reseller_id' => $reseller->id,
+                    'directadmin_username' => $reseller->directadmin_username,
+                ]);
+            }
         }
 
         if (! $this->isCascadeEnabled()) {

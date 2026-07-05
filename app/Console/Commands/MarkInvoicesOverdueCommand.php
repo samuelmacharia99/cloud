@@ -26,11 +26,26 @@ class MarkInvoicesOverdueCommand extends BaseCronCommand
 
         $count = 0;
         $suspended = 0;
+        $resellersSuspended = 0;
 
         foreach ($invoices as $invoice) {
             $invoice->update(['status' => 'overdue']);
             $notificationService->notifyInvoiceOverdue($invoice);
             $count++;
+
+            if ($invoice->type === 'reseller_subscription') {
+                $reseller = $invoice->user;
+
+                if ($reseller?->is_reseller && $resellerEnforcement->enforceOverdueSuspension($reseller->fresh())) {
+                    $resellersSuspended++;
+                    Log::info('Reseller suspended after subscription invoice marked overdue', [
+                        'reseller_id' => $reseller->id,
+                        'invoice_id' => $invoice->id,
+                    ]);
+                }
+
+                continue;
+            }
 
             if (! $enforcement->isSuspensionEnabled()) {
                 continue;
@@ -61,6 +76,10 @@ class MarkInvoicesOverdueCommand extends BaseCronCommand
         }
 
         $message = "Marked {$count} invoice(s) as overdue.";
+
+        if ($resellersSuspended > 0) {
+            $message .= " Suspended {$resellersSuspended} reseller account(s).";
+        }
 
         if ($suspended > 0) {
             $message .= " Suspended {$suspended} service(s) on DirectAdmin and other drivers.";

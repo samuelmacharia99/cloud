@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\User;
 use App\Services\ResellerEnforcementService;
 use Illuminate\Support\Facades\Log;
 
@@ -36,6 +37,25 @@ class SuspendResellersCommand extends BaseCronCommand
             }
         }
 
-        return "Suspended {$suspended} reseller account(s); {$cascadeCount} managed service(s) suspended on DirectAdmin.";
+        $retried = 0;
+        $failedSyncResellers = User::query()
+            ->where('is_reseller', true)
+            ->whereNotNull('reseller_suspended_at')
+            ->whereNotNull('reseller_directadmin_sync_failed_at')
+            ->get();
+
+        foreach ($failedSyncResellers as $reseller) {
+            if ($enforcement->retryDirectAdminSuspendIfNeeded($reseller)) {
+                $retried++;
+            }
+        }
+
+        $message = "Suspended {$suspended} reseller account(s); {$cascadeCount} managed service(s) suspended on DirectAdmin.";
+
+        if ($retried > 0) {
+            $message .= " Retried DirectAdmin sync for {$retried} reseller account(s).";
+        }
+
+        return $message;
     }
 }

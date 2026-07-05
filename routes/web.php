@@ -234,6 +234,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/resellers/{user}/add-domain', [ResellerController::class, 'addDomain'])->name('admin.resellers.add-domain');
         Route::post('admin/resellers/{user}/add-service', [ResellerController::class, 'addService'])->name('admin.resellers.add-service');
         Route::post('admin/resellers/{user}/wallet-adjust', [ResellerController::class, 'adjustWallet'])->name('admin.resellers.wallet-adjust');
+        Route::post('admin/resellers/{user}/enforce-suspension', [ResellerController::class, 'enforceSuspension'])->name('admin.resellers.enforce-suspension');
         Route::post('admin/resellers/{user}/directadmin/test', [ResellerController::class, 'testDirectAdminBinding'])->name('admin.resellers.directadmin.test');
         Route::post('admin/resellers/{user}/directadmin/connect', [ResellerController::class, 'connectDirectAdmin'])->name('admin.resellers.directadmin.connect');
         Route::post('admin/resellers/{user}/directadmin/disconnect', [ResellerController::class, 'disconnectDirectAdmin'])->name('admin.resellers.directadmin.disconnect');

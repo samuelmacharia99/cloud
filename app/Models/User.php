@@ -42,6 +42,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'package_expires_at',
         'reseller_suspended_at',
         'reseller_suspension_reason',
+        'reseller_directadmin_sync_failed_at',
         'directadmin_username',
         'reseller_node_id',
         'directadmin_login_key',
@@ -72,6 +73,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'package_subscribed_at' => 'datetime',
             'package_expires_at' => 'datetime',
             'reseller_suspended_at' => 'datetime',
+            'reseller_directadmin_sync_failed_at' => 'datetime',
             'reseller_node_id' => 'integer',
             'directadmin_login_key' => 'encrypted',
             'two_factor_enabled' => 'boolean',
@@ -300,6 +302,11 @@ class User extends Authenticatable implements MustVerifyEmail
     public function isResellerSuspended(): bool
     {
         return $this->is_reseller && $this->reseller_suspended_at !== null;
+    }
+
+    public function directAdminSyncFailed(): bool
+    {
+        return $this->is_reseller && $this->reseller_directadmin_sync_failed_at !== null;
     }
 
     public function getNextInvoiceDateAttribute(): ?Carbon

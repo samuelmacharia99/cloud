@@ -189,7 +189,7 @@ class CronJobSeeder extends Seeder
                 'name' => 'Suspend Resellers',
                 'description' => 'Suspends resellers with overdue or expired package subscriptions; optionally cascades to DirectAdmin.',
                 'command' => 'cron:suspend-resellers',
-                'schedule' => '30 4 * * *',
+                'schedule' => '*/15 * * * *',
                 'enabled' => true,
             ],
             [
