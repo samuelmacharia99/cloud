@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\InvoiceStatus;
 use App\Enums\ServiceStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -98,6 +99,11 @@ class Service extends Model
     public function containerAppInitializations()
     {
         return $this->hasMany(ContainerAppInitialization::class);
+    }
+
+    public function containerCronJobs()
+    {
+        return $this->hasMany(ContainerCronJob::class);
     }
 
     // Status helpers
@@ -366,7 +372,7 @@ class Service extends Model
     /**
      * Extend the billing period from the current next due date (or today if overdue).
      */
-    public function calculateNextDueDateAfterRenewal(?\Carbon\Carbon $reference = null): \Carbon\Carbon
+    public function calculateNextDueDateAfterRenewal(?Carbon $reference = null): Carbon
     {
         $reference = ($reference ?? now())->copy()->startOfDay();
         $base = $this->next_due_date?->copy()->startOfDay() ?? $reference;

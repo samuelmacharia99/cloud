@@ -105,4 +105,33 @@ return [
         'unlimited_heap_limit_mb' => (int) env('NODE_BUILD_UNLIMITED_HEAP_LIMIT_MB', 4096),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Customer-managed container cron jobs
+    |--------------------------------------------------------------------------
+    |
+    | Jobs are stored in the platform and executed every minute by
+    | cron:run-container-jobs using docker compose exec (no user crontab).
+    |
+    */
+    'cron' => [
+        'max_jobs_per_service' => (int) env('CONTAINER_CRON_MAX_JOBS', 20),
+        'max_command_length' => (int) env('CONTAINER_CRON_MAX_COMMAND_LENGTH', 500),
+        'command_timeout_seconds' => (int) env('CONTAINER_CRON_COMMAND_TIMEOUT', 300),
+        'output_max_chars' => (int) env('CONTAINER_CRON_OUTPUT_MAX_CHARS', 2000),
+        'batch_size' => (int) env('CONTAINER_CRON_BATCH_SIZE', 50),
+        'allowed_prefixes' => [
+            'php ',
+            'php artisan ',
+            '/usr/bin/php ',
+            '/usr/local/bin/php ',
+            'node ',
+            'npm run ',
+            'yarn ',
+            'python ',
+            'python3 ',
+            'bundle exec ',
+        ],
+    ],
+
 ];

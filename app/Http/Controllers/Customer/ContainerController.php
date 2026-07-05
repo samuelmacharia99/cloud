@@ -10,6 +10,7 @@ use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
 use App\Jobs\InitializeContainerAppJob;
 use App\Jobs\PullContainerGitRepositoryJob;
 use App\Models\ContainerBackup;
+use App\Models\ContainerCronJob;
 use App\Models\ContainerDomain;
 use App\Models\ContainerFileAuditLog;
 use App\Models\ContainerGitPull;
@@ -20,6 +21,7 @@ use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\Provisioning\ContainerBackupService;
+use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
 use App\Services\Provisioning\ContainerFileService;
@@ -98,6 +100,7 @@ class ContainerController extends Controller
         $latestBackup = null;
         $domainCount = 0;
         $domainsMissingSsl = 0;
+        $containerCronJobs = [];
 
         if ($deployment) {
             $deployment->loadMissing('domains');
@@ -111,6 +114,8 @@ class ContainerController extends Controller
             $domainsMissingSsl = $deployment->domains
                 ->filter(fn ($domain) => $domain->status === 'active' && ! $domain->ssl_enabled)
                 ->count();
+
+            $containerCronJobs = app(ContainerCronService::class)->listForService($service);
         }
 
         return view('customer.services.container', compact(
@@ -129,6 +134,7 @@ class ContainerController extends Controller
             'latestBackup',
             'domainCount',
             'domainsMissingSsl',
+            'containerCronJobs',
         ));
     }
 
@@ -1740,6 +1746,68 @@ class ContainerController extends Controller
             \Log::error("Failed to delete backup {$backup->id}: ".$e->getMessage());
 
             return back()->withErrors(['error' => 'Delete failed: '.$e->getMessage()]);
+        }
+    }
+
+    public function storeCronJob(Request $request, Service $service, ContainerCronService $cronService): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        $request->validate([
+            'name' => 'required|string|max:120',
+            'schedule' => 'required|string|max:100',
+            'command' => 'required|string|max:500',
+        ]);
+
+        try {
+            $cronService->create($service, $request->only('name', 'schedule', 'command'));
+
+            return back()->with('success', 'Cron job created.')->withFragment('cron');
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['cron' => $e->getMessage()])->withInput()->withFragment('cron');
+        }
+    }
+
+    public function updateCronJob(Request $request, Service $service, ContainerCronJob $cronJob, ContainerCronService $cronService): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+        abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
+        $this->authorize('manageContainer', $service);
+
+        $request->validate([
+            'name' => 'required|string|max:120',
+            'schedule' => 'required|string|max:100',
+            'command' => 'required|string|max:500',
+            'enabled' => 'sometimes|boolean',
+        ]);
+
+        try {
+            $cronService->update($cronJob, [
+                'name' => $request->input('name'),
+                'schedule' => $request->input('schedule'),
+                'command' => $request->input('command'),
+                'enabled' => $request->boolean('enabled'),
+            ]);
+
+            return back()->with('success', 'Cron job updated.')->withFragment('cron');
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['cron' => $e->getMessage()])->withInput()->withFragment('cron');
+        }
+    }
+
+    public function deleteCronJob(Service $service, ContainerCronJob $cronJob, ContainerCronService $cronService): RedirectResponse
+    {
+        abort_if($service->user_id !== auth()->id(), 403);
+        abort_if((int) $cronJob->service_id !== (int) $service->id, 404);
+        $this->authorize('manageContainer', $service);
+
+        try {
+            $cronService->delete($cronJob);
+
+            return back()->with('success', 'Cron job deleted.')->withFragment('cron');
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['cron' => $e->getMessage()])->withFragment('cron');
         }
     }
 

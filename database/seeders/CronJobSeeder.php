@@ -130,6 +130,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Run Container Cron Jobs',
+                'description' => 'Executes customer-defined scheduled commands inside running container services via docker exec.',
+                'command' => 'cron:run-container-jobs',
+                'schedule' => '* * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Prune Container Metrics',
                 'description' => 'Deletes container metric samples older than 90 days.',
                 'command' => 'cron:prune-container-metrics',
