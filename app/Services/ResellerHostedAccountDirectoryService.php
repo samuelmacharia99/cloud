@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\ServiceStatus;
+use App\Models\Product;
 use App\Models\ResellerProduct;
 use App\Models\Service;
 use App\Models\User;
@@ -58,20 +59,27 @@ class ResellerHostedAccountDirectoryService
     {
         $resellerId = $request->filled('reseller_id') ? (int) $request->reseller_id : null;
         $connectedResellers = $this->connectedResellers($resellerId);
-        $usesDirectAdmin = $connectedResellers->isNotEmpty();
+        $directAdminDirectoryAvailable = $connectedResellers->isNotEmpty();
+        $usesDirectAdminDirectory = $directAdminDirectoryAvailable
+            && $request->query('directory') === 'shared_hosting';
 
         $portalQuery = User::query()
             ->where('is_admin', false)
             ->where('is_reseller', false)
             ->with('reseller:id,name,email')
             ->withCount('services', 'invoices')
+            ->with([
+                'services' => fn ($query) => $query
+                    ->select('id', 'user_id', 'product_id', 'provisioning_driver_key')
+                    ->with('product:id,type'),
+            ])
             ->latest();
 
         if ($resellerId) {
             $portalQuery->where('reseller_id', $resellerId);
         }
 
-        if ($usesDirectAdmin) {
+        if ($usesDirectAdminDirectory) {
             $rows = $this->buildAdminRows($connectedResellers, $portalQuery->get(), $request->boolean('refresh'));
             $filtered = $this->applyFilters($rows, $request, true);
             $stats = $this->statsFromRows($rows, true);
@@ -80,10 +88,12 @@ class ResellerHostedAccountDirectoryService
                 'rows' => $this->paginateCollection($filtered, $request),
                 'stats' => $stats,
                 'uses_directadmin' => true,
+                'directadmin_directory_available' => true,
             ];
         }
 
         $this->applyPortalQueryFilters($portalQuery, $request, true);
+        $this->applyPortalServiceTypeFilter($portalQuery, $request);
 
         return [
             'rows' => $portalQuery->paginate(15)->withQueryString(),
@@ -95,6 +105,7 @@ class ResellerHostedAccountDirectoryService
                 'portal_only' => (clone $portalQuery)->count(),
             ],
             'uses_directadmin' => false,
+            'directadmin_directory_available' => $directAdminDirectoryAvailable,
         ];
     }
 
@@ -523,6 +534,64 @@ class ResellerHostedAccountDirectoryService
         }
 
         return $filtered->values();
+    }
+
+    /**
+     * @param  Builder<User>  $query
+     */
+    private function applyPortalServiceTypeFilter(Builder $query, Request $request): void
+    {
+        $serviceType = (string) $request->query('service_type', '');
+        if ($serviceType === '' || $serviceType === 'all') {
+            return;
+        }
+
+        $allowed = ['shared_hosting', 'container_hosting', 'vps', 'dedicated_server'];
+        if (! in_array($serviceType, $allowed, true)) {
+            return;
+        }
+
+        $query->whereHas('services', function (Builder $serviceQuery) use ($serviceType) {
+            $serviceQuery->where(function (Builder $inner) use ($serviceType) {
+                $inner->whereHas('product', fn (Builder $productQuery) => $productQuery->where('type', $serviceType));
+
+                if ($serviceType === 'shared_hosting') {
+                    $inner->orWhere('provisioning_driver_key', 'directadmin');
+                }
+
+                if ($serviceType === 'container_hosting') {
+                    $inner->orWhere('provisioning_driver_key', 'container');
+                }
+            });
+        });
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function serviceTypeLabelsForCustomer(User $customer): array
+    {
+        $labels = [];
+
+        foreach ($customer->services as $service) {
+            $type = $service->product?->type;
+
+            if ($type === null && $service->provisioning_driver_key === 'directadmin') {
+                $type = 'shared_hosting';
+            }
+
+            if ($type === null && $service->provisioning_driver_key === 'container') {
+                $type = 'container_hosting';
+            }
+
+            if (! is_string($type) || $type === '') {
+                continue;
+            }
+
+            $labels[$type] = Product::TYPES[$type] ?? ucwords(str_replace('_', ' ', $type));
+        }
+
+        return array_values($labels);
     }
 
     /**

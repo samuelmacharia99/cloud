@@ -12,6 +12,7 @@ use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerHostedAccountDirectoryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Mockery;
 use Tests\TestCase;
 
@@ -164,7 +165,7 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
         });
 
         $result = app(ResellerHostedAccountDirectoryService::class)
-            ->paginatedForAdmin(Request::create('/admin/customers', 'GET'));
+            ->paginatedForAdmin(Request::create('/admin/customers', 'GET', ['directory' => 'shared_hosting']));
 
         $row = collect($result['rows']->items())
             ->firstWhere('display_email', 'furniturenairobi@gmail.com');
@@ -175,6 +176,37 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
         $this->assertSame('copyrite', $row['da_username']);
         $this->assertSame('copyritefurniturekenya.com', $row['da_domain']);
         $this->assertSame('Gold', $row['da_package']);
+    }
+
+    public function test_admin_directory_skips_directadmin_calls_by_default(): void
+    {
+        $node = Node::factory()->create([
+            'type' => 'directadmin',
+            'api_url' => 'https://da.example.test:2222',
+            'is_active' => true,
+        ]);
+
+        User::factory()->reseller()->create([
+            'directadmin_username' => 'res_acme',
+            'directadmin_login_key' => 'login-key',
+            'reseller_node_id' => $node->id,
+        ]);
+
+        $daMock = Mockery::mock(DirectAdminService::class);
+        $daMock->shouldNotReceive('listUsersOwnedByReseller');
+        $daMock->shouldNotReceive('getAccountDirectoryEntry');
+
+        $this->mock(ResellerDirectAdminService::class, function ($mock) use ($daMock) {
+            $mock->shouldReceive('hasDirectAdminBinding')->andReturn(true);
+            $mock->shouldReceive('directAdmin')->andReturn($daMock);
+        });
+
+        $result = app(ResellerHostedAccountDirectoryService::class)
+            ->paginatedForAdmin(Request::create('/admin/customers', 'GET'));
+
+        $this->assertFalse($result['uses_directadmin']);
+        $this->assertTrue($result['directadmin_directory_available']);
+        $this->assertInstanceOf(LengthAwarePaginator::class, $result['rows']);
     }
 
     public function test_admin_directory_orders_customers_newest_first(): void
@@ -206,5 +238,56 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
         $this->assertSame('newer@example.test', $emails[0]);
         $this->assertContains('older@example.test', $emails->all());
         $this->assertLessThan($emails->search('older@example.test'), $emails->search('newer@example.test'));
+    }
+
+    public function test_admin_directory_filters_customers_by_service_type(): void
+    {
+        $containerProduct = Product::factory()->create(['type' => 'container_hosting']);
+        $vpsProduct = Product::factory()->create(['type' => 'vps']);
+
+        $containerCustomer = User::factory()->customer()->create(['email' => 'container@example.test']);
+        $vpsCustomer = User::factory()->customer()->create(['email' => 'vps@example.test']);
+
+        Service::factory()->create([
+            'user_id' => $containerCustomer->id,
+            'product_id' => $containerProduct->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        Service::factory()->create([
+            'user_id' => $vpsCustomer->id,
+            'product_id' => $vpsProduct->id,
+        ]);
+
+        $result = app(ResellerHostedAccountDirectoryService::class)
+            ->paginatedForAdmin(Request::create('/admin/customers', 'GET', ['service_type' => 'container_hosting']));
+
+        $emails = collect($result['rows']->items())->pluck('email');
+
+        $this->assertTrue($emails->contains('container@example.test'));
+        $this->assertFalse($emails->contains('vps@example.test'));
+    }
+
+    public function test_service_type_labels_for_customer(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $containerProduct = Product::factory()->create(['type' => 'container_hosting']);
+        $vpsProduct = Product::factory()->create(['type' => 'vps']);
+
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $containerProduct->id,
+        ]);
+        Service::factory()->create([
+            'user_id' => $customer->id,
+            'product_id' => $vpsProduct->id,
+        ]);
+
+        $customer->load(['services.product']);
+
+        $labels = app(ResellerHostedAccountDirectoryService::class)->serviceTypeLabelsForCustomer($customer);
+
+        $this->assertContains('Container Hosting', $labels);
+        $this->assertContains('VPS Server', $labels);
     }
 }

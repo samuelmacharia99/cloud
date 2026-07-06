@@ -64,6 +64,7 @@ class CustomerController extends Controller
             'customers' => $directoryResult['rows'],
             'directoryStats' => $directoryResult['stats'],
             'usesDirectAdminDirectory' => $directoryResult['uses_directadmin'],
+            'directAdminDirectoryAvailable' => $directoryResult['directadmin_directory_available'] ?? false,
             'resellers' => $resellers,
             'catalogListingsByReseller' => $catalogListingsByReseller,
             'managedCustomersByReseller' => $managedCustomersByReseller,

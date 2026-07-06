@@ -14,9 +14,9 @@
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Customers</h1>
             <p class="text-slate-600 dark:text-slate-400 mt-1">
                 @if ($usesDirectAdminDirectory ?? false)
-                    Platform customers plus DirectAdmin hosted users from connected resellers.
+                    Shared hosting accounts from DirectAdmin — link unlinked users to platform customers.
                 @else
-                    Manage customer accounts and subscriptions.
+                    Manage customer accounts and subscriptions across containers, VPS, dedicated servers, and more.
                 @endif
             </p>
         </div>
@@ -42,6 +42,25 @@
                     <button type="button" onclick="navigator.clipboard.writeText(@js($platformRegistrationUrl)); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy link', 2000)" class="shrink-0 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Copy link</button>
                 </div>
             </div>
+        </div>
+    @endif
+
+    @php
+        $directoryBaseQuery = request()->except(['directory', 'page', 'refresh']);
+        $allCustomersUrl = route('admin.customers.index', $directoryBaseQuery);
+        $sharedHostingDirectoryUrl = route('admin.customers.index', array_merge($directoryBaseQuery, ['directory' => 'shared_hosting']));
+    @endphp
+
+    @if ($directAdminDirectoryAvailable ?? false)
+        <div class="flex flex-wrap gap-2">
+            <a href="{{ $allCustomersUrl }}"
+               class="px-4 py-2 text-sm font-medium rounded-lg transition {{ ($usesDirectAdminDirectory ?? false) ? 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800' : 'bg-blue-600 text-white' }}">
+                All customers
+            </a>
+            <a href="{{ $sharedHostingDirectoryUrl }}"
+               class="px-4 py-2 text-sm font-medium rounded-lg transition {{ ($usesDirectAdminDirectory ?? false) ? 'bg-blue-600 text-white' : 'border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800' }}">
+                Shared hosting (DirectAdmin)
+            </a>
         </div>
     @endif
 
@@ -72,7 +91,10 @@
 
     <!-- Filters -->
     <form method="GET" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-{{ ($usesDirectAdminDirectory ?? false) ? '7' : '5' }} gap-4">
+        @if ($usesDirectAdminDirectory ?? false)
+            <input type="hidden" name="directory" value="shared_hosting">
+        @endif
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-{{ ($usesDirectAdminDirectory ?? false) ? '7' : '6' }} gap-4">
             <div>
                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Search</label>
                 <input type="text" name="search" value="{{ request('search') }}" placeholder="Name, email, DA username, domain..." class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
@@ -112,6 +134,18 @@
                     @endforeach
                 </select>
             </div>
+            @if (! ($usesDirectAdminDirectory ?? false))
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Service type</label>
+                    <select name="service_type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
+                        <option value="all" @selected(request('service_type', 'all') === 'all')>All service types</option>
+                        <option value="shared_hosting" @selected(request('service_type') === 'shared_hosting')>Shared hosting</option>
+                        <option value="container_hosting" @selected(request('service_type') === 'container_hosting')>Container hosting</option>
+                        <option value="vps" @selected(request('service_type') === 'vps')>VPS</option>
+                        <option value="dedicated_server" @selected(request('service_type') === 'dedicated_server')>Dedicated server</option>
+                    </select>
+                </div>
+            @endif
             @if ($usesDirectAdminDirectory ?? false)
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Platform link</label>
@@ -171,6 +205,7 @@
                             <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
                             <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Country</th>
                         @else
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Service types</th>
                             <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Company</th>
                             <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Country</th>
                             <th class="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">Status</th>
@@ -218,6 +253,23 @@
                                         Platform
                                     </span>
                                     <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Direct customer</p>
+                                @endif
+                            </td>
+                            <td class="px-6 py-4">
+                                @php
+                                    $serviceTypeLabels = app(\App\Services\ResellerHostedAccountDirectoryService::class)
+                                        ->serviceTypeLabelsForCustomer($customer);
+                                @endphp
+                                @if ($serviceTypeLabels === [])
+                                    <span class="text-sm text-slate-500 dark:text-slate-400">—</span>
+                                @else
+                                    <div class="flex flex-wrap gap-1">
+                                        @foreach ($serviceTypeLabels as $label)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                                {{ $label }}
+                                            </span>
+                                        @endforeach
+                                    </div>
                                 @endif
                             </td>
                             <td class="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
