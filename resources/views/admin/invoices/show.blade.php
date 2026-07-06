@@ -11,7 +11,7 @@
 @endsection
 
 @section('content')
-<div class="space-y-6" x-data="{ paymentModal: false }">
+<div class="space-y-6" x-data="{ paymentModal: false, transferModal: false }">
     <!-- Header -->
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8">
         <div class="flex items-start justify-between">
@@ -328,6 +328,43 @@
                     <a href="{{ route('admin.customers.show', $invoice->user) }}" class="block mt-4 px-4 py-2 bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900 text-sm font-medium rounded-lg transition text-center">
                         View Customer
                     </a>
+                    <button type="button" @click="transferModal = true" class="block w-full mt-2 px-4 py-2 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium rounded-lg transition text-center">
+                        Transfer to another customer
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="transferModal" x-cloak class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" @click.self="transferModal = false">
+                <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-8 max-w-lg w-full">
+                    <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Transfer invoice</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 mb-6">
+                        Reassign this invoice and its payments to another customer. Services listed on this invoice will move with it.
+                    </p>
+                    <form method="POST" action="{{ route('admin.invoices.transfer', $invoice) }}" class="space-y-4">
+                        @csrf
+                        <div>
+                            <label for="target_user_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">New customer</label>
+                            <select id="target_user_id" name="target_user_id" required class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select a customer...</option>
+                                @foreach ($transferCustomers as $customer)
+                                    <option value="{{ $customer->id }}" @selected(old('target_user_id') == $customer->id)>
+                                        {{ $customer->name }} ({{ $customer->email }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('target_user_id')
+                                <p class="text-red-600 dark:text-red-400 text-xs mt-1">{{ $message }}</p>
+                            @enderror
+                        </div>
+                        <div class="flex gap-3 justify-end pt-2">
+                            <button type="button" @click="transferModal = false" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-medium rounded-lg transition">
+                                Cancel
+                            </button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">
+                                Transfer invoice
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
 

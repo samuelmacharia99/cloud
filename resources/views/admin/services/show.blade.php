@@ -717,7 +717,7 @@
             <div class="p-6 border-b border-slate-200 dark:border-slate-800">
                 <h2 class="text-lg font-bold text-slate-900 dark:text-white">Transfer service</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                    Reassign service #{{ $service->id }} to another customer. Billing history stays with the previous owner.
+                    Reassign service #{{ $service->id }} to another customer. Related invoices move with the service when they only bill this service.
                 </p>
             </div>
             <form method="POST" action="{{ route('admin.services.transfer', $service) }}">

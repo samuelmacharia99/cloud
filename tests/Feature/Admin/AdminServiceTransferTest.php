@@ -3,6 +3,9 @@
 namespace Tests\Feature\Admin;
 
 use App\Models\Domain;
+use App\Models\Invoice;
+use App\Models\InvoiceItem;
+use App\Models\Payment;
 use App\Models\ResellerPackage;
 use App\Models\Service;
 use App\Models\User;
@@ -152,6 +155,92 @@ class AdminServiceTransferTest extends TestCase
             ])
             ->assertRedirect()
             ->assertSessionHas('error');
+    }
+
+    public function test_service_transfer_moves_related_invoice(): void
+    {
+        $admin = $this->createAdmin();
+        $fromCustomer = User::factory()->create(['name' => 'Alice']);
+        $toCustomer = User::factory()->create(['name' => 'Bob']);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $fromCustomer->id,
+            'invoice_number' => 'INV-TEST-001',
+            'status' => 'unpaid',
+        ]);
+
+        $service = Service::factory()->create([
+            'user_id' => $fromCustomer->id,
+            'invoice_id' => $invoice->id,
+        ]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $service->id,
+            'description' => 'Hosting',
+            'quantity' => 1,
+            'unit_price' => 1000,
+            'amount' => 1000,
+        ]);
+
+        Payment::factory()->create([
+            'user_id' => $fromCustomer->id,
+            'invoice_id' => $invoice->id,
+            'payment_method' => 'manual',
+            'status' => 'completed',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.services.transfer', $service), [
+                'target_user_id' => $toCustomer->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame($toCustomer->id, $invoice->fresh()->user_id);
+        $this->assertSame($toCustomer->id, $invoice->payments()->first()->user_id);
+    }
+
+    public function test_service_transfer_does_not_move_multi_service_invoice(): void
+    {
+        $admin = $this->createAdmin();
+        $fromCustomer = User::factory()->create();
+        $toCustomer = User::factory()->create();
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $fromCustomer->id,
+            'status' => 'unpaid',
+        ]);
+        $serviceA = Service::factory()->create(['user_id' => $fromCustomer->id]);
+        $serviceB = Service::factory()->create(['user_id' => $fromCustomer->id]);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $serviceA->id,
+            'description' => 'Service A',
+            'quantity' => 1,
+            'unit_price' => 500,
+            'amount' => 500,
+        ]);
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'service_id' => $serviceB->id,
+            'description' => 'Service B',
+            'quantity' => 1,
+            'unit_price' => 500,
+            'amount' => 500,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.services.transfer', $serviceA), [
+                'target_user_id' => $toCustomer->id,
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertSame($fromCustomer->id, $invoice->fresh()->user_id);
+        $this->assertSame($toCustomer->id, $serviceA->fresh()->user_id);
+        $this->assertSame($fromCustomer->id, $serviceB->fresh()->user_id);
     }
 
     public function test_transfer_preview_returns_json_summary(): void

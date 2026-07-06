@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Domain;
+use App\Models\Invoice;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
@@ -13,6 +14,7 @@ class ServiceTransferService
 {
     public function __construct(
         private ResellerServiceCatalogMatchService $catalogMatcher,
+        private InvoiceTransferService $invoiceTransfer,
     ) {}
 
     /**
@@ -49,7 +51,8 @@ class ServiceTransferService
      *     to_customer: string,
      *     domain_transferred: bool,
      *     catalog_warnings: list<string>,
-     *     da_warnings: list<string>
+     *     da_warnings: list<string>,
+     *     invoices_transferred: list<string>
      * }
      */
     public function transfer(Service $service, User $targetCustomer, bool $transferDomain = false): array
@@ -61,6 +64,7 @@ class ServiceTransferService
         $catalogWarnings = [];
         $daWarnings = [];
         $domainTransferred = false;
+        $invoicesTransferred = [];
 
         DB::transaction(function () use (
             $service,
@@ -71,6 +75,7 @@ class ServiceTransferService
             &$catalogWarnings,
             &$daWarnings,
             &$domainTransferred,
+            &$invoicesTransferred,
         ) {
             $service->update([
                 'user_id' => $targetCustomer->id,
@@ -88,6 +93,12 @@ class ServiceTransferService
                 $domainTransferred = $this->transferAttachedDomain($service, $fromCustomer, $targetCustomer);
             }
 
+            $invoicesTransferred = $this->invoiceTransfer->transferInvoicesForService(
+                $service,
+                $fromCustomer,
+                $targetCustomer,
+            );
+
             $this->appendTransferNote($service, $fromCustomer, $targetCustomer, $domainTransferred);
         });
 
@@ -103,6 +114,7 @@ class ServiceTransferService
                 'domain_transferred' => $domainTransferred,
                 'catalog_warnings' => $catalogWarnings,
                 'da_warnings' => $daWarnings,
+                'invoices_transferred' => $invoicesTransferred,
             ],
         );
 
@@ -112,6 +124,7 @@ class ServiceTransferService
             'domain_transferred' => $domainTransferred,
             'catalog_warnings' => $catalogWarnings,
             'da_warnings' => $daWarnings,
+            'invoices_transferred' => $invoicesTransferred,
         ];
     }
 
@@ -152,8 +165,13 @@ class ServiceTransferService
             }
         }
 
-        if ($service->invoice_id) {
-            $warnings[] = 'Historical invoices stay with the previous customer; only future billing uses the new owner.';
+        $invoices = $this->invoiceTransfer->invoicesForServiceTransfer($service, $fromCustomer);
+        if ($invoices !== []) {
+            $labels = array_map(
+                fn (Invoice $invoice) => filled($invoice->invoice_number) ? $invoice->invoice_number : '#'.$invoice->id,
+                $invoices,
+            );
+            $warnings[] = 'Related invoice(s) will move with this service: '.implode(', ', $labels).'.';
         }
 
         return $warnings;

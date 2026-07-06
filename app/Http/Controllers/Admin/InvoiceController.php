@@ -12,6 +12,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\InvoicePdfService;
+use App\Services\InvoiceTransferService;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -88,7 +89,14 @@ class InvoiceController extends Controller
     {
         $invoice->load('user', 'payments')->loadItemsForDisplay();
 
-        return view('admin.invoices.show', compact('invoice'));
+        $transferCustomers = User::query()
+            ->where('is_admin', false)
+            ->where('is_reseller', false)
+            ->whereKeyNot($invoice->user_id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email']);
+
+        return view('admin.invoices.show', compact('invoice', 'transferCustomers'));
     }
 
     public function edit(Invoice $invoice)
@@ -269,6 +277,30 @@ class InvoiceController extends Controller
 
             return redirect()->route('admin.invoices.show', $invoice)
                 ->with('error', 'Failed to record payment. '.$e->getMessage());
+        }
+    }
+
+    public function transfer(Request $request, Invoice $invoice, InvoiceTransferService $transferService)
+    {
+        $validated = $request->validate([
+            'target_user_id' => 'required|exists:users,id',
+        ]);
+
+        $targetCustomer = User::findOrFail($validated['target_user_id']);
+
+        try {
+            $result = $transferService->transferToCustomer($invoice, $targetCustomer);
+
+            $flash = "Invoice transferred from {$result['from_customer']} to {$result['to_customer']}.";
+            if ($result['services_transferred'] > 0) {
+                $flash .= ' '.$result['services_transferred'].' linked service(s) moved with the invoice.';
+            }
+
+            return redirect()
+                ->route('admin.invoices.show', $invoice)
+                ->with('success', $flash);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         }
     }
 }

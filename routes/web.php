@@ -183,6 +183,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::resource('admin/invoices', InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [InvoiceController::class, 'download'])->name('admin.invoices.download');
         Route::post('admin/invoices/{invoice}/payments', [InvoiceController::class, 'addPayment'])->name('admin.invoices.add-payment');
+        Route::post('admin/invoices/{invoice}/transfer', [InvoiceController::class, 'transfer'])->name('admin.invoices.transfer');
         Route::post('admin/invoices/{invoice}/mark-paid', [InvoiceController::class, 'markAsPaid'])->name('admin.invoices.mark-paid');
         Route::resource('admin/payments', App\Http\Controllers\Admin\PaymentController::class)->names('admin.payments');
         Route::resource('admin/credits', CreditController::class)->except(['edit', 'update'])->names('admin.credits');

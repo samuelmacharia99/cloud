@@ -301,6 +301,10 @@ class ServiceController extends Controller
                 $flash .= ' Attached domain moved with the service.';
             }
 
+            if (! empty($result['invoices_transferred'])) {
+                $flash .= ' Invoices moved: '.implode(', ', $result['invoices_transferred']).'.';
+            }
+
             $warnings = array_merge($result['catalog_warnings'], $result['da_warnings']);
             if ($warnings !== []) {
                 $flash .= ' Warnings: '.implode(' ', $warnings);
