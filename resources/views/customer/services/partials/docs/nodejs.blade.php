@@ -24,7 +24,8 @@
             <h4 class="font-semibold text-slate-900 dark:text-white">Next.js / Nuxt / SSR frameworks</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>These apps need a <strong>production build</strong> before <code class="font-mono text-xs">next start</code> or <code class="font-mono text-xs">nuxt start</code> can run.</li>
-                <li>Talksasa runs <code class="font-mono text-xs">npm install --include=dev</code> → <code class="font-mono text-xs">npm run build</code> automatically after each Git pull (devDependencies like Tailwind are required at build time).</li>
+                <li>Talksasa runs a prepare step before <code class="font-mono text-xs">npm run build</code> that patches TypeScript settings and relaxes Next.js type/lint blocking on hosted builds.</li>
+                <li>For Next.js/Nuxt apps, Talksasa runs <code class="font-mono text-xs">npm install --include=dev</code> → prepare → <code class="font-mono text-xs">npm run build</code> after each Git pull.</li>
                 <li>The build output (<code class="font-mono text-xs">.next</code> for Next.js) is <strong>not</strong> committed to Git — Talksasa rebuilds it on deploy.</li>
                 <li>Do <strong>not</strong> use <code class="font-mono text-xs">npm run dev</code> in production; keep <code class="font-mono text-xs">"start": "next start"</code>.</li>
             </ul>

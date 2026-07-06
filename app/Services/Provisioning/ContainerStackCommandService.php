@@ -190,6 +190,19 @@ class ContainerStackCommandService
                 $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $timeout, $buildEnv);
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+
+                if ($this->runtimeService->nodeBuildPrepareEnabled()) {
+                    app(ContainerNodeBuildPrepService::class)->syncPrepareScriptToHost($ssh, $hostAppPath);
+                    $this->runUnlimitedMemoryNodeCommand(
+                        $ssh,
+                        $dockerImage,
+                        $hostAppPath,
+                        $this->runtimeService->nodeBuildPrepareCommand(),
+                        '/app',
+                        120
+                    );
+                }
+
                 $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
                     $dockerImage,

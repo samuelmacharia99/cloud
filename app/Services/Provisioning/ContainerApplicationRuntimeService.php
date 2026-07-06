@@ -612,6 +612,33 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand('run build', 'production', $extra);
     }
 
+    public function nodeBuildPrepareCommand(): string
+    {
+        return 'node .talksasa/prepare-build.cjs';
+    }
+
+    public function nodeBuildPreparePrefix(): string
+    {
+        if (! $this->nodeBuildPrepareEnabled()) {
+            return '';
+        }
+
+        return 'node .talksasa/prepare-build.cjs && ';
+    }
+
+    public function nodeBuildPrepareEnabled(): bool
+    {
+        if (! function_exists('config')) {
+            return true;
+        }
+
+        try {
+            return (bool) config('containers.node_build.prepare_before_build', true);
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
     public function npmPruneShellCommand(): string
     {
         return $this->nodeCleanNpmCommand('prune --omit=dev', 'production');
@@ -676,6 +703,9 @@ class ContainerApplicationRuntimeService
         $installForBuild = $this->npmInstallShellCommand();
         $buildCommand = $this->npmBuildShellCommand();
         $pruneCommand = $this->npmPruneShellCommand();
+        $prepareStep = $this->nodeBuildPrepareEnabled()
+            ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '
+            : '';
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
             return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
@@ -683,7 +713,7 @@ class ContainerApplicationRuntimeService
 
         $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
 
-        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string
