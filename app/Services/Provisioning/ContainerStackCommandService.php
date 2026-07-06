@@ -166,32 +166,16 @@ class ContainerStackCommandService
         try {
             if ($requiresBuild) {
                 $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
-                $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
-
-                $this->runOneOffInContainer(
+                $this->prepareNodePostPullWorkspace(
                     $ssh,
                     $containerPath,
                     $containerName,
-                    'rm -rf node_modules .next',
-                    '/app',
-                    120,
-                    $buildEnv,
-                    true
-                );
-                $this->runOneOffInContainer(
-                    $ssh,
-                    $containerPath,
-                    $containerName,
-                    $this->runtimeService->npmCacheCleanShellCommand(),
-                    '/app',
-                    120,
-                    $buildEnv,
-                    true
+                    $hostAppPath,
+                    $packageJson,
+                    $buildEnv
                 );
 
-                $installCommand = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
-                    ? $this->runtimeService->npmCiShellCommand()
-                    : $this->runtimeService->npmInstallShellCommand();
+                $installCommand = $this->resolveNodeInstallCommand($ssh, $hostAppPath);
 
                 $this->runOneOffInContainer(
                     $ssh,
@@ -229,7 +213,19 @@ class ContainerStackCommandService
                 return ['Node dependencies updated and production build completed.'];
             }
 
-            $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'npm install --omit=dev', '/app', $timeout);
+            $this->prepareNodePostPullWorkspace(
+                $ssh,
+                $containerPath,
+                $containerName,
+                $hostAppPath,
+                $packageJson,
+            );
+
+            $installCommand = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
+                ? $this->runtimeService->nodeCleanNpmCommand('ci --omit=dev --no-audit --no-fund', 'production')
+                : 'npm install --omit=dev';
+
+            $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installCommand, '/app', $timeout);
             $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
             return ['Node dependencies updated.'];
@@ -351,22 +347,21 @@ class ContainerStackCommandService
             return;
         }
 
-        $this->runOneOffInContainer($ssh, $containerPath, $containerName, 'rm -rf node_modules', '/app', 120, $buildEnv, true);
-        $this->runOneOffInContainer(
+        $this->prepareNodePostPullWorkspace(
             $ssh,
             $containerPath,
             $containerName,
-            $this->runtimeService->npmCacheCleanShellCommand(),
-            '/app',
-            120,
+            $hostAppPath,
+            $packageJson,
             $buildEnv,
-            true
+            cleanBuildArtifacts: false,
         );
+
         $this->runOneOffInContainer(
             $ssh,
             $containerPath,
             $containerName,
-            $this->runtimeService->npmInstallShellCommand(true),
+            $this->resolveNodeInstallCommand($ssh, $hostAppPath),
             '/app',
             $timeout,
             $buildEnv,
@@ -402,16 +397,82 @@ class ContainerStackCommandService
         string $containerName
     ): void {
         $pathArg = escapeshellarg($containerPath);
-        $serviceArg = escapeshellarg($containerName);
 
         try {
-            $ssh->exec("cd {$pathArg} && docker compose stop {$serviceArg}", 120);
+            $ssh->exec("cd {$pathArg} && docker compose stop", 180);
         } catch (\Throwable $e) {
             \Log::warning('Failed to stop application container before Node post-pull maintenance', [
                 'container_name' => $containerName,
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @param  array<string, string>  $environment
+     */
+    private function prepareNodePostPullWorkspace(
+        SSHService $ssh,
+        string $containerPath,
+        string $containerName,
+        string $hostAppPath,
+        ?string $packageJson,
+        array $environment = [],
+        bool $cleanBuildArtifacts = true,
+    ): void {
+        $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
+
+        $extraDirs = $cleanBuildArtifacts
+            ? $this->runtimeService->nodeBuildArtifactDirs($packageJson)
+            : [];
+
+        $this->removeHostNodeInstallArtifacts($ssh, $hostAppPath, $extraDirs);
+
+        $this->runOneOffInContainer(
+            $ssh,
+            $containerPath,
+            $containerName,
+            $this->runtimeService->npmCacheCleanShellCommand(),
+            '/app',
+            120,
+            $environment,
+            true
+        );
+    }
+
+    /**
+     * @param  list<string>  $extraDirs
+     */
+    private function removeHostNodeInstallArtifacts(SSHService $ssh, string $hostAppPath, array $extraDirs = []): void
+    {
+        $base = rtrim($hostAppPath, '/');
+        $allowedBase = rtrim(ContainerDeploymentService::CONTAINER_BASE_PATH, '/');
+
+        if ($base === '' || ! str_starts_with($base, $allowedBase.'/')) {
+            throw new \InvalidArgumentException('Invalid host app path for Node cleanup.');
+        }
+
+        $targets = ['node_modules'];
+        foreach ($extraDirs as $dir) {
+            $dir = trim((string) $dir, '/');
+            if ($dir !== '' && preg_match('/^[a-zA-Z0-9._-]+$/', $dir)) {
+                $targets[] = $dir;
+            }
+        }
+
+        $rmPaths = implode(' ', array_map(
+            static fn (string $target): string => escapeshellarg($base.'/'.$target),
+            array_values(array_unique($targets))
+        ));
+
+        $ssh->exec('sh -lc '.escapeshellarg("rm -rf {$rmPaths}"), 300);
+    }
+
+    private function resolveNodeInstallCommand(SSHService $ssh, string $hostAppPath): string
+    {
+        return $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
+            ? $this->runtimeService->npmCiShellCommand()
+            : $this->runtimeService->npmInstallShellCommand();
     }
 
     private function resolveNodeDockerImage(ContainerDeployment $deployment): string

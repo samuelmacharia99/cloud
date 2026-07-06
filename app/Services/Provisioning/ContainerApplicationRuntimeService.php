@@ -558,17 +558,17 @@ class ContainerApplicationRuntimeService
     public function npmInstallDevPackagesShellCommand(?string $packageJson): string
     {
         if ($packageJson === null || trim($packageJson) === '') {
-            return $this->npmInstallShellCommand(true);
+            return $this->npmInstallShellCommand();
         }
 
         $data = json_decode($packageJson, true);
         if (! is_array($data)) {
-            return $this->npmInstallShellCommand(true);
+            return $this->npmInstallShellCommand();
         }
 
         $devDependencies = $data['devDependencies'] ?? [];
         if (! is_array($devDependencies) || $devDependencies === []) {
-            return $this->npmInstallShellCommand(true);
+            return $this->npmInstallShellCommand();
         }
 
         $names = array_values(array_filter(
@@ -577,12 +577,12 @@ class ContainerApplicationRuntimeService
         ));
 
         if ($names === []) {
-            return $this->npmInstallShellCommand(true);
+            return $this->npmInstallShellCommand();
         }
 
         $list = implode(' ', $names);
         if (strlen($list) > 300) {
-            return $this->npmInstallShellCommand(true);
+            return $this->npmInstallShellCommand();
         }
 
         return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
@@ -626,6 +626,42 @@ class ContainerApplicationRuntimeService
             'NPM_CONFIG_PRODUCTION' => 'false',
             'npm_config_production' => 'false',
         ];
+    }
+
+    /**
+     * Build output directories to remove before a clean Node install.
+     *
+     * @return list<string>
+     */
+    public function nodeBuildArtifactDirs(?string $packageJson): array
+    {
+        $dirs = ['.next'];
+
+        if ($packageJson === null || trim($packageJson) === '') {
+            return $dirs;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return $dirs;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : [],
+        );
+
+        if (isset($dependencies['nuxt'])) {
+            $dirs[] = '.nuxt';
+            $dirs[] = '.output';
+        }
+
+        $outputDir = $this->packageJsonBuildOutputDir($packageJson);
+        if ($outputDir !== 'dist' && preg_match('/^[a-zA-Z0-9._-]+$/', $outputDir)) {
+            $dirs[] = $outputDir;
+        }
+
+        return array_values(array_unique($dirs));
     }
 
     /** @deprecated use nodeNpmProductionOffPrefix() */

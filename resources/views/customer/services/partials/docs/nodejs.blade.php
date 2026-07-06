@@ -15,7 +15,8 @@
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>Include a <code class="font-mono text-xs">start</code> script in <code class="font-mono text-xs">package.json</code>, e.g. <code class="font-mono text-xs">"start": "node server.js"</code>.</li>
                 <li>Listen on <code class="font-mono text-xs">process.env.PORT</code> (Talksasa sets <code class="font-mono text-xs">PORT</code> automatically).</li>
-                <li>After each Git pull, dependencies are installed with <code class="font-mono text-xs">npm install --omit=dev</code>.</li>
+                <li>After each Git pull, Talksasa performs a clean dependency install (removes stale <code class="font-mono text-xs">node_modules</code> first).</li>
+                <li>Plain apps use <code class="font-mono text-xs">npm ci --omit=dev</code> when a lockfile is present.</li>
             </ul>
         </div>
 

@@ -177,6 +177,17 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_lists_node_build_artifact_dirs_for_next_and_nuxt(): void
+    {
+        $next = json_encode(['dependencies' => ['next' => '14.0.0']], JSON_THROW_ON_ERROR);
+        $nuxt = json_encode(['dependencies' => ['nuxt' => '3.0.0']], JSON_THROW_ON_ERROR);
+
+        $this->assertSame(['.next'], $this->service->nodeBuildArtifactDirs($next));
+        $this->assertContains('.nuxt', $this->service->nodeBuildArtifactDirs($nuxt));
+        $this->assertContains('.output', $this->service->nodeBuildArtifactDirs($nuxt));
+    }
+
+    #[Test]
     public function it_rebuilds_next_js_when_artifact_directory_exists_without_build_id(): void
     {
         $packageJson = json_encode([
