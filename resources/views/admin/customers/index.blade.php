@@ -28,23 +28,6 @@
         </a>
     </div>
 
-    @if (! empty($platformRegistrationUrl))
-        <div class="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/40 rounded-2xl p-5">
-            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                <div>
-                    <h2 class="text-sm font-semibold text-blue-900 dark:text-blue-100">Customer self-registration</h2>
-                    <p class="text-xs text-blue-800 dark:text-blue-200 mt-1 max-w-2xl">
-                        Share this link so customers can create their own platform account. They must provide a mobile number; verification codes are sent by email and SMS.
-                    </p>
-                </div>
-                <div class="flex flex-col sm:flex-row gap-2 w-full lg:max-w-xl">
-                    <input type="text" readonly value="{{ $platformRegistrationUrl }}" class="flex-1 px-3 py-2 text-xs font-mono border border-blue-200 dark:border-blue-700 bg-white dark:bg-slate-900 rounded-lg text-slate-700 dark:text-slate-300">
-                    <button type="button" onclick="navigator.clipboard.writeText(@js($platformRegistrationUrl)); this.textContent='Copied!'; setTimeout(() => this.textContent='Copy link', 2000)" class="shrink-0 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">Copy link</button>
-                </div>
-            </div>
-        </div>
-    @endif
-
     @php
         $directoryBaseQuery = request()->except(['directory', 'page', 'refresh']);
         $allCustomersUrl = route('admin.customers.index', $directoryBaseQuery);

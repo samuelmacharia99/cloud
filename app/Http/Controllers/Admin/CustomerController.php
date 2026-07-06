@@ -22,7 +22,6 @@ use App\Services\CreditService;
 use App\Services\CustomerResellerTransferService;
 use App\Services\InvoiceGenerationScheduleService;
 use App\Services\Provisioning\DirectAdminSetupService;
-use App\Services\RegistrationContextService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerHostedAccountDirectoryService;
 use App\Services\TaxService;
@@ -68,7 +67,6 @@ class CustomerController extends Controller
             'resellers' => $resellers,
             'catalogListingsByReseller' => $catalogListingsByReseller,
             'managedCustomersByReseller' => $managedCustomersByReseller,
-            'platformRegistrationUrl' => app(RegistrationContextService::class)->platformRegistrationUrl(),
         ]);
     }
 
