@@ -240,6 +240,24 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_resolves_next_integrity_marker_for_installed_frameworks(): void
+    {
+        $next = json_encode([
+            'dependencies' => ['next' => '14.2.35'],
+        ], JSON_THROW_ON_ERROR);
+        $nuxt = json_encode([
+            'dependencies' => ['nuxt' => '3.0.0'],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertSame(
+            'node_modules/next/dist/compiled/browserslist/index.js',
+            $this->service->nodeIntegrityMarkerRelativePath($next)
+        );
+        $this->assertSame('node_modules/nuxt/package.json', $this->service->nodeIntegrityMarkerRelativePath($nuxt));
+        $this->assertNull($this->service->nodeIntegrityMarkerRelativePath('{"dependencies":{"express":"^4"}}'));
+    }
+
+    #[Test]
     public function it_includes_production_build_bootstrap_for_next_start(): void
     {
         $runtime = $this->service->detectNodeFromContents(

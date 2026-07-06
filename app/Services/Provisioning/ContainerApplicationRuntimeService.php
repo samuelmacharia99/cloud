@@ -656,6 +656,36 @@ class ContainerApplicationRuntimeService
     }
 
     /**
+     * Relative path under /app used to verify a framework install is complete.
+     */
+    public function nodeIntegrityMarkerRelativePath(?string $packageJson): ?string
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return null;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : [],
+        );
+
+        if (isset($dependencies['next'])) {
+            return 'node_modules/next/dist/compiled/browserslist/index.js';
+        }
+
+        if (isset($dependencies['nuxt'])) {
+            return 'node_modules/nuxt/package.json';
+        }
+
+        return null;
+    }
+
+    /**
      * Build output directories to remove before a clean Node install.
      *
      * @return list<string>

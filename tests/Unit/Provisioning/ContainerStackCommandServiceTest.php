@@ -106,6 +106,28 @@ class ContainerStackCommandServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_runs_production_build_installs_with_docker_run(): void
+    {
+        $service = new ContainerStackCommandService;
+        $ssh = $this->createMock(SSHService::class);
+        $ssh->expects($this->once())
+            ->method('exec')
+            ->with($this->callback(fn (string $command): bool => str_contains($command, 'docker run --rm -v ')
+                && str_contains($command, 'node:20-alpine')
+                && str_contains($command, '/usr/local/bin/npm ci --include=dev')))
+            ->willReturn('');
+
+        $service->runUnlimitedMemoryNodeCommand(
+            $ssh,
+            'node:20-alpine',
+            '/var/lib/talksasa/containers/user-1-service-1/app',
+            'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_ENV=development /usr/local/bin/npm ci --include=dev --no-audit --no-fund',
+            '/app',
+            600
+        );
+    }
+
+    #[Test]
     public function it_runs_post_pull_commands_in_one_off_containers(): void
     {
         $service = new ContainerStackCommandService;

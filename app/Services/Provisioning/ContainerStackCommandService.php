@@ -172,23 +172,33 @@ class ContainerStackCommandService
                     $containerName,
                     $hostAppPath,
                     $packageJson,
-                    $buildEnv
+                    $buildEnv,
+                    cleanBuildArtifacts: true,
+                    nodeDockerImage: $dockerImage,
                 );
 
                 $installCommand = $this->resolveNodeInstallCommand($ssh, $hostAppPath);
 
-                $this->runOneOffInContainer(
+                $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
-                    $containerPath,
-                    $containerName,
+                    $dockerImage,
+                    $hostAppPath,
                     $installCommand,
                     '/app',
-                    $timeout,
-                    $buildEnv,
-                    true
+                    $timeout
                 );
-                $this->ensureNodeDevDependenciesInstalled($ssh, $containerPath, $containerName, $hostAppPath, $packageJson, $timeout, $buildEnv);
-                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
+                $this->ensureNodeDevDependenciesInstalled(
+                    $ssh,
+                    $dockerImage,
+                    $containerPath,
+                    $containerName,
+                    $hostAppPath,
+                    $packageJson,
+                    $timeout,
+                    $buildEnv
+                );
+                $this->ensureNodeModulesIntegrity($ssh, $dockerImage, $hostAppPath, $packageJson, $timeout);
+                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
                 $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
 
                 if ($this->runtimeService->nodeBuildPrepareEnabled()) {
@@ -211,17 +221,15 @@ class ContainerStackCommandService
                     '/app',
                     $buildTimeout
                 );
-                $this->runOneOffInContainer(
+                $this->runUnlimitedMemoryNodeCommand(
                     $ssh,
-                    $containerPath,
-                    $containerName,
+                    $dockerImage,
+                    $hostAppPath,
                     $this->runtimeService->npmPruneShellCommand(),
                     '/app',
-                    $timeout,
-                    $buildEnv,
-                    true
+                    $timeout
                 );
-                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
+                $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
 
                 return ['Node dependencies updated and production build completed.'];
             }
@@ -310,13 +318,23 @@ class ContainerStackCommandService
     private function restoreNodeModuleBinPermissions(
         SSHService $ssh,
         string $containerPath,
-        string $containerName
+        string $containerName,
+        ?string $nodeDockerImage = null,
+        ?string $hostAppPath = null,
     ): void {
+        $command = 'find node_modules/.bin -type f -exec chmod u+x {} +';
+
+        if ($nodeDockerImage !== null && $hostAppPath !== null) {
+            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', 60);
+
+            return;
+        }
+
         $this->runOneOffInContainer(
             $ssh,
             $containerPath,
             $containerName,
-            'find node_modules/.bin -type f -exec chmod u+x {} +',
+            $command,
             '/app',
             60
         );
@@ -327,6 +345,7 @@ class ContainerStackCommandService
      */
     private function ensureNodeDevDependenciesInstalled(
         SSHService $ssh,
+        ?string $nodeDockerImage,
         string $containerPath,
         string $containerName,
         string $hostAppPath,
@@ -356,7 +375,11 @@ class ContainerStackCommandService
             return;
         }
 
-        if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
+        $integrityMarker = $this->runtimeService->nodeIntegrityMarkerRelativePath($packageJson);
+        $integrityOk = $integrityMarker === null
+            || $this->hostFileExists($ssh, $hostAppPath.'/'.$integrityMarker);
+
+        if ($integrityOk && $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
             return;
         }
 
@@ -368,38 +391,85 @@ class ContainerStackCommandService
             $packageJson,
             $buildEnv,
             cleanBuildArtifacts: false,
+            nodeDockerImage: $nodeDockerImage,
         );
 
-        $this->runOneOffInContainer(
-            $ssh,
-            $containerPath,
-            $containerName,
-            $this->resolveNodeInstallCommand($ssh, $hostAppPath),
-            '/app',
-            $timeout,
-            $buildEnv,
-            true
-        );
+        $installCommand = $this->resolveNodeInstallCommand($ssh, $hostAppPath);
+        if ($nodeDockerImage !== null) {
+            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $installCommand, '/app', $timeout);
+        } else {
+            $this->runOneOffInContainer(
+                $ssh,
+                $containerPath,
+                $containerName,
+                $installCommand,
+                '/app',
+                $timeout,
+                $buildEnv,
+                true
+            );
+        }
 
         if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
             return;
         }
 
-        $this->runOneOffInContainer(
-            $ssh,
-            $containerPath,
-            $containerName,
-            $this->runtimeService->npmInstallDevPackagesShellCommand($packageJson),
-            '/app',
-            $timeout,
-            $buildEnv,
-            true
-        );
+        $devInstallCommand = $this->runtimeService->npmInstallDevPackagesShellCommand($packageJson);
+        if ($nodeDockerImage !== null) {
+            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $devInstallCommand, '/app', $timeout);
+        } else {
+            $this->runOneOffInContainer(
+                $ssh,
+                $containerPath,
+                $containerName,
+                $devInstallCommand,
+                '/app',
+                $timeout,
+                $buildEnv,
+                true
+            );
+        }
 
         if (! $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
             throw new \RuntimeException(
                 'Dev dependencies such as '.$probePackage.' were not installed after npm install retries. '
                 .'Stop the application container, remove node_modules, and run npm install with dev dependencies included.'
+            );
+        }
+    }
+
+    private function ensureNodeModulesIntegrity(
+        SSHService $ssh,
+        string $nodeDockerImage,
+        string $hostAppPath,
+        ?string $packageJson,
+        int $timeout
+    ): void {
+        $marker = $this->runtimeService->nodeIntegrityMarkerRelativePath($packageJson);
+        if ($marker === null || $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
+            return;
+        }
+
+        \Log::warning('Node dependency install is incomplete after npm ci/install; retrying with a clean npm install', [
+            'marker' => $marker,
+            'host_app_path' => $hostAppPath,
+        ]);
+
+        $this->removeHostNodeInstallArtifacts($ssh, $hostAppPath, []);
+
+        $this->runUnlimitedMemoryNodeCommand(
+            $ssh,
+            $nodeDockerImage,
+            $hostAppPath,
+            $this->runtimeService->npmInstallShellCommand(),
+            '/app',
+            $timeout
+        );
+
+        if (! $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
+            throw new \RuntimeException(
+                'Node dependency install is incomplete (missing '.$marker.'). '
+                .'Refresh package-lock.json locally with npm install, commit it, and pull again.'
             );
         }
     }
@@ -432,6 +502,7 @@ class ContainerStackCommandService
         ?string $packageJson,
         array $environment = [],
         bool $cleanBuildArtifacts = true,
+        ?string $nodeDockerImage = null,
     ): void {
         $this->stopApplicationServiceForMaintenance($ssh, $containerPath, $containerName);
 
@@ -441,11 +512,18 @@ class ContainerStackCommandService
 
         $this->removeHostNodeInstallArtifacts($ssh, $hostAppPath, $extraDirs);
 
+        $cacheCleanCommand = $this->runtimeService->npmCacheCleanShellCommand();
+        if ($nodeDockerImage !== null) {
+            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $cacheCleanCommand, '/app', 120);
+
+            return;
+        }
+
         $this->runOneOffInContainer(
             $ssh,
             $containerPath,
             $containerName,
-            $this->runtimeService->npmCacheCleanShellCommand(),
+            $cacheCleanCommand,
             '/app',
             120,
             $environment,
