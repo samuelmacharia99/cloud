@@ -12,6 +12,7 @@ use App\Models\ResellerDomainPricing;
 use App\Models\ResellerPackage;
 use App\Models\User;
 use App\Services\DomainRenewalService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerInvoicePaymentService;
 use App\Support\ResellerCartContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -199,6 +200,10 @@ class DomainRenewalCartTest extends TestCase
 
     public function test_paid_renewal_invoice_pushes_order_to_admin(): void
     {
+        $this->mock(RegistrarFulfillmentService::class, function ($mock) {
+            $mock->shouldReceive('fulfillRenewal')->once();
+        });
+
         $reseller = $this->createResellerWithPackage();
 
         $extension = DomainExtension::create([

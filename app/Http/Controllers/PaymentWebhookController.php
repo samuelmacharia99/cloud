@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DomainRenewalOrder;
 use App\Models\Payment;
 use App\Models\Setting;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\DomainPushService;
-use App\Services\DomainRenewalService;
+use App\Services\DomainRenewalPushService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
+use App\Services\PaymentGateway\PaymentGatewayInterface;
 use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerPackageSubscriptionService;
 use Illuminate\Http\Request;
@@ -72,7 +72,7 @@ class PaymentWebhookController extends Controller
     }
 
     /**
-     * @param  \App\Services\PaymentGateway\PaymentGatewayInterface  $gateway
+     * @param  PaymentGatewayInterface  $gateway
      */
     private function handleC2bCallback($gateway, array $data)
     {
@@ -205,16 +205,7 @@ class PaymentWebhookController extends Controller
     private function processResellerDomainRenewals($invoice): void
     {
         try {
-            $renewalOrders = DomainRenewalOrder::query()
-                ->where('invoice_id', $invoice->id)
-                ->where('status', 'invoiced')
-                ->get();
-
-            $renewalService = app(DomainRenewalService::class);
-
-            foreach ($renewalOrders as $order) {
-                $renewalService->pushRenewalToAdmin($order);
-            }
+            app(DomainRenewalPushService::class)->handlePaidInvoice($invoice->fresh(['items', 'user']));
         } catch (\Exception $e) {
             Log::error('Reseller domain renewal push failed from webhook', [
                 'invoice_id' => $invoice->id,

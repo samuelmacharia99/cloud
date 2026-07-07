@@ -3,13 +3,12 @@
 namespace App\Services\PaymentGateway;
 
 use App\Enums\PaymentStatus;
-use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Services\Billing\InvoiceSettlementService;
 use App\Services\CustomerCreditTopupService;
 use App\Services\DomainPushService;
-use App\Services\DomainRenewalService;
+use App\Services\DomainRenewalPushService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\ResellerInvoicePaymentService;
@@ -218,16 +217,7 @@ class MpesaReconciliationService
     private function processResellerDomainRenewals(Invoice $invoice): void
     {
         try {
-            $renewalOrders = DomainRenewalOrder::query()
-                ->where('invoice_id', $invoice->id)
-                ->where('status', 'invoiced')
-                ->get();
-
-            $renewalService = app(DomainRenewalService::class);
-
-            foreach ($renewalOrders as $order) {
-                $renewalService->pushRenewalToAdmin($order);
-            }
+            app(DomainRenewalPushService::class)->handlePaidInvoice($invoice->fresh(['items', 'user']));
         } catch (\Throwable $e) {
             Log::error('M-Pesa reconciliation: domain renewal push failed', [
                 'invoice_id' => $invoice->id,

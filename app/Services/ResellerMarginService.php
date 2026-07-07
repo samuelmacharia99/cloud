@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Payment;
@@ -186,6 +187,17 @@ class ResellerMarginService
                     'domain',
                     $retail,
                     (float) $order->wholesale_amount,
+                ];
+            }
+        }
+
+        if ($item->product_type === 'Domain' && isset($item->custom_options['renewal_order_id'])) {
+            $order = DomainRenewalOrder::find($item->custom_options['renewal_order_id']);
+            if ($order && $order->isResellerManaged()) {
+                return [
+                    'domain_renewal',
+                    $retail,
+                    $order->effectiveWholesaleAmount(),
                 ];
             }
         }

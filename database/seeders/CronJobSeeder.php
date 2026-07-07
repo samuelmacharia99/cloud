@@ -235,6 +235,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Process Queued Domain Renewals',
+                'description' => 'Push queued domain renewals when resellers have sufficient wallet funds after customer payment.',
+                'command' => 'cron:process-queued-domain-renewals',
+                'schedule' => '*/30 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Expire Queued Domain Orders',
                 'description' => 'Expire queued domain orders that have passed their 10-day expiration window.',
                 'command' => 'cron:expire-queued-domain-orders',

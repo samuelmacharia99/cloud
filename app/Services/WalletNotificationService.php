@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\NotificationEvent;
 use App\Mail\ResellerDomainOrderMail;
+use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\ResellerDomainOrder;
 use App\Models\ResellerWallet;
@@ -171,6 +172,29 @@ class WalletNotificationService
     public function sendDomainQueuedNotification(ResellerDomainOrder $order): void
     {
         $this->notifyResellerDomainOrder($order, NotificationEvent::ResellerDomainQueued, 'queued');
+    }
+
+    public function sendDomainRenewalQueuedNotification(DomainRenewalOrder $order): void
+    {
+        $order->loadMissing('reseller', 'domain', 'customer');
+        $reseller = $order->reseller;
+
+        if (! $reseller) {
+            return;
+        }
+
+        $domain = $order->domain;
+        $name = $domain ? $order->domain->name.$order->domain->extension : 'domain';
+        $amount = number_format($order->effectiveWholesaleAmount(), 2);
+
+        \Log::info('Domain renewal awaiting wholesale settlement', [
+            'renewal_order_id' => $order->id,
+            'reseller_id' => $reseller->id,
+            'domain' => $name,
+            'wholesale_amount' => $amount,
+            'customer_invoice_id' => $order->customer_invoice_id,
+            'reseller_invoice_id' => $order->reseller_invoice_id,
+        ]);
     }
 
     public function sendDomainPushedNotification(ResellerDomainOrder $order): void

@@ -7,6 +7,7 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
+use App\Models\Setting;
 use App\Models\User;
 use App\Services\Registrar\RegistrarFulfillmentService;
 use Illuminate\Support\Carbon;
@@ -40,6 +41,7 @@ class DomainRenewalService
             'user_id' => $reseller->id,
             'years' => $years,
             'amount' => $amount,
+            'wholesale_amount' => $amount,
             'status' => 'pending',
             'expires_at' => now()->addDays(10),
         ]);
@@ -47,11 +49,109 @@ class DomainRenewalService
 
     public function linkRenewalToInvoice(DomainRenewalOrder $renewalOrder, Invoice $invoice): void
     {
+        $this->linkCustomerInvoice($renewalOrder, $invoice);
+    }
+
+    public function linkCustomerInvoice(DomainRenewalOrder $renewalOrder, Invoice $invoice): void
+    {
         $renewalOrder->update([
-            'invoice_id' => $invoice->id,
+            'customer_invoice_id' => $invoice->id,
+            'invoice_id' => $renewalOrder->isResellerManaged() ? $renewalOrder->invoice_id : $invoice->id,
             'status' => 'invoiced',
-            'invoiced_at' => now(),
+            'invoiced_at' => $renewalOrder->invoiced_at ?? now(),
         ]);
+    }
+
+    public function linkResellerInvoice(DomainRenewalOrder $renewalOrder, Invoice $invoice): void
+    {
+        $renewalOrder->update([
+            'reseller_invoice_id' => $invoice->id,
+            'status' => 'invoiced',
+            'invoiced_at' => $renewalOrder->invoiced_at ?? now(),
+        ]);
+    }
+
+    public function initiateManagedCustomerRenewal(
+        Domain $domain,
+        User $reseller,
+        User $customer,
+        int $years,
+        float $wholesaleAmount,
+        float $retailAmount,
+    ): DomainRenewalOrder {
+        return DomainRenewalOrder::create([
+            'domain_id' => $domain->id,
+            'user_id' => $customer->id,
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+            'years' => $years,
+            'amount' => $retailAmount,
+            'wholesale_amount' => round($wholesaleAmount, 2),
+            'retail_amount' => round($retailAmount, 2),
+            'status' => 'pending',
+            'expires_at' => now()->addDays(10),
+        ]);
+    }
+
+    /**
+     * @param  array<int, DomainRenewalOrder>  $renewalOrders
+     */
+    public function createResellerWholesaleInvoice(User $reseller, array $renewalOrders): Invoice
+    {
+        if ($renewalOrders === []) {
+            throw new \InvalidArgumentException('No renewal orders supplied for wholesale invoice.');
+        }
+
+        return DB::transaction(function () use ($reseller, $renewalOrders) {
+            $subtotal = 0.0;
+            $items = [];
+
+            foreach ($renewalOrders as $renewalOrder) {
+                $renewalOrder->loadMissing('domain');
+                $domain = $renewalOrder->domain;
+                $wholesale = $renewalOrder->effectiveWholesaleAmount();
+                $subtotal += $wholesale;
+
+                $items[] = [
+                    'renewal_order' => $renewalOrder,
+                    'description' => 'Wholesale renewal: '.$domain->name.$domain->extension.' ('.$renewalOrder->years.' year'.($renewalOrder->years > 1 ? 's' : '').')',
+                    'amount' => $wholesale,
+                ];
+            }
+
+            $tax = TaxService::calculateResellerWholesale($subtotal);
+
+            $invoice = Invoice::create([
+                'user_id' => $reseller->id,
+                'invoice_number' => 'INV-'.strtoupper(uniqid()),
+                'status' => 'unpaid',
+                'due_date' => now()->addDays((int) (Setting::getValue('invoice_due_days', 7))),
+                'subtotal' => $tax['subtotal'],
+                'tax' => $tax['tax'],
+                'total' => $tax['total'],
+                'notes' => 'Wholesale domain renewal invoice',
+            ]);
+
+            foreach ($items as $item) {
+                InvoiceItem::create([
+                    'invoice_id' => $invoice->id,
+                    'domain_id' => $item['renewal_order']->domain_id,
+                    'product_type' => 'Domain',
+                    'description' => $item['description'],
+                    'quantity' => 1,
+                    'unit_price' => $item['amount'],
+                    'amount' => $item['amount'],
+                    'custom_options' => [
+                        'type' => 'domain_renewal_wholesale',
+                        'renewal_order_id' => $item['renewal_order']->id,
+                    ],
+                ]);
+
+                $this->linkResellerInvoice($item['renewal_order'], $invoice);
+            }
+
+            return $invoice->fresh(['items']);
+        });
     }
 
     public function initiateRenewal(Domain $domain, User $customer, int $years = 1): DomainRenewalOrder
@@ -122,6 +222,10 @@ class DomainRenewalService
             return;
         }
 
+        if ($renewalOrder->isResellerManaged() && ! $renewalOrder->canPushToAdmin()) {
+            return;
+        }
+
         $adminOrder = null;
         $adminInvoice = null;
         $shouldNotify = false;
@@ -145,12 +249,15 @@ class DomainRenewalService
                 return;
             }
 
-            $locked->loadMissing('invoice');
+            $locked->loadMissing('invoice', 'customerInvoice', 'domain');
             $domain = $locked->domain;
-            $customer = $locked->user;
-            $customerInvoicePaid = $locked->invoice?->isPaid() ?? false;
+            $customer = $locked->customer ?? $locked->user;
+            $customerInvoicePaid = $locked->hasPaidCustomerInvoice();
+            $adminAmount = $locked->isResellerManaged() || $locked->isSelfRenewal()
+                ? $locked->effectiveWholesaleAmount()
+                : (float) $locked->amount;
 
-            $tax = TaxService::calculateForUser((float) $locked->amount, $customer);
+            $tax = TaxService::calculateForUser($adminAmount, $customer);
 
             $adminOrder = Order::create([
                 'user_id' => $customer->id,
@@ -179,8 +286,12 @@ class DomainRenewalService
                 'domain_id' => $domain->id,
                 'description' => "Renew {$domain->name}{$domain->extension} for {$locked->years} year".($locked->years > 1 ? 's' : ''),
                 'quantity' => 1,
-                'unit_price' => $locked->amount,
-                'amount' => $locked->amount,
+                'unit_price' => $adminAmount,
+                'amount' => $adminAmount,
+                'custom_options' => [
+                    'type' => 'domain_renewal',
+                    'renewal_order_id' => $locked->id,
+                ],
             ]);
 
             $adminOrder->update(['invoice_id' => $adminInvoice->id]);
@@ -369,8 +480,15 @@ class DomainRenewalService
                 'status' => 'expired',
             ]);
 
-            if ($renewalOrder->invoice) {
-                $renewalOrder->invoice->update(['status' => 'cancelled']);
+            foreach ([$renewalOrder->customer_invoice_id, $renewalOrder->reseller_invoice_id, $renewalOrder->invoice_id] as $invoiceId) {
+                if (! $invoiceId) {
+                    continue;
+                }
+
+                $invoice = Invoice::find($invoiceId);
+                if ($invoice && $invoice->status->value !== 'paid') {
+                    $invoice->update(['status' => 'cancelled']);
+                }
             }
         });
     }

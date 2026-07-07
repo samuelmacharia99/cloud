@@ -351,11 +351,13 @@ class ResellerCustomerOrderService
 
         return DB::transaction(function () use ($reseller, $customer, $domainItems) {
             $lineItems = [];
+            $renewalOrders = [];
 
             foreach ($domainItems as $item) {
                 if (($item['type'] ?? 'domain') === 'domain_renewal') {
                     $prepared = $this->prepareDomainRenewal($reseller, $customer, $item);
                     $lineItems[] = $prepared['line_item'];
+                    $renewalOrders[] = $prepared['renewal_order'];
 
                     continue;
                 }
@@ -419,7 +421,7 @@ class ResellerCustomerOrderService
                 if ($renewalOrderId) {
                     $renewalOrder = DomainRenewalOrder::find($renewalOrderId);
                     if ($renewalOrder) {
-                        app(DomainRenewalService::class)->linkRenewalToInvoice($renewalOrder, $invoice);
+                        app(DomainRenewalService::class)->linkCustomerInvoice($renewalOrder, $invoice);
                     }
 
                     continue;
@@ -439,6 +441,10 @@ class ResellerCustomerOrderService
                     ]);
                     $this->notifications->notifyAdminResellerDomainOrder($order->fresh(['reseller', 'customer']), 'placed');
                 }
+            }
+
+            if ($renewalOrders !== []) {
+                app(DomainRenewalService::class)->createResellerWholesaleInvoice($reseller, $renewalOrders);
             }
 
             return $invoice->fresh(['items', 'user']);
@@ -479,7 +485,14 @@ class ResellerCustomerOrderService
             throw new \InvalidArgumentException('Renewal price mismatch. Refresh and try again.');
         }
 
-        $renewalOrder = app(DomainRenewalService::class)->initiateRenewal($domain, $customer, $years);
+        $renewalOrder = app(DomainRenewalService::class)->initiateManagedCustomerRenewal(
+            $domain,
+            $reseller,
+            $customer,
+            $years,
+            (float) ($item['wholesale_total'] ?? app(DomainRenewalService::class)->wholesaleRenewalAmount($domain, $years)),
+            $expectedRetail,
+        );
 
         return [
             'renewal_order' => $renewalOrder,

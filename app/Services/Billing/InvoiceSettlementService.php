@@ -11,7 +11,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\CreditService;
 use App\Services\Customer\CustomerHostingUpgradeService;
-use App\Services\DomainRenewalService;
+use App\Services\DomainRenewalPushService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
@@ -408,16 +408,7 @@ class InvoiceSettlementService
     private function processDomainRenewals(Invoice $invoice): void
     {
         try {
-            $renewalOrders = DomainRenewalOrder::query()
-                ->where('invoice_id', $invoice->id)
-                ->where('status', 'invoiced')
-                ->get();
-
-            $renewalService = app(DomainRenewalService::class);
-
-            foreach ($renewalOrders as $order) {
-                $renewalService->pushRenewalToAdmin($order);
-            }
+            app(DomainRenewalPushService::class)->handlePaidInvoice($invoice->fresh(['items', 'user']));
         } catch (\Throwable $e) {
             Log::error('Failed to process domain renewals after settlement', [
                 'invoice_id' => $invoice->id,

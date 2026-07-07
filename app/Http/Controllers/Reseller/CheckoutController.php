@@ -14,6 +14,7 @@ use App\Models\ResellerDomainOrder;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainPushService;
+use App\Services\DomainRenewalPushService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
 use App\Services\NotificationService;
@@ -387,13 +388,13 @@ class CheckoutController extends Controller
 
     private function processDomainRenewals(Invoice $invoice): void
     {
-        $renewalOrders = DomainRenewalOrder::query()
-            ->where('invoice_id', $invoice->id)
-            ->where('status', 'invoiced')
-            ->get();
-
-        foreach ($renewalOrders as $order) {
-            app(DomainRenewalService::class)->pushRenewalToAdmin($order);
+        try {
+            app(DomainRenewalPushService::class)->handlePaidInvoice($invoice->fresh(['items', 'user']));
+        } catch (\Throwable $e) {
+            \Log::error('Failed to process domain renewals after checkout payment', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -413,7 +414,7 @@ class CheckoutController extends Controller
             ResellerCartContext::setSelf();
 
             return redirect()->route('reseller.customer-invoices.show', $invoice)
-                ->with('success', 'Customer invoice created at your retail prices. Collect payment from your customer to complete registration.');
+                ->with('success', 'Customer and wholesale renewal invoices created. Collect retail payment from your customer; wholesale is due on your reseller invoice (or will debit your wallet when the customer pays if funds are available).');
         } catch (\InvalidArgumentException $e) {
             return redirect()->route('reseller.checkout.show')
                 ->with('error', $e->getMessage());
