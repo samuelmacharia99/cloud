@@ -168,6 +168,8 @@
                         :fetch-url="route('customer.payment.select-method', $invoice)"
                         :submit-url="route('customer.payment.initiate', $invoice)"
                         :amount-due="$amountRemaining ?? $invoice->getAmountRemaining()"
+                        :wallet-balance="$creditBalance ?? 0"
+                        :allow-wallet-apply="($creditBalance ?? 0) > 0"
                         button-class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
                     />
                 @endif

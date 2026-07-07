@@ -46,8 +46,14 @@
             }
 
             const data = await res.json();
+
+            if (data.already_paid && data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return;
+            }
+
             this.gateways = data.gateways || {};
-            this.walletBalance = data.wallet_balance ?? this.walletBalance;
+            this.walletBalance = data.wallet_balance ?? data.credit_balance ?? this.walletBalance;
             this.amountDue = data.amount_due ?? this.amountDue;
 
             if (Object.keys(this.gateways).length > 0) {

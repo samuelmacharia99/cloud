@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Services\CreditService;
 use App\Services\InvoicePdfService;
 use Illuminate\Http\Request;
 
@@ -47,6 +48,7 @@ class InvoiceController extends Controller
             'invoice' => $invoice,
             'appliedCredits' => $invoice->getAppliedCredits(),
             'amountRemaining' => $invoice->getAmountRemaining(),
+            'creditBalance' => CreditService::getAvailableBalance(auth()->user()),
         ]);
     }
 

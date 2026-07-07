@@ -425,6 +425,7 @@ class SharedHostingCheckoutService
                         'type' => 'domain_registration',
                         'domain_id' => $domain->id,
                         'fqdn' => $fqdn,
+                        'years' => $years,
                     ],
                 ];
             }
@@ -499,7 +500,7 @@ class SharedHostingCheckoutService
                 ];
 
                 $domain = isset($meta['domain_id']) ? Domain::find($meta['domain_id']) : null;
-                if ($domain && $customer?->reseller_id) {
+                if ($domain && $customer) {
                     $fqdn = (string) ($meta['fqdn'] ?? $domain->name.$domain->extension);
                     $parts = $this->domainValidator->splitFqdn($fqdn);
                     $orderType = $type === 'domain_transfer'

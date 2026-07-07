@@ -35,7 +35,7 @@ class CustomerPortalTest extends TestCase
             ->assertSee('500');
     }
 
-    public function test_invoice_auto_applies_credits_on_payment_page(): void
+    public function test_invoice_payment_page_does_not_auto_apply_credits(): void
     {
         $customer = $this->customer();
         CreditService::createManualCredit($customer, 1000, 'Test credit');
@@ -50,7 +50,62 @@ class CustomerPortalTest extends TestCase
 
         $this->actingAs($customer)
             ->get(route('customer.payment.select-method', $invoice))
+            ->assertOk()
+            ->assertSee('Apply credits');
+
+        $invoice->refresh();
+        $this->assertEquals(0, $invoice->getAppliedCredits());
+        $this->assertEquals(500, $invoice->getAmountRemaining());
+    }
+
+    public function test_invoice_payment_modal_returns_json_without_auto_applying_credits(): void
+    {
+        $customer = $this->customer();
+        CreditService::createManualCredit($customer, 1000, 'Test credit');
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'total' => 500,
+            'subtotal' => 500,
+            'tax' => 0,
+        ]);
+
+        $response = $this->actingAs($customer)
+            ->getJson(route('customer.payment.select-method', $invoice));
+
+        $response->assertOk()
+            ->assertJsonPath('amount_due', 500)
+            ->assertJsonPath('wallet_balance', 1000)
+            ->assertJsonPath('applied_credits', 0);
+
+        $invoice->refresh();
+        $this->assertEquals(0, $invoice->getAppliedCredits());
+    }
+
+    public function test_customer_can_pay_invoice_fully_with_wallet_on_initiate(): void
+    {
+        $customer = $this->customer();
+        CreditService::createManualCredit($customer, 1000, 'Test credit');
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'status' => 'unpaid',
+            'total' => 500,
+            'subtotal' => 500,
+            'tax' => 0,
+        ]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.payment.initiate', $invoice), [
+                'payment_method' => 'wallet',
+                'apply_wallet' => '1',
+            ])
             ->assertRedirect(route('customer.payment.success', $invoice));
+
+        $invoice->refresh();
+        $this->assertSame('paid', $invoice->status->value);
+        $this->assertEquals(500, $invoice->getAppliedCredits());
     }
 
     public function test_checkout_can_apply_credits_when_placing_order(): void

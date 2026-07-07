@@ -1440,22 +1440,20 @@ class CheckoutController extends Controller
             ],
         ];
 
-        if ($user->reseller_id) {
-            $domainOrder = app(ResellerDomainOrderService::class)->createForTransferCheckout(
-                $user,
-                $domain,
-                $invoice,
-                (string) $item['domain'],
-                (string) $item['extension'],
-                (float) $item['amount'],
-            );
+        $domainOrder = app(ResellerDomainOrderService::class)->createForTransferCheckout(
+            $user,
+            $domain,
+            $invoice,
+            (string) $item['domain'],
+            (string) $item['extension'],
+            (float) $item['amount'],
+        );
 
-            if ($domainOrder) {
-                $invoiceItemData = array_merge(
-                    $invoiceItemData,
-                    app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder),
-                );
-            }
+        if ($domainOrder) {
+            $invoiceItemData = array_merge(
+                $invoiceItemData,
+                app(ResellerDomainOrderService::class)->invoiceItemAttributes($domainOrder),
+            );
         }
 
         InvoiceItem::create($invoiceItemData);

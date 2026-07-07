@@ -15,6 +15,7 @@ use App\Services\DomainRenewalService;
 use App\Services\NotificationService;
 use App\Services\Provisioning\InvoiceProvisioningService;
 use App\Services\Provisioning\ProvisioningService;
+use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerMarginService;
 use App\Services\ServiceOverdueEnforcementService;
 use Illuminate\Support\Collection;
@@ -373,6 +374,17 @@ class InvoiceSettlementService
     private function processResellerDomainOrders(Invoice $invoice): void
     {
         $invoice->loadMissing('items');
+
+        try {
+            app(ResellerDomainOrderService::class)->ensureOrdersForInvoice($invoice->fresh(['items', 'user']));
+        } catch (\Throwable $e) {
+            Log::error('Failed to ensure domain orders exist for invoice', [
+                'invoice_id' => $invoice->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $invoice->refresh()->loadMissing('items');
 
         $hasDomainOrder = $invoice->items->contains(function ($item) {
             return $item->product_type === 'Domain'

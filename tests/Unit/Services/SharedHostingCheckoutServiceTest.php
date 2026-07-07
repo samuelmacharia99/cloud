@@ -4,10 +4,12 @@ namespace Tests\Unit\Services;
 
 use App\Enums\SharedHostingDomainMode;
 use App\Models\DirectAdminPackage;
+use App\Models\Domain;
 use App\Models\Invoice;
 use App\Models\Node;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ResellerDomainOrder;
 use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Services\Checkout\SharedHostingCheckoutService;
@@ -228,5 +230,42 @@ class SharedHostingCheckoutServiceTest extends TestCase
         $this->assertSame(99, $context['service_meta']['domain_id']);
         $this->assertSame('domain-key', $context['service_meta']['linked_domain_cart_key']);
         $this->assertSame([], $context['invoice_items']);
+    }
+
+    public function test_persist_extra_invoice_items_creates_platform_domain_order_for_hosting_addon(): void
+    {
+        $customer = User::factory()->customer()->create(['reseller_id' => null]);
+        $invoice = Invoice::factory()->create(['user_id' => $customer->id, 'status' => 'unpaid']);
+        $order = Order::factory()->create(['user_id' => $customer->id, 'invoice_id' => $invoice->id]);
+
+        $domain = Domain::create([
+            'user_id' => $customer->id,
+            'name' => 'hostsite',
+            'extension' => '.co.ke',
+            'status' => 'pending',
+        ]);
+
+        app(SharedHostingCheckoutService::class)->persistExtraInvoiceItems($invoice, $order, [[
+            'description' => 'Domain registration: hostsite.co.ke (1 year(s))',
+            'amount' => 1500,
+            'meta' => [
+                'type' => 'domain_registration',
+                'domain_id' => $domain->id,
+                'fqdn' => 'hostsite.co.ke',
+                'years' => 1,
+            ],
+        ]]);
+
+        $invoice->load('items');
+        $domainItem = $invoice->items->first();
+
+        $this->assertNotNull($domainItem);
+        $this->assertSame('Domain', $domainItem->product_type);
+        $this->assertNotEmpty($domainItem->custom_options['domain_order_id'] ?? null);
+
+        $domainOrder = ResellerDomainOrder::find($domainItem->custom_options['domain_order_id']);
+        $this->assertNotNull($domainOrder);
+        $this->assertTrue($domainOrder->isPlatformOrder());
+        $this->assertSame($domain->id, $domainOrder->domain_id);
     }
 }

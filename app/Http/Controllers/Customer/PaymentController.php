@@ -70,19 +70,22 @@ class PaymentController extends Controller
     /**
      * Show payment method selection for invoice
      */
-    public function selectMethod(Invoice $invoice, InvoiceSettlementService $settlement)
+    public function selectMethod(Invoice $invoice)
     {
         $this->authorize('pay', $invoice);
 
         $invoice->refresh();
-        $settlement->applyAvailableCredits($invoice);
-        $invoice->refresh();
 
         if ($invoice->status->value === 'paid' || $invoice->isFullyPaid()) {
-            $settlement->settleFromCredits($invoice);
+            if (request()->wantsJson()) {
+                return response()->json([
+                    'already_paid' => true,
+                    'redirect_url' => route('customer.payment.success', $invoice),
+                ]);
+            }
 
-            return redirect()->route('customer.payment.success', $invoice)
-                ->with('success', 'Invoice paid using your account credit.');
+            return redirect()->route('customer.invoices.show', $invoice)
+                ->with('info', 'This invoice has already been paid.');
         }
 
         $availableGateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);
@@ -90,6 +93,16 @@ class PaymentController extends Controller
         $bankDetails = BankTransferPaymentService::bankDetails();
 
         if (empty($availableGateways) && $creditBalance <= 0) {
+            if (request()->wantsJson()) {
+                return response()->json([
+                    'gateways' => [],
+                    'amount_due' => $invoice->getAmountRemaining(),
+                    'wallet_balance' => $creditBalance,
+                    'credit_balance' => $creditBalance,
+                    'applied_credits' => $invoice->getAppliedCredits(),
+                ], 422);
+            }
+
             return redirect()->route('customer.invoices.show', $invoice)
                 ->with('error', 'No payment methods available at the moment. Please contact support.');
         }
@@ -98,6 +111,7 @@ class PaymentController extends Controller
             return response()->json([
                 'gateways' => $availableGateways,
                 'amount_due' => $invoice->getAmountRemaining(),
+                'wallet_balance' => $creditBalance,
                 'credit_balance' => $creditBalance,
                 'applied_credits' => $invoice->getAppliedCredits(),
             ]);
@@ -132,10 +146,26 @@ class PaymentController extends Controller
     /**
      * Initiate payment with selected gateway
      */
-    public function initiate(Request $request, Invoice $invoice)
+    public function initiate(Request $request, Invoice $invoice, InvoiceSettlementService $settlement)
     {
         // Verify invoice belongs to authenticated user
         $this->authorize('pay', $invoice);
+
+        if ($request->boolean('apply_wallet')) {
+            $settlement->applyAvailableCredits($invoice);
+            $invoice->refresh();
+
+            if ($invoice->isFullyPaid() || $invoice->status->value === 'paid') {
+                $settlement->settleFromCredits($invoice);
+
+                return redirect()->route('customer.payment.success', $invoice)
+                    ->with('success', 'Invoice paid using your account credit.');
+            }
+        }
+
+        if ($request->input('payment_method') === 'wallet') {
+            return back()->with('error', 'Account credit is not enough to cover this invoice. Apply credit and choose another payment method for the remainder.');
+        }
 
         $availableMethods = array_keys(PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice));
 

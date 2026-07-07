@@ -33,7 +33,7 @@ class ResellerDomainOrderService
         }
 
         if ($customer->reseller_id === null) {
-            return ResellerDomainOrder::create([
+            $order = ResellerDomainOrder::create([
                 'reseller_id' => null,
                 'customer_id' => $customer->id,
                 'domain_id' => $domain->id,
@@ -49,6 +49,12 @@ class ResellerDomainOrderService
                 'queued_at' => now(),
                 'expires_at' => now()->addDays(10),
             ]);
+
+            if ($domain->domain_order_id === null) {
+                $domain->update(['domain_order_id' => $order->id]);
+            }
+
+            return $order;
         }
 
         $wholesaleAmount = $this->resolveWholesaleAmount($extension, $years, $retailAmount);
@@ -76,7 +82,28 @@ class ResellerDomainOrderService
         float $retailAmount,
     ): ?ResellerDomainOrder {
         if ($customer->reseller_id === null) {
-            return null;
+            $order = ResellerDomainOrder::create([
+                'reseller_id' => null,
+                'customer_id' => $customer->id,
+                'domain_id' => $domain->id,
+                'customer_invoice_id' => $invoice->id,
+                'domain_name' => $domainName,
+                'extension' => $extension,
+                'order_type' => ResellerDomainOrderType::Transfer,
+                'years' => 1,
+                'wholesale_amount' => round($retailAmount, 2),
+                'retail_amount' => 0,
+                'status' => 'queued',
+                'push_mode' => 'auto',
+                'queued_at' => now(),
+                'expires_at' => now()->addDays(10),
+            ]);
+
+            if ($domain->domain_order_id === null) {
+                $domain->update(['domain_order_id' => $order->id]);
+            }
+
+            return $order;
         }
 
         $wholesaleAmount = $this->resolveTransferWholesaleAmount($extension, $retailAmount);
@@ -108,10 +135,6 @@ class ResellerDomainOrderService
         ResellerDomainOrderType $orderType,
         int $years = 1,
     ): ?ResellerDomainOrder {
-        if ($customer->reseller_id === null) {
-            return null;
-        }
-
         if ($orderType === ResellerDomainOrderType::Transfer) {
             return $this->createForTransferCheckout(
                 $customer,
@@ -175,6 +198,92 @@ class ResellerDomainOrderService
                 'domain_id' => $domainOrder->domain_id,
             ],
         ];
+    }
+
+    /**
+     * Create missing domain orders for invoice lines that have a domain but no order link.
+     * Repairs hosting-addon checkouts where platform customers did not get a domain order row.
+     */
+    public function ensureOrdersForInvoice(Invoice $invoice): int
+    {
+        $invoice->loadMissing('items', 'user');
+        $customer = $invoice->user;
+
+        if (! $customer) {
+            return 0;
+        }
+
+        $created = 0;
+
+        foreach ($invoice->items as $item) {
+            if (! empty($item->custom_options['domain_order_id'])) {
+                continue;
+            }
+
+            $domainId = $item->domain_id ?? $item->custom_options['domain_id'] ?? null;
+            if (! $domainId) {
+                continue;
+            }
+
+            $domain = Domain::find($domainId);
+            if (! $domain) {
+                continue;
+            }
+
+            $lineType = $item->custom_options['type'] ?? null;
+            $isDomainLine = $item->product_type === 'Domain'
+                || in_array($lineType, ['domain_registration', 'domain_transfer'], true);
+
+            if (! $isDomainLine) {
+                continue;
+            }
+
+            $orderType = ($lineType === 'domain_transfer' || $domain->isTransfer())
+                ? ResellerDomainOrderType::Transfer
+                : ResellerDomainOrderType::Registration;
+
+            $years = (int) ($item->custom_options['years'] ?? 1);
+            $amount = (float) $item->amount;
+
+            $domainOrder = $orderType === ResellerDomainOrderType::Transfer
+                ? $this->createForTransferCheckout(
+                    $customer,
+                    $domain,
+                    $invoice,
+                    $domain->name,
+                    $domain->extension,
+                    $amount,
+                )
+                : $this->createForCustomerCheckout(
+                    $customer,
+                    $domain,
+                    $invoice,
+                    $domain->name,
+                    $domain->extension,
+                    max(1, $years),
+                    $amount,
+                    $orderType,
+                );
+
+            if (! $domainOrder) {
+                continue;
+            }
+
+            $customOptions = array_merge(
+                is_array($item->custom_options) ? $item->custom_options : [],
+                $this->invoiceItemAttributes($domainOrder)['custom_options'] ?? [],
+            );
+
+            $item->update([
+                'product_type' => 'Domain',
+                'domain_id' => $domain->id,
+                'custom_options' => $customOptions,
+            ]);
+
+            $created++;
+        }
+
+        return $created;
     }
 
     private function createResellerManagedOrder(
