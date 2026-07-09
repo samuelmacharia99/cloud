@@ -48,6 +48,12 @@ class ResellerPackageSubscriptionTest extends TestCase
         $this->assertNull($reseller->package_expires_at);
         $this->assertSame('reseller_subscription', $invoice->type);
         $this->assertSame('unpaid', $invoice->status->value);
+        $this->assertTrue(
+            $invoice->items()->where('product_type', 'reseller_package')->exists()
+        );
+        $packageItem = $invoice->items()->where('product_type', 'reseller_package')->first();
+        $this->assertStringContainsString('Starter', $packageItem->description);
+        $this->assertSame('Starter', $packageItem->displayTitle());
     }
 
     public function test_paid_subscription_invoice_activates_package(): void

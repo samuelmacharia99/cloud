@@ -557,8 +557,8 @@
                         <tr>
                             <td class="num">{{ $index + 1 }}</td>
                             <td class="description">
-                                <div class="item-desc">{{ $item->product->name ?? 'Service' }}</div>
-                                @if($item->description && $item->product)
+                                <div class="item-desc">{{ $item->displayTitle() }}</div>
+                                @if($item->description && ($item->product || in_array($item->product_type, ['reseller_disk_usage', 'reseller_disk_overage', 'reseller_package'], true)))
                                     <div class="item-detail">{{ $item->description }}</div>
                                 @endif
                                 @if($item->service)
@@ -570,8 +570,10 @@
                             <td class="period">
                                 @if($item->service && $item->service->billing_cycle)
                                     {{ ucfirst($item->service->billing_cycle) }} Billing
-                                @elseif($item->description && !$item->product)
-                                    {{ $item->description }}
+                                @elseif($item->product_type === 'reseller_package')
+                                    {{ str_contains($item->description ?? '', 'annually') ? 'Annual' : 'Monthly' }} Billing
+                                @elseif(in_array($item->product_type, ['reseller_disk_usage', 'reseller_disk_overage'], true))
+                                    Usage Period
                                 @else
                                     One-time
                                 @endif

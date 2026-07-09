@@ -87,6 +87,11 @@ class ResellerDiskUsageTest extends TestCase
             $invoice->items()->where('product_type', 'reseller_disk_usage')->exists()
         );
 
+        $packageItem = $invoice->items()->where('product_type', 'reseller_package')->first();
+        $this->assertNotNull($packageItem);
+        $this->assertSame('Growth', $packageItem->displayTitle());
+        $this->assertStringContainsString('Renewal', $packageItem->description);
+
         $overageItem = $invoice->items()->where('product_type', 'reseller_disk_overage')->first();
         $this->assertNotNull($overageItem);
         $this->assertGreaterThan(0, (float) $overageItem->amount);

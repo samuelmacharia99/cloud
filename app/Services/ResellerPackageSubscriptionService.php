@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use App\Models\InvoiceItem;
 use App\Models\ResellerPackage;
 use App\Models\User;
 use Carbon\Carbon;
@@ -32,6 +33,17 @@ class ResellerPackageSubscriptionService
     public function isRenewalInvoice(Invoice $invoice): bool
     {
         return str_contains($invoice->notes ?? '', 'Renewal');
+    }
+
+    public function subscriptionLabelFromNotes(?string $notes): ?string
+    {
+        if (! $notes) {
+            return null;
+        }
+
+        $clean = trim(preg_replace('/\[[^\]]+\]/', '', $notes) ?? '');
+
+        return $clean !== '' ? $clean : null;
     }
 
     public function isUpgradeInvoice(Invoice $invoice): bool
@@ -134,7 +146,7 @@ class ResellerPackageSubscriptionService
                 $quote['days_remaining'],
                 $quote['cycle_days'],
             );
-            $amounts = $this->calculateAmounts($quote['amount']);
+            $lineAmount = $quote['amount'];
             $dueDate = now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
             $notes = trim($label.' '.self::UPGRADE_META.' '.self::FROM_PACKAGE_META_PREFIX.$current->id.'] '.self::PACKAGE_META_PREFIX.$package->id.']');
         } elseif ($isDowngrade) {
@@ -144,7 +156,7 @@ class ResellerPackageSubscriptionService
                 $current->name,
                 $package->name,
             );
-            $amounts = $this->calculateAmounts(0);
+            $lineAmount = 0;
             $dueDate = now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
             $notes = trim($label.' '.self::DOWNGRADE_META.' '.self::FROM_PACKAGE_META_PREFIX.$current->id.'] '.self::PACKAGE_META_PREFIX.$package->id.']');
         } else {
@@ -152,7 +164,7 @@ class ResellerPackageSubscriptionService
                 ? "Reseller Package Renewal: {$package->name} ({$package->billing_cycle})"
                 : "Reseller Package: {$package->name} ({$package->billing_cycle})";
 
-            $amounts = $this->calculateAmounts((float) $package->price);
+            $lineAmount = (float) $package->price;
             $dueDate = $renewal && $user->package_expires_at
                 ? $schedule->resellerPackageRenewalDueDate($user)
                 : now()->copy()->startOfDay()->addDays($schedule->resellerPackageAdvanceDays());
@@ -165,11 +177,13 @@ class ResellerPackageSubscriptionService
             'invoice_number' => 'INV-'.strtoupper(Str::random(10)),
             'status' => 'unpaid',
             'due_date' => $dueDate,
-            'subtotal' => $amounts['subtotal'],
-            'tax' => $amounts['tax'],
-            'total' => $amounts['total'],
+            'subtotal' => 0,
+            'tax' => 0,
+            'total' => 0,
             'notes' => $notes,
         ]);
+
+        $this->appendPackageLineItem($invoice, $label, $lineAmount);
 
         if ($renewal) {
             app(ResellerDiskUsageBillingService::class)->addUsageItemsToSubscriptionInvoice($invoice, $user, true);
@@ -368,5 +382,24 @@ class ResellerPackageSubscriptionService
     private function cycleDaysFor(ResellerPackage $package): int
     {
         return $package->billing_cycle === 'annually' ? 365 : 30;
+    }
+
+    private function appendPackageLineItem(Invoice $invoice, string $description, float $amount): void
+    {
+        $breakdown = TaxService::calculateResellerSubscription($amount);
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'product_id' => null,
+            'product_type' => 'reseller_package',
+            'description' => $description,
+            'quantity' => 1,
+            'unit_price' => $amount,
+            'amount' => $amount,
+        ]);
+
+        $invoice->increment('subtotal', $breakdown['subtotal']);
+        $invoice->increment('tax', $breakdown['tax']);
+        $invoice->increment('total', $breakdown['total']);
     }
 }

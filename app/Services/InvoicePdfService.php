@@ -109,7 +109,7 @@ class InvoicePdfService
         $pdf = Pdf::loadView('invoices.pdf', [
             'invoice' => $invoice,
             'user' => $invoice->user,
-            'items' => $invoice->items,
+            'items' => $invoice->itemsForDisplay(),
             'amountRemaining' => $amountRemaining,
             'amountPaid' => $amountPaid,
             'company' => $company,

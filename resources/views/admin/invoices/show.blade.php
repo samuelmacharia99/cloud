@@ -110,7 +110,7 @@
             </div>
 
             <!-- Line Items -->
-            @if ($invoice->items->count() > 0)
+            @if ($invoice->itemsForDisplay()->isNotEmpty())
                 <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
                     <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Line Items</h2>
                     <div class="overflow-x-auto">
@@ -125,7 +125,7 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
-                                @foreach ($invoice->items as $item)
+                                @foreach ($invoice->itemsForDisplay() as $item)
                                     <tr>
                                         <td class="py-3 px-3 text-slate-900 dark:text-white">{{ $loop->iteration }}</td>
                                         <td class="py-3 px-3">

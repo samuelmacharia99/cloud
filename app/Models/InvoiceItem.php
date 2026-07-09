@@ -77,4 +77,59 @@ class InvoiceItem extends Model
 
         return $this->service->attachedDomainName();
     }
+
+    public function displayTitle(): string
+    {
+        if ($this->domain_id) {
+            return 'Domain';
+        }
+
+        return match ($this->product_type) {
+            'reseller_package' => $this->resellerPackageNameFromDescription() ?? 'Reseller Package',
+            'reseller_disk_usage' => 'Disk Usage',
+            'reseller_disk_overage' => 'Disk Overage',
+            'Domain' => 'Domain',
+            default => $this->product?->name
+                ?? $this->inferTitleFromDescription()
+                ?? 'Unknown Product',
+        };
+    }
+
+    private function inferTitleFromDescription(): ?string
+    {
+        $description = $this->description ?? '';
+
+        if (str_starts_with($description, 'Disk usage')) {
+            return 'Disk Usage';
+        }
+
+        if (str_starts_with($description, 'Disk overage')) {
+            return 'Disk Overage';
+        }
+
+        return null;
+    }
+
+    private function resellerPackageNameFromDescription(): ?string
+    {
+        $description = $this->description ?? '';
+
+        if (preg_match('/Reseller Package Renewal:\s*(.+?)\s*\(/s', $description, $matches)) {
+            return trim($matches[1]);
+        }
+
+        if (preg_match('/Reseller Package Upgrade:\s*(.+?)\s*\(/s', $description, $matches)) {
+            return 'Upgrade: '.trim($matches[1]);
+        }
+
+        if (preg_match('/Reseller Package Downgrade:\s*(.+?)\s*\(/s', $description, $matches)) {
+            return 'Downgrade: '.trim($matches[1]);
+        }
+
+        if (preg_match('/Reseller Package:\s*(.+?)\s*\(/s', $description, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return null;
+    }
 }

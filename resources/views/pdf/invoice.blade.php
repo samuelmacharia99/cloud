@@ -296,7 +296,7 @@
                                 @if($item->domain_id)
                                     <strong>Domain</strong><br>
                                 @else
-                                    <strong>{{ $item->product->name ?? 'Unknown Product' }}</strong><br>
+                                    <strong>{{ $item->displayTitle() }}</strong><br>
                                 @endif
                                 <small>{{ $item->description }}</small>
                                 @if($attachedDomain = $item->attachedDomainLabel())

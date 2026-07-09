@@ -5,7 +5,7 @@
         @if($item->domain_id)
             Domain
         @else
-            {{ $item->product->name ?? 'Unknown Product' }}
+            {{ $item->displayTitle() }}
         @endif
     </p>
     <p class="{{ $metaClass }}">{{ $item->description }}</p>

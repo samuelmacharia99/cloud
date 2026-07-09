@@ -91,7 +91,7 @@
             </div>
 
             <!-- Line Items -->
-            @if ($invoice->items->count() > 0)
+            @if ($invoice->itemsForDisplay()->isNotEmpty())
                 <div class="mb-8">
                     <table class="w-full mb-4">
                         <thead>
@@ -103,7 +103,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach ($invoice->items as $item)
+                            @foreach ($invoice->itemsForDisplay() as $item)
                                 <tr class="border-b border-slate-200 dark:border-slate-700">
                                     <td class="py-3 px-3">
                                         <x-invoice-item-details

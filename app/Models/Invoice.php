@@ -6,6 +6,7 @@ use App\Enums\InvoiceStatus;
 use App\Services\Billing\InvoiceCurrencyService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Support\CurrencyFormatter;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -200,5 +201,64 @@ class Invoice extends Model
     public function scopeResellerSubscription($query)
     {
         return $query->where('type', 'reseller_subscription');
+    }
+
+    /**
+     * Line items for invoice display, including a synthetic package row for legacy subscription invoices.
+     *
+     * @return Collection<int, InvoiceItem>
+     */
+    public function itemsForDisplay(): Collection
+    {
+        if (! $this->relationLoaded('items')) {
+            $this->load('items');
+        }
+
+        $items = $this->items;
+
+        if ($this->type !== 'reseller_subscription' || $this->hasSubscriptionPackageLineItem()) {
+            return $items;
+        }
+
+        $label = app(ResellerPackageSubscriptionService::class)->subscriptionLabelFromNotes($this->notes);
+        $amount = $this->subscriptionPackageLineAmount();
+
+        if (! $label || $amount <= 0) {
+            return $items;
+        }
+
+        $synthetic = new InvoiceItem([
+            'description' => $label,
+            'product_type' => 'reseller_package',
+            'quantity' => 1,
+            'unit_price' => $amount,
+            'amount' => $amount,
+        ]);
+
+        return $items->prepend($synthetic);
+    }
+
+    public function hasSubscriptionPackageLineItem(): bool
+    {
+        if (! $this->relationLoaded('items')) {
+            $this->load('items');
+        }
+
+        return $this->items->contains(
+            fn (InvoiceItem $item) => $item->product_type === 'reseller_package'
+        );
+    }
+
+    public function subscriptionPackageLineAmount(): float
+    {
+        if (! $this->relationLoaded('items')) {
+            $this->load('items');
+        }
+
+        $diskAmount = $this->items
+            ->whereIn('product_type', ['reseller_disk_usage', 'reseller_disk_overage'])
+            ->sum(fn (InvoiceItem $item) => (float) $item->amount);
+
+        return max(0, round((float) $this->subtotal - $diskAmount, 2));
     }
 }
