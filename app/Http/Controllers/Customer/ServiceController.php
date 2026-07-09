@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\RenameCustomerServiceRequest;
 use App\Models\Service;
 use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\Customer\CustomerServiceCancellationService;
@@ -25,6 +26,17 @@ class ServiceController extends Controller
             ->get();
 
         return view('customer.services.index', compact('services'));
+    }
+
+    public function rename(RenameCustomerServiceRequest $request, Service $service)
+    {
+        $this->authorize('rename', $service);
+
+        $service->update([
+            'name' => $request->validated('name'),
+        ]);
+
+        return back()->with('success', 'Service renamed successfully.');
     }
 
     public function show(Service $service)

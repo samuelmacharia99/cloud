@@ -38,6 +38,16 @@ class ServicePolicy
     }
 
     /**
+     * Customer can rename their own service for personal reference.
+     */
+    public function rename(User $user, Service $service): Response
+    {
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only rename your own services.');
+    }
+
+    /**
      * Only admin can update service details.
      */
     public function update(User $user, Service $service): Response

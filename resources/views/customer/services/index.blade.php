@@ -23,12 +23,19 @@
                         ? route('customer.payment.select-method', $payInvoice)
                         : route('customer.services.show', $service);
                 @endphp
-                <article class="ui-card ui-card-interactive flex flex-col overflow-hidden group">
+                <article
+                    class="ui-card ui-card-interactive flex flex-col overflow-hidden group"
+                    x-data="{ showRenameModal: false, renameName: @js($service->name) }"
+                >
                     <a href="{{ $manageUrl }}" class="block p-5 sm:p-6 flex-1">
                         <div class="flex items-start justify-between gap-3 mb-4">
                             <div class="min-w-0">
-                                <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->product->name }}</h3>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 capitalize">{{ str_replace('_', ' ', $service->product->type) }}</p>
+                                <h3 class="font-semibold text-slate-900 dark:text-white truncate group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors">{{ $service->name }}</h3>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    {{ $service->product->name }}
+                                    <span class="text-slate-400 dark:text-slate-500">·</span>
+                                    <span class="capitalize">{{ str_replace('_', ' ', $service->product->type) }}</span>
+                                </p>
                             </div>
                             <x-status-badge :status="$service->status" type="service" />
                         </div>
@@ -65,6 +72,51 @@
                         @else
                             <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed" title="Renewal unavailable">Renew</button>
                         @endif
+                        <button
+                            type="button"
+                            @click="showRenameModal = true; renameName = @js($service->name)"
+                            class="btn-secondary flex-1 btn-sm"
+                        >
+                            Rename
+                        </button>
+                    </div>
+
+                    <div
+                        x-show="showRenameModal"
+                        x-cloak
+                        class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+                        @keydown.escape.window="showRenameModal = false"
+                    >
+                        <div
+                            class="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl p-6"
+                            @click.outside="showRenameModal = false"
+                        >
+                            <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Rename service</h3>
+                            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                                Choose a label for your own reference. This does not change your plan or billing.
+                            </p>
+                            <form method="POST" action="{{ route('customer.services.rename', $service) }}" class="space-y-4">
+                                @csrf
+                                @method('PATCH')
+                                <div>
+                                    <label for="rename-name-{{ $service->id }}" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Service name</label>
+                                    <input
+                                        id="rename-name-{{ $service->id }}"
+                                        type="text"
+                                        name="name"
+                                        x-model="renameName"
+                                        required
+                                        minlength="2"
+                                        maxlength="100"
+                                        class="w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500"
+                                    >
+                                </div>
+                                <div class="flex gap-2">
+                                    <button type="button" @click="showRenameModal = false" class="btn-secondary flex-1 btn-sm">Cancel</button>
+                                    <button type="submit" class="btn-primary flex-1 btn-sm">Save</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
                 </article>
             @endforeach
