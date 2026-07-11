@@ -19,6 +19,12 @@ class WordPressAdminLoginService
      */
     public function createLoginUrl(Service $service): string
     {
+        // SSH + docker compose + wp-load can exceed the default 30s web timeout.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(180);
+        }
+        @ini_set('max_execution_time', '180');
+
         $service->loadMissing([
             'product.containerTemplate',
             'containerDeployment.node',
@@ -51,7 +57,13 @@ class WordPressAdminLoginService
 
         try {
             $this->ensureMuPlugin($ssh, $hostAppPath);
-            $userId = $this->resolveAdministratorUserId($ssh, $containerPath, $appService, $deployment->env_values ?? []);
+            $userId = $this->resolveAdministratorUserIdCached(
+                $service,
+                $ssh,
+                $containerPath,
+                $appService,
+                $deployment->env_values ?? []
+            );
             $token = bin2hex(random_bytes(32));
             $payload = json_encode([
                 'token' => $token,
@@ -60,11 +72,12 @@ class WordPressAdminLoginService
                 'issued_at' => time(),
             ], JSON_THROW_ON_ERROR);
 
+            $tokenPath = $hostAppPath.'/'.self::TOKEN_RELATIVE;
             $ssh->mkdirp($hostAppPath.'/wp-content/uploads');
-            $ssh->upload($payload, $hostAppPath.'/'.self::TOKEN_RELATIVE);
+            $ssh->upload($payload, $tokenPath);
             $ssh->exec(
-                'chown 33:33 '.escapeshellarg($hostAppPath.'/'.self::TOKEN_RELATIVE)
-                .' && chmod 640 '.escapeshellarg($hostAppPath.'/'.self::TOKEN_RELATIVE),
+                'chown 33:33 '.escapeshellarg($tokenPath)
+                .' && chmod 640 '.escapeshellarg($tokenPath),
                 15
             );
         } finally {
@@ -154,14 +167,55 @@ PHP;
 
     private function ensureMuPlugin(SSHService $ssh, string $hostAppPath): void
     {
-        $ssh->mkdirp($hostAppPath.'/wp-content/mu-plugins');
         $remotePath = $hostAppPath.'/'.self::MU_PLUGIN_RELATIVE;
+        $remoteArg = escapeshellarg($remotePath);
+
+        // Skip re-upload when the SSO plugin is already in place (saves SSH round-trips).
+        try {
+            $exists = trim($ssh->exec(
+                '[ -f '.$remoteArg.' ] && grep -q "Talksasa Admin SSO" '.$remoteArg.' && echo yes || echo no',
+                15
+            ));
+            if ($exists === 'yes') {
+                return;
+            }
+        } catch (\Throwable) {
+            // Fall through and (re)install.
+        }
+
+        $ssh->mkdirp($hostAppPath.'/wp-content/mu-plugins');
         $ssh->upload($this->muPluginContents(), $remotePath);
         $ssh->exec(
-            'chown 33:33 '.escapeshellarg($remotePath)
-            .' && chmod 644 '.escapeshellarg($remotePath),
+            'chown 33:33 '.$remoteArg.' && chmod 644 '.$remoteArg,
             15
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $envValues
+     */
+    private function resolveAdministratorUserIdCached(
+        Service $service,
+        SSHService $ssh,
+        string $containerPath,
+        string $appService,
+        array $envValues
+    ): int {
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $cached = (int) ($meta['wordpress_sso']['admin_user_id'] ?? 0);
+        if ($cached > 0) {
+            return $cached;
+        }
+
+        $userId = $this->resolveAdministratorUserId($ssh, $containerPath, $appService, $envValues);
+
+        $meta['wordpress_sso'] = [
+            'admin_user_id' => $userId,
+            'resolved_at' => now()->toIso8601String(),
+        ];
+        $service->update(['service_meta' => $meta]);
+
+        return $userId;
     }
 
     /**
@@ -238,7 +292,7 @@ PHP;
         try {
             $output = $ssh->exec(
                 "cd {$containerPath} && docker compose exec -T {$appService} php -d display_errors=0 -r ".escapeshellarg($php),
-                90
+                60
             );
         } catch (\Throwable $e) {
             throw new RuntimeException(

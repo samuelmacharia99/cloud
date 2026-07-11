@@ -44,6 +44,10 @@ class ServiceController extends Controller
     {
         $this->authorize('wordpressAdminLogin', $service);
 
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(180);
+        }
+
         try {
             $url = $loginService->createLoginUrl($service);
 
