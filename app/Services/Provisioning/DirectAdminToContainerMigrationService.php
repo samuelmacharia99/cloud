@@ -408,13 +408,9 @@ class DirectAdminToContainerMigrationService
                 'DB_HOST' => $dbService,
             ];
 
-            // Prefer host bind-mount path so file manager and container stay in sync.
-            $this->rewriteWpConfigOnHost($targetSsh, $hostAppPath.'/wp-config.php', $dbDefines);
-            try {
-                $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
-            } catch (\Throwable) {
-                // Host rewrite is authoritative when bind-mounted; container rewrite is best-effort.
-            }
+            // Rewrite via the WordPress container (nodes typically have no host PHP).
+            // With the host app bind-mount, this updates the same files the file manager sees.
+            $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
 
             @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
             @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
@@ -945,41 +941,16 @@ PHP;
     /**
      * @param  array{DB_NAME: string, DB_USER: string, DB_PASSWORD: string, DB_HOST: string}  $db
      */
-    private function rewriteWpConfigOnHost(SSHService $ssh, string $configPath, array $db): void
-    {
-        foreach ($db as $key => $value) {
-            $escapedValue = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
-            $escapedPath = str_replace(['\\', "'"], ['\\\\', "\\'"], $configPath);
-            $php = <<<PHP
-\$cfg = '{$escapedPath}';
-if (! is_file(\$cfg)) {
-    exit(0);
-}
-\$key = '{$key}';
-\$val = '{$escapedValue}';
-\$text = file_get_contents(\$cfg);
-\$pattern = "/define\\s*\\(\\s*['\\"]{\$key}['\\"]\\s*,\\s*['\\"].*?['\\"]\\s*\\)/i";
-\$repl = "define('{\$key}', '{\$val}')";
-if (preg_match(\$pattern, \$text)) {
-    \$text = preg_replace(\$pattern, \$repl, \$text, 1);
-} else {
-    \$text = preg_replace('/<\\?php/', "<?php\\n" . \$repl, \$text, 1);
-}
-file_put_contents(\$cfg, \$text);
-PHP;
-            $ssh->exec('php -r '.escapeshellarg($php), 30);
-        }
-    }
-
-    /**
-     * @param  array{DB_NAME: string, DB_USER: string, DB_PASSWORD: string, DB_HOST: string}  $db
-     */
     private function rewriteWpConfigInContainer(SSHService $ssh, string $containerPath, string $appService, array $db): void
     {
         foreach ($db as $key => $value) {
             $escapedValue = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
             $php = <<<PHP
 \$cfg = '/var/www/html/wp-config.php';
+if (! is_file(\$cfg)) {
+    fwrite(STDERR, "wp-config.php missing at {\$cfg}\\n");
+    exit(1);
+}
 \$key = '{$key}';
 \$val = '{$escapedValue}';
 \$text = file_get_contents(\$cfg);
