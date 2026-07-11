@@ -47,4 +47,15 @@ class WordPressAdminLoginServiceTest extends TestCase
         $this->assertStringContainsString('.talksasa-admin-sso.json', $contents);
         $this->assertStringContainsString('admin_url()', $contents);
     }
+
+    #[Test]
+    public function it_parses_admin_id_from_noisy_container_output(): void
+    {
+        $login = new WordPressAdminLoginService;
+
+        $noisy = "PHP Warning: session_start(): Failed...\nTALKASA_WP_ADMIN_ID=7\n";
+        $this->assertSame(7, $login->parseAdministratorIdFromOutput($noisy));
+        $this->assertSame(0, $login->parseAdministratorIdFromOutput("TALKASA_WP_ADMIN_ID=0\n"));
+        $this->assertSame(0, $login->parseAdministratorIdFromOutput('no marker'));
+    }
 }

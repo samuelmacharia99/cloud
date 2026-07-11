@@ -175,38 +175,96 @@ PHP;
     ): int {
         $preferredLogin = trim((string) ($envValues['WORDPRESS_ADMIN_USER'] ?? 'admin'));
         $preferredLogin = preg_replace('/[^a-zA-Z0-9._@-]/', '', $preferredLogin) ?: 'admin';
+        $preferredEmail = trim((string) ($envValues['WORDPRESS_ADMIN_EMAIL'] ?? ''));
+        $preferredEmail = filter_var($preferredEmail, FILTER_VALIDATE_EMAIL) ? $preferredEmail : '';
 
         $php = <<<PHP
+@ini_set('display_errors', '0');
+@ini_set('display_startup_errors', '0');
+error_reporting(0);
 require '/var/www/html/wp-load.php';
+\$emit = static function (int \$id): void {
+    if (\$id > 0) {
+        echo 'TALKASA_WP_ADMIN_ID=' . \$id;
+        exit(0);
+    }
+};
 \$preferred = '{$preferredLogin}';
+\$preferredEmail = '{$preferredEmail}';
 \$user = get_user_by('login', \$preferred);
 if (\$user && user_can(\$user, 'manage_options')) {
-    echo (int) \$user->ID;
-    exit;
+    \$emit((int) \$user->ID);
+}
+if (\$preferredEmail !== '') {
+    \$user = get_user_by('email', \$preferredEmail);
+    if (\$user && user_can(\$user, 'manage_options')) {
+        \$emit((int) \$user->ID);
+    }
 }
 \$users = get_users([
     'role' => 'administrator',
     'number' => 1,
     'orderby' => 'ID',
     'order' => 'ASC',
+    'fields' => 'ID',
 ]);
 if (! empty(\$users[0])) {
-    echo (int) \$users[0]->ID;
-    exit;
+    \$emit((int) \$users[0]);
 }
-fwrite(STDERR, "No WordPress administrator found\\n");
-exit(1);
+global \$wpdb;
+\$metaKey = \$wpdb->get_blog_prefix() . 'capabilities';
+\$userId = (int) \$wpdb->get_var(\$wpdb->prepare(
+    "SELECT user_id FROM {\$wpdb->usermeta} WHERE meta_key = %s AND meta_value LIKE %s ORDER BY user_id ASC LIMIT 1",
+    \$metaKey,
+    '%administrator%'
+));
+if (\$userId > 0) {
+    \$emit(\$userId);
+}
+\$capsUsers = get_users([
+    'capability' => 'manage_options',
+    'number' => 1,
+    'orderby' => 'ID',
+    'order' => 'ASC',
+    'fields' => 'ID',
+]);
+if (! empty(\$capsUsers[0])) {
+    \$emit((int) \$capsUsers[0]);
+}
+echo 'TALKASA_WP_ADMIN_ID=0';
+exit(0);
 PHP;
 
-        $output = trim($ssh->exec(
-            "cd {$containerPath} && docker compose exec -T {$appService} php -r ".escapeshellarg($php),
-            60
-        ));
-
-        if (! ctype_digit($output) || (int) $output < 1) {
-            throw new RuntimeException('Could not resolve a WordPress administrator account.');
+        try {
+            $output = $ssh->exec(
+                "cd {$containerPath} && docker compose exec -T {$appService} php -d display_errors=0 -r ".escapeshellarg($php),
+                90
+            );
+        } catch (\Throwable $e) {
+            throw new RuntimeException(
+                'Could not resolve a WordPress administrator account: '.$e->getMessage(),
+                0,
+                $e
+            );
         }
 
-        return (int) $output;
+        $userId = $this->parseAdministratorIdFromOutput($output);
+        if ($userId > 0) {
+            return $userId;
+        }
+
+        throw new RuntimeException(
+            'Could not resolve a WordPress administrator account.'
+            .' Ensure the site has at least one administrator user, then try again.'
+        );
+    }
+
+    public function parseAdministratorIdFromOutput(string $output): int
+    {
+        if (preg_match('/TALKASA_WP_ADMIN_ID=(\d+)/', $output, $matches) === 1) {
+            return (int) $matches[1];
+        }
+
+        return 0;
     }
 }
