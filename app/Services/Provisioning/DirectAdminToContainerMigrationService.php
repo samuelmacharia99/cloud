@@ -611,12 +611,21 @@ PHP;
             throw new \InvalidArgumentException('MySQL dump requires DB_USER.');
         }
 
-        $parts = ['mysqldump', '--single-transaction', '--quick', '--no-tablespaces'];
+        $parts = [];
 
         if ($defaultsExtraFile) {
+            // Must be the first option or mysqldump treats it as an unknown variable.
+            $parts[] = 'mysqldump';
             $parts[] = '--defaults-extra-file='.escapeshellarg($defaultsExtraFile);
+            $parts[] = '--single-transaction';
+            $parts[] = '--quick';
+            $parts[] = '--no-tablespaces';
         } else {
-            $parts = array_merge(['MYSQL_PWD='.escapeshellarg($pass)], $parts);
+            $parts[] = 'MYSQL_PWD='.escapeshellarg($pass);
+            $parts[] = 'mysqldump';
+            $parts[] = '--single-transaction';
+            $parts[] = '--quick';
+            $parts[] = '--no-tablespaces';
 
             if (preg_match('#^([^:]+):(/[^:]+)$#', $host, $socketMatch)) {
                 $parts[] = '-h'.escapeshellarg($socketMatch[1]);

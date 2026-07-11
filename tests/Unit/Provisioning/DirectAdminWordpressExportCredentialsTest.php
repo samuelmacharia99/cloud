@@ -52,9 +52,14 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
             'DB_HOST' => 'localhost',
         ], 'sisallov_wp_ghvrh', '/tmp/db.sql', '/tmp/mysqldump.cnf');
 
-        $this->assertStringContainsString("--defaults-extra-file='/tmp/mysqldump.cnf'", $cmd);
+        $this->assertStringStartsWith("mysqldump --defaults-extra-file='/tmp/mysqldump.cnf'", $cmd);
         $this->assertStringNotContainsString('MYSQL_PWD', $cmd);
         $this->assertStringNotContainsString('root', $cmd);
+        // Ensure defaults-extra-file is not after other mysqldump options
+        $this->assertMatchesRegularExpression(
+            "/^mysqldump --defaults-extra-file='[^']+' --single-transaction/",
+            $cmd
+        );
     }
 
     public function test_build_mysql_dump_command_supports_socket_host(): void
