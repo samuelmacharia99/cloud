@@ -217,7 +217,10 @@ class ContainerDeploymentService
                 $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
                 $ssh->mkdirp($containerPath);
 
-                if ($options->shouldResetDatabase($databaseTemplate !== null)) {
+                $hasDatabaseSidecar = $databaseTemplate !== null
+                    || $this->templateEnvironment->templateDefinesDatabaseSidecar($template);
+
+                if ($options->shouldResetDatabase($hasDatabaseSidecar)) {
                     $this->tearDownStack($ssh, $containerPath, removeVolumes: true);
                     $databaseReset = true;
                     $this->recordDeploymentEvent($service, $deployment, 'database_volume_reset', [

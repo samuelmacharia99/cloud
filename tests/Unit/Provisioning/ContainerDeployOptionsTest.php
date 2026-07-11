@@ -31,12 +31,14 @@ class ContainerDeployOptionsTest extends TestCase
     }
 
     #[Test]
-    public function it_prepares_laravel_on_redeploy_without_running_migrations_by_default(): void
+    public function quiet_convert_resets_embedded_database_volumes(): void
     {
-        $options = ContainerDeployOptions::redeploy(resetDatabase: false);
+        $options = ContainerDeployOptions::quietConvert();
 
-        $this->assertTrue($options->shouldPrepareLaravelApplication('laravel'));
-        $this->assertFalse($options->shouldRunLaravelMigrations('laravel'));
-        $this->assertFalse($options->shouldSyncLaravelDatabase('laravel'));
+        $this->assertTrue($options->quiet);
+        $this->assertTrue($options->isRedeploy);
+        $this->assertTrue($options->resetDatabase);
+        $this->assertTrue($options->shouldResetDatabase(true));
+        $this->assertFalse($options->shouldResetDatabase(false));
     }
 }

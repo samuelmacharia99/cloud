@@ -18,9 +18,22 @@ final class ContainerDeployOptions
     /**
      * Deploy without customer notifications (admin silent convert / ops).
      */
-    public static function quiet(): self
+    public static function quiet(bool $resetDatabase = false): self
     {
-        return new self(quiet: true);
+        return new self(
+            isRedeploy: $resetDatabase,
+            resetDatabase: $resetDatabase,
+            quiet: true,
+        );
+    }
+
+    /**
+     * Admin DA→App Hosting convert: silent deploy and always wipe DB volumes so
+     * leftover mysql_data from a failed attempt cannot keep a stale root password.
+     */
+    public static function quietConvert(): self
+    {
+        return new self(isRedeploy: true, resetDatabase: true, quiet: true);
     }
 
     public function shouldResetDatabase(bool $hasDatabaseSidecar): bool

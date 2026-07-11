@@ -343,7 +343,7 @@ class DirectAdminToContainerConvertService
 
             $steps[] = 'Provisioning WordPress container (silent — no customer notification)';
             $this->appendConvertStep($service, $steps);
-            $this->deployments->deploy($service, ContainerDeployOptions::quiet());
+            $this->deployments->deploy($service, ContainerDeployOptions::quietConvert());
 
             $service->refresh()->load('containerDeployment.node', 'product.containerTemplate');
 
