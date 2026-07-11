@@ -845,7 +845,12 @@ class ContainerController extends Controller
             $startTime = microtime(true);
 
             $output = match ($type) {
-                'mysql', 'mariadb' => $this->testMysqlConnection($ssh, $containerPath, $deployment->env_values ?? []),
+                'mysql', 'mariadb' => $this->testMysqlConnection(
+                    $ssh,
+                    $containerPath,
+                    $deployment->env_values ?? [],
+                    (string) ($databaseContext['service'] ?? 'db')
+                ),
                 'postgresql' => $this->testPostgresqlConnection($ssh, $containerPath, $deployment->env_values ?? []),
                 'mongodb' => $this->testMongodbConnection($ssh, $containerPath, $deployment->env_values ?? []),
                 default => throw new \RuntimeException("Unsupported database type: {$type}"),
@@ -920,13 +925,33 @@ class ContainerController extends Controller
         }
     }
 
-    private function testMysqlConnection(SSHService $ssh, string $containerPath, array $envVars): string
-    {
-        $db = escapeshellarg((string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb'));
-        $user = escapeshellarg((string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser'));
-        $password = escapeshellarg((string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''));
+    private function testMysqlConnection(
+        SSHService $ssh,
+        string $containerPath,
+        array $envVars,
+        string $composeService = 'db'
+    ): string {
+        $db = escapeshellarg((string) (
+            $envVars['WORDPRESS_DB_NAME']
+            ?? $envVars['DB_DATABASE']
+            ?? $envVars['MYSQL_DATABASE']
+            ?? 'appdb'
+        ));
+        $user = escapeshellarg((string) (
+            $envVars['WORDPRESS_DB_USER']
+            ?? $envVars['DB_USERNAME']
+            ?? $envVars['MYSQL_USER']
+            ?? 'appuser'
+        ));
+        $password = escapeshellarg((string) (
+            $envVars['WORDPRESS_DB_PASSWORD']
+            ?? $envVars['DB_PASSWORD']
+            ?? $envVars['MYSQL_PASSWORD']
+            ?? ''
+        ));
+        $service = escapeshellarg($composeService !== '' ? $composeService : 'db');
 
-        $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} db "
+        $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} {$service} "
             ."mysql --batch -u {$user} {$db} -e 'SELECT VERSION() AS version, CURRENT_USER() AS user, DATABASE() AS db'";
 
         return trim($ssh->exec($command, 15));
@@ -1152,13 +1177,16 @@ class ContainerController extends Controller
         $databaseId = $service->service_meta['database_id'] ?? null;
         $template = $databaseId ? DatabaseTemplate::find($databaseId) : null;
         $type = $template?->type ?? $this->inferDatabaseTypeFromEnv($env);
+        $dbService = $this->resolveComposeDatabaseServiceName($service, $env);
 
         if (! $type || ! in_array($type, ['mysql', 'mariadb', 'postgresql'], true)) {
             return $fallback;
         }
 
         $password = match ($type) {
-            'mysql', 'mariadb' => $env['DB_PASSWORD'] ?? ($env['MYSQL_PASSWORD'] ?? null),
+            'mysql', 'mariadb' => $env['WORDPRESS_DB_PASSWORD']
+                ?? $env['DB_PASSWORD']
+                ?? ($env['MYSQL_PASSWORD'] ?? null),
             'postgresql' => $env['DB_PASSWORD'] ?? ($env['POSTGRES_PASSWORD'] ?? null),
             default => null,
         };
@@ -1167,25 +1195,31 @@ class ContainerController extends Controller
             'mysql', 'mariadb' => [
                 'available' => true,
                 'type' => $type,
-                'host' => $env['DB_HOST'] ?? 'db',
+                'service' => $dbService,
+                'host' => $env['WORDPRESS_DB_HOST'] ?? $env['DB_HOST'] ?? $dbService,
                 'port' => $env['DB_PORT'] ?? '3306',
-                'database' => $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb'),
-                'username' => $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
+                'database' => $env['WORDPRESS_DB_NAME']
+                    ?? $env['DB_DATABASE']
+                    ?? ($env['MYSQL_DATABASE'] ?? 'appdb'),
+                'username' => $env['WORDPRESS_DB_USER']
+                    ?? $env['DB_USERNAME']
+                    ?? ($env['MYSQL_USER'] ?? 'appuser'),
                 'password' => $password,
                 'password_masked' => $this->maskSecret($password),
                 'root_password_masked' => $this->maskSecret($env['MYSQL_ROOT_PASSWORD'] ?? null),
                 'connection' => sprintf(
                     'mysql://%s:%s@%s:%s/%s',
-                    $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
+                    $env['WORDPRESS_DB_USER'] ?? $env['DB_USERNAME'] ?? ($env['MYSQL_USER'] ?? 'appuser'),
                     '********',
-                    $env['DB_HOST'] ?? 'db',
+                    $dbService,
                     $env['DB_PORT'] ?? '3306',
-                    $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb')
+                    $env['WORDPRESS_DB_NAME'] ?? $env['DB_DATABASE'] ?? ($env['MYSQL_DATABASE'] ?? 'appdb')
                 ),
             ],
             'postgresql' => [
                 'available' => true,
                 'type' => $type,
+                'service' => $dbService,
                 'host' => $env['DB_HOST'] ?? 'db',
                 'port' => $env['DB_PORT'] ?? '5432',
                 'database' => $env['DB_DATABASE'] ?? ($env['POSTGRES_DB'] ?? 'appdb'),
@@ -1202,13 +1236,36 @@ class ContainerController extends Controller
         };
     }
 
+    /**
+     * @param  array<string, mixed>  $env
+     */
+    private function resolveComposeDatabaseServiceName(Service $service, array $env): string
+    {
+        $service->loadMissing('product.containerTemplate');
+        $slug = $service->product?->containerTemplate?->slug;
+        if ($slug === 'wordpress' || ! empty($env['WORDPRESS_DB_NAME']) || ! empty($env['WORDPRESS_DB_HOST'])) {
+            return 'mysql';
+        }
+
+        $host = (string) ($env['DB_HOST'] ?? $env['WORDPRESS_DB_HOST'] ?? 'db');
+        if (str_contains($host, ':')) {
+            $host = explode(':', $host, 2)[0];
+        }
+
+        return $host !== '' ? $host : 'db';
+    }
+
     private function inferDatabaseTypeFromEnv(array $env): ?string
     {
         if (! empty($env['POSTGRES_DB']) || ($env['DB_CONNECTION'] ?? '') === 'pgsql') {
             return 'postgresql';
         }
 
-        if (! empty($env['MYSQL_DATABASE']) || ! empty($env['DB_DATABASE'])) {
+        if (! empty($env['WORDPRESS_DB_NAME'])
+            || ! empty($env['WORDPRESS_DB_HOST'])
+            || ! empty($env['MYSQL_DATABASE'])
+            || ! empty($env['MYSQL_ROOT_PASSWORD'])
+            || ! empty($env['DB_DATABASE'])) {
             return 'mysql';
         }
 
@@ -1238,9 +1295,15 @@ class ContainerController extends Controller
         if (in_array($dbType, ['mysql', 'mariadb'], true)) {
             $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
             $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
-            $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['MYSQL_PASSWORD'] ?? ''));
+            $service = escapeshellarg((string) ($databaseContext['service'] ?? 'db'));
+            $password = escapeshellarg((string) (
+                $deployment->env_values['WORDPRESS_DB_PASSWORD']
+                ?? $deployment->env_values['DB_PASSWORD']
+                ?? $deployment->env_values['MYSQL_PASSWORD']
+                ?? ''
+            ));
 
-            $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} db ".
+            $command = "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD={$password} {$service} ".
                 "mysql --batch --raw -u {$user} {$db} -e {$queryArg}";
 
             $output = $ssh->exec($command, 20);
@@ -1290,9 +1353,15 @@ class ContainerController extends Controller
             if (in_array($dbType, ['mysql', 'mariadb'], true)) {
                 $db = escapeshellarg((string) ($databaseContext['database'] ?? 'appdb'));
                 $user = escapeshellarg((string) ($databaseContext['username'] ?? 'appuser'));
-                $password = escapeshellarg((string) ($deployment->env_values['DB_PASSWORD'] ?? $deployment->env_values['MYSQL_PASSWORD'] ?? ''));
+                $service = escapeshellarg((string) ($databaseContext['service'] ?? 'db'));
+                $password = escapeshellarg((string) (
+                    $deployment->env_values['WORDPRESS_DB_PASSWORD']
+                    ?? $deployment->env_values['DB_PASSWORD']
+                    ?? $deployment->env_values['MYSQL_PASSWORD']
+                    ?? ''
+                ));
 
-                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e MYSQL_PWD={$password} db "
+                $command = "cd {$containerPath} && cat {$remoteArg} | docker compose exec -T -e MYSQL_PWD={$password} {$service} "
                     ."mysql --batch -u {$user} {$db}";
 
                 return $ssh->exec($command, 180);

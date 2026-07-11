@@ -973,16 +973,31 @@ class ContainerDeploymentService
         if ($template->volume_paths) {
             $compose['services'][$containerName]['volumes'] = [];
             $compose['volumes'] = [];
+            $wordpressBindMounted = false;
 
             foreach ($template->volume_paths as $volumeName => $mountPath) {
-                if ($volumeName === 'app_data' && $hostAppPath) {
+                // Bind host app dir for Laravel (/app) and WordPress (/var/www/html) so the
+                // customer file manager and convert import share the same filesystem.
+                if ($hostAppPath && in_array($volumeName, ['app_data', 'wp_data'], true)) {
                     $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:{$mountPath}";
+                    if ($volumeName === 'wp_data') {
+                        $wordpressBindMounted = true;
+                    }
 
+                    continue;
+                }
+
+                // Nested wp-content named volume would shadow the bind mount — skip it.
+                if ($wordpressBindMounted && $volumeName === 'wp_content') {
                     continue;
                 }
 
                 $compose['services'][$containerName]['volumes'][] = "{$volumeName}:{$mountPath}";
                 $compose['volumes'][$volumeName] = null;
+            }
+
+            if ($hostAppPath && ($template->slug ?? '') === 'wordpress' && empty($compose['services'][$containerName]['volumes'])) {
+                $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:/var/www/html";
             }
 
             if (empty($compose['volumes'])) {
@@ -993,7 +1008,8 @@ class ContainerDeploymentService
         // Legacy fallback: ensure runtime templates still mount host app path
         // even when template volume metadata is missing.
         if ($hostAppPath && empty($compose['services'][$containerName]['volumes'])) {
-            $compose['services'][$containerName]['volumes'] = ["{$hostAppPath}:/app"];
+            $mount = ($template->slug ?? '') === 'wordpress' ? '/var/www/html' : '/app';
+            $compose['services'][$containerName]['volumes'] = ["{$hostAppPath}:{$mount}"];
         }
 
         // Add sidecar services from template
@@ -1387,10 +1403,27 @@ class ContainerDeploymentService
         array $envVars
     ): void {
         $pathArg = escapeshellarg($containerPath);
+        $dbService = $this->resolveMysqlComposeServiceName($envVars);
+        $dbServiceArg = escapeshellarg($dbService);
         $rootPassword = (string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? $envVars['DB_PASSWORD'] ?? '');
-        $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['MYSQL_DATABASE'] ?? 'appdb');
-        $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['MYSQL_USER'] ?? 'appuser');
-        $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '');
+        $database = (string) (
+            $envVars['WORDPRESS_DB_NAME']
+            ?? $envVars['DB_DATABASE']
+            ?? $envVars['MYSQL_DATABASE']
+            ?? 'appdb'
+        );
+        $username = (string) (
+            $envVars['WORDPRESS_DB_USER']
+            ?? $envVars['DB_USERNAME']
+            ?? $envVars['MYSQL_USER']
+            ?? 'appuser'
+        );
+        $password = (string) (
+            $envVars['WORDPRESS_DB_PASSWORD']
+            ?? $envVars['DB_PASSWORD']
+            ?? $envVars['MYSQL_PASSWORD']
+            ?? ''
+        );
 
         $sql = sprintf(
             'CREATE DATABASE IF NOT EXISTS %s; '
@@ -1410,7 +1443,7 @@ class ContainerDeploymentService
         // Attempt 1: use the env root password
         try {
             $ssh->exec(
-                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysql -u root -e {$sqlArg}",
+                "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} mysql -u root -e {$sqlArg}",
                 20
             );
 
@@ -1421,7 +1454,7 @@ class ContainerDeploymentService
         // Attempt 2: try passwordless root (some images allow socket auth)
         try {
             $ssh->exec(
-                "cd {$pathArg} && docker compose exec -T db mysql -u root -e {$sqlArg}",
+                "cd {$pathArg} && docker compose exec -T {$dbServiceArg} mysql -u root -e {$sqlArg}",
                 20
             );
 
@@ -1446,14 +1479,14 @@ class ContainerDeploymentService
         $resetScript = implode("\n", [
             "cd {$pathArg}",
             'docker rm -f db_credential_repair 2>/dev/null || true',
-            'docker compose stop db 2>/dev/null || true',
-            'docker compose run --rm -d --name db_credential_repair --entrypoint "" db sh -c "exec mysqld --skip-grant-tables --skip-networking=false --user=mysql"',
+            "docker compose stop {$dbServiceArg} 2>/dev/null || true",
+            "docker compose run --rm -d --name db_credential_repair --entrypoint \"\" {$dbServiceArg} sh -c \"exec mysqld --skip-grant-tables --skip-networking=false --user=mysql\"",
             'for i in $(seq 1 25); do if docker exec db_credential_repair mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done',
             "REPAIR_RESULT=0; docker exec db_credential_repair mysql -u root -e {$skipGrantSqlArg} || REPAIR_RESULT=1",
             'docker stop db_credential_repair 2>/dev/null || true',
             'docker rm -f db_credential_repair 2>/dev/null || true',
-            'docker compose start db',
-            "for i in \$(seq 1 15); do if docker compose exec -T -e MYSQL_PWD={$rootPwArg} db mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done",
+            "docker compose start {$dbServiceArg}",
+            "for i in \$(seq 1 15); do if docker compose exec -T -e MYSQL_PWD={$rootPwArg} {$dbServiceArg} mysqladmin ping --silent 2>/dev/null; then break; fi; sleep 1; done",
             'exit $REPAIR_RESULT',
         ]);
 
@@ -1463,6 +1496,25 @@ class ContainerDeploymentService
     private function mysqlQuoteIdentifier(string $name): string
     {
         return '`'.str_replace('`', '``', $name).'`';
+    }
+
+    /**
+     * @param  array<string, mixed>  $envVars
+     */
+    private function resolveMysqlComposeServiceName(array $envVars): string
+    {
+        if (! empty($envVars['WORDPRESS_DB_NAME'])
+            || ! empty($envVars['WORDPRESS_DB_HOST'])
+            || ! empty($envVars['WORDPRESS_DB_USER'])) {
+            return 'mysql';
+        }
+
+        $host = (string) ($envVars['DB_HOST'] ?? $envVars['WORDPRESS_DB_HOST'] ?? 'db');
+        if (str_contains($host, ':')) {
+            $host = explode(':', $host, 2)[0];
+        }
+
+        return $host !== '' ? $host : 'db';
     }
 
     /**
@@ -1689,25 +1741,30 @@ class ContainerDeploymentService
 
     private function resolveHostAppPath($template, string $containerName): ?string
     {
+        $path = self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+        $slug = $template->slug ?? '';
+
         if (! isset($template->volume_paths) || ! is_array($template->volume_paths)) {
             // Legacy template rows may miss volume_paths; still keep app path
             // for runtime templates that expect /app content.
-            if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
-                return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+            if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby', 'wordpress'], true)) {
+                return $path;
             }
 
             return null;
         }
 
-        if (! array_key_exists('app_data', $template->volume_paths)) {
-            if (in_array($template->slug ?? '', ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
-                return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
-            }
-
-            return null;
+        if (array_key_exists('app_data', $template->volume_paths)
+            || array_key_exists('wp_data', $template->volume_paths)
+            || $slug === 'wordpress') {
+            return $path;
         }
 
-        return self::CONTAINER_BASE_PATH.'/'.$containerName.'/app';
+        if (in_array($slug, ['laravel', 'php', 'nodejs', 'python', 'ruby'], true)) {
+            return $path;
+        }
+
+        return null;
     }
 
     private function resolveApplicationRuntime(SSHService $ssh, $template, ?string $hostAppPath): ?ApplicationRuntime

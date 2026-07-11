@@ -94,6 +94,23 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringContainsString('[ -s ', $cmd);
     }
 
+    public function test_build_wordpress_host_extract_command_targets_file_manager_path(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildWordPressHostExtractCommand(
+            '/tmp/files.tar.gz',
+            '/opt/talksasa/containers/user-76-service-97-wordpress/app'
+        );
+
+        $this->assertStringContainsString(
+            "tar -xzf '/tmp/files.tar.gz' -C '/opt/talksasa/containers/user-76-service-97-wordpress/app'",
+            $cmd
+        );
+        $this->assertStringContainsString('wp-config.php', $cmd);
+        $this->assertStringContainsString('wp-content', $cmd);
+    }
+
     public function test_resolve_wordpress_import_credentials_prefers_deployment_env_values(): void
     {
         $ssh = \Mockery::mock(SSHService::class);

@@ -337,13 +337,12 @@ class DirectAdminToContainerMigrationService
                 180
             );
 
+            // Extract onto the host bind mount (.../app → /var/www/html) so the customer
+            // file manager sees the same files as the WordPress container.
+            $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+            $targetSsh->exec('mkdir -p '.escapeshellarg($hostAppPath));
             $targetSsh->exec(
-                "cd {$containerPath} && docker compose cp ".escapeshellarg($filesTar)." {$appService}:/tmp/wp-files.tar.gz",
-                300
-            );
-            $targetSsh->exec(
-                "cd {$containerPath} && docker compose exec -T {$appService} sh -c "
-                .escapeshellarg('mkdir -p /var/www/html && tar -xzf /tmp/wp-files.tar.gz -C /var/www/html && rm -f /tmp/wp-files.tar.gz'),
+                $this->buildWordPressHostExtractCommand($filesTar, $hostAppPath),
                 900
             );
 
@@ -402,12 +401,20 @@ class DirectAdminToContainerMigrationService
                 600
             );
 
-            $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, [
+            $dbDefines = [
                 'DB_NAME' => $safeDatabase,
                 'DB_USER' => $db['user'] !== '' ? $db['user'] : 'wordpress',
                 'DB_PASSWORD' => $db['password'] !== '' ? $db['password'] : $importPass,
                 'DB_HOST' => $dbService,
-            ]);
+            ];
+
+            // Prefer host bind-mount path so file manager and container stay in sync.
+            $this->rewriteWpConfigOnHost($targetSsh, $hostAppPath.'/wp-config.php', $dbDefines);
+            try {
+                $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
+            } catch (\Throwable) {
+                // Host rewrite is authoritative when bind-mounted; container rewrite is best-effort.
+            }
 
             @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
             @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
@@ -890,6 +897,21 @@ PHP;
     }
 
     /**
+     * Extract a WordPress files archive onto the host bind mount used by the file manager.
+     */
+    public function buildWordPressHostExtractCommand(string $filesTar, string $hostAppPath): string
+    {
+        return 'mkdir -p '.escapeshellarg($hostAppPath)
+            .' && tar -xzf '.escapeshellarg($filesTar).' -C '.escapeshellarg($hostAppPath)
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ -f '.escapeshellarg(rtrim($hostAppPath, '/').'/wp-config.php')
+            .' ] || [ -d '.escapeshellarg(rtrim($hostAppPath, '/').'/wp-content').' ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
+    }
+
+    /**
      * @return array<string, string>
      */
     private function readContainerDbEnv(SSHService $ssh, string $containerPath): array
@@ -918,6 +940,35 @@ PHP;
         }
 
         return 'db';
+    }
+
+    /**
+     * @param  array{DB_NAME: string, DB_USER: string, DB_PASSWORD: string, DB_HOST: string}  $db
+     */
+    private function rewriteWpConfigOnHost(SSHService $ssh, string $configPath, array $db): void
+    {
+        foreach ($db as $key => $value) {
+            $escapedValue = str_replace(['\\', "'"], ['\\\\', "\\'"], $value);
+            $escapedPath = str_replace(['\\', "'"], ['\\\\', "\\'"], $configPath);
+            $php = <<<PHP
+\$cfg = '{$escapedPath}';
+if (! is_file(\$cfg)) {
+    exit(0);
+}
+\$key = '{$key}';
+\$val = '{$escapedValue}';
+\$text = file_get_contents(\$cfg);
+\$pattern = "/define\\s*\\(\\s*['\\"]{\$key}['\\"]\\s*,\\s*['\\"].*?['\\"]\\s*\\)/i";
+\$repl = "define('{\$key}', '{\$val}')";
+if (preg_match(\$pattern, \$text)) {
+    \$text = preg_replace(\$pattern, \$repl, \$text, 1);
+} else {
+    \$text = preg_replace('/<\\?php/', "<?php\\n" . \$repl, \$text, 1);
+}
+file_put_contents(\$cfg, \$text);
+PHP;
+            $ssh->exec('php -r '.escapeshellarg($php), 30);
+        }
     }
 
     /**

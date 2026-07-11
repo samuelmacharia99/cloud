@@ -385,7 +385,14 @@ class ContainerFileService
 
         $template = $deployment->service?->product?->containerTemplate;
         $volumePaths = $template?->volume_paths;
-        if (is_array($volumePaths) && array_key_exists('app_data', $volumePaths)) {
+        if (is_array($volumePaths) && (
+            array_key_exists('app_data', $volumePaths)
+            || array_key_exists('wp_data', $volumePaths)
+        )) {
+            return $basePath.self::APP_SUBDIR;
+        }
+
+        if (($template?->slug ?? '') === 'wordpress') {
             return $basePath.self::APP_SUBDIR;
         }
 

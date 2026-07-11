@@ -122,6 +122,65 @@ class ContainerDeploymentComposeTest extends TestCase
     }
 
     #[Test]
+    public function render_compose_bind_mounts_wordpress_host_app_to_var_www_html(): void
+    {
+        $template = new ContainerTemplate([
+            'slug' => 'wordpress',
+            'docker_image' => 'wordpress:latest',
+            'default_port' => 80,
+            'required_cpu_cores' => 1,
+            'required_ram_mb' => 512,
+            'volume_paths' => [
+                'wp_data' => '/var/www/html',
+                'wp_content' => '/var/www/html/wp-content',
+            ],
+            'compose_services' => [
+                'mysql' => [
+                    'image' => 'mysql:8.0',
+                    'environment' => [],
+                    'volumes' => [
+                        'mysql_data:/var/lib/mysql',
+                    ],
+                ],
+            ],
+        ]);
+
+        $runtimeImages = $this->createMock(RuntimeImageProvisioner::class);
+        $runtimeImages->method('usesRuntimeImage')->willReturn(false);
+
+        $deployer = new ContainerDeploymentService(
+            runtimeImages: $runtimeImages,
+            templateEnvironment: new ContainerTemplateEnvironmentService
+        );
+
+        $method = new ReflectionMethod(ContainerDeploymentService::class, 'renderCompose');
+        $method->setAccessible(true);
+
+        $hostApp = '/opt/talksasa/containers/user-76-service-97-wordpress/app';
+        $yaml = $method->invoke(
+            $deployer,
+            $template,
+            'user-76-service-97-wordpress',
+            30004,
+            [
+                'WORDPRESS_DB_NAME' => 'wordpress',
+                'WORDPRESS_DB_USER' => 'wordpress',
+                'WORDPRESS_DB_PASSWORD' => 'generated-password',
+                'MYSQL_ROOT_PASSWORD' => 'root-password',
+            ],
+            null,
+            null,
+            null,
+            $hostApp,
+            null
+        );
+
+        $this->assertStringContainsString("{$hostApp}:/var/www/html", $yaml);
+        $this->assertStringNotContainsString('wp_data:/var/www/html', $yaml);
+        $this->assertStringNotContainsString('wp_content:/var/www/html/wp-content', $yaml);
+    }
+
+    #[Test]
     public function render_compose_adds_autostart_command_for_nodejs(): void
     {
         $template = new ContainerTemplate([
