@@ -129,10 +129,10 @@ class DirectAdminContainerMigrationController extends Controller
             $product->id,
             $request->boolean('acknowledge_extra_mailboxes'),
             $validated['database_name'] ?? null,
-        );
+        )->afterResponse();
 
         return redirect()
             ->route('admin.services.show', $service)
-            ->with('success', 'Silent convert queued: same service, no invoice, no customer notification. Refresh this page for progress (da_convert status).');
+            ->with('success', 'Silent convert queued: same service, no invoice, no customer notification. Refresh this page for progress (da_convert status). Ensure a queue worker is running if QUEUE_CONNECTION is not sync.');
     }
 }

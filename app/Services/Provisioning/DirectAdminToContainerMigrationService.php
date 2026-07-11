@@ -239,16 +239,23 @@ class DirectAdminToContainerMigrationService
         try {
             $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
 
+            $wpCreds = $this->parseWpDatabaseCredentials($daSsh, (string) $inventory['docroot']);
             $dbName = $databaseName
-                ?: ($inventory['databases'][0]['name'] ?? null)
-                ?: $this->parseWpDatabaseName($daSsh, (string) $inventory['docroot']);
+                ?: ($wpCreds['DB_NAME'] ?? null)
+                ?: ($inventory['databases'][0]['name'] ?? null);
 
             if (! $dbName) {
                 throw new \RuntimeException('Could not determine MySQL database name for WordPress.');
             }
 
+            if (blank($wpCreds['DB_USER'] ?? null)) {
+                throw new \RuntimeException(
+                    'Could not read DB_USER from wp-config.php. Cannot dump the database without WordPress MySQL credentials.'
+                );
+            }
+
             $daSsh->exec(
-                'mysqldump --single-transaction --quick '.escapeshellarg($dbName).' > '.escapeshellarg($dumpFile),
+                $this->buildMysqlDumpCommand($wpCreds, $dbName, $dumpFile),
                 600
             );
             $daSsh->exec(
@@ -441,13 +448,107 @@ class DirectAdminToContainerMigrationService
 
     private function parseWpDatabaseName(SSHService $ssh, string $docroot): ?string
     {
-        $cfg = escapeshellarg($docroot.'/wp-config.php');
-        $out = $ssh->exec("grep -E \"define\\s*\\(\\s*'DB_NAME'\" {$cfg} | head -1");
-        if (preg_match("/DB_NAME'\\s*,\\s*'([^']+)'/", $out, $m)) {
-            return $m[1];
+        return $this->parseWpDatabaseCredentials($ssh, $docroot)['DB_NAME'] ?? null;
+    }
+
+    /**
+     * Read DB_* defines from wp-config.php on the DirectAdmin node.
+     *
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseWpDatabaseCredentials(SSHService $ssh, string $docroot): array
+    {
+        $cfgPath = rtrim($docroot, '/').'/wp-config.php';
+        $php = <<<'PHP'
+$cfgPath = $argv[1] ?? '';
+$text = @file_get_contents($cfgPath);
+if ($text === false) {
+    fwrite(STDERR, "unreadable\n");
+    exit(1);
+}
+foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
+    if (preg_match('/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*([\'"])(.*?)\1\s*\)/s', $text, $m)) {
+        echo $key.':'.base64_encode(stripcslashes($m[2]))."\n";
+    }
+}
+PHP;
+
+        $out = $ssh->exec('php -r '.escapeshellarg($php).' '.escapeshellarg($cfgPath).' 2>/dev/null || true');
+
+        return $this->decodeWpDatabaseCredentialLines($out);
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function decodeWpDatabaseCredentialLines(string $output): array
+    {
+        $creds = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+
+        foreach (preg_split('/\r\n|\r|\n/', $output) as $line) {
+            if (! str_contains($line, ':')) {
+                continue;
+            }
+            [$key, $encoded] = explode(':', $line, 2);
+            if (! array_key_exists($key, $creds)) {
+                continue;
+            }
+            $decoded = base64_decode(trim($encoded), true);
+            if ($decoded === false) {
+                continue;
+            }
+            $creds[$key] = $decoded;
         }
 
-        return null;
+        if (($creds['DB_HOST'] ?? null) === null || $creds['DB_HOST'] === '') {
+            $creds['DB_HOST'] = 'localhost';
+        }
+
+        return $creds;
+    }
+
+    /**
+     * @param  array{DB_NAME?: ?string, DB_USER?: ?string, DB_PASSWORD?: ?string, DB_HOST?: string}  $creds
+     */
+    public function buildMysqlDumpCommand(array $creds, string $dbName, string $dumpFile): string
+    {
+        $user = (string) ($creds['DB_USER'] ?? '');
+        $pass = (string) ($creds['DB_PASSWORD'] ?? '');
+        $host = (string) ($creds['DB_HOST'] ?? 'localhost');
+
+        if ($user === '') {
+            throw new \InvalidArgumentException('MySQL dump requires DB_USER.');
+        }
+
+        $parts = [
+            'MYSQL_PWD='.escapeshellarg($pass),
+            'mysqldump',
+            '--single-transaction',
+            '--quick',
+            '--no-tablespaces',
+        ];
+
+        if (preg_match('#^([^:]+):(/[^:]+)$#', $host, $socketMatch)) {
+            $parts[] = '-h'.escapeshellarg($socketMatch[1]);
+            $parts[] = '--socket='.escapeshellarg($socketMatch[2]);
+        } elseif (preg_match('/^(.+):(\d+)$/', $host, $portMatch)) {
+            $parts[] = '-h'.escapeshellarg($portMatch[1]);
+            $parts[] = '-P'.escapeshellarg($portMatch[2]);
+        } else {
+            $parts[] = '-h'.escapeshellarg($host);
+        }
+
+        $parts[] = '-u'.escapeshellarg($user);
+        $parts[] = escapeshellarg($dbName);
+        $parts[] = '>';
+        $parts[] = escapeshellarg($dumpFile);
+
+        return implode(' ', $parts);
     }
 
     /**
