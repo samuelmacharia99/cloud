@@ -43,7 +43,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 
 | # | Deliverable | Notes |
 |---|-------------|--------|
-| 1.1 | Console IA regroup | Group tabs: **App** / **Data** / **Network** / **Ops** / **Help** |
+| 1.1 | Console IA regroup | Real tabs only (no fake App/Data/… labels); mobile optgroups OK |
 | 1.2 | Environment / Secrets panel | CRUD env vars; restart/apply; platform DB keys protected |
 | 1.3 | Backup UX | Downtime warning, scheduled backup status, clearer restore copy |
 | 1.4 | Harden Laravel + Node path | Force rebuild, runtime skip fix, docs → Environment |
@@ -134,6 +134,8 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | 2026-07-11 | **Phase 2 MVP:** auto-deploy webhook + Git UI, live logs, DB table browser, container plan resize, data-aware node migrate. |
 | 2026-07-11 | **Phase 3.1 MVP:** WordPress DA→container ETL (inventory, job, customer/admin wizards, progress on target). |
 | 2026-07-11 | **Phase 4.1 foundation:** staging sibling link + env sync. |
+| 2026-07-11 | Added QA testing checklist for Phases 1–4 MVP. |
+| 2026-07-11 | Fixed console tab IA: removed fake App/Data/… labels; Docs tab always mounts for deep links. |
 
 ### Phase checklists
 
@@ -155,6 +157,120 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 - [x] 4.1 Staging link MVP
 - [ ] 4.3 Mail product
 - [ ] 4.4 Team / BYO Dockerfile
+
+---
+
+## QA testing checklist
+
+Use this on a staging/production-like environment with a real container host (and a DA node for migration tests). Check off as you go. Prefer one Laravel, one Node, and one WordPress service where noted.
+
+### Preconditions
+
+- [ ] Queue worker running (`php artisan queue:work` or Horizon) — git pulls, auto-deploy, and DA migrator jobs need it
+- [ ] At least one active `container_host` node with SSH
+- [ ] Customer account with an active App Hosting service (Laravel or Node for git; WordPress for migrator target)
+- [ ] (Migration only) Same customer has an active DirectAdmin shared hosting WordPress site
+- [ ] (Plan resize only) Two+ active products sharing the same `container_template_id` with different CPU/RAM
+
+### Phase 1 — Console & positioning
+
+- [ ] `/my/services` and checkout/techstack show **App Hosting** / **Shared (email & legacy)** labels (not raw `container_hosting`)
+- [ ] Container console shows only real tabs (Overview, Environment, … Docs) — not App/Data/Network/Ops/Help as clickable items
+- [ ] `?tab=documentation` opens Docs with stack-specific guide content
+- [ ] **Environment** tab: add a custom env var → Save & apply → container restarts → value persists after refresh
+- [ ] **Environment** tab: delete a custom key → applied and gone after refresh
+- [ ] Platform DB keys still present after edits; changing them does not leave the stack broken (or Repair Credentials recovers)
+- [ ] **Backups**: create backup shows downtime warning; scheduled “next due ~24h” messaging appears when a prior backup exists
+- [ ] Laravel: Git pull does not incorrectly skip a completed runtime step on a second pull
+- [ ] Node: **Force clean rebuild** runs a full rebuild path when checked
+- [ ] Docs / Laravel setup / terminal copy points at **Environment** (and Git) where relevant
+
+### Phase 2 — PaaS parity
+
+#### Auto-deploy (Git tab)
+
+- [ ] Save a public (or PAT-backed private) repo + branch
+- [ ] **Enable auto-deploy** → one-time secret shown once; copy URL + secret
+- [ ] Webhook rejects bad token (`401` / invalid token)
+- [ ] Push (or `curl`) to connected branch with `X-Talksasa-Token` → pull queued (`202`); pipeline UI updates
+- [ ] Push to a **different** branch → ignored message, no new pull
+- [ ] **Disable auto-deploy** → webhook no longer queues
+- [ ] **Rotate secret** → old secret fails; new secret works
+- [ ] GitLab-style: token via `X-Gitlab-Token` or `?token=` works
+
+#### Logs & git progress
+
+- [ ] During an active git pull, steps + terminal output refresh ~1.5s
+- [ ] **Logs** tab: Refresh loads last ~200 lines
+- [ ] **Logs** tab: **Live follow** updates ~every 2s and scrolls while new lines appear
+- [ ] Overview log preview still loads
+
+#### Database tab
+
+- [ ] Credentials / test connection / (Laravel) repair credentials work
+- [ ] **Table browser**: Refresh tables lists tables; click table previews ≤25 rows
+- [ ] Read-only SQL console: `SELECT` / `SHOW` succeed; write query rejected
+- [ ] SQL import (small dump) succeeds when console enabled
+
+#### Plan resize
+
+- [ ] Container overview **Change plan** opens upgrade UI with CPU/RAM/disk options (same template only)
+- [ ] Upgrade with prorated charge → unpaid invoice → pay → limits applied (CPU/memory on deployment + stack)
+- [ ] Downgrade / lateral (KES 0) applies without payment friction (or paid £0 invoice settles)
+- [ ] Wrong-template products do **not** appear in the list
+- [ ] Shared hosting **Change plan** still works (regression)
+
+#### Data-aware node migrate (admin)
+
+- [ ] Admin → container service → **Migrate Node**
+- [ ] Warning copy mentions data/volumes are copied (not “fresh redeploy only”)
+- [ ] After migrate: app files + DB data still present; service runs on target node
+- [ ] Source node cleaned up (or cleanup warning only if best-effort fail)
+
+### Phase 3 — DA → WordPress container
+
+#### Customer wizard
+
+- [ ] Shared hosting service shows **Move to App Hosting**
+- [ ] `/my/services/{id}/migrate-to-app` shows dry-run inventory (user, domain, stack, docroot, DBs, warnings)
+- [ ] Without a WordPress container target: CTA to deploy App Hosting
+- [ ] With target: must accept “email stays on DA” checkbox
+- [ ] Queue migration → redirects to **target** container overview with status banner (`queued` → `running` → `completed` / `failed`)
+- [ ] On success: WP files in container, DB imported, site loads; mailboxes still on DA
+- [ ] DNS caveat understood: site may need DNS/SSL update to container URL/domain
+
+#### Admin wizard
+
+- [ ] Admin shared hosting → **Migrate to App Hosting** inventory + queue works
+- [ ] Admin container → **Migrate Node** still available for C→C moves
+
+### Phase 4 — Staging foundation
+
+- [ ] Overview **Staging environment**: link a same-stack sibling container
+- [ ] **Sync env to staging** copies non–platform-managed vars; staging restarts
+- [ ] **Unlink** clears the relationship
+- [ ] Different-template sibling does not appear (or link is rejected)
+
+### Smoke / regression
+
+- [ ] Start / stop / restart / Visit service
+- [ ] Domains bind + SSL path unchanged
+- [ ] Files + terminal still open
+- [ ] Cron list/add/delete (if used)
+- [ ] Customer cannot open another user’s container routes (`403`)
+- [ ] CSRF: browser forms work; webhook path is CSRF-exempt
+
+### Sign-off
+
+| Area | Tester | Date | Pass? | Notes |
+|------|--------|------|-------|-------|
+| Phase 1 | | | | |
+| Auto-deploy | | | | |
+| Logs / DB / resize | | | | |
+| Node migrate | | | | |
+| DA→WP migrator | | | | |
+| Staging | | | | |
+| Regression smoke | | | | |
 
 ---
 

@@ -108,32 +108,35 @@
                         </optgroup>
                     </select>
 
-                    <nav class="hidden md:flex flex-col gap-3 pb-1" role="tablist">
-                        <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
-                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 w-16">App</span>
-                            @foreach ([['overview', 'Overview'], ['environment', 'Environment'], ['files', 'Files'], ['terminal', 'Terminal']] as [$tabKey, $tabLabel])
-                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                    {{-- Only real tabs are clickable. Group names are not tabs (that confused the IA). --}}
+                    <nav class="hidden md:block overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Container console sections">
+                        <div class="flex items-center gap-1 min-w-max">
+                            @foreach ([
+                                ['overview', 'Overview'],
+                                ['environment', 'Environment'],
+                                ['files', 'Files'],
+                                ['terminal', 'Terminal'],
+                            ] as [$tabKey, $tabLabel])
+                                <button type="button" @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === '{{ $tabKey }}'">{{ $tabLabel }}</button>
                             @endforeach
                             @if (!empty($supportsGitRepository))
-                                <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Git</button>
+                                <button type="button" @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'github'">Git</button>
                             @endif
                             @if (!empty($supportsPhpExtensions))
-                                <button @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">PHP Extensions</button>
+                                <button type="button" @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === 'php-extensions'">PHP Extensions</button>
                             @endif
-                        </div>
-                        <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
-                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 w-16">Data</span>
-                            @foreach ([['database', 'Database'], ['backups', 'Backups']] as [$tabKey, $tabLabel])
-                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+
+                            <span class="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700 shrink-0" aria-hidden="true"></span>
+
+                            @foreach ([['database', 'Database'], ['backups', 'Backups'], ['domains', 'Domains']] as [$tabKey, $tabLabel])
+                                <button type="button" @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === '{{ $tabKey }}'">{{ $tabLabel }}</button>
                             @endforeach
-                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Network</span>
-                            <button @click="setTab('domains')" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Domains</button>
-                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Ops</span>
-                            @foreach ([['logs', 'Logs'], ['cron', 'Cron']] as [$tabKey, $tabLabel])
-                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+
+                            <span class="mx-1 h-5 w-px bg-slate-200 dark:bg-slate-700 shrink-0" aria-hidden="true"></span>
+
+                            @foreach ([['logs', 'Logs'], ['cron', 'Cron'], ['documentation', 'Docs']] as [$tabKey, $tabLabel])
+                                <button type="button" @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'border-b-2 border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm whitespace-nowrap" role="tab" :aria-selected="activeTab === '{{ $tabKey }}'">{{ $tabLabel }}</button>
                             @endforeach
-                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Help</span>
-                            <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Docs</button>
                         </div>
                     </nav>
                 </div>
@@ -668,12 +671,10 @@
                         </div>
                     </template>
 
-                    <!-- Documentation Tab -->
-                    <template x-if="hasVisited('documentation')">
-                        <div x-show="activeTab === 'documentation'">
-                            @include('customer.services.partials.documentation')
-                        </div>
-                    </template>
+                    <!-- Documentation Tab (always mounted so ?tab=documentation deep-links work) -->
+                    <div x-show="activeTab === 'documentation'" x-cloak class="space-y-0">
+                        @include('customer.services.partials.documentation')
+                    </div>
                 </div>
 
                 <!-- Mobile sticky actions -->
@@ -763,9 +764,11 @@
 
 <script>
 function containerTabs(initialTab) {
+    const allowedTabs = @js($containerTabs);
+
     return {
-        activeTab: initialTab,
-        visitedTabs: [initialTab],
+        activeTab: allowedTabs.includes(initialTab) ? initialTab : 'overview',
+        visitedTabs: [allowedTabs.includes(initialTab) ? initialTab : 'overview'],
         fullLogs: '',
         logsLoading: false,
         logsLive: false,
@@ -784,6 +787,9 @@ function containerTabs(initialTab) {
         },
 
         setTab(tab) {
+            if (! allowedTabs.includes(tab)) {
+                return;
+            }
             if (!this.visitedTabs.includes(tab)) {
                 this.visitedTabs.push(tab);
             }
