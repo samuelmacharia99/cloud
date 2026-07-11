@@ -345,6 +345,7 @@ class DirectAdminToContainerMigrationService
                 $this->buildWordPressHostExtractCommand($filesTar, $hostAppPath),
                 900
             );
+            $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             $targetSsh->exec(
                 "cd {$containerPath} && docker compose cp ".escapeshellarg($dumpFile)." {$dbService}:/tmp/import.sql",
@@ -411,6 +412,7 @@ class DirectAdminToContainerMigrationService
             // Rewrite via the WordPress container (nodes typically have no host PHP).
             // With the host app bind-mount, this updates the same files the file manager sees.
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
+            $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
             @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
@@ -905,6 +907,57 @@ PHP;
             .' ] || [ -d '.escapeshellarg(rtrim($hostAppPath, '/').'/wp-content').' ]; then exit 0; fi'
             .' ; fi'
             .' ; exit "$status"';
+    }
+
+    /**
+     * Make bind-mounted WordPress files readable/writable by Apache (www-data / uid 33).
+     *
+     * DA archives often keep wp-config.php as mode 600 under a DA user UID; that causes
+     * HTTP 500 once Apache in the official WordPress image cannot read the config.
+     */
+    public function buildWordPressPermissionsCommand(string $hostAppPath): string
+    {
+        $path = escapeshellarg(rtrim($hostAppPath, '/'));
+
+        return 'if [ -d '.$path.' ]; then'
+            .'  chown -R 33:33 '.$path
+            .'  && find '.$path.' -type d -exec chmod 755 {} +'
+            .'  && find '.$path.' -type f -exec chmod 644 {} +'
+            .'  && if [ -f '.$path.'/wp-config.php ]; then chmod 640 '.$path.'/wp-config.php; fi'
+            .'  && if [ -d '.$path.'/wp-content ]; then'
+            .'       find '.$path.'/wp-content -type d -exec chmod 775 {} +'
+            .'       && find '.$path.'/wp-content -type f -exec chmod 664 {} +'
+            .'     ; fi'
+            .'  ; fi';
+    }
+
+    private function normalizeWordPressAppPermissions(
+        SSHService $ssh,
+        string $hostAppPath,
+        string $containerPath,
+        string $appService
+    ): void {
+        try {
+            $ssh->exec($this->buildWordPressPermissionsCommand($hostAppPath), 300);
+        } catch (\Throwable $e) {
+            // Fallback: chown inside the container (same bind mount) as root.
+            $ssh->exec(
+                "cd {$containerPath} && docker compose exec -u 0 -T {$appService} sh -c "
+                .escapeshellarg(
+                    'chown -R www-data:www-data /var/www/html'
+                    .' && find /var/www/html -type d -exec chmod 755 {} +'
+                    .' && find /var/www/html -type f -exec chmod 644 {} +'
+                    .' && chmod 640 /var/www/html/wp-config.php 2>/dev/null || true'
+                    .' && find /var/www/html/wp-content -type d -exec chmod 775 {} + 2>/dev/null || true'
+                    .' && find /var/www/html/wp-content -type f -exec chmod 664 {} + 2>/dev/null || true'
+                ),
+                300
+            );
+            Log::warning('Host WordPress permission normalize failed; applied via container', [
+                'error' => $e->getMessage(),
+                'host_app_path' => $hostAppPath,
+            ]);
+        }
     }
 
     /**

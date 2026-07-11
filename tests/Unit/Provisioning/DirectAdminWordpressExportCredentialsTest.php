@@ -111,6 +111,20 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringContainsString('wp-content', $cmd);
     }
 
+    public function test_build_wordpress_permissions_command_owns_files_as_www_data_uid(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildWordPressPermissionsCommand(
+            '/opt/talksasa/containers/user-76-service-97-wordpress/app'
+        );
+
+        $this->assertStringContainsString('chown -R 33:33', $cmd);
+        $this->assertStringContainsString('wp-config.php', $cmd);
+        $this->assertStringContainsString('chmod 640', $cmd);
+        $this->assertStringContainsString('wp-content', $cmd);
+    }
+
     public function test_resolve_wordpress_import_credentials_prefers_deployment_env_values(): void
     {
         $ssh = \Mockery::mock(SSHService::class);

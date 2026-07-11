@@ -31,6 +31,7 @@
     <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-6 space-y-3">
         <h4 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h4>
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
+            <li><strong>HTTP 500 after DirectAdmin migrate</strong> — Bind-mounted files may still be owned by the DA user / mode <code class="font-mono text-xs">600</code> on <code class="font-mono text-xs">wp-config.php</code>. Ask support to normalize ownership to <code class="font-mono text-xs">www-data</code> (uid 33), or check Logs for “Permission denied”.</li>
             <li><strong>Redirect loop after domain change</strong> — Update <code class="font-mono text-xs">siteurl</code> and <code class="font-mono text-xs">home</code> in the database or wp-config.</li>
             <li><strong>White screen</strong> — Enable <code class="font-mono text-xs">WP_DEBUG</code> temporarily and check Logs.</li>
         </ul>
