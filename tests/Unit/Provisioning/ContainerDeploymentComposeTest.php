@@ -77,6 +77,9 @@ class ContainerDeploymentComposeTest extends TestCase
                 'mysql' => [
                     'image' => 'mysql:8.0',
                     'environment' => [],
+                    'volumes' => [
+                        'mysql_data:/var/lib/mysql',
+                    ],
                 ],
             ],
         ]);
@@ -114,6 +117,8 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringNotContainsString("\n  db:\n", $yaml);
         $this->assertStringContainsString('generated-password', $yaml);
         $this->assertStringContainsString('depends_on', $yaml);
+        $this->assertStringContainsString('mysql_data:/var/lib/mysql', $yaml);
+        $this->assertMatchesRegularExpression('/volumes:\s*\n(?:.*\n)*?\s+mysql_data:/', $yaml);
     }
 
     #[Test]

@@ -997,7 +997,45 @@ class ContainerDeploymentService
             $this->injectDatabaseSidecar($compose, $databaseTemplate, $envVars, $containerName);
         }
 
+        $this->ensureNamedVolumesDeclared($compose);
+
         return Yaml::dump($compose, 10, 2);
+    }
+
+    /**
+     * Declare top-level named volumes referenced by services (e.g. template mysql_data).
+     *
+     * @param  array<string, mixed>  $compose
+     */
+    private function ensureNamedVolumesDeclared(array &$compose): void
+    {
+        foreach ($compose['services'] ?? [] as $serviceConfig) {
+            if (! is_array($serviceConfig)) {
+                continue;
+            }
+
+            foreach ($serviceConfig['volumes'] ?? [] as $mount) {
+                if (! is_string($mount) || $mount === '') {
+                    continue;
+                }
+
+                // Bind mounts: /host/path:..., ./rel:..., ~/...
+                if (str_starts_with($mount, '/') || str_starts_with($mount, '.') || str_starts_with($mount, '~')) {
+                    continue;
+                }
+
+                // Named volume short syntax: name:container_path[:opts]
+                if (! preg_match('/^([a-zA-Z0-9][a-zA-Z0-9_.-]*)(:.+)$/', $mount, $matches)) {
+                    continue;
+                }
+
+                $volumeName = $matches[1];
+                $compose['volumes'] ??= [];
+                if (! array_key_exists($volumeName, $compose['volumes'])) {
+                    $compose['volumes'][$volumeName] = null;
+                }
+            }
+        }
     }
 
     /**
