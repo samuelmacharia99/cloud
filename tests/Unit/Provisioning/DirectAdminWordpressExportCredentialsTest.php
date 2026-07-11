@@ -74,4 +74,20 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
 
         $this->assertStringContainsString("--socket='/var/lib/mysql/mysql.sock'", $cmd);
     }
+
+    public function test_build_wordpress_files_tar_command_tolerates_changed_files(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildWordPressFilesTarCommand(
+            '/home/sisallov/domains/sisallove.com/public_html',
+            '/opt/talksasa/da-migrations/wp-export/files.tar.gz'
+        );
+
+        $this->assertStringContainsString("tar -czf '/opt/talksasa/da-migrations/wp-export/files.tar.gz'", $cmd);
+        $this->assertStringContainsString("--exclude='./wp-content/cache'", $cmd);
+        $this->assertStringContainsString("status=$?", $cmd);
+        $this->assertStringContainsString('[ "$status" -eq 1 ]', $cmd);
+        $this->assertStringContainsString('[ -s ', $cmd);
+    }
 }

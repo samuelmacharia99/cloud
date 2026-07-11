@@ -264,10 +264,12 @@ class DirectAdminToContainerMigrationService
             } finally {
                 @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
             }
+
             $daSsh->exec(
-                'tar -czf '.escapeshellarg($filesTar).' -C '.escapeshellarg((string) $inventory['docroot']).' .',
+                $this->buildWordPressFilesTarCommand((string) $inventory['docroot'], $filesTar),
                 900
             );
+
             $daSsh->downloadToLocal($dumpFile, $localDump);
             $daSsh->downloadToLocal($filesTar, $localTar);
         } finally {
@@ -645,6 +647,39 @@ PHP;
         $parts[] = escapeshellarg($dumpFile);
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * Archive WordPress docroot for migration.
+     * GNU tar exits 1 when files change mid-read (common on live sites); treat that as OK if the archive exists.
+     */
+    public function buildWordPressFilesTarCommand(string $docroot, string $filesTar): string
+    {
+        $excludeArgs = [];
+        foreach ([
+            './wp-content/cache',
+            './wp-content/upgrade',
+            './wp-content/temp',
+            './wp-content/tmp',
+            './wp-content/uploads/cache',
+            './wp-content/wflogs',
+            './*.log',
+        ] as $exclude) {
+            $excludeArgs[] = '--exclude='.escapeshellarg($exclude);
+        }
+
+        $tar = 'tar -czf '.escapeshellarg($filesTar)
+            .' '.implode(' ', $excludeArgs)
+            .' -C '.escapeshellarg($docroot)
+            .' .';
+
+        // Remap exit status 1 → 0 when archive was written (files changed while reading).
+        return $tar
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ -s '.escapeshellarg($filesTar).' ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
     }
 
     /**
