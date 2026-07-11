@@ -50,12 +50,26 @@ class ContainerTemplateEnvironmentService
             return;
         }
 
+        $rootPassword = trim((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? ''));
+        $mysqlPassword = trim((string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? ''));
+
+        // Never invent passwords here — they would not be saved to deployment env_values
+        // and import would use a different secret than the running MySQL container.
+        if ($rootPassword === '' || $mysqlPassword === '') {
+            throw new \RuntimeException(
+                'WordPress deploy is missing MYSQL_ROOT_PASSWORD / WORDPRESS_DB_PASSWORD before composing the mysql sidecar.'
+            );
+        }
+
         $compose['services']['mysql']['environment'] = [
             'MYSQL_DATABASE' => $envVars['WORDPRESS_DB_NAME'] ?? 'wordpress',
             'MYSQL_USER' => $envVars['WORDPRESS_DB_USER'] ?? 'wordpress',
-            'MYSQL_PASSWORD' => $envVars['WORDPRESS_DB_PASSWORD'] ?? Str::random(32),
-            'MYSQL_ROOT_PASSWORD' => $envVars['MYSQL_ROOT_PASSWORD'] ?? Str::random(32),
+            'MYSQL_PASSWORD' => $mysqlPassword,
+            'MYSQL_ROOT_PASSWORD' => $rootPassword,
         ];
+
+        // Avoid colliding container names across customers (template default is static).
+        $compose['services']['mysql']['container_name'] = $appServiceName.'-mysql';
 
         $compose['services'][$appServiceName]['depends_on'] = ['mysql'];
     }

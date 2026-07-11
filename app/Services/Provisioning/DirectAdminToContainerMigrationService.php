@@ -314,6 +314,21 @@ class DirectAdminToContainerMigrationService
             $db = $this->resolveWordpressImportCredentials($target, $targetSsh, $containerPath);
             $dbService = $db['service'];
 
+            // Prefer secrets from the running mysql container (source of truth after compose up).
+            $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+            if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
+                $db['root_password'] = $live['MYSQL_ROOT_PASSWORD'];
+            }
+            if (($live['MYSQL_PASSWORD'] ?? '') !== '') {
+                $db['password'] = $live['MYSQL_PASSWORD'];
+            }
+            if (($live['MYSQL_USER'] ?? '') !== '') {
+                $db['user'] = $live['MYSQL_USER'];
+            }
+            if (($live['MYSQL_DATABASE'] ?? '') !== '') {
+                $db['database'] = $live['MYSQL_DATABASE'];
+            }
+
             $this->waitForComposeMysql(
                 $targetSsh,
                 $containerPath,
@@ -337,8 +352,8 @@ class DirectAdminToContainerMigrationService
                 300
             );
 
-            $importUser = $db['root_password'] !== '' ? 'root' : $db['user'];
             $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
+            $importUser = $db['root_password'] !== '' ? 'root' : $db['user'];
             if ($importPass === '') {
                 throw new \RuntimeException(
                     'WordPress container MySQL password is missing (check deployment env_values / MYSQL_ROOT_PASSWORD).'
@@ -348,18 +363,34 @@ class DirectAdminToContainerMigrationService
             $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
             $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'wordpress';
 
+            // Use the unix socket (no -h127.0.0.1). Official MySQL images auth root via
+            // localhost socket; TCP to 127.0.0.1 often yields Access denied for root.
             $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
-            $targetSsh->exec(
-                'cd '.escapeshellarg($containerPath)
-                .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
-                .' '.escapeshellarg($dbService)
-                .' mysql -h127.0.0.1 -u'.escapeshellarg($safeUser)
-                .' -e '.escapeshellarg($createDbSql),
-                60
-            );
+            try {
+                $targetSsh->exec(
+                    'cd '.escapeshellarg($containerPath)
+                    .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
+                    .' '.escapeshellarg($dbService)
+                    .' mysql -u'.escapeshellarg($safeUser)
+                    .' -e '.escapeshellarg($createDbSql),
+                    60
+                );
+            } catch (\Throwable $rootError) {
+                // Fall back to app user — MYSQL_DATABASE already creates the schema on first boot.
+                if ($safeUser === 'root' && $db['password'] !== '' && $db['user'] !== '') {
+                    $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $db['user']) ?: 'wordpress';
+                    $importPass = $db['password'];
+                    Log::warning('WordPress import root login failed; retrying as app user', [
+                        'error' => $rootError->getMessage(),
+                        'user' => $safeUser,
+                    ]);
+                } else {
+                    throw $rootError;
+                }
+            }
 
             $importShell = sprintf(
-                'mysql -h127.0.0.1 -u%s %s < /tmp/import.sql && rm -f /tmp/import.sql',
+                'mysql -u%s %s < /tmp/import.sql && rm -f /tmp/import.sql',
                 escapeshellarg($safeUser),
                 escapeshellarg($safeDatabase)
             );
@@ -464,11 +495,24 @@ class DirectAdminToContainerMigrationService
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
-                $ssh->exec(
-                    "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
-                    .' mysqladmin ping -h 127.0.0.1 --silent',
-                    20
-                );
+                // Authenticate over the unix socket (not -h 127.0.0.1 / TCP).
+                if ($password !== '') {
+                    $ssh->exec(
+                        "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
+                        .' mysqladmin ping --silent',
+                        20
+                    );
+                    $ssh->exec(
+                        "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
+                        ." mysql -uroot -e 'SELECT 1'",
+                        20
+                    );
+                } else {
+                    $ssh->exec(
+                        "cd {$pathArg} && docker compose exec -T {$serviceArg} mysqladmin ping --silent",
+                        20
+                    );
+                }
 
                 return;
             } catch (\Throwable $e) {
@@ -487,6 +531,32 @@ class DirectAdminToContainerMigrationService
         throw new \RuntimeException(
             "MySQL sidecar \"{$dbService}\" did not become ready within {$timeoutSeconds} seconds."
         );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function readLiveMysqlSidecarEnv(SSHService $ssh, string $containerPath, string $dbService): array
+    {
+        $raw = $ssh->exec(
+            'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -T '.escapeshellarg($dbService)
+            .' printenv 2>/dev/null || true'
+        );
+
+        $env = [];
+        foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
+            if (! str_contains($line, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            if (in_array($key, ['MYSQL_ROOT_PASSWORD', 'MYSQL_PASSWORD', 'MYSQL_USER', 'MYSQL_DATABASE'], true)) {
+                $env[$key] = $value;
+            }
+        }
+
+        return $env;
     }
 
     /**

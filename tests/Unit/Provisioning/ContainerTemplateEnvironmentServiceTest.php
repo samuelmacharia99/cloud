@@ -93,6 +93,8 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertSame('wp_app', $compose['services']['mysql']['environment']['MYSQL_DATABASE']);
         $this->assertSame('wp_user', $compose['services']['mysql']['environment']['MYSQL_USER']);
         $this->assertSame('wp-secret', $compose['services']['mysql']['environment']['MYSQL_PASSWORD']);
+        $this->assertSame('root-secret', $compose['services']['mysql']['environment']['MYSQL_ROOT_PASSWORD']);
+        $this->assertSame('app-service-mysql', $compose['services']['mysql']['container_name']);
         $this->assertSame(['mysql'], $compose['services']['app-service']['depends_on']);
     }
 

@@ -259,6 +259,16 @@ class ContainerDeploymentService
                 // Upload docker-compose.yml
                 $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
 
+                // Quiet convert / reset: wipe volumes after compose exists so named volumes
+                // from prior failed attempts cannot keep a stale MySQL root password.
+                if ($options->shouldResetDatabase($hasDatabaseSidecar)) {
+                    $this->tearDownStack($ssh, $containerPath, removeVolumes: true);
+                    $databaseReset = true;
+                    $this->recordDeploymentEvent($service, $deployment, 'database_volume_reset_after_compose', [
+                        'container_name' => $containerName,
+                    ]);
+                }
+
                 if ($this->runtimeImages->usesRuntimeImage($template)) {
                     $this->runtimeImages->ensureImage($ssh, $template, $selectedVersion, $service, $deployment);
                 }
