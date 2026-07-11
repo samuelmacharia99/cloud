@@ -145,8 +145,21 @@
                 <div class="p-8">
                     <!-- Overview Tab -->
                     <div x-show="activeTab === 'overview'" class="space-y-8">
-                        @php $daMigration = $service->service_meta['da_migration'] ?? null; @endphp
-                        @if (!empty($daMigration['status']))
+                        @php
+                            $daMigration = $service->service_meta['da_migration'] ?? null;
+                            $daConvert = $service->service_meta['da_convert'] ?? null;
+                        @endphp
+                        @if (!empty($daConvert['status']))
+                            <div class="rounded-xl border p-4 {{ ($daConvert['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800' : (($daConvert['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800' : 'border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800') }}">
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">Converted from DirectAdmin: <span class="uppercase">{{ $daConvert['status'] }}</span></p>
+                                @if (!empty($daConvert['error']))
+                                    <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ $daConvert['error'] }}</p>
+                                @endif
+                                @if (($daConvert['status'] ?? '') === 'completed')
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Web runs on App Hosting. Email stays on DirectAdmin — update web DNS when ready; leave MX on DA.</p>
+                                @endif
+                            </div>
+                        @elseif (!empty($daMigration['status']))
                             <div class="rounded-xl border p-4 {{ ($daMigration['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800' : (($daMigration['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800' : 'border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800') }}">
                                 <p class="text-sm font-semibold text-slate-900 dark:text-white">DA → container migration: <span class="uppercase">{{ $daMigration['status'] }}</span></p>
                                 @if (!empty($daMigration['error']))

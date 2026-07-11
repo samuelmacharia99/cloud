@@ -23,7 +23,7 @@
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>MySQL credentials are pre-configured — see the <strong>Database</strong> tab for connection details.</li>
                 <li>Use the <strong>Database</strong> tab table browser and read-only SQL console (when enabled).</li>
-                <li>Migrating from DirectAdmin? Use <strong>Move to App Hosting</strong> on the shared hosting service (WordPress ETL). Email stays on DirectAdmin.</li>
+                <li>Migrating from DirectAdmin shared hosting? Ask support — admins convert WordPress in place (same service). Email stays on DirectAdmin.</li>
             </ul>
         </div>
     </div>

@@ -376,8 +376,10 @@ class ContainerDeploymentService
                 // Increment container count on node
                 $node->increment('container_count');
 
-                // Notify user
-                app(NotificationService::class)->notifyServiceActivated($service->fresh());
+                // Notify user (skipped for admin quiet converts)
+                if (! $options->quiet) {
+                    app(NotificationService::class)->notifyServiceActivated($service->fresh());
+                }
 
                 \Log::info("Container deployment successful for service {$service->id}", [
                     'container' => $containerName,

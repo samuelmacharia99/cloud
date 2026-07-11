@@ -7,11 +7,20 @@ final class ContainerDeployOptions
     public function __construct(
         public readonly bool $isRedeploy = false,
         public readonly bool $resetDatabase = false,
+        public readonly bool $quiet = false,
     ) {}
 
     public static function redeploy(bool $resetDatabase = false): self
     {
         return new self(isRedeploy: true, resetDatabase: $resetDatabase);
+    }
+
+    /**
+     * Deploy without customer notifications (admin silent convert / ops).
+     */
+    public static function quiet(): self
+    {
+        return new self(quiet: true);
     }
 
     public function shouldResetDatabase(bool $hasDatabaseSidecar): bool

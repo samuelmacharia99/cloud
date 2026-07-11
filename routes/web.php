@@ -37,7 +37,6 @@ use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
-use App\Http\Controllers\Customer\DirectAdminMigrationController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
 use App\Http\Controllers\Customer\HostingPanelController;
@@ -562,8 +561,6 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew.store');
         Route::get('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'show'])->name('customer.services.upgrade');
         Route::post('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'store'])->name('customer.services.upgrade.store');
-        Route::get('/my/services/{service}/migrate-to-app', [DirectAdminMigrationController::class, 'show'])->name('customer.services.migrate-to-app');
-        Route::post('/my/services/{service}/migrate-to-app', [DirectAdminMigrationController::class, 'store'])->name('customer.services.migrate-to-app.store');
 
         Route::prefix('my/services/{service}/hosting')->name('customer.services.hosting.')->group(function () {
             Route::get('panel-login', [HostingPanelController::class, 'panelLogin'])->middleware('throttle:10,1')->name('panel-login');

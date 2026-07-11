@@ -9,21 +9,28 @@
 ### Earlier (committed)
 1. Reseller invoice "Unknown Product" fix (`cebe7774`)
 2. Customer service rename (`2437a8e9`)
+3. Container Phases 1–4 MVP (`e90cc498`) + tab UX/QA checklist (`3f940f64`)
 
-### Container / App Hosting initiative (Phases 1–4 foundations)
+### Convert-in-place DA → App Hosting (uncommitted unless asked)
+
+Admin-only silent convert on the **same Service** (no dual-service, no invoice, no customer notify):
+
+- `DirectAdminToContainerConvertService` — preflight, mailbox classify, convert-in-place
+- Job: `ConvertDirectAdminServiceToContainerJob`
+- Admin: **Convert to App Hosting** → `admin.services.migrate-to-container`
+- Customer dual-service migrator removed
+- Quiet deploy skips `notifyServiceActivated`
+- Keeps `next_due_date` / `billing_cycle`; clears `custom_price` for container retail at renewal
+- Email stays on DA; extra mailboxes require admin ack
 
 Roadmap: `docs/CONTAINER_APP_HOSTING_ROADMAP.md`
 
-- **Phase 1:** Console IA, Environment & Secrets, backup UX, Laravel/Node harden, App Hosting positioning
-- **Phase 2 MVP:** Auto-deploy webhooks, live logs, DB table browser, plan resize, data-aware node migrate
-- **Phase 3.1 MVP:** DA→WordPress container ETL + customer/admin wizards
-- **Phase 4.1 foundation:** Staging sibling link + env sync
-
-## Remaining (not this commit)
+## Remaining
 
 - Phase 3.2+ Laravel/PHP migrators
 - Phase 4.3 Mail product / 4.4 team & BYO Dockerfile
 - Production QA on real container/DA nodes
+- Commit convert-in-place when requested
 
 ## Git
 

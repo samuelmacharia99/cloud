@@ -151,6 +151,140 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * Export WordPress files + DB from a DA shared hosting service to local temp files.
+     *
+     * @param  array{docroot: ?string, databases: list<array{name: string}>, domain: ?string, stack: string, has_wp_config: bool}  $inventory
+     * @return array{local_dump: string, local_tar: string, remote_work: string, db_name: string}
+     */
+    public function exportWordPressFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null): array
+    {
+        $source->loadMissing('node');
+        if (! $source->node) {
+            throw new \InvalidArgumentException('DirectAdmin node is missing.');
+        }
+
+        $workId = 'wp-export-'.$source->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $dumpFile = $remoteWork.'/db.sql';
+        $filesTar = $remoteWork.'/files.tar.gz';
+        $localDump = storage_path('app/migrations/'.$workId.'-db.sql');
+        $localTar = storage_path('app/migrations/'.$workId.'-files.tar.gz');
+
+        if (! is_dir(dirname($localDump))) {
+            mkdir(dirname($localDump), 0755, true);
+        }
+
+        $daSsh = SSHService::forNode($source->node);
+        try {
+            $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+
+            $dbName = $databaseName
+                ?: ($inventory['databases'][0]['name'] ?? null)
+                ?: $this->parseWpDatabaseName($daSsh, (string) $inventory['docroot']);
+
+            if (! $dbName) {
+                throw new \RuntimeException('Could not determine MySQL database name for WordPress.');
+            }
+
+            $daSsh->exec(
+                'mysqldump --single-transaction --quick '.escapeshellarg($dbName).' > '.escapeshellarg($dumpFile),
+                600
+            );
+            $daSsh->exec(
+                'tar -czf '.escapeshellarg($filesTar).' -C '.escapeshellarg((string) $inventory['docroot']).' .',
+                900
+            );
+            $daSsh->downloadToLocal($dumpFile, $localDump);
+            $daSsh->downloadToLocal($filesTar, $localTar);
+        } finally {
+            $daSsh->disconnect();
+        }
+
+        return [
+            'local_dump' => $localDump,
+            'local_tar' => $localTar,
+            'remote_work' => $remoteWork,
+            'db_name' => $dbName,
+        ];
+    }
+
+    /**
+     * Import previously exported WordPress dump/tar into a deployed WordPress container service.
+     */
+    public function importWordPressIntoContainer(
+        Service $target,
+        string $localDump,
+        string $localTar,
+        string $remoteWork,
+        ?Node $cleanupDaNode = null,
+    ): void {
+        $target->loadMissing('containerDeployment.node');
+        $deployment = $target->containerDeployment;
+        if (! $deployment?->node) {
+            throw new \InvalidArgumentException('Target container is not deployed.');
+        }
+
+        $dumpFile = rtrim($remoteWork, '/').'/db.sql';
+        $filesTar = rtrim($remoteWork, '/').'/files.tar.gz';
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $appService = $deployment->container_name;
+
+        $targetSsh = SSHService::forNode($deployment->node);
+        try {
+            $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+            $targetSsh->uploadFromLocal($localDump, $dumpFile);
+            $targetSsh->uploadFromLocal($localTar, $filesTar);
+
+            $targetSsh->exec(
+                "cd {$containerPath} && docker compose cp ".escapeshellarg($filesTar)." {$appService}:/tmp/wp-files.tar.gz",
+                300
+            );
+            $targetSsh->exec(
+                "cd {$containerPath} && docker compose exec -T {$appService} sh -c "
+                .escapeshellarg('mkdir -p /var/www/html && tar -xzf /tmp/wp-files.tar.gz -C /var/www/html && rm -f /tmp/wp-files.tar.gz'),
+                900
+            );
+
+            $env = $this->readContainerDbEnv($targetSsh, $containerPath);
+            $dbService = $this->resolveDbServiceName($targetSsh, $containerPath);
+            $dbUser = $env['WORDPRESS_DB_USER'] ?? $env['MYSQL_USER'] ?? $env['DB_USERNAME'] ?? 'wordpress';
+            $dbPass = $env['WORDPRESS_DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? $env['DB_PASSWORD'] ?? '';
+            $dbDatabase = $env['WORDPRESS_DB_NAME'] ?? $env['MYSQL_DATABASE'] ?? $env['DB_DATABASE'] ?? 'wordpress';
+
+            $targetSsh->exec(
+                "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD=".escapeshellarg($dbPass)
+                .' '.$dbService.' mysql -u'.escapeshellarg($dbUser).' '.escapeshellarg($dbDatabase)
+                .' < '.escapeshellarg($dumpFile),
+                600
+            );
+
+            $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, [
+                'DB_NAME' => $dbDatabase,
+                'DB_USER' => $dbUser,
+                'DB_PASSWORD' => $dbPass,
+                'DB_HOST' => $dbService,
+            ]);
+
+            @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
+            @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+        } finally {
+            $targetSsh->disconnect();
+        }
+
+        if ($cleanupDaNode) {
+            @$this->cleanupDaWork($cleanupDaNode, $remoteWork);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    public function recordExternalProgress(Service $service, array $data): void
+    {
+        $this->updateMigrationMeta($service, $data);
+    }
+
+    /**
      * Run WordPress ETL into an existing WordPress container.
      *
      * @return array{ok: bool, message: string, steps: list<string>}
@@ -175,105 +309,29 @@ class DirectAdminToContainerMigrationService
             'error' => null,
         ]);
 
-        $workId = 'wp-'.$source->id.'-'.$target->id.'-'.Str::lower(Str::random(6));
-        $remoteWork = self::WORK_BASE.'/'.$workId;
-        $dumpFile = $remoteWork.'/db.sql';
-        $filesTar = $remoteWork.'/files.tar.gz';
-        $localDump = storage_path('app/migrations/'.$workId.'-db.sql');
-        $localTar = storage_path('app/migrations/'.$workId.'-files.tar.gz');
-
         try {
             $steps[] = 'Inventory complete ('.$inventory['stack'].')';
             $this->appendStep($target, $steps);
 
-            $daSsh = SSHService::forNode($source->node);
-            try {
-                $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+            $steps[] = 'Exporting from DirectAdmin';
+            $this->appendStep($target, $steps);
+            $export = $this->exportWordPressFromDirectAdmin($source, $inventory, $databaseName);
 
-                $dbName = $databaseName
-                    ?: ($inventory['databases'][0]['name'] ?? null)
-                    ?: $this->parseWpDatabaseName($daSsh, $inventory['docroot']);
+            $steps[] = 'Importing into container';
+            $this->appendStep($target, $steps);
+            $this->importWordPressIntoContainer(
+                $target,
+                $export['local_dump'],
+                $export['local_tar'],
+                $export['remote_work'],
+                $source->node,
+            );
 
-                if (! $dbName) {
-                    throw new \RuntimeException('Could not determine MySQL database name for WordPress.');
+            foreach ([$export['local_dump'], $export['local_tar']] as $path) {
+                if (is_file($path)) {
+                    @unlink($path);
                 }
-
-                $steps[] = 'Dumping database '.$dbName;
-                $this->appendStep($target, $steps);
-                $daSsh->exec(
-                    'mysqldump --single-transaction --quick '.escapeshellarg($dbName).' > '.escapeshellarg($dumpFile),
-                    600
-                );
-
-                $steps[] = 'Archiving site files from '.$inventory['docroot'];
-                $this->appendStep($target, $steps);
-                $daSsh->exec(
-                    'tar -czf '.escapeshellarg($filesTar).' -C '.escapeshellarg($inventory['docroot']).' .',
-                    900
-                );
-
-                if (! is_dir(dirname($localDump))) {
-                    mkdir(dirname($localDump), 0755, true);
-                }
-                $daSsh->downloadToLocal($dumpFile, $localDump);
-                $daSsh->downloadToLocal($filesTar, $localTar);
-            } finally {
-                $daSsh->disconnect();
             }
-
-            $deployment = $target->containerDeployment;
-            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-            $appService = $deployment->container_name;
-
-            $targetSsh = SSHService::forNode($deployment->node);
-            try {
-                $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
-                $targetSsh->uploadFromLocal($localDump, $dumpFile);
-                $targetSsh->uploadFromLocal($localTar, $filesTar);
-
-                $steps[] = 'Importing files into WordPress document root';
-                $this->appendStep($target, $steps);
-                $targetSsh->exec(
-                    "cd {$containerPath} && docker compose cp ".escapeshellarg($filesTar)." {$appService}:/tmp/wp-files.tar.gz",
-                    300
-                );
-                $targetSsh->exec(
-                    "cd {$containerPath} && docker compose exec -T {$appService} sh -c "
-                    .escapeshellarg('mkdir -p /var/www/html && tar -xzf /tmp/wp-files.tar.gz -C /var/www/html && rm -f /tmp/wp-files.tar.gz'),
-                    900
-                );
-
-                $env = $this->readContainerDbEnv($targetSsh, $containerPath);
-                $dbService = $this->resolveDbServiceName($targetSsh, $containerPath);
-                $dbUser = $env['WORDPRESS_DB_USER'] ?? $env['MYSQL_USER'] ?? $env['DB_USERNAME'] ?? 'wordpress';
-                $dbPass = $env['WORDPRESS_DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? $env['DB_PASSWORD'] ?? '';
-                $dbDatabase = $env['WORDPRESS_DB_NAME'] ?? $env['MYSQL_DATABASE'] ?? $env['DB_DATABASE'] ?? 'wordpress';
-
-                $steps[] = 'Importing database into container MySQL ('.$dbService.')';
-                $this->appendStep($target, $steps);
-                $targetSsh->exec(
-                    "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD=".escapeshellarg($dbPass)
-                    .' '.$dbService.' mysql -u'.escapeshellarg($dbUser).' '.escapeshellarg($dbDatabase)
-                    .' < '.escapeshellarg($dumpFile),
-                    600
-                );
-
-                $steps[] = 'Rewriting wp-config.php for container DB host';
-                $this->appendStep($target, $steps);
-                $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, [
-                    'DB_NAME' => $dbDatabase,
-                    'DB_USER' => $dbUser,
-                    'DB_PASSWORD' => $dbPass,
-                    'DB_HOST' => $dbService,
-                ]);
-
-                @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
-                @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
-            } finally {
-                $targetSsh->disconnect();
-            }
-
-            @$this->cleanupDaWork($source->node, $remoteWork);
 
             $steps[] = 'Migration completed. Point DNS to the container and keep email on DirectAdmin.';
             $this->updateMigrationMeta($target, [
@@ -301,12 +359,6 @@ class DirectAdminToContainerMigrationService
                 'failed_at' => now()->toIso8601String(),
             ]);
             throw $e;
-        } finally {
-            foreach ([$localDump, $localTar] as $path) {
-                if (is_file($path)) {
-                    @unlink($path);
-                }
-            }
         }
     }
 

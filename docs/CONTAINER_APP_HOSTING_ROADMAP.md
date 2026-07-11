@@ -67,22 +67,23 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 
 ---
 
-### Phase 3 — Shared-hosting escape hatch (DA → container) *(WordPress MVP)*
+### Phase 3 — Shared-hosting escape hatch (DA → container) *(WordPress convert-in-place)*
 
 **Goal:** Seamless site migrations off DirectAdmin. Keep one DA box for mail.
 
 > **Important:** This is **not** “restore a DA backup into a container.”  
-> DA/cPanel backup formats ≠ container `.tar.gz`. We build an **ETL migration wizard**.
+> Admin **convert-in-place** on the same service: no second service, no invoice, no customer notification.  
+> Keeps DA `next_due_date` / billing cycle; next renewal uses App Hosting product price. Email stays on DA.
 
 | # | Deliverable | Notes |
 |---|-------------|--------|
-| 3.1 | WordPress migrator MVP | Inventory + queue job + customer/admin wizards |
+| 3.1 | WordPress convert-in-place MVP | Admin silent convert + mailbox preflight |
 | 3.2 | Laravel / plain PHP migrator | Next |
 | 3.3 | Static / custom PHP | |
-| 3.4 | Admin/customer wizard UI | Dry-run inventory + progress on target overview |
+| 3.4 | Admin wizard UI | Preflight, extra-mailbox ack, queue job |
 | 3.5 | cPanel path | Only if needed — zero cPanel code today |
 
-**Email reality:** Site + DB + domain can be seamless. Mailboxes stay on DA until a separate mail product exists.
+**Email reality:** Site + DB move to container. Mailboxes stay on DA. Extra mailboxes require admin acknowledgement.
 
 ---
 
@@ -118,9 +119,9 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | Auto-deploy | `app/Services/Provisioning/ContainerAutoDeployService.php` |
 | Plan resize | `app/Services/Customer/CustomerContainerPlanChangeService.php` |
 | Data-aware node migrate | `app/Services/Provisioning/ContainerMigrationService.php` |
-| DA→WP migrator | `app/Services/Provisioning/DirectAdminToContainerMigrationService.php` |
+| DA→WP convert | `app/Services/Provisioning/DirectAdminToContainerConvertService.php` |
 | Staging link | `app/Services/Provisioning/ContainerStagingService.php` |
-| Routes | `routes/web.php` (~container + migrate-to-app) |
+| Routes | `routes/web.php` (`admin.services.migrate-to-container`) |
 
 ---
 
@@ -136,6 +137,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | 2026-07-11 | **Phase 4.1 foundation:** staging sibling link + env sync. |
 | 2026-07-11 | Added QA testing checklist for Phases 1–4 MVP. |
 | 2026-07-11 | Fixed console tab IA: removed fake App/Data/… labels; Docs tab always mounts for deep links. |
+| 2026-07-11 | **Admin convert-in-place:** same service, no invoice/notify, keep due date, container price at renewal, mailbox preflight; customer dual-service migrator removed. |
 
 ### Phase checklists
 
@@ -149,9 +151,9 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 - [x] 2.5 Data-aware C→C migrate
 
 **Phase 3:**
-- [x] 3.1 WordPress migrator MVP
+- [x] 3.1 WordPress convert-in-place MVP (admin silent)
 - [ ] 3.2 Laravel / PHP migrator
-- [x] 3.4 Wizard UI (dry-run + queue)
+- [x] 3.4 Admin wizard UI (preflight + queue)
 
 **Phase 4:**
 - [x] 4.1 Staging link MVP
@@ -229,20 +231,18 @@ Use this on a staging/production-like environment with a real container host (an
 
 ### Phase 3 — DA → WordPress container
 
-#### Customer wizard
-
-- [ ] Shared hosting service shows **Move to App Hosting**
-- [ ] `/my/services/{id}/migrate-to-app` shows dry-run inventory (user, domain, stack, docroot, DBs, warnings)
-- [ ] Without a WordPress container target: CTA to deploy App Hosting
-- [ ] With target: must accept “email stays on DA” checkbox
-- [ ] Queue migration → redirects to **target** container overview with status banner (`queued` → `running` → `completed` / `failed`)
-- [ ] On success: WP files in container, DB imported, site loads; mailboxes still on DA
-- [ ] DNS caveat understood: site may need DNS/SSL update to container URL/domain
-
 #### Admin wizard
 
-- [ ] Admin shared hosting → **Migrate to App Hosting** inventory + queue works
-- [ ] Admin container → **Migrate Node** still available for C→C moves
+- [ ] Admin shared hosting → **Convert to App Hosting** shows inventory + mailbox preflight
+- [ ] Extra mailboxes beyond DA username require acknowledgement
+- [ ] Queue convert: **same service ID**, no invoice, no customer email/SMS
+- [ ] After success: product is WordPress App Hosting; `next_due_date` unchanged; `custom_price` null (renewal = container retail)
+- [ ] DA account still exists for mail; MX unchanged
+- [ ] Customer has **no** self-serve “Move to App Hosting” button
+
+#### Admin wizard (legacy copy path — removed)
+
+- [x] ~~Customer dual-service migrator~~ removed in favor of convert-in-place
 
 ### Phase 4 — Staging foundation
 
