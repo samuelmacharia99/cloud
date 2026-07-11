@@ -44,10 +44,13 @@ class DirectAdminToContainerMigrationService
             throw new \InvalidArgumentException('Source must be a DirectAdmin shared hosting service.');
         }
 
-        $source->loadMissing('node', 'product');
-        $creds = $source->getHostingCredentials();
-        $username = (string) ($creds['username'] ?? '');
-        $domain = $source->attachedDomainName() ?? ($creds['domain'] ?? null);
+        $source->loadMissing('node', 'product.directAdminPackage');
+        $creds = $source->getHostingCredentials() ?? [];
+        $meta = is_array($source->service_meta) ? $source->service_meta : [];
+        $username = (string) ($creds['username'] ?? $source->external_reference ?? ($meta['username'] ?? ''));
+        $domain = $source->attachedDomainName()
+            ?? (is_string($creds['domain'] ?? null) ? $creds['domain'] : null)
+            ?? (is_string($meta['domain'] ?? null) ? $meta['domain'] : null);
 
         if ($username === '' || ! $source->node) {
             throw new \InvalidArgumentException('Source hosting credentials or node are missing.');
@@ -68,15 +71,46 @@ class DirectAdminToContainerMigrationService
             ? "/home/{$username}/domains/{$domain}/public_html"
             : "/home/{$username}/public_html";
 
-        $detection = $this->detectStackOnNode($source->node, $docroot);
+        $detection = ['stack' => 'unknown', 'has_wp_config' => false];
+        $stackError = null;
+        try {
+            $detection = $this->detectStackOnNode($source->node, $docroot);
+        } catch (\Throwable $e) {
+            $stackError = $e->getMessage();
+        }
+
+        $dashboard = null;
+        $dashboardError = null;
+        try {
+            $dash = $api->getDashboard($username, is_string($domain) ? $domain : null);
+            if ($dash['success'] ?? false) {
+                $dashboard = $dash['data'] ?? null;
+                if (is_array($dashboard) && $databases === [] && ! empty($dashboard['databases'])) {
+                    $databases = array_values(array_map(
+                        fn ($name) => ['name' => (string) $name],
+                        $dashboard['databases']
+                    ));
+                }
+            } else {
+                $dashboardError = (string) ($dash['message'] ?? 'Failed to load DirectAdmin dashboard.');
+            }
+        } catch (\Throwable $e) {
+            $dashboardError = $e->getMessage();
+        }
 
         $warnings = [
             'Email mailboxes stay on DirectAdmin — only site files and database are moved.',
             'DNS must be updated to the container host after cutover.',
         ];
+        if ($stackError) {
+            $warnings[] = 'Could not SSH-detect application stack: '.$stackError;
+        }
         if (! $detection['has_wp_config']) {
             $warnings[] = 'wp-config.php was not detected at the expected docroot. Migration may fail until the path is confirmed.';
         }
+
+        $daAccount = is_array($meta['directadmin_account'] ?? null) ? $meta['directadmin_account'] : [];
+        $packageUsage = is_array($meta['package_usage'] ?? null) ? $meta['package_usage'] : [];
 
         return [
             'username' => $username,
@@ -87,6 +121,33 @@ class DirectAdminToContainerMigrationService
             'has_wp_config' => $detection['has_wp_config'],
             'email_stays_on_da' => true,
             'warnings' => $warnings,
+            'account' => [
+                'service_id' => $source->id,
+                'service_name' => $source->name,
+                'status' => $source->status?->value ?? (string) $source->status,
+                'platform_product' => $source->product?->name,
+                'platform_product_id' => $source->product_id,
+                'billing_cycle' => $source->billing_cycle,
+                'next_due_date' => optional($source->next_due_date)->toDateString(),
+                'custom_price' => $source->custom_price,
+                'node' => $source->node?->name,
+                'node_hostname' => $source->node?->hostname ?? $source->node?->ip_address,
+                'da_package' => $dashboard['package']
+                    ?? ($daAccount['package'] ?? null)
+                    ?? ($meta['package_name'] ?? null)
+                    ?? ($meta['package'] ?? null)
+                    ?? $source->product?->directAdminPackage?->name,
+                'da_package_key' => $meta['package'] ?? $source->product?->directAdminPackage?->package_key,
+                'panel_url' => $dashboard['panel_url'] ?? ($creds['panel_url'] ?? null),
+                'suspended_on_da' => (bool) ($dashboard['suspended'] ?? false),
+                'disk' => $dashboard['disk'] ?? null,
+                'bandwidth' => $dashboard['bandwidth'] ?? null,
+                'counts' => $dashboard['counts'] ?? ($daAccount['counts'] ?? null),
+                'nameservers' => $dashboard['nameservers'] ?? [],
+                'package_usage_meta' => $packageUsage,
+                'dashboard_error' => $dashboardError,
+                'stack_error' => $stackError,
+            ],
         ];
     }
 

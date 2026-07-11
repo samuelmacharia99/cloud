@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Service;
 use App\Services\Billing\ServiceRenewalPricingService;
 use App\Services\Hosting\DirectAdminCustomerPanelApi;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -35,7 +36,8 @@ class DirectAdminToContainerConvertService
      *     },
      *     can_convert: bool,
      *     blockers: list<string>,
-     *     wordpress_products: list<Product>
+     *     wordpress_products: list<Product>,
+     *     products_are_fallback: bool
      * }
      */
     public function preflight(Service $service): array
@@ -56,26 +58,87 @@ class DirectAdminToContainerConvertService
             $blockers[] = 'Could not list email accounts: '.$email['message'];
         }
 
-        $products = Product::query()
-            ->where('type', 'container_hosting')
-            ->where('is_active', true)
-            ->whereHas('containerTemplate', fn ($q) => $q->where('slug', 'wordpress'))
-            ->with('containerTemplate')
-            ->orderBy('price')
-            ->orderBy('monthly_price')
-            ->get();
+        $productPick = $this->availableWordPressProducts();
+        $products = $productPick['products'];
+        $productsAreFallback = $productPick['fallback'];
 
-        if ($products->isEmpty()) {
-            $blockers[] = 'No active WordPress App Hosting products are available.';
+        $activeEligible = $productsAreFallback
+            ? $products->filter(fn (Product $product) => $product->is_active && $this->productIsWordPressContainer($product))
+            : $products->where('is_active', true);
+
+        if ($activeEligible->isEmpty()) {
+            $blockers[] = 'No active WordPress App Hosting products are available. Create or activate a product with the WordPress container template under Admin → Products.';
         }
+
+        $looksLikeWordpress = $inventory['stack'] === 'wordpress' || $inventory['has_wp_config'];
 
         return [
             'inventory' => $inventory,
             'email' => $email,
-            'can_convert' => $blockers === [] && ($inventory['stack'] === 'wordpress' || $inventory['has_wp_config']),
+            'can_convert' => $blockers === [] && $looksLikeWordpress,
             'blockers' => $blockers,
             'wordpress_products' => $products->all(),
+            'products_are_fallback' => $productsAreFallback,
         ];
+    }
+
+    /**
+     * WordPress App Hosting catalog for the convert dropdown.
+     *
+     * @return array{products: Collection<int, Product>, fallback: bool}
+     */
+    public function availableWordPressProducts(): array
+    {
+        $base = Product::query()
+            ->where('type', 'container_hosting')
+            ->with('containerTemplate');
+
+        $wordpress = (clone $base)
+            ->where(function ($query) {
+                $query->whereHas('containerTemplate', function ($template) {
+                    $template->whereRaw('LOWER(slug) = ?', ['wordpress'])
+                        ->orWhereRaw('LOWER(slug) LIKE ?', ['%wordpress%'])
+                        ->orWhereRaw('LOWER(name) LIKE ?', ['%wordpress%']);
+                })->orWhereRaw('LOWER(name) LIKE ?', ['%wordpress%'])
+                    ->orWhereRaw('LOWER(slug) LIKE ?', ['%wordpress%']);
+            })
+            ->orderByDesc('is_active')
+            ->orderBy('order')
+            ->orderBy('monthly_price')
+            ->orderBy('price')
+            ->orderBy('name')
+            ->get();
+
+        if ($wordpress->isNotEmpty()) {
+            return ['products' => $wordpress, 'fallback' => false];
+        }
+
+        $all = (clone $base)
+            ->orderByDesc('is_active')
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
+
+        return ['products' => $all, 'fallback' => $all->isNotEmpty()];
+    }
+
+    public function productIsWordPressContainer(Product $product): bool
+    {
+        $product->loadMissing('containerTemplate');
+        $slug = strtolower((string) ($product->containerTemplate?->slug ?? ''));
+        $templateName = strtolower((string) ($product->containerTemplate?->name ?? ''));
+        $name = strtolower((string) $product->name);
+        $productSlug = strtolower((string) ($product->slug ?? ''));
+
+        if ($product->type !== 'container_hosting') {
+            return false;
+        }
+
+        return $slug === 'wordpress'
+            || str_contains($slug, 'wordpress')
+            || str_contains($templateName, 'wordpress')
+            || str_contains($name, 'wordpress')
+            || str_contains($productSlug, 'wordpress');
     }
 
     /**
@@ -201,9 +264,12 @@ class DirectAdminToContainerConvertService
             );
         }
 
-        if ($containerProduct->type !== 'container_hosting'
-            || $containerProduct->containerTemplate?->slug !== 'wordpress') {
-            throw new \InvalidArgumentException('Select an active WordPress App Hosting product.');
+        if (! $this->productIsWordPressContainer($containerProduct)) {
+            throw new \InvalidArgumentException('Select a WordPress App Hosting product (container product with WordPress template).');
+        }
+
+        if (! $containerProduct->is_active) {
+            throw new \InvalidArgumentException('The selected App Hosting product is inactive. Activate it first.');
         }
 
         $service->loadMissing('node', 'product', 'user');

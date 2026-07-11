@@ -49,13 +49,37 @@ class DirectAdminContainerMigrationController extends Controller
             $productEstimates[$product->id] = $renewalPricing->unitPrice($probe);
         }
 
+        // Always surface catalog even if inventory/preflight partially failed
+        if ($preflight === null) {
+            $pick = $convert->availableWordPressProducts();
+            $wordpressProductsStandalone = $pick['products'];
+            $productsAreFallback = $pick['fallback'];
+            foreach ($wordpressProductsStandalone as $product) {
+                $probe = Service::make([
+                    'billing_cycle' => $service->billing_cycle,
+                    'custom_price' => null,
+                    'product_id' => $product->id,
+                    'user_id' => $service->user_id,
+                    'reseller_id' => $service->reseller_id,
+                ]);
+                $probe->setRelation('product', $product);
+                $probe->setRelation('user', $service->user);
+                $productEstimates[$product->id] = $renewalPricing->unitPrice($probe);
+            }
+        } else {
+            $wordpressProductsStandalone = $preflight['wordpress_products'] ?? [];
+            $productsAreFallback = (bool) ($preflight['products_are_fallback'] ?? false);
+        }
+
         return view('admin.services.migrate-to-container', [
-            'service' => $service->load('product', 'node', 'user'),
+            'service' => $service->load('product.directAdminPackage', 'node', 'user'),
             'preflight' => $preflight,
             'preflightError' => $preflightError,
             'currentDue' => $currentDue,
             'currentCycle' => $currentCycle,
             'productEstimates' => $productEstimates,
+            'wordpressProducts' => $wordpressProductsStandalone,
+            'productsAreFallback' => $productsAreFallback,
             'convertMeta' => $service->service_meta['da_convert'] ?? null,
         ]);
     }
