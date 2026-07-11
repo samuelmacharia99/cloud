@@ -412,6 +412,8 @@ class DirectAdminToContainerMigrationService
             // Rewrite via the WordPress container (nodes typically have no host PHP).
             // With the host app bind-mount, this updates the same files the file manager sees.
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
+            $this->ensureWordPressProxyHttpsAwareness($targetSsh, $containerPath, $appService);
+            $this->sanitizeWordPressHostRuntimeConfig($targetSsh, $hostAppPath);
             $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
@@ -929,6 +931,89 @@ PHP;
             .'       && find '.$path.'/wp-content -type f -exec chmod 664 {} +'
             .'     ; fi'
             .'  ; fi';
+    }
+
+    /**
+     * Neutralize cPanel/DA PHP overrides that break sessions inside the container.
+     *
+     * Migrated sites often ship .user.ini / php.ini / .htaccess with session.save_path
+     * under /var/cpanel/... which does not exist in App Hosting containers.
+     */
+    public function buildWordPressRuntimeSanitizeCommand(string $hostAppPath): string
+    {
+        $root = escapeshellarg(rtrim($hostAppPath, '/'));
+
+        return 'root='.$root.'; '
+            .'if [ ! -d "$root" ]; then exit 0; fi; '
+            .'mkdir -p "$root/wp-content/uploads/sessions"; '
+            .'chmod 775 "$root/wp-content/uploads/sessions" 2>/dev/null || true; '
+            // Drop stale EasyApache / cPanel / DA session paths from common override files.
+            .'for f in "$root/.user.ini" "$root/php.ini" "$root/wp-content/.user.ini"; do '
+            .'  if [ -f "$f" ]; then '
+            .'    sed -i'
+            .' -e "/session\\.save_path/Id"'
+            .' -e "/open_basedir/Id"'
+            .' -e "/upload_tmp_dir/Id"'
+            .' -e "/error_log/Id"'
+            .' "$f" 2>/dev/null || true; '
+            .'  fi; '
+            .'done; '
+            .'if [ -f "$root/.htaccess" ]; then '
+            .'  sed -i'
+            .' -e "/php_value[[:space:]]\\+session\\.save_path/Id"'
+            .' -e "/php_admin_value[[:space:]]\\+session\\.save_path/Id"'
+            .' -e "/php_value[[:space:]]\\+open_basedir/Id"'
+            .' "$root/.htaccess" 2>/dev/null || true; '
+            .'fi; '
+            // Ensure a container-local session path for plugins that call session_start().
+            // Path must be the in-container mount path, not the host bind path.
+            .'printf "%s\\n" \'session.save_path = "/var/www/html/wp-content/uploads/sessions"\' > "$root/.user.ini"; '
+            .'chmod 644 "$root/.user.ini" 2>/dev/null || true';
+    }
+
+    private function sanitizeWordPressHostRuntimeConfig(SSHService $ssh, string $hostAppPath): void
+    {
+        $ssh->exec($this->buildWordPressRuntimeSanitizeCommand($hostAppPath), 60);
+    }
+
+    /**
+     * Teach WordPress that HTTPS terminated at nginx is still HTTPS (avoids redirect loops).
+     */
+    private function ensureWordPressProxyHttpsAwareness(
+        SSHService $ssh,
+        string $containerPath,
+        string $appService
+    ): void {
+        $snippet = <<<'SNIP'
+/* TALKASA_PROXY_HTTPS */
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+}
+$sessionDir = '/var/www/html/wp-content/uploads/sessions';
+if (is_dir($sessionDir) || @mkdir($sessionDir, 0775, true)) {
+    @ini_set('session.save_path', $sessionDir);
+} else {
+    @ini_set('session.save_path', '/tmp');
+}
+
+SNIP;
+
+        $php = '$cfg = \'/var/www/html/wp-config.php\';'
+            .' if (! is_file($cfg)) { fwrite(STDERR, "wp-config.php missing\\n"); exit(1); }'
+            .' $text = file_get_contents($cfg);'
+            .' if (str_contains($text, \'TALKASA_PROXY_HTTPS\')) { exit(0); }'
+            .' $snippet = '.var_export($snippet, true).';'
+            .' if (preg_match(\'/<\?php\\b/\', $text)) {'
+            .'   $text = preg_replace(\'/<\?php\\b/\', "<?php\\n".$snippet, $text, 1);'
+            .' } else {'
+            .'   $text = "<?php\\n".$snippet.$text;'
+            .' }'
+            .' file_put_contents($cfg, $text);';
+
+        $ssh->exec(
+            "cd {$containerPath} && docker compose exec -T {$appService} php -r ".escapeshellarg($php),
+            60
+        );
     }
 
     private function normalizeWordPressAppPermissions(

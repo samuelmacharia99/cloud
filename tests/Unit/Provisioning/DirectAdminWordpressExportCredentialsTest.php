@@ -125,6 +125,20 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringContainsString('wp-content', $cmd);
     }
 
+    public function test_build_wordpress_runtime_sanitize_clears_cpanel_session_path(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildWordPressRuntimeSanitizeCommand(
+            '/opt/talksasa/containers/user-76-service-97-wordpress/app'
+        );
+
+        $this->assertStringContainsString('session\\.save_path', $cmd);
+        $this->assertStringContainsString('.user.ini', $cmd);
+        $this->assertStringContainsString('/var/www/html/wp-content/uploads/sessions', $cmd);
+        $this->assertStringContainsString('.htaccess', $cmd);
+    }
+
     public function test_resolve_wordpress_import_credentials_prefers_deployment_env_values(): void
     {
         $ssh = \Mockery::mock(SSHService::class);
