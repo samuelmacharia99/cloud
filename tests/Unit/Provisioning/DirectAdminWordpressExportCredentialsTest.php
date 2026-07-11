@@ -123,6 +123,7 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringContainsString('wp-config.php', $cmd);
         $this->assertStringContainsString('chmod 640', $cmd);
         $this->assertStringContainsString('wp-content', $cmd);
+        $this->assertStringContainsString('chmod -R', $cmd);
     }
 
     public function test_build_wordpress_runtime_sanitize_clears_cpanel_session_path(): void

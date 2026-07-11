@@ -27,6 +27,12 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
 
     public function handle(DirectAdminToContainerConvertService $convert): void
     {
+        // afterResponse + sync queue still shares the web PHP process; disable the 30s cap.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
         try {
             $service = Service::with('node', 'product')->findOrFail($this->serviceId);
             $product = Product::with('containerTemplate')->findOrFail($this->productId);

@@ -286,6 +286,8 @@ class DirectAdminToContainerMigrationService
 
     /**
      * Import previously exported WordPress dump/tar into a deployed WordPress container service.
+     *
+     * @param  (callable(string): void)|null  $onProgress
      */
     public function importWordPressIntoContainer(
         Service $target,
@@ -293,7 +295,19 @@ class DirectAdminToContainerMigrationService
         string $localTar,
         string $remoteWork,
         ?Node $cleanupDaNode = null,
+        ?callable $onProgress = null,
     ): void {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $progress = static function (string $detail) use ($onProgress): void {
+            if ($onProgress) {
+                $onProgress($detail);
+            }
+        };
+
         $target->loadMissing('containerDeployment.node');
         $deployment = $target->containerDeployment;
         if (! $deployment?->node) {
@@ -307,6 +321,7 @@ class DirectAdminToContainerMigrationService
 
         $targetSsh = SSHService::forNode($deployment->node);
         try {
+            $progress('Uploading export archives to container node');
             $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
             $targetSsh->uploadFromLocal($localDump, $dumpFile);
             $targetSsh->uploadFromLocal($localTar, $filesTar);
@@ -329,6 +344,7 @@ class DirectAdminToContainerMigrationService
                 $db['database'] = $live['MYSQL_DATABASE'];
             }
 
+            $progress('Waiting for MySQL sidecar');
             $this->waitForComposeMysql(
                 $targetSsh,
                 $containerPath,
@@ -340,12 +356,12 @@ class DirectAdminToContainerMigrationService
             // Extract onto the host bind mount (.../app → /var/www/html) so the customer
             // file manager sees the same files as the WordPress container.
             $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+            $progress('Extracting WordPress files onto host bind mount');
             $targetSsh->exec('mkdir -p '.escapeshellarg($hostAppPath));
             $targetSsh->exec(
                 $this->buildWordPressHostExtractCommand($filesTar, $hostAppPath),
                 900
             );
-            $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
             $targetSsh->exec(
                 "cd {$containerPath} && docker compose cp ".escapeshellarg($dumpFile)." {$dbService}:/tmp/import.sql",
@@ -389,6 +405,7 @@ class DirectAdminToContainerMigrationService
                 }
             }
 
+            $progress('Importing MySQL dump');
             $importShell = sprintf(
                 'mysql -u%s %s < /tmp/import.sql && rm -f /tmp/import.sql',
                 escapeshellarg($safeUser),
@@ -409,6 +426,7 @@ class DirectAdminToContainerMigrationService
                 'DB_HOST' => $dbService,
             ];
 
+            $progress('Rewriting wp-config and normalizing runtime');
             // Rewrite via the WordPress container (nodes typically have no host PHP).
             // With the host app bind-mount, this updates the same files the file manager sees.
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
@@ -416,6 +434,7 @@ class DirectAdminToContainerMigrationService
             $this->sanitizeWordPressHostRuntimeConfig($targetSsh, $hostAppPath);
             $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
+            $progress('Restarting WordPress container');
             @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
             @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
         } finally {
@@ -923,13 +942,10 @@ PHP;
 
         return 'if [ -d '.$path.' ]; then'
             .'  chown -R 33:33 '.$path
-            .'  && find '.$path.' -type d -exec chmod 755 {} +'
-            .'  && find '.$path.' -type f -exec chmod 644 {} +'
+            // chmod -R is far faster than find -exec on multi-GB WordPress trees.
+            .'  && chmod -R u+rwX,g+rX,o+rX '.$path
             .'  && if [ -f '.$path.'/wp-config.php ]; then chmod 640 '.$path.'/wp-config.php; fi'
-            .'  && if [ -d '.$path.'/wp-content ]; then'
-            .'       find '.$path.'/wp-content -type d -exec chmod 775 {} +'
-            .'       && find '.$path.'/wp-content -type f -exec chmod 664 {} +'
-            .'     ; fi'
+            .'  && if [ -d '.$path.'/wp-content ]; then chmod -R ug+rwX '.$path.'/wp-content; fi'
             .'  ; fi';
     }
 

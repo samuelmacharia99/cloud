@@ -110,6 +110,55 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertFalse($convert->canRevertToDirectAdmin($reverted->fresh()));
     }
 
+    public function test_can_force_revert_stuck_running_convert(): void
+    {
+        $daProduct = Product::query()->create([
+            'name' => 'DA Silver',
+            'slug' => 'da-silver-stuck',
+            'type' => 'shared_hosting',
+            'price' => 1000,
+            'monthly_price' => 1000,
+            'is_active' => true,
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+        $containerProduct = Product::query()->create([
+            'name' => 'WP App',
+            'slug' => 'wp-app-stuck',
+            'type' => 'container_hosting',
+            'price' => 2000,
+            'monthly_price' => 2000,
+            'is_active' => true,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $service = Service::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'product_id' => $containerProduct->id,
+            'name' => 'stuck-convert',
+            'status' => 'provisioning',
+            'billing_cycle' => 'annual',
+            'provisioning_driver_key' => 'container',
+            'service_meta' => [
+                'da_convert' => [
+                    'status' => 'running',
+                    'started_at' => now()->subMinutes(40)->toIso8601String(),
+                    'heartbeat_at' => now()->subMinutes(40)->toIso8601String(),
+                    'previous' => [
+                        'product_id' => $daProduct->id,
+                        'node_id' => null,
+                        'provisioning_driver_key' => 'directadmin',
+                        'custom_price' => null,
+                        'status' => 'active',
+                    ],
+                ],
+            ],
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $this->assertTrue($convert->convertLooksStuck($service->service_meta['da_convert']));
+        $this->assertTrue($convert->canRevertToDirectAdmin($service));
+    }
+
     public function test_available_wordpress_products_lists_templated_products(): void
     {
         $template = ContainerTemplate::query()->create([

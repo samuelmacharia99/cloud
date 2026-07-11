@@ -102,13 +102,21 @@
                 </ul>
             @endif
             @if (in_array($daConvert['status'] ?? '', ['queued', 'running'], true))
-                <p class="mt-2 text-xs opacity-80">Refresh this page for progress. Ensure <code class="font-mono">php artisan queue:work</code> is running.</p>
+                <p class="mt-2 text-xs opacity-80">
+                    Refresh this page for progress.
+                    Prefer <code class="font-mono">QUEUE_CONNECTION=database</code> (or redis) with
+                    <code class="font-mono">php artisan queue:work --timeout=2400</code>
+                    so large imports are not killed by PHP’s web <code class="font-mono">max_execution_time</code>.
+                    @if (!empty($daConvert['heartbeat_at']))
+                        Last heartbeat: {{ $daConvert['heartbeat_at'] }}
+                    @endif
+                </p>
             @endif
             @if ($canRevertDaConvert)
-                <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="mt-3" data-confirm="Restore this service to DirectAdmin? You must delete any leftover container on the node yourself." data-confirm-title="Revert to DirectAdmin">
+                <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="mt-3" data-confirm="{{ in_array($daConvert['status'] ?? '', ['queued', 'running'], true) ? 'Convert looks stuck. Force revert to DirectAdmin? Stop any queue worker first if it is still processing this job. Delete leftover containers on the node manually.' : 'Restore this service to DirectAdmin? You must delete any leftover container on the node yourself.' }}" data-confirm-title="Revert to DirectAdmin">
                     @csrf
                     <button type="submit" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium rounded-lg transition">
-                        Revert to DirectAdmin
+                        {{ in_array($daConvert['status'] ?? '', ['queued', 'running'], true) ? 'Force revert (stuck convert)' : 'Revert to DirectAdmin' }}
                     </button>
                 </form>
             @endif

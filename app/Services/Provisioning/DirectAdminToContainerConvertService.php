@@ -253,6 +253,11 @@ class DirectAdminToContainerConvertService
         bool $acknowledgeExtraMailboxes = false,
         ?string $databaseName = null,
     ): array {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
         $preflight = $this->preflight($service);
         if ($preflight['blockers'] !== []) {
             throw new \InvalidArgumentException(implode(' ', $preflight['blockers']));
@@ -355,6 +360,10 @@ class DirectAdminToContainerConvertService
                 $export['local_tar'],
                 $export['remote_work'],
                 $daNode,
+                function (string $detail) use ($service, &$steps): void {
+                    $steps[] = 'Import: '.$detail;
+                    $this->appendConvertStep($service, $steps);
+                },
             );
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
@@ -450,7 +459,11 @@ class DirectAdminToContainerConvertService
      */
     private function appendConvertStep(Service $service, array $steps): void
     {
-        $this->writeConvertMeta($service, ['steps' => $steps, 'status' => 'running']);
+        $this->writeConvertMeta($service, [
+            'steps' => $steps,
+            'status' => 'running',
+            'heartbeat_at' => now()->toIso8601String(),
+        ]);
     }
 
     public function canRevertToDirectAdmin(Service $service): bool
@@ -459,13 +472,14 @@ class DirectAdminToContainerConvertService
             ? $service->service_meta['da_convert']
             : [];
 
-        if (in_array($convert['status'] ?? '', ['queued', 'running'], true)) {
-            return false;
-        }
-
         $previous = $convert['previous'] ?? null;
         if (! is_array($previous) || empty($previous['product_id'])) {
             return false;
+        }
+
+        if (in_array($convert['status'] ?? '', ['queued', 'running'], true)) {
+            // Allow force-revert when the job died mid-flight (e.g. PHP 30s timeout).
+            return $this->convertLooksStuck($convert);
         }
 
         $alreadyOnPrevious = (int) $service->product_id === (int) $previous['product_id']
@@ -474,6 +488,27 @@ class DirectAdminToContainerConvertService
                 || $service->provisioning_driver_key === ($previous['provisioning_driver_key'] ?? 'directadmin'));
 
         return ! $alreadyOnPrevious;
+    }
+
+    /**
+     * @param  array<string, mixed>  $convert
+     */
+    public function convertLooksStuck(array $convert): bool
+    {
+        $marker = $convert['heartbeat_at']
+            ?? $convert['started_at']
+            ?? $convert['queued_at']
+            ?? null;
+
+        if (! is_string($marker) || $marker === '') {
+            return true;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($marker)->lt(now()->subMinutes(15));
+        } catch (\Throwable) {
+            return true;
+        }
     }
 
     /**
