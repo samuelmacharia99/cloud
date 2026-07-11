@@ -1,0 +1,30 @@
+# Session Context (Jul 11, 2026)
+
+## Project
+
+**Talksasa Cloud** — Laravel 11 hosting billing/provisioning platform (Admin, Reseller, Customer portals).
+
+## Completed
+
+### Earlier (committed)
+1. Reseller invoice "Unknown Product" fix (`cebe7774`)
+2. Customer service rename (`2437a8e9`)
+
+### Container / App Hosting initiative (Phases 1–4 foundations)
+
+Roadmap: `docs/CONTAINER_APP_HOSTING_ROADMAP.md`
+
+- **Phase 1:** Console IA, Environment & Secrets, backup UX, Laravel/Node harden, App Hosting positioning
+- **Phase 2 MVP:** Auto-deploy webhooks, live logs, DB table browser, plan resize, data-aware node migrate
+- **Phase 3.1 MVP:** DA→WordPress container ETL + customer/admin wizards
+- **Phase 4.1 foundation:** Staging sibling link + env sync
+
+## Remaining (not this commit)
+
+- Phase 3.2+ Laravel/PHP migrators
+- Phase 4.3 Mail product / 4.4 team & BYO Dockerfile
+- Production QA on real container/DA nodes
+
+## Git
+
+- Do not commit `database/database.sqlite` or `storage/framework/*` artifacts.

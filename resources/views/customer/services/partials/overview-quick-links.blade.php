@@ -5,7 +5,18 @@
     $backupStale = $latestBackup === null || ($backupAgeDays !== null && $backupAgeDays > 7);
 @endphp
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+    <button
+        type="button"
+        @click="$dispatch('container-set-tab', 'environment')"
+        class="text-left rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:border-blue-300 dark:hover:border-blue-600 transition group"
+    >
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Environment</p>
+        <p class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Secrets &amp; env</p>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Manage runtime variables</p>
+        <span class="mt-2 inline-block text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">Manage →</span>
+    </button>
+
     <button
         type="button"
         @click="$dispatch('container-set-tab', 'domains')"

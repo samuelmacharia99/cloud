@@ -364,6 +364,22 @@ class ContainerApplicationRuntimeService
         return trim($ssh->exec("[ {$flag} {$pathArg} ] && echo yes || echo no", 10)) === 'yes';
     }
 
+    public function packageJsonHasBuildScript(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $scripts = $data['scripts'] ?? [];
+
+        return is_array($scripts) && ! empty($scripts['build']);
+    }
+
     public function packageJsonRequiresProductionBuild(?string $packageJson): bool
     {
         if ($packageJson === null || trim($packageJson) === '') {
@@ -393,6 +409,8 @@ class ContainerApplicationRuntimeService
             '@remix-run/node',
             '@angular/core',
             '@angular/cli',
+            'vite',
+            'astro',
         ];
 
         foreach ($buildPackages as $package) {
@@ -404,7 +422,12 @@ class ContainerApplicationRuntimeService
         $start = strtolower((string) ($scripts['start'] ?? ''));
         if (str_contains($start, 'next start')
             || str_contains($start, 'nuxt start')
-            || str_contains($start, 'remix-serve')) {
+            || str_contains($start, 'remix-serve')
+            || str_contains($start, 'vite preview')
+            || str_contains($start, 'astro preview')
+            || str_contains($start, 'dist/')
+            || str_contains($start, '.next')
+            || str_contains($start, 'build/')) {
             return true;
         }
 

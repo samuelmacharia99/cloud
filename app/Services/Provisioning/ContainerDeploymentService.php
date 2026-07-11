@@ -1719,6 +1719,75 @@ class ContainerDeploymentService
         return 'Application start command updated ('.$runtime->label.').';
     }
 
+    /**
+     * Rewrite compose from current env_values, sync .env when applicable, and recreate the stack.
+     */
+    public function applyEnvironmentVariables(Service $service, ContainerDeployment $deployment): void
+    {
+        $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
+        $deployment = $service->containerDeployment ?? $deployment;
+
+        if (! $deployment?->node) {
+            throw new \DomainException('Container host is not available.');
+        }
+
+        $template = $service->product?->containerTemplate;
+        if (! $template) {
+            throw new \DomainException('Container template is missing.');
+        }
+
+        $ssh = SSHService::forNode($deployment->node);
+
+        try {
+            $hostAppPath = $this->resolveHostAppPath($template, $deployment->container_name);
+            $databaseTemplate = $this->resolveDatabaseTemplate($service, $template);
+            $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+
+            $runtime = $this->resolveApplicationRuntime($ssh, $template, $hostAppPath);
+            $documentRoot = null;
+
+            if (($template->slug ?? null) === 'laravel' && $hostAppPath) {
+                $resolver = app(LaravelProjectPathResolver::class);
+                if ($resolver->hasProject($ssh, $hostAppPath)) {
+                    $resolved = $resolver->persistResolvedPaths($service, $ssh, $deployment);
+                    $documentRoot = $resolved['document_root'] ?? $resolver->resolveDocumentRoot($ssh, $hostAppPath);
+                }
+            }
+
+            $composeYaml = $this->renderCompose(
+                $template,
+                $deployment->container_name,
+                (int) $deployment->assigned_port,
+                $envVars,
+                $databaseTemplate,
+                $deployment,
+                $deployment->selected_version,
+                $hostAppPath,
+                $runtime,
+                $documentRoot
+            );
+
+            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            $deployment->update(['docker_compose_content' => $composeYaml]);
+            $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+
+            app(ContainerEnvironmentService::class)->syncDotEnvFile($ssh, $service, $deployment, $envVars);
+
+            if ($this->runtimeImages->usesRuntimeImage($template)) {
+                $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
+            }
+
+            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
+            $this->composeUp($ssh, $containerPath, $this->runtimeImages->usesRuntimeImage($template), useExplicitComposeFile: true);
+            $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
+            $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
+
+            $deployment->update(['status' => 'running']);
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
     public function refreshLaravelServeCompose(Service $service, ContainerDeployment $deployment, SSHService $ssh): string
     {
         $service->loadMissing('product.containerTemplate');

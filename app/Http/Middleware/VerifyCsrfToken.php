@@ -12,6 +12,7 @@ class VerifyCsrfToken extends Middleware
         'webhooks/stripe',
         'webhooks/paypal',
         'webhooks/email/bounce',
+        'webhooks/containers/*/git-deploy',
         'api/v1/public/*',
     ];
 }

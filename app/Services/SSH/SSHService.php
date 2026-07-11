@@ -131,6 +131,66 @@ class SSHService
     }
 
     /**
+     * Download a remote file to a local path (streamed; suitable for large archives).
+     */
+    public function downloadToLocal(string $remotePath, string $localPath): void
+    {
+        $this->ensureConnected();
+
+        try {
+            $this->initSFTP();
+
+            $directory = dirname($localPath);
+            if (! is_dir($directory)) {
+                mkdir($directory, 0755, true);
+            }
+
+            if ($this->sftp->get($remotePath, $localPath) === false) {
+                throw new \Exception('File not found or read failed');
+            }
+        } catch (\Exception $e) {
+            throw new \RuntimeException(
+                "Failed to download {$remotePath}: ".$e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
+     * Upload a local file to a remote path (streamed; suitable for large archives).
+     */
+    public function uploadFromLocal(string $localPath, string $remotePath): void
+    {
+        $this->ensureConnected();
+
+        if (! is_readable($localPath)) {
+            throw new \InvalidArgumentException("Local file is not readable: {$localPath}");
+        }
+
+        try {
+            $this->initSFTP();
+
+            $directory = dirname($remotePath);
+            if ($directory !== '/') {
+                $this->mkdirp($directory);
+            }
+
+            if (! $this->sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE)) {
+                throw new \Exception("Failed to write file to {$remotePath}");
+            }
+
+            @$this->sftp->chmod(0644, $remotePath);
+        } catch (\Exception $e) {
+            throw new \RuntimeException(
+                "Failed to upload {$remotePath}: ".$e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
+    /**
      * Upload file content to remote server
      */
     public function upload(string $localContent, string $remotePath): void

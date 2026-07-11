@@ -233,7 +233,7 @@ function containerTerminal() {
             @if ($terminalTemplateSlug === 'laravel')
             this.terminal.write('  Tip: use Overview → Clear /app if Initialize Laravel is blocked by leftover files.\r\n');
             @elseif ($terminalTemplateSlug === 'nodejs')
-            this.terminal.write('  Tip: Git pull rebuilds your app automatically; run npm run build manually if needed.\r\n');
+            this.terminal.write('  Tip: for Node apps, prefer Git → Pull with Force clean rebuild instead of manual npm run build.\r\n');
             @endif
             this.terminal.write('✓ ' + (data.welcome_message || 'Connected.') + '\r\n');
             this.writePrompt();

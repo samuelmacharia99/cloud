@@ -65,9 +65,9 @@
 
         @if ($deployment)
             @php
-                $containerTabs = ['overview', 'files', 'terminal', 'backups', 'domains', 'database', 'cron', 'logs', 'documentation'];
+                $containerTabs = ['overview', 'environment', 'files', 'terminal', 'backups', 'domains', 'database', 'cron', 'logs', 'documentation'];
                 if (! empty($supportsGitRepository)) {
-                    array_splice($containerTabs, array_search('database', $containerTabs, true) + 1, 0, 'github');
+                    array_splice($containerTabs, array_search('terminal', $containerTabs, true) + 1, 0, 'github');
                 }
                 if (! empty($supportsPhpExtensions)) {
                     $documentationIndex = array_search('documentation', $containerTabs, true);
@@ -80,37 +80,61 @@
                 <div class="border-b border-slate-200 dark:border-slate-700 px-4 pt-4">
                     <label class="md:hidden block text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Section</label>
                     <select :value="activeTab" @change="setTab($event.target.value)" class="md:hidden w-full mb-4 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm">
-                        <option value="overview">Overview</option>
-                        <option value="logs">Logs</option>
-                        <option value="files">Files</option>
-                        <option value="terminal">Terminal</option>
-                        <option value="database">Database</option>
-                        <option value="cron">Cron Jobs</option>
-                        @if (!empty($supportsGitRepository))
-                            <option value="github">GitHub</option>
-                        @endif
-                        <option value="domains">Domains</option>
-                        <option value="backups">Backups</option>
-                        @if (!empty($supportsPhpExtensions))
-                            <option value="php-extensions">PHP Extensions</option>
-                        @endif
-                        <option value="documentation">Documentation</option>
+                        <optgroup label="App">
+                            <option value="overview">Overview</option>
+                            <option value="environment">Environment</option>
+                            <option value="files">Files</option>
+                            <option value="terminal">Terminal</option>
+                            @if (!empty($supportsGitRepository))
+                                <option value="github">Git</option>
+                            @endif
+                            @if (!empty($supportsPhpExtensions))
+                                <option value="php-extensions">PHP Extensions</option>
+                            @endif
+                        </optgroup>
+                        <optgroup label="Data">
+                            <option value="database">Database</option>
+                            <option value="backups">Backups</option>
+                        </optgroup>
+                        <optgroup label="Network">
+                            <option value="domains">Domains</option>
+                        </optgroup>
+                        <optgroup label="Ops">
+                            <option value="logs">Logs</option>
+                            <option value="cron">Cron Jobs</option>
+                        </optgroup>
+                        <optgroup label="Help">
+                            <option value="documentation">Documentation</option>
+                        </optgroup>
                     </select>
 
-                    <nav class="hidden md:flex flex-wrap gap-x-1" role="tablist">
-                        @foreach ([['overview', 'Overview'], ['logs', 'Logs'], ['files', 'Files'], ['terminal', 'Terminal'], ['database', 'Database'], ['cron', 'Cron Jobs']] as [$tabKey, $tabLabel])
-                            <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
-                        @endforeach
-                        @if (!empty($supportsGitRepository))
-                            <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">GitHub</button>
-                        @endif
-                        @foreach ([['domains', 'Domains'], ['backups', 'Backups']] as [$tabKey, $tabLabel])
-                            <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
-                        @endforeach
-                        @if (!empty($supportsPhpExtensions))
-                            <button @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">PHP Extensions</button>
-                        @endif
-                        <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-4 py-3 font-medium transition text-sm" role="tab">Docs</button>
+                    <nav class="hidden md:flex flex-col gap-3 pb-1" role="tablist">
+                        <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 w-16">App</span>
+                            @foreach ([['overview', 'Overview'], ['environment', 'Environment'], ['files', 'Files'], ['terminal', 'Terminal']] as [$tabKey, $tabLabel])
+                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                            @endforeach
+                            @if (!empty($supportsGitRepository))
+                                <button @click="setTab('github')" :class="activeTab === 'github' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Git</button>
+                            @endif
+                            @if (!empty($supportsPhpExtensions))
+                                <button @click="setTab('php-extensions')" :class="activeTab === 'php-extensions' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">PHP Extensions</button>
+                            @endif
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-1 gap-y-1">
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 w-16">Data</span>
+                            @foreach ([['database', 'Database'], ['backups', 'Backups']] as [$tabKey, $tabLabel])
+                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                            @endforeach
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Network</span>
+                            <button @click="setTab('domains')" :class="activeTab === 'domains' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Domains</button>
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Ops</span>
+                            @foreach ([['logs', 'Logs'], ['cron', 'Cron']] as [$tabKey, $tabLabel])
+                                <button @click="setTab('{{ $tabKey }}')" :class="activeTab === '{{ $tabKey }}' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">{{ $tabLabel }}</button>
+                            @endforeach
+                            <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 px-2 ml-2">Help</span>
+                            <button @click="setTab('documentation')" :class="activeTab === 'documentation' ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'" class="px-3 py-2.5 font-medium transition text-sm" role="tab">Docs</button>
+                        </div>
                     </nav>
                 </div>
 
@@ -118,6 +142,25 @@
                 <div class="p-8">
                     <!-- Overview Tab -->
                     <div x-show="activeTab === 'overview'" class="space-y-8">
+                        @php $daMigration = $service->service_meta['da_migration'] ?? null; @endphp
+                        @if (!empty($daMigration['status']))
+                            <div class="rounded-xl border p-4 {{ ($daMigration['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800' : (($daMigration['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800' : 'border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800') }}">
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">DA → container migration: <span class="uppercase">{{ $daMigration['status'] }}</span></p>
+                                @if (!empty($daMigration['error']))
+                                    <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ $daMigration['error'] }}</p>
+                                @endif
+                                @if (!empty($daMigration['steps']) && is_array($daMigration['steps']))
+                                    <ul class="mt-2 text-xs font-mono text-slate-700 dark:text-slate-300 space-y-1">
+                                        @foreach ($daMigration['steps'] as $step)
+                                            <li>{{ $step }}</li>
+                                        @endforeach
+                                    </ul>
+                                @endif
+                                @if (($daMigration['status'] ?? '') === 'completed')
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Update DNS to this container. Email remains on DirectAdmin.</p>
+                                @endif
+                            </div>
+                        @endif
                         <!-- Quick Actions -->
                         <div class="flex gap-3 flex-wrap items-center">
                             @if ($deployment->isRunning())
@@ -153,6 +196,10 @@
                                 </span>
                             @endif
 
+                            <a href="{{ route('customer.services.upgrade', $service) }}" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition">
+                                Change plan
+                            </a>
+
                             <div class="relative" x-data="{ open: false }">
                                 <button type="button" @click="open = !open" class="px-5 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition hover:bg-slate-200 dark:hover:bg-slate-600">
                                     Advanced ▾
@@ -167,8 +214,8 @@
                                         </label>
                                         <button
                                             type="button"
-                                            class="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition text-sm"
-                                            onclick="confirmRedeploy(document.getElementById('redeploy-form'))"
+                                            onclick="confirmRedeploy(this.form)"
+                                            class="w-full px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-medium"
                                         >
                                             Redeploy stack
                                         </button>
@@ -176,6 +223,8 @@
                                 </div>
                             </div>
                         </div>
+
+                        @include('customer.services.partials.staging')
 
                         @include('customer.services.partials.overview-quick-links')
 
@@ -185,6 +234,13 @@
 
                         @include('customer.services.partials.enhanced-stats')
                     </div>
+
+                    <!-- Environment Tab -->
+                    <template x-if="hasVisited('environment')">
+                        <div x-show="activeTab === 'environment'">
+                            @include('customer.services.partials.environment')
+                        </div>
+                    </template>
 
                     <!-- Files Tab -->
                     <template x-if="hasVisited('files')">
@@ -204,14 +260,31 @@
                     <template x-if="hasVisited('backups')">
                         <div x-show="activeTab === 'backups'">
                         <div class="space-y-6">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-xl font-bold text-slate-900 dark:text-white">Container Backups</h3>
-                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;">
+                            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                <div>
+                                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Container Backups</h3>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                                        Manual and scheduled archives of your container directory (app files + compose volumes).
+                                    </p>
+                                </div>
+                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Create a backup now? The container will stop briefly while the archive is created, then start again." data-confirm-title="Create backup">
                                     @csrf
                                     <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
                                         Create backup
                                     </button>
                                 </form>
+                            </div>
+
+                            <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-1">
+                                <p><strong>Brief downtime:</strong> backups stop the stack while archiving, then restart it. Prefer off-peak windows for large apps.</p>
+                                <p>
+                                    <strong>Scheduled backups:</strong> running containers are backed up automatically about every 24 hours.
+                                    @if (! empty($scheduledBackupDue))
+                                        Next window after your latest backup: {{ $scheduledBackupDue->format('M j, Y g:i A') }}.
+                                    @else
+                                        Create a backup or wait for the first scheduled run once the container is running.
+                                    @endif
+                                </p>
                             </div>
 
                             @php
@@ -227,6 +300,9 @@
                                                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                                                     @if ($backup->status === 'completed')
                                                         Size: {{ formatBytes($backup->size_bytes) }} • {{ $backup->created_at->diffForHumans() }}
+                                                        @if ($backup->type)
+                                                            • <span class="capitalize">{{ $backup->type }}</span>
+                                                        @endif
                                                     @else
                                                         Status: {{ ucfirst($backup->status) }}
                                                     @endif
@@ -234,7 +310,7 @@
                                             </div>
                                             <div class="flex gap-2">
                                                 @if ($backup->status === 'completed')
-                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;" data-confirm="Restore this backup? Current container data will be replaced." data-confirm-title="Restore backup">
+                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;" data-confirm="Restore this backup? Current container data will be replaced and the app will restart." data-confirm-title="Restore backup">
                                                         @csrf
                                                         <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                                                             Restore
@@ -475,6 +551,32 @@
                                     <pre id="db-import-output" class="mt-3 hidden bg-slate-900 text-slate-200 p-3 rounded-lg overflow-auto max-h-48 text-xs"></pre>
                                 </div>
 
+                                <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40" x-data="dbTableBrowser()">
+                                    <div class="flex items-center justify-between gap-3 mb-3">
+                                        <div>
+                                            <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Table browser</h3>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">List tables and peek at rows without leaving the console.</p>
+                                        </div>
+                                        <button type="button" @click="loadTables()" :disabled="loading" class="px-3 py-1.5 text-sm rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50">
+                                            <span x-text="loading ? 'Loading…' : 'Refresh tables'"></span>
+                                        </button>
+                                    </div>
+                                    <p x-show="error" class="text-sm text-red-600 dark:text-red-400 mb-2" x-text="error"></p>
+                                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                        <ul class="lg:col-span-1 max-h-64 overflow-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+                                            <template x-if="!tables.length && !loading">
+                                                <li class="p-3 text-sm text-slate-500">No tables loaded yet.</li>
+                                            </template>
+                                            <template x-for="table in tables" :key="table">
+                                                <li>
+                                                    <button type="button" @click="previewTable(table)" class="w-full text-left px-3 py-2 text-sm font-mono hover:bg-slate-50 dark:hover:bg-slate-700/60" :class="selected === table ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300' : 'text-slate-800 dark:text-slate-200'" x-text="table"></button>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                        <pre class="lg:col-span-2 bg-slate-900 text-slate-200 p-3 rounded-lg overflow-auto max-h-64 text-xs" x-text="preview || 'Select a table to preview up to 25 rows.'"></pre>
+                                    </div>
+                                </div>
+
                                 <div class="p-4 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
                                     <p class="text-sm text-amber-900 dark:text-amber-200">
                                         Read-only SQL console: only <code>SELECT</code>, <code>SHOW</code>, <code>DESCRIBE</code>, and <code>EXPLAIN</code> are allowed.
@@ -534,13 +636,18 @@
                     <template x-if="hasVisited('logs')">
                         <div x-show="activeTab === 'logs'">
                             <div class="space-y-4">
-                                <div class="flex items-center gap-3">
+                                <div class="flex flex-wrap items-center gap-3">
                                     <button type="button" @click="loadFullLogs()" :disabled="logsLoading" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
                                         <span x-text="logsLoading ? 'Loading…' : 'Refresh logs'"></span>
                                     </button>
-                                    <span class="text-sm text-slate-500 dark:text-slate-400">Container stdout/stderr</span>
+                                    <label class="inline-flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                                        <input type="checkbox" x-model="logsLive" @change="toggleLiveLogs()" class="rounded border-slate-300 dark:border-slate-600 text-blue-600">
+                                        Live follow (2s)
+                                    </label>
+                                    <span class="text-sm text-slate-500 dark:text-slate-400">Last 200 lines · stdout/stderr</span>
+                                    <span x-show="logsFetchedAt" class="text-xs font-mono text-slate-400" x-text="logsFetchedAt ? `Updated ${logsFetchedAt}` : ''"></span>
                                 </div>
-                                <pre class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[32rem] whitespace-pre-wrap" x-text="fullLogs || 'Loading logs…'"></pre>
+                                <pre class="bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-sm overflow-x-auto max-h-[32rem] whitespace-pre-wrap" x-ref="fullLogsEl" x-text="fullLogs || 'Loading logs…'"></pre>
                             </div>
                         </div>
                     </template>
@@ -661,11 +768,19 @@ function containerTabs(initialTab) {
         visitedTabs: [initialTab],
         fullLogs: '',
         logsLoading: false,
+        logsLive: false,
+        logsFetchedAt: '',
+        logsTimer: null,
 
         init() {
             if (this.activeTab === 'logs') {
                 this.loadFullLogs();
             }
+            this.$watch('activeTab', (tab) => {
+                if (tab !== 'logs') {
+                    this.stopLiveLogs();
+                }
+            });
         },
 
         setTab(tab) {
@@ -678,6 +793,8 @@ function containerTabs(initialTab) {
             history.replaceState({}, '', url);
             if (tab === 'logs') {
                 this.$nextTick(() => this.loadFullLogs());
+            } else {
+                this.stopLiveLogs();
             }
         },
 
@@ -685,21 +802,56 @@ function containerTabs(initialTab) {
             return this.visitedTabs.includes(tab);
         },
 
-        async loadFullLogs() {
-            this.logsLoading = true;
-            this.fullLogs = 'Loading logs…';
+        toggleLiveLogs() {
+            if (this.logsLive) {
+                this.startLiveLogs();
+            } else {
+                this.stopLiveLogs();
+            }
+        },
+
+        startLiveLogs() {
+            this.stopLiveLogs();
+            this.logsTimer = setInterval(() => this.loadFullLogs(true), 2000);
+        },
+
+        stopLiveLogs() {
+            if (this.logsTimer) {
+                clearInterval(this.logsTimer);
+                this.logsTimer = null;
+            }
+            this.logsLive = false;
+        },
+
+        async loadFullLogs(silent = false) {
+            if (!silent) {
+                this.logsLoading = true;
+            }
 
             try {
-                const response = await fetch('{{ route("customer.services.container.logs", $service) }}');
+                const response = await fetch('{{ route("customer.services.container.logs", $service) }}?lines=200', {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
                 const data = await response.json();
 
                 if (data.error) {
                     this.fullLogs = `Error: ${data.error}`;
                 } else {
                     this.fullLogs = data.logs || 'No logs available';
+                    this.logsFetchedAt = data.fetched_at
+                        ? new Date(data.fetched_at).toLocaleTimeString()
+                        : new Date().toLocaleTimeString();
+                    this.$nextTick(() => {
+                        const el = this.$refs.fullLogsEl;
+                        if (el && this.logsLive) {
+                            el.scrollTop = el.scrollHeight;
+                        }
+                    });
                 }
             } catch (error) {
-                this.fullLogs = 'Failed to fetch logs';
+                if (!silent) {
+                    this.fullLogs = 'Failed to fetch logs';
+                }
                 console.error('Error:', error);
             } finally {
                 this.logsLoading = false;
@@ -877,6 +1029,74 @@ async function loadDatabaseHistory() {
     } catch (error) {
         historyEl.innerHTML = '<div class="p-3 text-sm text-red-600">Failed to load history</div>';
     }
+}
+
+function dbTableBrowser() {
+    return {
+        tables: [],
+        selected: null,
+        preview: '',
+        loading: false,
+        error: '',
+        init() {
+            this.loadTables();
+        },
+        async runQuery(sql) {
+            const response = await fetch('{{ route("customer.services.container.database.query", $service) }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({ query: sql, format: 'text' }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Query failed');
+            }
+            return data.output || data.result || '';
+        },
+        async loadTables() {
+            this.loading = true;
+            this.error = '';
+            try {
+                const output = await this.runQuery('SHOW TABLES');
+                this.tables = String(output)
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter((line) => line && !/^Tables_in_/i.test(line) && line.toLowerCase() !== 'null');
+                if (!this.tables.length && output) {
+                    // Fallback: tab/space separated first column from mysql CLI style
+                    this.tables = String(output)
+                        .split(/\r?\n/)
+                        .slice(1)
+                        .map((l) => l.trim().split(/\s+/)[0])
+                        .filter(Boolean);
+                }
+            } catch (e) {
+                this.error = e.message || 'Failed to list tables';
+                this.tables = [];
+            } finally {
+                this.loading = false;
+            }
+        },
+        async previewTable(table) {
+            this.selected = table;
+            this.preview = 'Loading…';
+            try {
+                const safe = String(table).replace(/[^a-zA-Z0-9_]/g, '');
+                if (!safe) {
+                    this.preview = 'Invalid table name';
+                    return;
+                }
+                this.preview = await this.runQuery(`SELECT * FROM \`${safe}\` LIMIT 25`);
+            } catch (e) {
+                this.preview = e.message || 'Preview failed';
+            }
+        },
+    };
 }
 </script>
 @endsection

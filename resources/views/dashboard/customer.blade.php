@@ -174,7 +174,7 @@
                 @else
                     <div class="px-6 py-10 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">No active services yet.</p>
-                        <a href="{{ route('customer.select-techstack') }}" class="btn-primary btn-sm">Deploy your first service</a>
+                        <a href="{{ route('customer.select-techstack') }}" class="btn-primary btn-sm">Deploy your first app</a>
                     </div>
                 @endif
             </x-dashboard-section>

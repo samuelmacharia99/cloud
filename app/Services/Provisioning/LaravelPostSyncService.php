@@ -65,7 +65,10 @@ class LaravelPostSyncService
                 $messages[] = 'Migrations could not run automatically: '.$e->getMessage();
             }
         } elseif (! $options->runMigrations) {
-            $this->syncDatabaseCredentialsOnly($service, $deployment, $ssh);
+            $credentialMessage = $this->syncDatabaseCredentialsOnly($service, $deployment, $ssh);
+            if ($credentialMessage !== null) {
+                $messages[] = $credentialMessage;
+            }
         }
 
         if ($options->finalizeApplication) {
@@ -142,11 +145,11 @@ class LaravelPostSyncService
         );
     }
 
-    private function syncDatabaseCredentialsOnly(Service $service, ContainerDeployment $deployment, SSHService $ssh): void
+    private function syncDatabaseCredentialsOnly(Service $service, ContainerDeployment $deployment, SSHService $ssh): ?string
     {
         $databaseTemplate = $this->deploymentService->resolveDatabaseTemplateForService($service);
         if (! $databaseTemplate) {
-            return;
+            return null;
         }
 
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
@@ -154,11 +157,15 @@ class LaravelPostSyncService
 
         try {
             $this->deploymentService->waitForDatabaseSidecar($ssh, $containerPath, $databaseTemplate, $envValues, 60);
+
+            return null;
         } catch (\Throwable $e) {
             \Log::warning('Database credential sync skipped during Laravel post-sync: DB not ready', [
                 'service_id' => $service->id,
                 'error' => $e->getMessage(),
             ]);
+
+            return 'Database was not ready — credentials were not refreshed. Retry the Git pull once the database sidecar is healthy.';
         }
     }
 }

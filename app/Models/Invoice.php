@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\InvoiceStatus;
 use App\Services\Billing\InvoiceCurrencyService;
+use App\Services\Customer\CustomerContainerPlanChangeService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Support\CurrencyFormatter;
 use Illuminate\Database\Eloquent\Collection;
@@ -57,6 +58,8 @@ class Invoice extends Model
             if ($invoice->wasChanged('status') && $invoice->isPaid()) {
                 app(ResellerPackageSubscriptionService::class)
                     ->activateFromPaidInvoice($invoice);
+                app(CustomerContainerPlanChangeService::class)
+                    ->applyFromPaidInvoice($invoice);
             }
         });
     }

@@ -1,4 +1,7 @@
 <div class="space-y-4">
+    <p class="text-sm text-slate-600 dark:text-slate-400">
+        Optional now — you can connect Git after checkout from the app console (Git tab), then manage secrets under <strong>Environment</strong>.
+    </p>
     <div>
         <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Source Repository URL</label>
         <input type="url" name="source_repo_url[{{ $product['key'] }}]" value="{{ old("source_repo_url.{$product['key']}") }}"

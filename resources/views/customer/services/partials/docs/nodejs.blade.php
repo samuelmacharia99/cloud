@@ -3,7 +3,7 @@
         <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h4>
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
             <li>Push your Node.js app to GitHub (Express, Fastify, or a framework like Next.js).</li>
-            <li>Connect the repo on the <strong>GitHub</strong> tab and pull code into <code class="font-mono text-xs">/app</code>.</li>
+            <li>Connect the repo on the <strong>Git</strong> tab and pull code into <code class="font-mono text-xs">/app</code>.</li>
             <li>Talksasa detects your start command from <code class="font-mono text-xs">package.json</code> or a <code class="font-mono text-xs">Procfile</code>.</li>
             <li>Bind your domain and visit the service URL.</li>
         </ol>
@@ -25,7 +25,8 @@
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>These apps need a <strong>production build</strong> before <code class="font-mono text-xs">next start</code> or <code class="font-mono text-xs">nuxt start</code> can run.</li>
                 <li>Talksasa runs a prepare step before <code class="font-mono text-xs">npm run build</code> that patches TypeScript settings and relaxes Next.js type/lint blocking on hosted builds.</li>
-                <li>For Next.js/Nuxt apps, Talksasa runs <code class="font-mono text-xs">npm install --include=dev</code> → prepare → <code class="font-mono text-xs">npm run build</code> after each Git pull.</li>
+                <li>For Next.js/Nuxt apps, Talksasa runs <code class="font-mono text-xs">npm install --include=dev</code> → prepare → <code class="font-mono text-xs">npm run build</code> after each Git pull when a framework build is detected.</li>
+                <li>If a build looks stuck or stale, pull again with <strong>Force clean rebuild</strong> enabled on the Git tab.</li>
                 <li>The build output (<code class="font-mono text-xs">.next</code> for Next.js) is <strong>not</strong> committed to Git — Talksasa rebuilds it on deploy.</li>
                 <li>Do <strong>not</strong> use <code class="font-mono text-xs">npm run dev</code> in production; keep <code class="font-mono text-xs">"start": "next start"</code>.</li>
             </ul>
@@ -35,8 +36,8 @@
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
         <h4 class="font-semibold text-slate-900 dark:text-white">Environment variables</h4>
         <p class="text-sm text-slate-600 dark:text-slate-300">
-            Set <code class="font-mono text-xs">NODE_ENV=production</code> at order time or add variables in your repo.
-            Framework secrets (database URLs, API keys) belong in <code class="font-mono text-xs">.env</code> or Talksasa service settings — never commit secrets to Git.
+            Manage runtime secrets under the <strong>Environment</strong> tab (recommended). Framework secrets (database URLs, API keys) can also live in <code class="font-mono text-xs">.env</code> — never commit secrets to Git.
+            Rebuilds run when a framework build is detected or when you enable <strong>Force clean rebuild</strong>; otherwise production dependency install runs without a full rebuild.
         </p>
     </div>
 

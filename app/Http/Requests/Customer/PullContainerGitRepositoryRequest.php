@@ -17,6 +17,7 @@ class PullContainerGitRepositoryRequest extends FormRequest
             'replace_existing' => ['sometimes', 'boolean'],
             'run_composer' => ['sometimes', 'boolean'],
             'run_migrations' => ['sometimes', 'boolean'],
+            'force_rebuild' => ['sometimes', 'boolean'],
         ];
     }
 }

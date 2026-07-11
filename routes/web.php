@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\CronController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DatabaseTemplateController;
+use App\Http\Controllers\Admin\DirectAdminContainerMigrationController;
 use App\Http\Controllers\Admin\DomainController;
 use App\Http\Controllers\Admin\DomainOrderController;
 use App\Http\Controllers\Admin\DomainRenewalController;
@@ -31,10 +32,12 @@ use App\Http\Controllers\Admin\SmsController;
 use App\Http\Controllers\Admin\SmsTemplateController;
 use App\Http\Controllers\Admin\TicketController;
 use App\Http\Controllers\Api\V1\ResellerPublic\ResellerPackageCatalogController;
+use App\Http\Controllers\ContainerGitDeployWebhookController;
 use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
+use App\Http\Controllers\Customer\DirectAdminMigrationController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
 use App\Http\Controllers\Customer\HostingPanelController;
@@ -152,6 +155,9 @@ Route::middleware(['throttle:120,1'])->group(function () {
     Route::post('/webhooks/stripe', [PaymentController::class, 'stripeWebhook'])->name('payment.stripe.webhook');
     Route::post('/webhooks/paypal', [PaymentController::class, 'paypalWebhook'])->name('payment.paypal.webhook');
     Route::post('/webhooks/email/bounce', [EmailWebhookController::class, 'bounce'])->name('webhooks.email.bounce');
+    Route::post('/webhooks/containers/{service}/git-deploy', ContainerGitDeployWebhookController::class)
+        ->middleware('throttle:20,1')
+        ->name('webhooks.containers.git-deploy');
 });
 
 // Legal pages (public, no authentication required)
@@ -353,6 +359,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         // Container migration
         Route::get('admin/services/{service}/container/migrate', [ContainerMigrationController::class, 'index'])->name('admin.services.container.migrate');
         Route::post('admin/services/{service}/container/migrate', [ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
+        Route::get('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'show'])->name('admin.services.migrate-to-container');
+        Route::post('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'store'])->name('admin.services.migrate-to-container.store');
         Route::post('admin/nodes/{node}/migrate-containers', [ContainerMigrationController::class, 'migrateNode'])->name('admin.nodes.migrate-containers');
 
         // Admin Ticket Management
@@ -554,6 +562,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew.store');
         Route::get('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'show'])->name('customer.services.upgrade');
         Route::post('/my/services/{service}/upgrade', [ServiceUpgradeController::class, 'store'])->name('customer.services.upgrade.store');
+        Route::get('/my/services/{service}/migrate-to-app', [DirectAdminMigrationController::class, 'show'])->name('customer.services.migrate-to-app');
+        Route::post('/my/services/{service}/migrate-to-app', [DirectAdminMigrationController::class, 'store'])->name('customer.services.migrate-to-app.store');
 
         Route::prefix('my/services/{service}/hosting')->name('customer.services.hosting.')->group(function () {
             Route::get('panel-login', [HostingPanelController::class, 'panelLogin'])->middleware('throttle:10,1')->name('panel-login');
@@ -675,12 +685,17 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('my/services/{service}/container/clear-app', [App\Http\Controllers\Customer\ContainerController::class, 'clearAppDirectory'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.clear-app');
         Route::get('my/services/{service}/container/laravel-setup', [App\Http\Controllers\Customer\ContainerController::class, 'laravelSetupStatus'])->name('customer.services.container.laravel-setup');
         Route::post('my/services/{service}/container/php-extensions', [App\Http\Controllers\Customer\ContainerController::class, 'updatePhpExtensions'])->middleware('throttle:10,10')->name('customer.services.container.php-extensions.update');
+        Route::put('my/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'updateEnvironment'])->middleware('throttle:10,10')->name('customer.services.container.environment.update');
+        Route::delete('my/services/{service}/container/environment', [App\Http\Controllers\Customer\ContainerController::class, 'deleteEnvironment'])->middleware('throttle:10,10')->name('customer.services.container.environment.delete');
         Route::post('my/services/{service}/container/cron-jobs', [App\Http\Controllers\Customer\ContainerController::class, 'storeCronJob'])->middleware('throttle:20,10')->name('customer.services.container.cron-jobs.store');
         Route::put('my/services/{service}/container/cron-jobs/{cronJob}', [App\Http\Controllers\Customer\ContainerController::class, 'updateCronJob'])->middleware('throttle:20,10')->name('customer.services.container.cron-jobs.update');
         Route::delete('my/services/{service}/container/cron-jobs/{cronJob}', [App\Http\Controllers\Customer\ContainerController::class, 'deleteCronJob'])->middleware('throttle:20,10')->name('customer.services.container.cron-jobs.delete');
         Route::post('my/services/{service}/container/git-repository', [App\Http\Controllers\Customer\ContainerController::class, 'updateGitRepository'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.git-repository.update');
         Route::post('my/services/{service}/container/git-repository/pull', [App\Http\Controllers\Customer\ContainerController::class, 'pullGitRepository'])->middleware('throttle:laravel-container-actions')->name('customer.services.container.git-repository.pull');
         Route::get('my/services/{service}/container/git-repository/status', [App\Http\Controllers\Customer\ContainerController::class, 'gitPullStatus'])->name('customer.services.container.git-repository.status');
+        Route::post('my/services/{service}/container/auto-deploy', [App\Http\Controllers\Customer\ContainerController::class, 'updateAutoDeploy'])->middleware('throttle:10,10')->name('customer.services.container.auto-deploy.update');
+        Route::post('my/services/{service}/container/auto-deploy/rotate', [App\Http\Controllers\Customer\ContainerController::class, 'rotateAutoDeploySecret'])->middleware('throttle:5,10')->name('customer.services.container.auto-deploy.rotate');
+        Route::post('my/services/{service}/container/staging', [App\Http\Controllers\Customer\ContainerController::class, 'updateStaging'])->middleware('throttle:10,10')->name('customer.services.container.staging.update');
         Route::post('my/services/{service}/container/stop', [App\Http\Controllers\Customer\ContainerController::class, 'stop'])->name('customer.services.container.stop');
         Route::post('my/services/{service}/container/start', [App\Http\Controllers\Customer\ContainerController::class, 'start'])->name('customer.services.container.start');
         Route::get('my/services/{service}/container/logs', [App\Http\Controllers\Customer\ContainerController::class, 'logs'])->name('customer.services.container.logs');

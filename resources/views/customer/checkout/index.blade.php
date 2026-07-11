@@ -59,7 +59,8 @@
                 @endphp
                 @if (!empty($containerProducts))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Container Configuration</h2>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Application deploy settings</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Optional now — you can connect Git and manage Environment secrets from the app console after checkout.</p>
                         <div class="space-y-6">
                             @foreach($containerProducts as $key => $product)
                                 @php $template = $product['container_template'] ?? null; @endphp
@@ -76,7 +77,8 @@
 
                 @if (!empty($sharedHostingItems))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared Hosting Domain</h2>
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared plan domain (DirectAdmin)</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Email and classic shared hosting live on DirectAdmin. Prefer app hosting for new websites.</p>
                         @include('customer.checkout.partials.shared-hosting-domain', ['linkedHostingDomains' => $linkedHostingDomains ?? []])
                     </div>
                 @endif

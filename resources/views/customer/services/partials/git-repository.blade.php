@@ -5,6 +5,7 @@
     $gitSyncedAt = $gitRepository['synced_at'] ?? null;
     $hasRepoToken = (bool) ($gitRepository['has_repo_token'] ?? false);
     $hasComposerAuth = (bool) ($gitRepository['has_composer_auth'] ?? false);
+    $isNodeTemplate = ($service->product?->containerTemplate?->slug ?? '') === 'nodejs';
 @endphp
 
 <style>
@@ -101,10 +102,17 @@
                 <span class="inline-flex h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
                 <span class="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-600 dark:text-cyan-400">Deploy pipeline</span>
             </div>
-            <h3 class="text-lg font-semibold text-slate-900 dark:text-white">GitHub repository</h3>
+            <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Git repository</h3>
             <p class="text-sm text-slate-600 dark:text-slate-300 mt-2">
                 Connect a Git repository and pull the latest code into <code class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-300">/app</code>.
-                For private GitHub repos, add a Personal Access Token below. Laravel deploys also run <strong>composer install</strong> and optional migrations automatically.
+                For private repos, add a Personal Access Token below.
+                @if (!empty($isLaravelTemplate))
+                    Laravel pulls run <strong>composer install</strong>, refresh platform <code class="font-mono text-xs">.env</code> keys, and can run migrations. Manage app secrets in the <strong>Environment</strong> tab.
+                @elseif ($isNodeTemplate)
+                    Node pulls install dependencies and run a production build when your framework needs one (Next.js, Nuxt, Vite, etc.). Use <strong>Force clean rebuild</strong> if builds look stuck. Manage secrets in the <strong>Environment</strong> tab.
+                @else
+                    After pull, stack-specific install steps run automatically. Manage secrets in the <strong>Environment</strong> tab.
+                @endif
             </p>
         </div>
     </div>
@@ -152,24 +160,26 @@
                 </label>
             @endif
         </div>
-        <div>
-            <label for="composer_github_token" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Composer GitHub token (private packages)</label>
-            <input
-                id="composer_github_token"
-                type="password"
-                name="composer_github_token"
-                value=""
-                placeholder="{{ $hasComposerAuth ? 'Token saved — leave blank to keep' : 'Optional — for private Composer deps' }}"
-                autocomplete="off"
-                class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition"
-            >
-            @if ($hasComposerAuth)
-                <label class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <input type="checkbox" name="remove_composer_auth" value="1" class="rounded border-slate-300 dark:border-slate-600">
-                    Remove saved Composer auth
-                </label>
-            @endif
-        </div>
+        @if (!empty($isLaravelTemplate))
+            <div>
+                <label for="composer_github_token" class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">Composer GitHub token (private packages)</label>
+                <input
+                    id="composer_github_token"
+                    type="password"
+                    name="composer_github_token"
+                    value=""
+                    placeholder="{{ $hasComposerAuth ? 'Token saved — leave blank to keep' : 'Optional — for private Composer deps' }}"
+                    autocomplete="off"
+                    class="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900/80 px-3 py-2.5 text-sm font-mono focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500/50 transition"
+                >
+                @if ($hasComposerAuth)
+                    <label class="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <input type="checkbox" name="remove_composer_auth" value="1" class="rounded border-slate-300 dark:border-slate-600">
+                        Remove saved Composer auth
+                    </label>
+                @endif
+            </div>
+        @endif
         <div class="lg:col-span-2">
             <button
                 type="submit"
@@ -181,6 +191,86 @@
     </form>
 
     @if ($gitUrl !== '')
+        @php
+            $autoDeploy = $autoDeployPanel ?? [
+                'enabled' => false,
+                'has_secret' => false,
+                'webhook_url' => route('webhooks.containers.git-deploy', $service),
+                'branch' => $gitBranch,
+                'run_composer' => true,
+                'run_migrations' => true,
+                'force_rebuild' => false,
+            ];
+        @endphp
+        <div class="relative border border-emerald-200 dark:border-emerald-800/50 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 p-5 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div>
+                    <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Auto-deploy from Git</h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">
+                        Add this webhook to GitHub/GitLab so pushes to <span class="font-mono">{{ $autoDeploy['branch'] }}</span> pull automatically.
+                        Send the secret as header <code class="font-mono text-[11px]">X-Talksasa-Token</code> (or GitLab token header / <code class="font-mono text-[11px]">?token=</code>).
+                    </p>
+                </div>
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider {{ !empty($autoDeploy['enabled']) ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400' }}">
+                    {{ !empty($autoDeploy['enabled']) ? 'Enabled' : 'Off' }}
+                </span>
+            </div>
+
+            @if (session('auto_deploy_secret'))
+                <div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 space-y-2">
+                    <p class="text-xs font-semibold text-amber-900 dark:text-amber-200">Copy your webhook secret now — it will not be shown again.</p>
+                    <div class="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                        <code class="flex-1 font-mono text-xs break-all bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-800 rounded px-3 py-2">{{ session('auto_deploy_secret') }}</code>
+                        <button type="button" onclick="navigator.clipboard.writeText(@js(session('auto_deploy_secret')))" class="px-3 py-2 text-xs font-medium rounded-lg bg-amber-600 hover:bg-amber-700 text-white">Copy</button>
+                    </div>
+                </div>
+            @endif
+
+            <div class="space-y-2">
+                <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">Webhook URL</label>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" readonly value="{{ $autoDeploy['webhook_url'] }}" class="flex-1 font-mono text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
+                    <button type="button" onclick="navigator.clipboard.writeText(@js($autoDeploy['webhook_url']))" class="px-3 py-2 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800">Copy URL</button>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ route('customer.services.container.auto-deploy.update', $service) }}" class="space-y-3">
+                @csrf
+                <input type="hidden" name="enabled" value="{{ !empty($autoDeploy['enabled']) ? '0' : '1' }}">
+                @if (empty($autoDeploy['enabled']))
+                    @if (!empty($isLaravelTemplate))
+                        <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" name="run_composer" value="1" @checked($autoDeploy['run_composer'] ?? true) class="rounded border-slate-300">
+                            Run composer install on auto-deploy
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" name="run_migrations" value="1" @checked($autoDeploy['run_migrations'] ?? true) class="rounded border-slate-300">
+                            Run migrations on auto-deploy
+                        </label>
+                    @elseif ($isNodeTemplate)
+                        <label class="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" name="force_rebuild" value="1" @checked($autoDeploy['force_rebuild'] ?? false) class="rounded border-slate-300">
+                            Force clean rebuild on auto-deploy
+                        </label>
+                    @endif
+                @endif
+                <div class="flex flex-wrap gap-2">
+                    <button type="submit" class="px-4 py-2 rounded-lg text-sm font-medium text-white {{ !empty($autoDeploy['enabled']) ? 'bg-slate-700 hover:bg-slate-800' : 'bg-emerald-600 hover:bg-emerald-700' }}">
+                        {{ !empty($autoDeploy['enabled']) ? 'Disable auto-deploy' : 'Enable auto-deploy' }}
+                    </button>
+                </div>
+            </form>
+
+            @if (!empty($autoDeploy['enabled']))
+                <form method="POST" action="{{ route('customer.services.container.auto-deploy.rotate', $service) }}" class="inline">
+                    @csrf
+                    <button type="submit" class="text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline" data-confirm="Rotate the webhook secret? You must update GitHub/GitLab with the new value." data-confirm-title="Rotate secret">
+                        Rotate webhook secret
+                    </button>
+                </form>
+            @endif
+        </div>
+
         <div class="relative border-t border-slate-200 dark:border-slate-800 pt-6 space-y-5">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="text-sm text-slate-600 dark:text-slate-300 space-y-1">
@@ -215,6 +305,11 @@
                         <label class="inline-flex items-center gap-2.5 cursor-pointer group">
                             <input type="checkbox" x-model="runMigrations" class="rounded border-slate-300 dark:border-slate-600 text-emerald-500 focus:ring-emerald-500/40">
                             <span class="group-hover:text-slate-900 dark:group-hover:text-white transition">Run <code class="font-mono text-xs text-emerald-600 dark:text-emerald-400">php artisan migrate</code></span>
+                        </label>
+                    @elseif ($isNodeTemplate)
+                        <label class="inline-flex items-center gap-2.5 cursor-pointer group">
+                            <input type="checkbox" x-model="forceRebuild" class="rounded border-slate-300 dark:border-slate-600 text-amber-500 focus:ring-amber-500/40">
+                            <span class="group-hover:text-slate-900 dark:group-hover:text-white transition">Force clean rebuild (wipe build artifacts + run <code class="font-mono text-xs text-amber-600 dark:text-amber-400">npm run build</code>)</span>
                         </label>
                     @endif
                 </div>
@@ -376,6 +471,7 @@ function gitPullPanel() {
         replaceExisting: false,
         runComposer: true,
         runMigrations: true,
+        forceRebuild: false,
         pulling: false,
         errorMessage: '',
         pollTimer: null,
@@ -392,7 +488,7 @@ function gitPullPanel() {
 
         schedulePoll() {
             if (this.pollTimer) clearInterval(this.pollTimer);
-            this.pollTimer = setInterval(() => this.refresh(), this.isActive ? 2500 : 15000);
+            this.pollTimer = setInterval(() => this.refresh(), this.isActive ? 1500 : 15000);
         },
 
         progressPercent() {
@@ -502,6 +598,7 @@ function gitPullPanel() {
                         replace_existing: this.replaceExisting,
                         run_composer: this.runComposer,
                         run_migrations: this.runMigrations,
+                        force_rebuild: this.forceRebuild,
                     }),
                 });
 

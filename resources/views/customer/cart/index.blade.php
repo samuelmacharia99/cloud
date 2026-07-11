@@ -25,7 +25,7 @@
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
                                 <h3 class="font-semibold text-slate-900 dark:text-white">Add a hosting plan?</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Optional — attach shared or container hosting to your domain. Domain and hosting stay on <strong>one invoice</strong> when you check out together.</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Optional — attach <strong>app hosting</strong> for your site, or a shared plan if you need email / classic DirectAdmin hosting. Domain and hosting stay on <strong>one invoice</strong> when you check out together.</p>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-2 shrink-0">
                                 <a href="{{ route('customer.cart.attach-hosting') }}" class="inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">

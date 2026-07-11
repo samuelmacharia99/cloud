@@ -125,7 +125,7 @@
         <x-empty-state
             title="No services yet"
             description="Deploy hosting, containers, or other infrastructure in minutes."
-            action-label="Deploy your first service"
+            action-label="Deploy your first app"
             action-href="{{ route('customer.select-techstack') }}"
         />
     @endif

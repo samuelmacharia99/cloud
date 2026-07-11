@@ -1,15 +1,20 @@
 @extends('layouts.customer')
 
-@section('title', 'Change Hosting Plan')
+@section('title', !empty($isContainerPlanChange) ? 'Change App Hosting Plan' : 'Change Hosting Plan')
 
 @section('content')
 <div class="space-y-6 max-w-3xl">
     <div>
         <a href="{{ route('customer.services.show', $service) }}" class="text-sm text-brand-600 hover:underline">&larr; Back to service</a>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">Change hosting plan</h1>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
+            {{ !empty($isContainerPlanChange) ? 'Change app hosting plan' : 'Change hosting plan' }}
+        </h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             Current plan: <strong>{{ $service->product->name }}</strong>
             · billed <span class="capitalize">{{ $billingCycle }}</span>
+            @if (!empty($isContainerPlanChange) && $service->product?->containerTemplate)
+                · stack <span class="font-mono text-sm">{{ $service->product->containerTemplate->slug }}</span>
+            @endif
         </p>
     </div>
 
@@ -35,7 +40,7 @@
 
     @if ($planOptions->isEmpty())
         <div class="ui-card p-8 text-center text-slate-600 dark:text-slate-400">
-            <p>{{ $planChangeEmptyReason ?? 'No other shared hosting plans are available for this service right now.' }}</p>
+            <p>{{ $planChangeEmptyReason ?? (!empty($isContainerPlanChange) ? 'No other app hosting plans are available for this stack right now.' : 'No other shared hosting plans are available for this service right now.') }}</p>
         </div>
     @else
         <form
@@ -66,7 +71,11 @@
                     @endforeach
                 </select>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    Upgrade charges are prorated for the rest of your current billing period. Your service will renew on the selected cycle after the next invoice.
+                    @if (!empty($isContainerPlanChange))
+                        Upgrade charges are an estimated mid-cycle prorate of the plan difference. Downgrades and same-tier switches apply at no extra cost.
+                    @else
+                        Upgrade charges are prorated for the rest of your current billing period. Your service will renew on the selected cycle after the next invoice.
+                    @endif
                 </p>
                 @error('billing_cycle')
                     <p class="text-sm text-red-600 mt-2">{{ $message }}</p>
@@ -88,7 +97,17 @@
                     $planKey = $product->id . ':' . ($option['reseller_product_id'] ?? 0);
                     $cyclePrices = [];
                     foreach ($billingCycles as $cycleOption) {
-                        $cyclePrices[$cycleOption] = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycleOption);
+                        if (! empty($isContainerPlanChange)) {
+                            $factor = match ($cycleOption) {
+                                'quarterly' => 3,
+                                'semi-annual' => 6,
+                                'annual' => 12,
+                                default => 1,
+                            };
+                            $cyclePrices[$cycleOption] = round(((float) ($option['display_price'] ?? $product->price)) * $factor, 2);
+                        } else {
+                            $cyclePrices[$cycleOption] = $upgrades->displayPriceForPlanOption(auth()->user(), $option, $cycleOption);
+                        }
                     }
                 @endphp
                 <label class="ui-card ui-card-interactive p-5 flex items-start gap-4 cursor-pointer has-[:checked]:ring-2 has-[:checked]:ring-brand-500 {{ $isRecommended ? 'ring-2 ring-amber-400' : '' }}">
@@ -117,16 +136,22 @@
                         </div>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
                             <span data-cycle-prices='@json($cyclePrices)' x-text="planPriceLabel($el)"></span>
-                            @if($option['disk_quota'])
-                                · {{ rtrim(rtrim(number_format($option['disk_quota'], 2), '0'), '.') }} GB storage
-                            @endif
-                            @if($option['bandwidth_quota'] !== null && (float) $option['bandwidth_quota'] >= 0)
-                                · {{ rtrim(rtrim(number_format($option['bandwidth_quota'], 2), '0'), '.') }} GB bandwidth
-                            @elseif($option['bandwidth_quota'] !== null)
-                                · Unlimited bandwidth
-                            @endif
-                            @if(isset($option['num_databases']) && (int) $option['num_databases'] > 0)
-                                · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', (int) $option['num_databases']) }}
+                            @if (!empty($isContainerPlanChange))
+                                · {{ $option['cpu'] ?? '—' }} CPU
+                                · {{ number_format((int) ($option['memory_mb'] ?? 0)) }} MB RAM
+                                · {{ rtrim(rtrim(number_format((float) ($option['disk_gb'] ?? 0), 2), '0'), '.') }} GB disk
+                            @else
+                                @if(!empty($option['disk_quota']))
+                                    · {{ rtrim(rtrim(number_format($option['disk_quota'], 2), '0'), '.') }} GB storage
+                                @endif
+                                @if(array_key_exists('bandwidth_quota', $option) && $option['bandwidth_quota'] !== null && (float) $option['bandwidth_quota'] >= 0)
+                                    · {{ rtrim(rtrim(number_format($option['bandwidth_quota'], 2), '0'), '.') }} GB bandwidth
+                                @elseif(array_key_exists('bandwidth_quota', $option) && $option['bandwidth_quota'] !== null)
+                                    · Unlimited bandwidth
+                                @endif
+                                @if(isset($option['num_databases']) && (int) $option['num_databases'] > 0)
+                                    · {{ $option['num_databases'] }} {{ \Illuminate\Support\Str::plural('database', (int) $option['num_databases']) }}
+                                @endif
                             @endif
                         </p>
                         @if ($changeType === 'downgrade')
@@ -160,7 +185,13 @@
                 </p>
             </div>
 
-            <p class="text-sm text-slate-500">The amount due today is a prorated upgrade charge for the rest of your current billing period — not the full annual plan price. Downgrades apply at no extra cost after you confirm.</p>
+            <p class="text-sm text-slate-500">
+                @if (!empty($isContainerPlanChange))
+                    Confirming applies new CPU/memory limits to your running container after payment (or immediately when free).
+                @else
+                    The amount due today is a prorated upgrade charge for the rest of your current billing period — not the full annual plan price. Downgrades apply at no extra cost after you confirm.
+                @endif
+            </p>
             <button type="submit" class="btn-primary">Continue to billing</button>
         </form>
         <script>

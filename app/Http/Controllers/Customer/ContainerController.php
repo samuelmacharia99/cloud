@@ -7,6 +7,8 @@ use App\Http\Requests\Customer\ImportContainerDatabaseRequest;
 use App\Http\Requests\Customer\PullContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerGitRepositoryRequest;
 use App\Http\Requests\Customer\UpdateContainerPhpExtensionsRequest;
+use App\Http\Requests\DeleteContainerEnvironmentRequest;
+use App\Http\Requests\UpdateContainerEnvironmentRequest;
 use App\Jobs\InitializeContainerAppJob;
 use App\Jobs\PullContainerGitRepositoryJob;
 use App\Models\ContainerBackup;
@@ -20,14 +22,17 @@ use App\Models\Service;
 use App\Models\Setting;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Dns\DomainCloudflareDnsService;
+use App\Services\Provisioning\ContainerAutoDeployService;
 use App\Services\Provisioning\ContainerBackupService;
 use App\Services\Provisioning\ContainerCronService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerDeployOptions;
+use App\Services\Provisioning\ContainerEnvironmentService;
 use App\Services\Provisioning\ContainerFileService;
 use App\Services\Provisioning\ContainerGitCredentialsService;
 use App\Services\Provisioning\ContainerGitRepositoryService;
 use App\Services\Provisioning\ContainerPhpExtensionsService;
+use App\Services\Provisioning\ContainerStagingService;
 use App\Services\Provisioning\LaravelAppInitializationService;
 use App\Services\Provisioning\NginxProxyService;
 use App\Services\SSH\SSHService;
@@ -36,6 +41,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class ContainerController extends Controller
@@ -101,6 +107,12 @@ class ContainerController extends Controller
         $domainCount = 0;
         $domainsMissingSsl = 0;
         $containerCronJobs = [];
+        $environmentPanel = app(ContainerEnvironmentService::class)->buildPanelState($service, $deployment);
+        $autoDeployPanel = $supportsGitRepository
+            ? app(ContainerAutoDeployService::class)->panelState($service)
+            : null;
+        $stagingPanel = app(ContainerStagingService::class)->panelState($service);
+        $scheduledBackupDue = null;
 
         if ($deployment) {
             $deployment->loadMissing('domains');
@@ -116,6 +128,11 @@ class ContainerController extends Controller
                 ->count();
 
             $containerCronJobs = app(ContainerCronService::class)->listForService($service);
+
+            if ($latestBackup?->completed_at || $latestBackup?->created_at) {
+                $anchor = $latestBackup->completed_at ?? $latestBackup->created_at;
+                $scheduledBackupDue = $anchor->copy()->addDay();
+            }
         }
 
         return view('customer.services.container', compact(
@@ -135,6 +152,10 @@ class ContainerController extends Controller
             'domainCount',
             'domainsMissingSsl',
             'containerCronJobs',
+            'environmentPanel',
+            'autoDeployPanel',
+            'stagingPanel',
+            'scheduledBackupDue',
         ));
     }
 
@@ -478,6 +499,7 @@ class ContainerController extends Controller
                 $request->boolean('replace_existing'),
                 $request->boolean('run_composer', true),
                 $request->boolean('run_migrations', true),
+                $request->boolean('force_rebuild', false),
             );
 
             PullContainerGitRepositoryJob::dispatch($pull->id)->afterResponse();
@@ -523,7 +545,64 @@ class ContainerController extends Controller
         return response()->json([
             'repository' => $settings,
             'pull' => $latest ? $this->formatGitPull($latest) : null,
+            'auto_deploy' => app(ContainerAutoDeployService::class)->panelState($service),
         ]);
+    }
+
+    public function updateAutoDeploy(Request $request, Service $service, ContainerAutoDeployService $autoDeploy): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $validated = $request->validate([
+            'enabled' => 'required|boolean',
+            'run_composer' => 'nullable|boolean',
+            'run_migrations' => 'nullable|boolean',
+            'force_rebuild' => 'nullable|boolean',
+        ]);
+
+        try {
+            if ($request->boolean('enabled')) {
+                $result = $autoDeploy->enable($service, rotateSecret: ! $autoDeploy->panelState($service)['has_secret']);
+                $autoDeploy->updateOptions($service, [
+                    'run_composer' => $request->boolean('run_composer', true),
+                    'run_migrations' => $request->boolean('run_migrations', true),
+                    'force_rebuild' => $request->boolean('force_rebuild', false),
+                ]);
+
+                $message = 'Auto-deploy enabled.';
+                if (($result['secret'] ?? '') !== '') {
+                    $message .= ' Copy your webhook secret now — it is shown only once.';
+                }
+
+                return $this->redirectToContainerTab($service, 'github')
+                    ->with('success', $message)
+                    ->with('auto_deploy_secret', $result['secret'] ?? null);
+            }
+
+            $autoDeploy->disable($service);
+
+            return $this->redirectToContainerTab($service, 'github')
+                ->with('success', 'Auto-deploy disabled.');
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirectToContainerTab($service, 'github')
+                ->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
+    public function rotateAutoDeploySecret(Service $service, ContainerAutoDeployService $autoDeploy): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        try {
+            $result = $autoDeploy->enable($service, rotateSecret: true);
+
+            return $this->redirectToContainerTab($service, 'github')
+                ->with('success', 'Webhook secret rotated. Copy the new secret now — it is shown only once.')
+                ->with('auto_deploy_secret', $result['secret']);
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirectToContainerTab($service, 'github')
+                ->withErrors(['error' => $e->getMessage()]);
+        }
     }
 
     /**
@@ -899,10 +978,16 @@ class ContainerController extends Controller
                 return response()->json(['error' => 'Invalid service type'], 400);
             }
 
-            $containerService = new ContainerDeploymentService;
-            $logs = $containerService->getLogs($service, 100);
+            $lines = (int) request()->query('lines', 200);
+            $lines = max(50, min(1000, $lines));
 
-            return response()->json(['logs' => $logs]);
+            $containerService = new ContainerDeploymentService;
+            $logs = $containerService->getLogs($service, $lines);
+
+            return response()->json([
+                'logs' => $logs,
+                'fetched_at' => now()->toIso8601String(),
+            ]);
         } catch (\Exception $e) {
             \Log::error("Failed to fetch logs for service {$service->id}: ".$e->getMessage());
 
@@ -1709,11 +1794,97 @@ class ContainerController extends Controller
             $backupService = new ContainerBackupService;
             $backup = $backupService->createBackup($service, 'manual');
 
-            return back()->with('success', "Backup '{$backup->backup_name}' created successfully.");
+            return $this->redirectToContainerTab($service, 'backups')
+                ->with('success', "Backup '{$backup->backup_name}' created successfully. Brief downtime may have occurred while the archive was created.");
         } catch (\Exception $e) {
             \Log::error("Failed to create backup for service {$service->id}: ".$e->getMessage());
 
-            return back()->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
+            return $this->redirectToContainerTab($service, 'backups')
+                ->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
+        }
+    }
+
+    public function updateEnvironment(UpdateContainerEnvironmentRequest $request, Service $service): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        try {
+            $result = app(ContainerEnvironmentService::class)->updateVariables(
+                $service,
+                $request->validated('variables'),
+                $request->boolean('restart', true)
+            );
+
+            return $this->redirectToContainerTab($service, 'environment')
+                ->with('success', $result['message']);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            \Log::error("Failed to update environment for service {$service->id}: ".$e->getMessage());
+
+            return $this->redirectToContainerTab($service, 'environment')
+                ->withErrors(['error' => 'Failed to update environment: '.$e->getMessage()]);
+        }
+    }
+
+    public function deleteEnvironment(DeleteContainerEnvironmentRequest $request, Service $service): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        try {
+            $result = app(ContainerEnvironmentService::class)->deleteVariables(
+                $service,
+                $request->validated('keys'),
+                $request->boolean('restart', true)
+            );
+
+            return $this->redirectToContainerTab($service, 'environment')
+                ->with('success', $result['message']);
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            \Log::error("Failed to delete environment keys for service {$service->id}: ".$e->getMessage());
+
+            return $this->redirectToContainerTab($service, 'environment')
+                ->withErrors(['error' => 'Failed to remove variables: '.$e->getMessage()]);
+        }
+    }
+
+    public function updateStaging(Request $request, Service $service, ContainerStagingService $staging): RedirectResponse
+    {
+        $this->authorize('manageContainer', $service);
+
+        $validated = $request->validate([
+            'action' => 'required|in:link,unlink,sync_env',
+            'staging_service_id' => 'nullable|exists:services,id',
+        ]);
+
+        try {
+            if ($validated['action'] === 'unlink') {
+                $staging->unlink($service);
+
+                return $this->redirectToContainerTab($service, 'overview')
+                    ->with('success', 'Staging link removed.');
+            }
+
+            if ($validated['action'] === 'sync_env') {
+                $result = $staging->syncEnvironment($service);
+
+                return $this->redirectToContainerTab($service, 'overview')
+                    ->with('success', $result['message'] ?? 'Environment synced to staging.');
+            }
+
+            $target = Service::findOrFail($validated['staging_service_id']);
+            $staging->link($service, $target);
+
+            return $this->redirectToContainerTab($service, 'overview')
+                ->with('success', 'Staging environment linked.');
+        } catch (\InvalidArgumentException $e) {
+            return $this->redirectToContainerTab($service, 'overview')
+                ->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            return $this->redirectToContainerTab($service, 'overview')
+                ->withErrors(['error' => 'Staging update failed: '.$e->getMessage()]);
         }
     }
 

@@ -173,6 +173,15 @@
                     <button type="button" @click="upgradeHostingModal = true" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg transition text-sm">
                         Upgrade Hosting
                     </button>
+                    <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
+                        Migrate to App Hosting
+                    </a>
+                @endif
+
+                @if ($service->isContainerHosting() && $service->containerDeployment)
+                    <a href="{{ route('admin.services.container.migrate', $service) }}" class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-medium rounded-lg transition text-sm">
+                        Migrate Node
+                    </a>
                 @endif
 
                 @if (in_array($service->status->value, ['pending', 'provisioning']))

@@ -62,7 +62,8 @@
             <div>
                 <h3 class="font-semibold text-amber-900 dark:text-amber-200 mb-1">Important Notice</h3>
                 <p class="text-sm text-amber-800 dark:text-amber-300">
-                    Volume data will NOT be transferred. The application will be redeployed fresh on the target node with new volumes. Any persistent data must be backed up separately.
+                    App files and database volumes are copied to the target node (brief downtime while the archive is created).
+                    DNS/proxy bindings may need a moment to settle after cutover. Prefer migrating during a maintenance window for large sites.
                 </p>
             </div>
         </div>

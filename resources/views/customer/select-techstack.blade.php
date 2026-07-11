@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Deploy Your Application</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Select your programming language to get started</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose a stack. Prefer <strong>app hosting</strong> for modern sites — shared plans are for email and classic DirectAdmin hosting.</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -43,11 +43,11 @@
                         <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
                         <div class="flex gap-2 mt-1">
                             @if(in_array($language->slug, ['laravel', 'wordpress']))
-                                <span class="inline-block text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded-full">Shared or Container</span>
+                                <span class="inline-block text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded-full">App hosting recommended</span>
                             @elseif($language->hosting_type === 'directadmin')
-                                <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared Hosting</span>
+                                <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared (email &amp; legacy)</span>
                             @else
-                                <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Container</span>
+                                <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">App hosting</span>
                             @endif
                         </div>
                     </div>
@@ -125,7 +125,7 @@
                             : 'border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-600'">
                         <span class="absolute top-3 right-3 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-1 rounded-full">Recommended</span>
                         <div class="text-2xl mb-2">🐳</div>
-                        <p class="font-semibold text-slate-900 dark:text-white">Container Hosting</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">App hosting</p>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="containerHostingDescription"></p>
                     </button>
 
@@ -135,7 +135,7 @@
                             ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-md'
                             : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600'">
                         <div class="text-2xl mb-2">🌐</div>
-                        <p class="font-semibold text-slate-900 dark:text-white">Shared Hosting</p>
+                        <p class="font-semibold text-slate-900 dark:text-white">Shared (email &amp; legacy)</p>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="sharedHostingDescription"></p>
                     </button>
                 </div>
@@ -256,22 +256,22 @@ function techstackSelector() {
 
         get containerHostingDescription() {
             if (this.selectedLanguage.slug === 'wordpress') {
-                return 'Docker-based WordPress with bundled MySQL and isolated resources.';
+                return 'Isolated app hosting for WordPress with bundled MySQL — recommended for new sites.';
             }
 
             if (this.selectedLanguage.slug === 'laravel') {
-                return 'Docker-based Laravel runtime with flexible PHP versions and isolated resources.';
+                return 'Isolated Laravel app hosting with Git deploy, Environment secrets, and flexible PHP versions.';
             }
 
-            return 'Containerized deployment with isolated resources and flexible scaling.';
+            return 'Isolated application hosting with Git deploy, metrics, and modern runtimes.';
         },
 
         get sharedHostingDescription() {
-            return 'DirectAdmin shared hosting with cPanel-style management and bundled MySQL.';
+            return 'Classic DirectAdmin hosting for email and legacy sites. Prefer app hosting for new applications.';
         },
 
         get deploymentPlatformLabel() {
-            return this.deploymentPlatform === 'shared' ? 'Shared Hosting' : 'Container Hosting';
+            return this.deploymentPlatform === 'shared' ? 'Shared (email & legacy)' : 'App hosting';
         },
 
         selectLanguageAndShowModal(languageId) {
@@ -359,10 +359,10 @@ function techstackSelector() {
 
             return {
                 emoji: isShared ? '🌐' : '🐳',
-                label: isShared ? 'DirectAdmin Shared Hosting' : 'Container Hosting',
+                label: isShared ? 'Shared (email & legacy)' : 'App hosting',
                 description: isShared
-                    ? `${appLabel} will be deployed to shared hosting with DirectAdmin control panel`
-                    : `${appLabel} will run in a containerized environment with Docker`,
+                    ? `${appLabel} will use DirectAdmin shared hosting — best for email and classic sites.`
+                    : `${appLabel} will run on isolated app hosting with Git deploy and a modern console.`,
                 bgClass: isShared
                     ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
                     : 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700',

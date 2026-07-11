@@ -126,8 +126,12 @@ class ContainerStackCommandService
     /**
      * @return list<string>
      */
-    public function runPostPullSteps(Service $service, ContainerDeployment $deployment, SSHService $ssh): array
-    {
+    public function runPostPullSteps(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+        bool $forceRebuild = false
+    ): array {
         $slug = $service->product?->containerTemplate?->slug ?? '';
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $containerName = $deployment->container_name;
@@ -135,7 +139,15 @@ class ContainerStackCommandService
         $timeout = (int) config('containers.laravel_init.command_timeout_seconds', 600);
 
         return match ($slug) {
-            'nodejs' => $this->installNodeDependencies($ssh, $containerPath, $containerName, $hostAppPath, $deployment, $timeout),
+            'nodejs' => $this->installNodeDependencies(
+                $ssh,
+                $containerPath,
+                $containerName,
+                $hostAppPath,
+                $deployment,
+                $timeout,
+                $forceRebuild
+            ),
             'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             default => [],
@@ -151,7 +163,8 @@ class ContainerStackCommandService
         string $containerName,
         string $hostAppPath,
         ContainerDeployment $deployment,
-        int $timeout
+        int $timeout,
+        bool $forceRebuild = false
     ): array {
         $packageJsonPath = $hostAppPath.'/package.json';
         if (! $this->hostFileExists($ssh, $packageJsonPath)) {
@@ -159,7 +172,8 @@ class ContainerStackCommandService
         }
 
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
-        $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson);
+        $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson)
+            || ($forceRebuild && $this->runtimeService->packageJsonHasBuildScript($packageJson));
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
         $dockerImage = $this->resolveNodeDockerImage($deployment);
 
@@ -231,7 +245,9 @@ class ContainerStackCommandService
                 );
                 $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName, $dockerImage, $hostAppPath);
 
-                return ['Node dependencies updated and production build completed.'];
+                return [$forceRebuild
+                    ? 'Node dependencies updated and production build completed (forced rebuild).'
+                    : 'Node dependencies updated and production build completed.'];
             }
 
             $this->prepareNodePostPullWorkspace(

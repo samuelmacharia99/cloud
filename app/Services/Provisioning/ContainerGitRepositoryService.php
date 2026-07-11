@@ -91,7 +91,8 @@ class ContainerGitRepositoryService
         User $user,
         bool $replaceExisting,
         bool $runComposer = true,
-        bool $runMigrations = true
+        bool $runMigrations = true,
+        bool $forceRebuild = false
     ): ContainerGitPull {
         $service->loadMissing('product.containerTemplate', 'containerDeployment.node');
 
@@ -113,7 +114,7 @@ class ContainerGitRepositoryService
             throw new \DomainException('A Git pull is already in progress.');
         }
 
-        return DB::transaction(function () use ($service, $user, $deployment, $replaceExisting, $runComposer, $runMigrations) {
+        return DB::transaction(function () use ($service, $user, $deployment, $replaceExisting, $runComposer, $runMigrations, $forceRebuild) {
             return ContainerGitPull::create([
                 'service_id' => $service->id,
                 'container_deployment_id' => $deployment->id,
@@ -124,6 +125,7 @@ class ContainerGitRepositoryService
                     'replace_existing' => $replaceExisting,
                     'run_composer' => $runComposer,
                     'run_migrations' => $runMigrations,
+                    'force_rebuild' => $forceRebuild,
                 ],
                 'steps' => $this->buildInitialSteps($service, $runComposer, $runMigrations),
             ]);
@@ -146,6 +148,7 @@ class ContainerGitRepositoryService
         $replaceExisting = (bool) ($options['replace_existing'] ?? false);
         $runComposer = (bool) ($options['run_composer'] ?? true);
         $runMigrations = (bool) ($options['run_migrations'] ?? true);
+        $forceRebuild = (bool) ($options['force_rebuild'] ?? false);
 
         $pull->update([
             'status' => ContainerGitPull::STATUS_RUNNING,
@@ -292,8 +295,8 @@ class ContainerGitRepositoryService
                 $this->skipPullStep($pull, 'composer', 'No Laravel project detected in /app.');
                 $this->skipPullStep($pull, 'migrations', 'No Laravel project detected in /app.');
             } else {
-                $this->runPullStep($pull, 'post_pull', function () use ($service, $deployment, $ssh, $pull) {
-                    $messages = $this->stackCommands->runPostPullSteps($service, $deployment, $ssh);
+                $this->runPullStep($pull, 'post_pull', function () use ($service, $deployment, $ssh, $pull, $forceRebuild) {
+                    $messages = $this->stackCommands->runPostPullSteps($service, $deployment, $ssh, $forceRebuild);
                     foreach ($messages as $message) {
                         $pull->appendLog($message);
                     }
@@ -323,8 +326,6 @@ class ContainerGitRepositoryService
 
                     return $message !== '' ? $message : 'Application runtime refreshed.';
                 });
-            } else {
-                $this->skipPullStep($pull, 'runtime', 'Laravel web root refreshed after Git sync.');
             }
 
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -352,7 +353,8 @@ class ContainerGitRepositoryService
         ContainerDeployment $deployment,
         bool $replaceExisting,
         bool $runComposer = true,
-        bool $runMigrations = true
+        bool $runMigrations = true,
+        bool $forceRebuild = false
     ): array {
         $service->loadMissing('user');
 
@@ -360,7 +362,7 @@ class ContainerGitRepositoryService
             throw new \RuntimeException('Service owner is required to run a Git pull.');
         }
 
-        $pull = $this->requestPull($service, $service->user, $replaceExisting, $runComposer, $runMigrations);
+        $pull = $this->requestPull($service, $service->user, $replaceExisting, $runComposer, $runMigrations, $forceRebuild);
         $this->runPull($pull);
         $pull->refresh();
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -56,8 +57,8 @@ class Product extends Model
     ];
 
     const TYPES = [
-        'shared_hosting' => 'Shared Hosting',
-        'container_hosting' => 'Container Hosting',
+        'shared_hosting' => 'Shared (email & legacy)',
+        'container_hosting' => 'App Hosting',
         'ssl' => 'SSL Certificate',
         'email_hosting' => 'Email Hosting',
         'vps' => 'VPS Server',
@@ -103,7 +104,7 @@ class Product extends Model
      */
     public function deletionBlockers(): array
     {
-        if ($this->slug === \App\Services\ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
+        if ($this->slug === ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
             return ['This is a system product used for reseller DirectAdmin provisioning and cannot be deleted. Deactivate it instead if needed.'];
         }
 

@@ -4,7 +4,7 @@
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
             <li>Upload or pull your PHP application into <code class="font-mono text-xs">/app</code>.</li>
             <li>Ensure a web entry point exists (<code class="font-mono text-xs">public/index.php</code> or <code class="font-mono text-xs">index.php</code> at root).</li>
-            <li>Configure environment variables for your app via the Files tab or service settings.</li>
+            <li>Configure environment variables for your app via the <strong>Environment</strong> tab.</li>
             <li>Bind your domain under <strong>Domains</strong>.</li>
         </ol>
     </div>
