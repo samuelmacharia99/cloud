@@ -9,6 +9,7 @@ use App\Services\Customer\CustomerHostingUpgradeService;
 use App\Services\Customer\CustomerServiceCancellationService;
 use App\Services\Customer\CustomerServiceRenewalService;
 use App\Services\Hosting\ServicePackageUsageService;
+use App\Services\Provisioning\WordPressAdminLoginService;
 use App\Services\ServiceEnforcementInsightService;
 use Illuminate\Http\Request;
 
@@ -17,7 +18,7 @@ class ServiceController extends Controller
     public function index()
     {
         $services = auth()->user()->services()
-            ->with(['product', 'invoice'])
+            ->with(['product.containerTemplate', 'invoice'])
             ->whereNotIn('status', ['cancelled', 'terminated'])
             ->whereHas('product', function ($q) {
                 $q->where('type', '!=', 'domain');
@@ -37,6 +38,23 @@ class ServiceController extends Controller
         ]);
 
         return back()->with('success', 'Service renamed successfully.');
+    }
+
+    public function wordpressAdminLogin(Service $service, WordPressAdminLoginService $loginService)
+    {
+        $this->authorize('wordpressAdminLogin', $service);
+
+        try {
+            $url = $loginService->createLoginUrl($service);
+
+            return redirect()->away($url);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return back()->withErrors([
+                'error' => $e->getMessage() ?: 'Could not open WordPress admin. Try again in a moment.',
+            ]);
+        }
     }
 
     public function show(Service $service)

@@ -22,6 +22,8 @@
                     $manageUrl = $payInvoice
                         ? route('customer.payment.select-method', $payInvoice)
                         : route('customer.services.show', $service);
+                    $isWordpress = $service->product?->type === 'container_hosting'
+                        && ($service->product?->containerTemplate?->slug ?? '') === 'wordpress';
                 @endphp
                 <article
                     class="ui-card ui-card-interactive flex flex-col overflow-hidden group"
@@ -61,24 +63,33 @@
                         </dl>
                     </a>
 
-                    <div class="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex gap-2">
-                        <a href="{{ $manageUrl }}" class="{{ $payInvoice ? 'btn-primary' : 'btn-secondary' }} flex-1 btn-sm">
+                    <div class="px-5 sm:px-6 py-4 bg-slate-50/80 dark:bg-slate-800/30 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                        <a href="{{ $manageUrl }}" class="{{ $payInvoice ? 'btn-primary' : 'btn-secondary' }} flex-1 btn-sm min-w-[5.5rem]">
                             {{ $payInvoice ? 'Pay invoice' : 'Manage' }}
                         </a>
                         @if($canRenew)
-                            <a href="{{ route('customer.services.renew', $service) }}" class="btn-primary flex-1 btn-sm text-center">
+                            <a href="{{ route('customer.services.renew', $service) }}" class="btn-primary flex-1 btn-sm text-center min-w-[5.5rem]">
                                 Renew
                             </a>
                         @else
-                            <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed" title="Renewal unavailable">Renew</button>
+                            <button disabled class="btn-secondary flex-1 btn-sm opacity-50 cursor-not-allowed min-w-[5.5rem]" title="Renewal unavailable">Renew</button>
                         @endif
                         <button
                             type="button"
                             @click="showRenameModal = true; renameName = @js($service->name)"
-                            class="btn-secondary flex-1 btn-sm"
+                            class="btn-secondary flex-1 btn-sm min-w-[5.5rem]"
                         >
                             Rename
                         </button>
+                        @if($isWordpress)
+                            <a
+                                href="{{ route('customer.services.wordpress-admin', $service) }}"
+                                class="btn-primary flex-1 btn-sm text-center min-w-[5.5rem]"
+                                title="Open WordPress admin as administrator"
+                            >
+                                WP Admin
+                            </a>
+                        @endif
                     </div>
 
                     <div

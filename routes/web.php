@@ -556,6 +556,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
     Route::middleware(['customer', 'reseller.customer.catalog'])->group(function () {
         Route::get('/my/services', [App\Http\Controllers\Customer\ServiceController::class, 'index'])->name('customer.services.index');
         Route::patch('/my/services/{service}/rename', [App\Http\Controllers\Customer\ServiceController::class, 'rename'])->name('customer.services.rename');
+        Route::get('/my/services/{service}/wordpress-admin', [App\Http\Controllers\Customer\ServiceController::class, 'wordpressAdminLogin'])
+            ->middleware('throttle:10,1')
+            ->name('customer.services.wordpress-admin');
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::get('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renewForm'])->name('customer.services.renew');

@@ -48,6 +48,16 @@ class ServicePolicy
     }
 
     /**
+     * Customer can open a one-time WordPress admin SSO link for their own service.
+     */
+    public function wordpressAdminLogin(User $user, Service $service): Response
+    {
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only open WordPress admin for your own services.');
+    }
+
+    /**
      * Only admin can update service details.
      */
     public function update(User $user, Service $service): Response
