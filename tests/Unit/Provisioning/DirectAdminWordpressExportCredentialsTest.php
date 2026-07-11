@@ -42,6 +42,21 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringNotContainsString('root', $cmd);
     }
 
+    public function test_build_mysql_dump_command_with_defaults_file(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildMysqlDumpCommand([
+            'DB_USER' => 'sisallov_wpuser',
+            'DB_PASSWORD' => 'secret',
+            'DB_HOST' => 'localhost',
+        ], 'sisallov_wp_ghvrh', '/tmp/db.sql', '/tmp/mysqldump.cnf');
+
+        $this->assertStringContainsString("--defaults-extra-file='/tmp/mysqldump.cnf'", $cmd);
+        $this->assertStringNotContainsString('MYSQL_PWD', $cmd);
+        $this->assertStringNotContainsString('root', $cmd);
+    }
+
     public function test_build_mysql_dump_command_supports_socket_host(): void
     {
         $service = app(DirectAdminToContainerMigrationService::class);

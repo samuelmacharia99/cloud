@@ -254,10 +254,16 @@ class DirectAdminToContainerMigrationService
                 );
             }
 
-            $daSsh->exec(
-                $this->buildMysqlDumpCommand($wpCreds, $dbName, $dumpFile),
-                600
-            );
+            $defaultsFile = $remoteWork.'/mysqldump.cnf';
+            $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $wpCreds);
+            try {
+                $daSsh->exec(
+                    $this->buildMysqlDumpCommand($wpCreds, $dbName, $dumpFile, $defaultsFile),
+                    600
+                );
+            } finally {
+                @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
+            }
             $daSsh->exec(
                 'tar -czf '.escapeshellarg($filesTar).' -C '.escapeshellarg((string) $inventory['docroot']).' .',
                 900
@@ -473,9 +479,47 @@ foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
 }
 PHP;
 
-        $out = $ssh->exec('php -r '.escapeshellarg($php).' '.escapeshellarg($cfgPath).' 2>/dev/null || true');
+        try {
+            $out = $ssh->exec('php -r '.escapeshellarg($php).' '.escapeshellarg($cfgPath).' 2>/dev/null || true');
+            $creds = $this->decodeWpDatabaseCredentialLines($out);
+            if (! blank($creds['DB_USER'] ?? null)) {
+                return $creds;
+            }
+        } catch (\Throwable) {
+            // Fall through to grep parser when php CLI is missing on the node.
+        }
 
-        return $this->decodeWpDatabaseCredentialLines($out);
+        return $this->parseWpDatabaseCredentialsViaGrep($ssh, $cfgPath);
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseWpDatabaseCredentialsViaGrep(SSHService $ssh, string $cfgPath): array
+    {
+        $raw = $ssh->exec(
+            'grep -E "define\\s*\\(\\s*[\'\\\"]DB_(NAME|USER|PASSWORD|HOST)[\'\\\"]" '
+            .escapeshellarg($cfgPath).' 2>/dev/null || true'
+        );
+
+        $creds = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+
+        foreach (['DB_NAME', 'DB_USER', 'DB_PASSWORD', 'DB_HOST'] as $key) {
+            if (preg_match('/define\s*\(\s*[\'"]'.$key.'[\'"]\s*,\s*([\'"])(.*?)\1\s*\)/s', $raw, $m)) {
+                $creds[$key] = stripcslashes($m[2]);
+            }
+        }
+
+        if (($creds['DB_HOST'] ?? null) === null || $creds['DB_HOST'] === '') {
+            $creds['DB_HOST'] = 'localhost';
+        }
+
+        return $creds;
     }
 
     /**
@@ -515,8 +559,50 @@ PHP;
     /**
      * @param  array{DB_NAME?: ?string, DB_USER?: ?string, DB_PASSWORD?: ?string, DB_HOST?: string}  $creds
      */
-    public function buildMysqlDumpCommand(array $creds, string $dbName, string $dumpFile): string
+    public function writeRemoteMysqlDefaultsFile(SSHService $ssh, string $remotePath, array $creds): void
     {
+        $user = (string) ($creds['DB_USER'] ?? '');
+        $pass = (string) ($creds['DB_PASSWORD'] ?? '');
+        $host = (string) ($creds['DB_HOST'] ?? 'localhost');
+
+        $hostLine = 'host='.$host;
+        $socketLine = '';
+        $portLine = '';
+
+        if (preg_match('#^([^:]+):(/[^:]+)$#', $host, $socketMatch)) {
+            $hostLine = 'host='.$socketMatch[1];
+            $socketLine = 'socket='.$socketMatch[2]."\n";
+        } elseif (preg_match('/^(.+):(\d+)$/', $host, $portMatch)) {
+            $hostLine = 'host='.$portMatch[1];
+            $portLine = 'port='.$portMatch[2]."\n";
+        }
+
+        // Escape password for my.cnf: backslash and double-quote.
+        $passEscaped = str_replace(['\\', '"'], ['\\\\', '\\"'], $pass);
+
+        $cnf = "[client]\n"
+            ."user=\"{$user}\"\n"
+            ."password=\"{$passEscaped}\"\n"
+            ."{$hostLine}\n"
+            .$portLine
+            .$socketLine;
+
+        $b64 = base64_encode($cnf);
+        $ssh->exec(
+            'umask 077; echo '.escapeshellarg($b64).' | base64 -d > '.escapeshellarg($remotePath)
+            .' && chmod 600 '.escapeshellarg($remotePath)
+        );
+    }
+
+    /**
+     * @param  array{DB_NAME?: ?string, DB_USER?: ?string, DB_PASSWORD?: ?string, DB_HOST?: string}  $creds
+     */
+    public function buildMysqlDumpCommand(
+        array $creds,
+        string $dbName,
+        string $dumpFile,
+        ?string $defaultsExtraFile = null,
+    ): string {
         $user = (string) ($creds['DB_USER'] ?? '');
         $pass = (string) ($creds['DB_PASSWORD'] ?? '');
         $host = (string) ($creds['DB_HOST'] ?? 'localhost');
@@ -525,25 +611,26 @@ PHP;
             throw new \InvalidArgumentException('MySQL dump requires DB_USER.');
         }
 
-        $parts = [
-            'MYSQL_PWD='.escapeshellarg($pass),
-            'mysqldump',
-            '--single-transaction',
-            '--quick',
-            '--no-tablespaces',
-        ];
+        $parts = ['mysqldump', '--single-transaction', '--quick', '--no-tablespaces'];
 
-        if (preg_match('#^([^:]+):(/[^:]+)$#', $host, $socketMatch)) {
-            $parts[] = '-h'.escapeshellarg($socketMatch[1]);
-            $parts[] = '--socket='.escapeshellarg($socketMatch[2]);
-        } elseif (preg_match('/^(.+):(\d+)$/', $host, $portMatch)) {
-            $parts[] = '-h'.escapeshellarg($portMatch[1]);
-            $parts[] = '-P'.escapeshellarg($portMatch[2]);
+        if ($defaultsExtraFile) {
+            $parts[] = '--defaults-extra-file='.escapeshellarg($defaultsExtraFile);
         } else {
-            $parts[] = '-h'.escapeshellarg($host);
+            $parts = array_merge(['MYSQL_PWD='.escapeshellarg($pass)], $parts);
+
+            if (preg_match('#^([^:]+):(/[^:]+)$#', $host, $socketMatch)) {
+                $parts[] = '-h'.escapeshellarg($socketMatch[1]);
+                $parts[] = '--socket='.escapeshellarg($socketMatch[2]);
+            } elseif (preg_match('/^(.+):(\d+)$/', $host, $portMatch)) {
+                $parts[] = '-h'.escapeshellarg($portMatch[1]);
+                $parts[] = '-P'.escapeshellarg($portMatch[2]);
+            } else {
+                $parts[] = '-h'.escapeshellarg($host);
+            }
+
+            $parts[] = '-u'.escapeshellarg($user);
         }
 
-        $parts[] = '-u'.escapeshellarg($user);
         $parts[] = escapeshellarg($dbName);
         $parts[] = '>';
         $parts[] = escapeshellarg($dumpFile);
