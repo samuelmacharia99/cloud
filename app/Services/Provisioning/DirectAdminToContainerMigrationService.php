@@ -311,6 +311,17 @@ class DirectAdminToContainerMigrationService
             $targetSsh->uploadFromLocal($localDump, $dumpFile);
             $targetSsh->uploadFromLocal($localTar, $filesTar);
 
+            $db = $this->resolveWordpressImportCredentials($target, $targetSsh, $containerPath);
+            $dbService = $db['service'];
+
+            $this->waitForComposeMysql(
+                $targetSsh,
+                $containerPath,
+                $dbService,
+                $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
+                180
+            );
+
             $targetSsh->exec(
                 "cd {$containerPath} && docker compose cp ".escapeshellarg($filesTar)." {$appService}:/tmp/wp-files.tar.gz",
                 300
@@ -321,23 +332,49 @@ class DirectAdminToContainerMigrationService
                 900
             );
 
-            $env = $this->readContainerDbEnv($targetSsh, $containerPath);
-            $dbService = $this->resolveDbServiceName($targetSsh, $containerPath);
-            $dbUser = $env['WORDPRESS_DB_USER'] ?? $env['MYSQL_USER'] ?? $env['DB_USERNAME'] ?? 'wordpress';
-            $dbPass = $env['WORDPRESS_DB_PASSWORD'] ?? $env['MYSQL_PASSWORD'] ?? $env['DB_PASSWORD'] ?? '';
-            $dbDatabase = $env['WORDPRESS_DB_NAME'] ?? $env['MYSQL_DATABASE'] ?? $env['DB_DATABASE'] ?? 'wordpress';
-
             $targetSsh->exec(
-                "cd {$containerPath} && docker compose exec -T -e MYSQL_PWD=".escapeshellarg($dbPass)
-                .' '.$dbService.' mysql -u'.escapeshellarg($dbUser).' '.escapeshellarg($dbDatabase)
-                .' < '.escapeshellarg($dumpFile),
+                "cd {$containerPath} && docker compose cp ".escapeshellarg($dumpFile)." {$dbService}:/tmp/import.sql",
+                300
+            );
+
+            $importUser = $db['root_password'] !== '' ? 'root' : $db['user'];
+            $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
+            if ($importPass === '') {
+                throw new \RuntimeException(
+                    'WordPress container MySQL password is missing (check deployment env_values / MYSQL_ROOT_PASSWORD).'
+                );
+            }
+
+            $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
+            $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'wordpress';
+
+            $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
+            $targetSsh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
+                .' '.escapeshellarg($dbService)
+                .' mysql -h127.0.0.1 -u'.escapeshellarg($safeUser)
+                .' -e '.escapeshellarg($createDbSql),
+                60
+            );
+
+            $importShell = sprintf(
+                'mysql -h127.0.0.1 -u%s %s < /tmp/import.sql && rm -f /tmp/import.sql',
+                escapeshellarg($safeUser),
+                escapeshellarg($safeDatabase)
+            );
+            $targetSsh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
+                .' '.escapeshellarg($dbService)
+                .' sh -c '.escapeshellarg($importShell),
                 600
             );
 
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, [
-                'DB_NAME' => $dbDatabase,
-                'DB_USER' => $dbUser,
-                'DB_PASSWORD' => $dbPass,
+                'DB_NAME' => $safeDatabase,
+                'DB_USER' => $db['user'] !== '' ? $db['user'] : 'wordpress',
+                'DB_PASSWORD' => $db['password'] !== '' ? $db['password'] : $importPass,
                 'DB_HOST' => $dbService,
             ]);
 
@@ -350,6 +387,106 @@ class DirectAdminToContainerMigrationService
         if ($cleanupDaNode) {
             @$this->cleanupDaWork($cleanupDaNode, $remoteWork);
         }
+    }
+
+    /**
+     * @return array{service: string, database: string, user: string, password: string, root_password: string}
+     */
+    public function resolveWordpressImportCredentials(Service $target, SSHService $ssh, string $containerPath): array
+    {
+        $target->loadMissing('containerDeployment');
+        $deployment = $target->containerDeployment;
+        $env = is_array($deployment?->env_values) ? $deployment->env_values : [];
+        $fromFile = $this->readContainerDbEnv($ssh, $containerPath);
+
+        $credentials = [];
+        if (is_string($target->credentials ?? null) && $target->credentials !== '') {
+            $decoded = json_decode($target->credentials, true);
+            if (is_array($decoded)) {
+                $credentials = $decoded;
+            }
+        } elseif (is_array($target->credentials ?? null)) {
+            $credentials = $target->credentials;
+        }
+        $dbCreds = is_array($credentials['database'] ?? null) ? $credentials['database'] : [];
+
+        $database = (string) (
+            $env['WORDPRESS_DB_NAME']
+            ?? $env['MYSQL_DATABASE']
+            ?? $fromFile['WORDPRESS_DB_NAME']
+            ?? $fromFile['MYSQL_DATABASE']
+            ?? $dbCreds['name']
+            ?? 'wordpress'
+        );
+        $user = (string) (
+            $env['WORDPRESS_DB_USER']
+            ?? $env['MYSQL_USER']
+            ?? $fromFile['WORDPRESS_DB_USER']
+            ?? $fromFile['MYSQL_USER']
+            ?? $dbCreds['username']
+            ?? 'wordpress'
+        );
+        $password = (string) (
+            $env['WORDPRESS_DB_PASSWORD']
+            ?? $env['MYSQL_PASSWORD']
+            ?? $fromFile['WORDPRESS_DB_PASSWORD']
+            ?? $fromFile['MYSQL_PASSWORD']
+            ?? $dbCreds['password']
+            ?? ''
+        );
+        $rootPassword = (string) (
+            $env['MYSQL_ROOT_PASSWORD']
+            ?? $fromFile['MYSQL_ROOT_PASSWORD']
+            ?? ''
+        );
+
+        return [
+            'service' => $this->resolveDbServiceName($ssh, $containerPath),
+            'database' => $database !== '' ? $database : 'wordpress',
+            'user' => $user !== '' ? $user : 'wordpress',
+            'password' => $password,
+            'root_password' => $rootPassword,
+        ];
+    }
+
+    public function waitForComposeMysql(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $password,
+        int $timeoutSeconds = 180,
+    ): void {
+        $delaySeconds = 5;
+        $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
+        $pathArg = escapeshellarg($containerPath);
+        $serviceArg = escapeshellarg($dbService);
+        $pwdArg = escapeshellarg($password);
+
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            try {
+                $ssh->exec(
+                    "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
+                    .' mysqladmin ping -h 127.0.0.1 --silent',
+                    20
+                );
+
+                return;
+            } catch (\Throwable $e) {
+                Log::debug('WordPress MySQL sidecar not ready yet', [
+                    'attempt' => $attempt + 1,
+                    'service' => $dbService,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            if ($attempt < $maxAttempts - 1) {
+                sleep($delaySeconds);
+            }
+        }
+
+        throw new \RuntimeException(
+            "MySQL sidecar \"{$dbService}\" did not become ready within {$timeoutSeconds} seconds."
+        );
     }
 
     /**

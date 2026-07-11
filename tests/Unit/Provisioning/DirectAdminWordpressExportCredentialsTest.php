@@ -2,7 +2,10 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
+use App\Models\Service;
 use App\Services\Provisioning\DirectAdminToContainerMigrationService;
+use App\Services\SSH\SSHService;
 use Tests\TestCase;
 
 class DirectAdminWordpressExportCredentialsTest extends TestCase
@@ -86,8 +89,45 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
 
         $this->assertStringContainsString("tar -czf '/opt/talksasa/da-migrations/wp-export/files.tar.gz'", $cmd);
         $this->assertStringContainsString("--exclude='./wp-content/cache'", $cmd);
-        $this->assertStringContainsString("status=$?", $cmd);
+        $this->assertStringContainsString('status=$?', $cmd);
         $this->assertStringContainsString('[ "$status" -eq 1 ]', $cmd);
         $this->assertStringContainsString('[ -s ', $cmd);
+    }
+
+    public function test_resolve_wordpress_import_credentials_prefers_deployment_env_values(): void
+    {
+        $ssh = \Mockery::mock(SSHService::class);
+        $ssh->shouldReceive('exec')->andReturnUsing(function (string $command): string {
+            if (str_contains($command, 'grep')) {
+                return '';
+            }
+
+            return "mysql\nwordpress-app\n";
+        });
+
+        $deployment = new ContainerDeployment([
+            'env_values' => [
+                'WORDPRESS_DB_NAME' => 'wordpress',
+                'WORDPRESS_DB_USER' => 'wordpress',
+                'WORDPRESS_DB_PASSWORD' => 'app-secret',
+                'MYSQL_ROOT_PASSWORD' => 'root-secret',
+            ],
+        ]);
+
+        $service = new Service;
+        $service->setRelation('containerDeployment', $deployment);
+
+        $migrator = app(DirectAdminToContainerMigrationService::class);
+        $creds = $migrator->resolveWordpressImportCredentials(
+            $service,
+            $ssh,
+            '/opt/talksasa/containers/demo'
+        );
+
+        $this->assertSame('mysql', $creds['service']);
+        $this->assertSame('wordpress', $creds['database']);
+        $this->assertSame('wordpress', $creds['user']);
+        $this->assertSame('app-secret', $creds['password']);
+        $this->assertSame('root-secret', $creds['root_password']);
     }
 }

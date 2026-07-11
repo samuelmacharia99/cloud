@@ -419,16 +419,15 @@ class DirectAdminToContainerConvertService
     {
         try {
             $service->refresh();
-            // Only roll product back if container deploy never became healthy
-            if (! $service->containerDeployment || $service->containerDeployment->status !== 'running') {
-                $service->update([
-                    'product_id' => $previous['product_id'],
-                    'node_id' => $previous['node_id'],
-                    'provisioning_driver_key' => $previous['provisioning_driver_key'],
-                    'custom_price' => $previous['custom_price'],
-                    'status' => $previous['status'] ?: 'active',
-                ]);
-            }
+            // Always restore the DA product so convert can be retried. A running
+            // container from a failed import is cleaned up on the next deploy.
+            $service->update([
+                'product_id' => $previous['product_id'],
+                'node_id' => $previous['node_id'],
+                'provisioning_driver_key' => $previous['provisioning_driver_key'],
+                'custom_price' => $previous['custom_price'],
+                'status' => $previous['status'] ?: 'active',
+            ]);
         } catch (\Throwable $rollbackError) {
             Log::warning('Convert-in-place rollback incomplete', [
                 'service_id' => $service->id,
