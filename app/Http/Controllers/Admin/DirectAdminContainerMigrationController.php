@@ -135,4 +135,27 @@ class DirectAdminContainerMigrationController extends Controller
             ->route('admin.services.show', $service)
             ->with('success', 'Silent convert queued: same service, no invoice, no customer notification. Refresh this page for progress (da_convert status). Ensure a queue worker is running if QUEUE_CONNECTION is not sync.');
     }
+
+    public function revert(
+        Service $service,
+        DirectAdminToContainerConvertService $convert,
+    ): RedirectResponse {
+        try {
+            $reverted = $convert->revertToDirectAdmin($service);
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        $containerName = $reverted->service_meta['da_convert']['manual_container_cleanup'] ?? null;
+        $message = 'Service restored to DirectAdmin (same billing dates).';
+        if (is_string($containerName) && $containerName !== '') {
+            $message .= ' Delete the container manually on the node if it exists: /opt/talksasa/containers/'.$containerName;
+        } else {
+            $message .= ' Delete any leftover container on the node manually if one was created.';
+        }
+
+        return redirect()
+            ->route('admin.services.show', $reverted)
+            ->with('success', $message);
+    }
 }

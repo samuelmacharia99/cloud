@@ -4,6 +4,8 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerTemplate;
 use App\Models\Product;
+use App\Models\Service;
+use App\Models\User;
 use App\Services\Provisioning\DirectAdminToContainerConvertService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -39,6 +41,73 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertFalse($result['has_extra_mailboxes']);
         $this->assertCount(1, $result['default_mailboxes']);
         $this->assertSame([], $result['extra_mailboxes']);
+    }
+
+    public function test_can_revert_and_restore_previous_directadmin_product(): void
+    {
+        $daProduct = Product::query()->create([
+            'name' => 'Silver DA',
+            'slug' => 'silver-da-'.uniqid(),
+            'type' => 'shared_hosting',
+            'price' => 1000,
+            'monthly_price' => 1000,
+            'is_active' => true,
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+
+        $wpTemplate = ContainerTemplate::query()->create([
+            'name' => 'WordPress',
+            'slug' => 'wordpress-revert-'.uniqid(),
+            'docker_image' => 'wordpress:latest',
+            'is_active' => true,
+        ]);
+
+        $containerProduct = Product::query()->create([
+            'name' => 'WP App',
+            'slug' => 'wp-app-'.uniqid(),
+            'type' => 'container_hosting',
+            'price' => 2000,
+            'monthly_price' => 2000,
+            'is_active' => true,
+            'container_template_id' => $wpTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $service = Service::query()->create([
+            'user_id' => User::factory()->create()->id,
+            'product_id' => $containerProduct->id,
+            'name' => 'converted-service',
+            'status' => 'active',
+            'billing_cycle' => 'annual',
+            'provisioning_driver_key' => 'container',
+            'node_id' => null,
+            'service_meta' => [
+                'username' => 'sisallov',
+                'domain' => 'sisallove.com',
+                'da_convert' => [
+                    'status' => 'failed',
+                    'previous' => [
+                        'product_id' => $daProduct->id,
+                        'node_id' => null,
+                        'provisioning_driver_key' => 'directadmin',
+                        'custom_price' => null,
+                        'status' => 'active',
+                    ],
+                ],
+            ],
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+        $this->assertTrue($convert->canRevertToDirectAdmin($service));
+
+        $reverted = $convert->revertToDirectAdmin($service);
+
+        $this->assertTrue($reverted->isSharedHosting());
+        $this->assertSame($daProduct->id, $reverted->product_id);
+        $this->assertNull($reverted->node_id);
+        $this->assertSame('directadmin', $reverted->provisioning_driver_key);
+        $this->assertSame('reverted', $reverted->service_meta['da_convert']['status']);
+        $this->assertFalse($convert->canRevertToDirectAdmin($reverted->fresh()));
     }
 
     public function test_available_wordpress_products_lists_templated_products(): void

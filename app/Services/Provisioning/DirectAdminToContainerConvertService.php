@@ -452,4 +452,80 @@ class DirectAdminToContainerConvertService
     {
         $this->writeConvertMeta($service, ['steps' => $steps, 'status' => 'running']);
     }
+
+    public function canRevertToDirectAdmin(Service $service): bool
+    {
+        $convert = is_array($service->service_meta['da_convert'] ?? null)
+            ? $service->service_meta['da_convert']
+            : [];
+
+        if (in_array($convert['status'] ?? '', ['queued', 'running'], true)) {
+            return false;
+        }
+
+        $previous = $convert['previous'] ?? null;
+        if (! is_array($previous) || empty($previous['product_id'])) {
+            return false;
+        }
+
+        $alreadyOnPrevious = (int) $service->product_id === (int) $previous['product_id']
+            && $service->isSharedHosting()
+            && ($service->provisioning_driver_key === 'directadmin'
+                || $service->provisioning_driver_key === ($previous['provisioning_driver_key'] ?? 'directadmin'));
+
+        return ! $alreadyOnPrevious;
+    }
+
+    /**
+     * Restore the platform service row to DirectAdmin from da_convert.previous.
+     * Does not touch the container on the server — admin removes that manually.
+     */
+    public function revertToDirectAdmin(Service $service): Service
+    {
+        if (! $this->canRevertToDirectAdmin($service)) {
+            throw new \InvalidArgumentException(
+                'This service cannot be reverted to DirectAdmin (missing convert snapshot, or convert still running).'
+            );
+        }
+
+        $service->loadMissing('containerDeployment', 'product');
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $previous = $meta['da_convert']['previous'];
+        $legacy = is_array($meta['da_legacy'] ?? null) ? $meta['da_legacy'] : [];
+
+        $nodeId = $previous['node_id']
+            ?? ($legacy['da_node_id'] ?? null)
+            ?? ($meta['node_id'] ?? null);
+
+        $containerName = $service->containerDeployment?->container_name;
+
+        $service->update([
+            'product_id' => $previous['product_id'],
+            'node_id' => $nodeId,
+            'provisioning_driver_key' => $previous['provisioning_driver_key'] ?? 'directadmin',
+            'custom_price' => $previous['custom_price'] ?? null,
+            'status' => $previous['status'] ?: 'active',
+        ]);
+
+        if (! empty($legacy['username']) && blank($meta['username'] ?? null)) {
+            $meta['username'] = $legacy['username'];
+        }
+        if (! empty($legacy['domain']) && blank($meta['domain'] ?? null)) {
+            $meta['domain'] = $legacy['domain'];
+        }
+        if (! empty($legacy['password']) && blank($meta['password'] ?? null)) {
+            $meta['password'] = $legacy['password'];
+        }
+
+        $meta['da_convert'] = array_merge($meta['da_convert'] ?? [], [
+            'status' => 'reverted',
+            'reverted_at' => now()->toIso8601String(),
+            'manual_container_cleanup' => $containerName,
+            'error' => null,
+        ]);
+
+        $service->update(['service_meta' => $meta]);
+
+        return $service->fresh(['product', 'node', 'user']);
+    }
 }

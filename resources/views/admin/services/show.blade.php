@@ -84,9 +84,12 @@
         </div>
     @endif
 
-    @php $daConvert = $service->service_meta['da_convert'] ?? null; @endphp
+    @php
+        $daConvert = $service->service_meta['da_convert'] ?? null;
+        $canRevertDaConvert = app(\App\Services\Provisioning\DirectAdminToContainerConvertService::class)->canRevertToDirectAdmin($service);
+    @endphp
     @if (!empty($daConvert['status']))
-        <div class="rounded-xl border px-4 py-3 text-sm {{ ($daConvert['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100' : (($daConvert['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/40 dark:border-red-800 text-red-900 dark:text-red-100' : 'border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100') }}">
+        <div class="rounded-xl border px-4 py-3 text-sm {{ ($daConvert['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100' : (($daConvert['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/40 dark:border-red-800 text-red-900 dark:text-red-100' : (($daConvert['status'] ?? '') === 'reverted' ? 'border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 text-slate-800 dark:text-slate-200' : 'border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100')) }}">
             <p class="font-semibold">DA → App Hosting convert: <span class="uppercase">{{ $daConvert['status'] }}</span></p>
             @if (!empty($daConvert['error']))
                 <p class="mt-1">{{ $daConvert['error'] }}</p>
@@ -100,6 +103,17 @@
             @endif
             @if (in_array($daConvert['status'] ?? '', ['queued', 'running'], true))
                 <p class="mt-2 text-xs opacity-80">Refresh this page for progress. Ensure <code class="font-mono">php artisan queue:work</code> is running.</p>
+            @endif
+            @if ($canRevertDaConvert)
+                <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="mt-3" data-confirm="Restore this service to DirectAdmin? You must delete any leftover container on the node yourself." data-confirm-title="Revert to DirectAdmin">
+                    @csrf
+                    <button type="submit" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-medium rounded-lg transition">
+                        Revert to DirectAdmin
+                    </button>
+                </form>
+            @endif
+            @if (($daConvert['status'] ?? '') === 'reverted' && !empty($daConvert['manual_container_cleanup']))
+                <p class="mt-2 text-xs font-mono opacity-80">Manual cleanup: /opt/talksasa/containers/{{ $daConvert['manual_container_cleanup'] }}</p>
             @endif
         </div>
     @endif
@@ -196,6 +210,15 @@
                     <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
                         Convert to App Hosting
                     </a>
+                @endif
+
+                @if ($canRevertDaConvert ?? false)
+                    <form method="POST" action="{{ route('admin.services.revert-from-container', $service) }}" class="inline" data-confirm="Restore this service to DirectAdmin? Delete any leftover container on the node yourself afterward." data-confirm-title="Revert to DirectAdmin">
+                        @csrf
+                        <button type="submit" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-medium rounded-lg transition text-sm">
+                            Revert to DirectAdmin
+                        </button>
+                    </form>
                 @endif
 
                 @if ($service->isContainerHosting() && $service->containerDeployment)
