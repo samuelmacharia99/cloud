@@ -363,9 +363,15 @@ class DirectAdminToContainerMigrationService
                 900
             );
 
-            $targetSsh->exec(
-                "cd {$containerPath} && docker compose cp ".escapeshellarg($dumpFile)." {$dbService}:/tmp/import.sql",
-                300
+            // Heavy extract/IO can stall or restart the MySQL sidecar — wait again before import.
+            $progress('Re-checking MySQL sidecar before import');
+            $this->waitForComposeMysql(
+                $targetSsh,
+                $containerPath,
+                $dbService,
+                $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
+                180,
+                $db['root_password'] !== '' ? 'root' : ($db['user'] !== '' ? $db['user'] : 'wordpress'),
             );
 
             $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
@@ -379,16 +385,16 @@ class DirectAdminToContainerMigrationService
             $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
             $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'wordpress';
 
-            // Use the unix socket (no -h127.0.0.1). Official MySQL images auth root via
-            // localhost socket; TCP to 127.0.0.1 often yields Access denied for root.
             $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
             try {
-                $targetSsh->exec(
-                    'cd '.escapeshellarg($containerPath)
-                    .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
-                    .' '.escapeshellarg($dbService)
-                    .' mysql -u'.escapeshellarg($safeUser)
-                    .' -e '.escapeshellarg($createDbSql),
+                $this->execMysqlInCompose(
+                    $targetSsh,
+                    $containerPath,
+                    $dbService,
+                    $safeUser,
+                    $importPass,
+                    $createDbSql,
+                    null,
                     60
                 );
             } catch (\Throwable $rootError) {
@@ -400,23 +406,38 @@ class DirectAdminToContainerMigrationService
                         'error' => $rootError->getMessage(),
                         'user' => $safeUser,
                     ]);
+                    $this->waitForComposeMysql(
+                        $targetSsh,
+                        $containerPath,
+                        $dbService,
+                        $importPass,
+                        120,
+                        $safeUser,
+                    );
+                    $this->execMysqlInCompose(
+                        $targetSsh,
+                        $containerPath,
+                        $dbService,
+                        $safeUser,
+                        $importPass,
+                        $createDbSql,
+                        null,
+                        60
+                    );
                 } else {
                     throw $rootError;
                 }
             }
 
             $progress('Importing MySQL dump');
-            $importShell = sprintf(
-                'mysql -u%s %s < /tmp/import.sql && rm -f /tmp/import.sql',
-                escapeshellarg($safeUser),
-                escapeshellarg($safeDatabase)
-            );
-            $targetSsh->exec(
-                'cd '.escapeshellarg($containerPath)
-                .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($importPass)
-                .' '.escapeshellarg($dbService)
-                .' sh -c '.escapeshellarg($importShell),
-                600
+            $this->importMysqlDumpViaCompose(
+                $targetSsh,
+                $containerPath,
+                $dbService,
+                $dumpFile,
+                $safeUser,
+                $importPass,
+                $safeDatabase,
             );
 
             $dbDefines = [
@@ -512,30 +533,39 @@ class DirectAdminToContainerMigrationService
         string $dbService,
         string $password,
         int $timeoutSeconds = 180,
+        string $user = 'root',
     ): void {
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
         $pathArg = escapeshellarg($containerPath);
         $serviceArg = escapeshellarg($dbService);
         $pwdArg = escapeshellarg($password);
+        $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $user) ?: 'root';
+        $userArg = escapeshellarg($safeUser);
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
+                // Soft-start the sidecar if extract/IO knocked it over.
+                if ($attempt > 0 && $attempt % 3 === 0) {
+                    @$ssh->exec("cd {$pathArg} && docker compose start {$serviceArg} 2>/dev/null || true", 30);
+                    sleep(3);
+                }
+
                 // Authenticate over the unix socket (not -h 127.0.0.1 / TCP).
                 if ($password !== '') {
                     $ssh->exec(
                         "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
-                        .' mysqladmin ping --silent',
+                        ." mysqladmin ping -u{$userArg} --silent",
                         20
                     );
                     $ssh->exec(
                         "cd {$pathArg} && docker compose exec -T -e MYSQL_PWD={$pwdArg} {$serviceArg}"
-                        ." mysql -uroot -e 'SELECT 1'",
+                        ." mysql -u{$userArg} -e 'SELECT 1'",
                         20
                     );
                 } else {
                     $ssh->exec(
-                        "cd {$pathArg} && docker compose exec -T {$serviceArg} mysqladmin ping --silent",
+                        "cd {$pathArg} && docker compose exec -T {$serviceArg} mysqladmin ping -u{$userArg} --silent",
                         20
                     );
                 }
@@ -545,6 +575,7 @@ class DirectAdminToContainerMigrationService
                 Log::debug('WordPress MySQL sidecar not ready yet', [
                     'attempt' => $attempt + 1,
                     'service' => $dbService,
+                    'user' => $safeUser,
                     'error' => $e->getMessage(),
                 ]);
             }
@@ -556,6 +587,113 @@ class DirectAdminToContainerMigrationService
 
         throw new \RuntimeException(
             "MySQL sidecar \"{$dbService}\" did not become ready within {$timeoutSeconds} seconds."
+        );
+    }
+
+    /**
+     * Run a short SQL statement inside the compose MySQL service (unix socket).
+     */
+    public function execMysqlInCompose(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $user,
+        string $password,
+        string $sql,
+        ?string $database = null,
+        int $timeoutSeconds = 60,
+    ): string {
+        $command = 'cd '.escapeshellarg($containerPath)
+            .' && docker compose exec -T -e MYSQL_PWD='.escapeshellarg($password)
+            .' '.escapeshellarg($dbService)
+            .' mysql -u'.escapeshellarg($user);
+
+        if ($database !== null && $database !== '') {
+            $command .= ' '.escapeshellarg($database);
+        }
+
+        $command .= ' -e '.escapeshellarg($sql);
+
+        return $ssh->exec($command, $timeoutSeconds);
+    }
+
+    /**
+     * Stream a dump into MySQL via docker compose (host cat → container mysql stdin).
+     * Avoids docker compose cp into the DB container and in-container shell redirects,
+     * which are fragile after heavy disk IO during file extract.
+     */
+    public function buildMysqlDumpImportCommand(
+        string $containerPath,
+        string $dbService,
+        string $dumpFile,
+        string $user,
+        string $password,
+        string $database,
+    ): string {
+        return 'cd '.escapeshellarg($containerPath)
+            .' && cat '.escapeshellarg($dumpFile)
+            .' | docker compose exec -T -e MYSQL_PWD='.escapeshellarg($password)
+            .' '.escapeshellarg($dbService)
+            .' mysql -u'.escapeshellarg($user)
+            .' '.escapeshellarg($database);
+    }
+
+    private function importMysqlDumpViaCompose(
+        SSHService $ssh,
+        string $containerPath,
+        string $dbService,
+        string $dumpFile,
+        string $user,
+        string $password,
+        string $database,
+    ): void {
+        $command = $this->buildMysqlDumpImportCommand(
+            $containerPath,
+            $dbService,
+            $dumpFile,
+            $user,
+            $password,
+            $database,
+        );
+
+        $attempts = 3;
+        $lastError = null;
+
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                $this->waitForComposeMysql(
+                    $ssh,
+                    $containerPath,
+                    $dbService,
+                    $password,
+                    90,
+                    $user,
+                );
+                $ssh->exec($command, 600);
+
+                return;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                Log::warning('WordPress MySQL dump import attempt failed', [
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage(),
+                ]);
+
+                if ($attempt < $attempts) {
+                    @$ssh->exec(
+                        'cd '.escapeshellarg($containerPath)
+                        .' && docker compose start '.escapeshellarg($dbService).' 2>/dev/null || true',
+                        30
+                    );
+                    sleep(5);
+                }
+            }
+        }
+
+        throw new \RuntimeException(
+            'MySQL dump import failed after '.$attempts.' attempts: '.($lastError?->getMessage() ?? 'unknown error'),
+            0,
+            $lastError
         );
     }
 

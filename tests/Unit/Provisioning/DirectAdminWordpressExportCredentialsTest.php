@@ -94,6 +94,26 @@ class DirectAdminWordpressExportCredentialsTest extends TestCase
         $this->assertStringContainsString('[ -s ', $cmd);
     }
 
+    public function test_build_mysql_dump_import_command_pipes_host_file_into_compose_mysql(): void
+    {
+        $service = app(DirectAdminToContainerMigrationService::class);
+
+        $cmd = $service->buildMysqlDumpImportCommand(
+            '/opt/talksasa/containers/demo',
+            'mysql',
+            '/tmp/db.sql',
+            'wordpress',
+            'secret',
+            'wordpress',
+        );
+
+        $this->assertStringContainsString("cat '/tmp/db.sql'", $cmd);
+        $this->assertStringContainsString("docker compose exec -T -e MYSQL_PWD='secret' 'mysql'", $cmd);
+        $this->assertStringContainsString("mysql -u'wordpress' 'wordpress'", $cmd);
+        $this->assertStringNotContainsString('sh -c', $cmd);
+        $this->assertStringNotContainsString('/tmp/import.sql', $cmd);
+    }
+
     public function test_build_wordpress_host_extract_command_targets_file_manager_path(): void
     {
         $service = app(DirectAdminToContainerMigrationService::class);
