@@ -31,6 +31,9 @@ class ContainerDeployment extends Model
         'cpu_limit',
         'memory_limit_mb',
         'selected_version',
+        'migrated_from_node_id',
+        'migrated_at',
+        'migration_reason',
     ];
 
     protected $casts = [

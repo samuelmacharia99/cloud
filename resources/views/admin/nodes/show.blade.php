@@ -33,13 +33,9 @@
             <a href="{{ route('admin.nodes.edit', $node) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
                 Edit Node
             </a>
-            <form method="POST" action="{{ route('admin.nodes.delete', $node) }}" class="inline" data-confirm='Are you sure? This cannot be undone unless the node has no active services.'>
-                @csrf
-                @method('DELETE')
-                <button type="submit" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm">
-                    Delete
-                </button>
-            </form>
+            <a href="{{ route('admin.nodes.delete-confirm', $node) }}" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition text-sm">
+                Delete
+            </a>
         </div>
     </div>
 

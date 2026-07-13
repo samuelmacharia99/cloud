@@ -9,10 +9,12 @@ use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\SSH\SSHService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\View\View;
 
 class NodeController extends Controller
 {
@@ -401,10 +403,95 @@ class NodeController extends Controller
             ->with('success', 'Node updated successfully.');
     }
 
+    public function confirmDelete(Node $node): View
+    {
+        $services = $node->servicesOnNodeQuery()
+            ->with(['user', 'product', 'containerDeployment'])
+            ->orderBy('id')
+            ->get();
+
+        $resellers = $node->type === 'directadmin'
+            ? $node->assignedResellers()->orderBy('id')->get()
+            : collect();
+
+        $targets = app(NodeServiceRelocationService::class)->candidateTargets($node);
+        $remaining = app(NodeServiceRelocationService::class)->remainingCount($node);
+
+        return view('admin.nodes.delete-confirm', [
+            'node' => $node,
+            'services' => $services,
+            'resellers' => $resellers,
+            'remaining' => $remaining,
+            'targets' => $targets,
+            'scanResults' => session('relocation_scan'),
+            'relocationSummary' => session('relocation_summary'),
+        ]);
+    }
+
+    public function relocateServices(Request $request, Node $node)
+    {
+        $validated = $request->validate([
+            'target_node_id' => 'required|exists:nodes,id',
+            'action' => 'required|in:scan,apply',
+        ]);
+
+        $target = Node::findOrFail($validated['target_node_id']);
+        $relocation = app(NodeServiceRelocationService::class);
+
+        try {
+            if ($validated['action'] === 'scan') {
+                $scan = $relocation->scan($node, $target);
+
+                return redirect()
+                    ->route('admin.nodes.delete-confirm', $node)
+                    ->with('relocation_scan', [
+                        'target_node_id' => $target->id,
+                        'target_name' => $target->name,
+                        'rows' => $scan,
+                    ])
+                    ->with('success', 'Rescan complete. Review matches before updating records.');
+            }
+
+            $result = $relocation->apply($node, $target);
+            $updated = count($result['updated']);
+            $skipped = count($result['skipped']);
+            $failed = count($result['failed']);
+
+            $message = "Updated {$updated} record(s) to {$target->name}.";
+            if ($skipped > 0) {
+                $message .= " Skipped {$skipped} not found on destination.";
+            }
+            if ($failed > 0) {
+                $message .= " Failed {$failed}.";
+            }
+
+            $remaining = $relocation->remainingCount($node);
+
+            return redirect()
+                ->route('admin.nodes.delete-confirm', $node)
+                ->with('relocation_scan', [
+                    'target_node_id' => $target->id,
+                    'target_name' => $target->name,
+                    'rows' => $result['scan'],
+                ])
+                ->with('relocation_summary', $result)
+                ->with($failed > 0 ? 'error' : 'success', $message.($remaining === 0
+                    ? ' Nothing remains on this node — you can delete it.'
+                    : " {$remaining} record(s) still point at this node."));
+        } catch (\Throwable $e) {
+            return redirect()
+                ->route('admin.nodes.delete-confirm', $node)
+                ->withInput()
+                ->with('error', $e->getMessage());
+        }
+    }
+
     public function delete(Node $node)
     {
-        if ($node->servicesOnNodeQuery()->exists()) {
-            return back()->with('error', 'Cannot delete node with active services. Remove all services first.');
+        if (app(NodeServiceRelocationService::class)->remainingCount($node) > 0) {
+            return redirect()
+                ->route('admin.nodes.delete-confirm', $node)
+                ->with('error', 'This node still has services or assigned resellers. Confirm where they were moved, rescan the destination, then update records before deleting.');
         }
 
         $name = $node->name;

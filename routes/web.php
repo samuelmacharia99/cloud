@@ -215,6 +215,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/nodes/{node}/sync-packages', [NodeController::class, 'syncDirectAdminPackages'])->name('admin.nodes.sync-packages');
         Route::get('admin/nodes/{node}/packages-json', [NodeController::class, 'packagesJson'])->name('admin.nodes.packages-json');
         Route::get('admin/nodes-status-json', [NodeController::class, 'statusJson'])->name('admin.nodes.status-json');
+        Route::get('admin/nodes/{node}/delete', [NodeController::class, 'confirmDelete'])->name('admin.nodes.delete-confirm');
+        Route::post('admin/nodes/{node}/relocate-services', [NodeController::class, 'relocateServices'])->name('admin.nodes.relocate-services');
         Route::delete('admin/nodes/{node}', [NodeController::class, 'delete'])->name('admin.nodes.delete');
         Route::resource('admin/domains', DomainController::class)->names('admin.domains');
         Route::post('admin/domains/{domain}/generate-invoice', [DomainController::class, 'generateInvoice'])->name('admin.domains.generate-invoice');
