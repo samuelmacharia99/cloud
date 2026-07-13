@@ -4,6 +4,7 @@ namespace Tests\Unit\Provisioning;
 
 use App\Models\ContainerBackup;
 use App\Models\ContainerDeployment;
+use App\Models\Node;
 use App\Models\Product;
 use App\Models\Service;
 use App\Services\Provisioning\ContainerBackupService;
@@ -31,11 +32,13 @@ class ContainerTerminationBackupPurgeTest extends TestCase
             'status' => 'running',
         ]);
 
+        $node = Node::factory()->containerHost()->create();
+
         $backup = ContainerBackup::factory()->create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $service->id,
-            'node_id' => null,
-            'backup_path' => null,
+            'node_id' => $node->id,
+            'backup_path' => '',
             'status' => 'completed',
         ]);
 

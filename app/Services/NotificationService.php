@@ -747,20 +747,6 @@ class NotificationService
 
         $subject = 'Container Backup Completed: '.$service->name;
         $this->sendCustomerEmail($service->user, new ContainerBackupCompletedMail($service, $backup), $subject, $event);
-
-        if ($this->smsService->isConfigured() && $service->user->phone) {
-            try {
-                $message = $this->renderTemplate('container_backup_completed', [
-                    'customer_name' => $service->user->name,
-                    'service_name' => $service->name,
-                    'backup_name' => $backup->backup_name,
-                    'site_name' => $this->siteNameFor($service->user),
-                ], 'Backup of "'.$service->name.'" completed successfully.');
-                $this->sendCustomerSms($service->user, $message, $event);
-            } catch (\Exception $e) {
-                Log::error('Failed to send container backup completed SMS', ['error' => $e->getMessage()]);
-            }
-        }
     }
 
     public function notifyContainerBackupFailed(Service $service, string $error): void
@@ -779,20 +765,6 @@ class NotificationService
 
         $subject = 'Container Backup Failed: '.$service->name;
         $this->emailDelivery->sendToAdmins(new ContainerBackupFailedMail($service, $error), $subject, $event);
-
-        if ($this->smsService->isConfigured()) {
-            try {
-                $adminUsers = User::where('is_admin', true)->whereNotNull('notification_phones')->get();
-                foreach ($adminUsers as $admin) {
-                    if (! empty($admin->notification_phones) && is_array($admin->notification_phones)) {
-                        $message = 'ALERT: Backup failed for service "'.$service->name.'". Error: '.Str::limit($error, 50);
-                        $this->smsService->send($admin->notification_phones, $message);
-                    }
-                }
-            } catch (\Exception $e) {
-                Log::error('Failed to notify admins about backup failure', ['error' => $e->getMessage()]);
-            }
-        }
     }
 
     public function notifyContainerFailed(Service $service, string $reason): void

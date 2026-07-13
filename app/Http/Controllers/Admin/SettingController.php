@@ -13,12 +13,14 @@ use App\Models\Node;
 use App\Models\Registrar;
 use App\Models\Setting;
 use App\Models\SmsTemplate;
+use App\Services\Dns\CloudflareDnsService;
 use App\Services\PaymentGateway\MpesaService;
 use App\Services\PaymentGateway\PayPalConnectService;
 use App\Services\PaymentGateway\StripeService;
 use App\Services\SmsService;
 use App\Services\Telegram\TelegramBotService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Mail;
 
 class SettingController extends Controller
@@ -67,6 +69,9 @@ class SettingController extends Controller
             'suspend_on_disk_overquota', 'disk_overquota_threshold_percent',
             'cloudflare_enabled', 'cloudflare_api_token', 'cloudflare_account_id',
             'cloudflare_branded_ns1', 'cloudflare_branded_ns2', 'cloudflare_branded_ns3', 'cloudflare_branded_ns4',
+            'backup_storage_driver',
+            'hetzner_storage_host', 'hetzner_storage_port', 'hetzner_storage_username',
+            'hetzner_storage_password', 'hetzner_storage_path',
         ],
         'branding' => [
             'logo_url', 'favicon_url', 'primary_color', 'company_name', 'footer_text',
@@ -191,6 +196,7 @@ class SettingController extends Controller
         'max_', 'auto_', 'suspend_', 'terminate_', 'grace_',
         'provisioning_', 'directadmin_', 'timezone', 'date_format',
         'reseller_', 'service_', 'currency', 'telegram_', 'cloudflare_',
+        'backup_', 'hetzner_',
     ];
 
     public function update(Request $request)
@@ -214,7 +220,7 @@ class SettingController extends Controller
             'sms_api_token', 'smtp_password', 'mpesa_passkey', 'mpesa_consumer_secret', 'mpesa_callback_token',
             'directadmin_api_password', 'stripe_key', 'stripe_secret_key', 'stripe_webhook_secret',
             'paypal_client_secret', 'paypal_partner_client_secret', 'recaptcha_secret_key',
-            'telegram_bot_token', 'cloudflare_api_token',
+            'telegram_bot_token', 'cloudflare_api_token', 'hetzner_storage_password',
         ];
 
         foreach ($settings as $key => $value) {
@@ -242,6 +248,10 @@ class SettingController extends Controller
             // Skip empty sensitive fields
             if (in_array($key, $sensitiveFields) && empty($trimmedValue)) {
                 continue;
+            }
+
+            if ($key === 'hetzner_storage_password' && $trimmedValue !== '') {
+                $trimmedValue = Crypt::encryptString($trimmedValue);
             }
 
             Setting::setValue($key, $trimmedValue);
@@ -700,7 +710,7 @@ class SettingController extends Controller
     {
         $this->authorize('batchUpdate', Setting::class);
 
-        return response()->json(app(\App\Services\Dns\CloudflareDnsService::class)->testConnection());
+        return response()->json(app(CloudflareDnsService::class)->testConnection());
     }
 
     public function testPayPal(Request $request)

@@ -16,6 +16,7 @@ class ContainerBackup extends Model
         'node_id',
         'backup_name',
         'backup_path',
+        'storage_driver',
         'size_bytes',
         'status',
         'type',

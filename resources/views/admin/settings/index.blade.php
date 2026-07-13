@@ -1382,6 +1382,48 @@
                         </div>
                     </fieldset>
 
+                    <fieldset>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container backup storage</legend>
+                        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                            Prefer Hetzner Storage Box so backup archives are not kept on production container nodes.
+                            Flow: tar on the node → upload via SFTP → delete local copy.
+                        </p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Storage driver</label>
+                                <select name="settings[backup_storage_driver]" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
+                                    <option value="node" @selected(($settings['backup_storage_driver'] ?? 'node') === 'node')>Keep on container node (legacy)</option>
+                                    <option value="hetzner" @selected(($settings['backup_storage_driver'] ?? 'node') === 'hetzner')>Hetzner Storage Box (SFTP)</option>
+                                </select>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Storage Box host</label>
+                                    <input type="text" name="settings[hetzner_storage_host]" value="{{ $settings['hetzner_storage_host'] ?? '' }}" placeholder="uXXXXXX.your-storagebox.de" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SFTP port</label>
+                                    <input type="number" name="settings[hetzner_storage_port]" value="{{ $settings['hetzner_storage_port'] ?? '23' }}" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Hetzner external SFTP is usually port 23.</p>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Username</label>
+                                    <input type="text" name="settings[hetzner_storage_username]" value="{{ $settings['hetzner_storage_username'] ?? '' }}" autocomplete="off" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Password</label>
+                                    <input type="password" name="settings[hetzner_storage_password]" value="" placeholder="{{ ! empty($settings['hetzner_storage_password']) ? '•••••••• (leave blank to keep)' : '' }}" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white" />
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remote base path</label>
+                                <input type="text" name="settings[hetzner_storage_path]" value="{{ $settings['hetzner_storage_path'] ?? '/backups/containers' }}" placeholder="/backups/containers" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                            </div>
+                        </div>
+                    </fieldset>
+
                     <div class="pt-6 border-t border-slate-200 dark:border-slate-800 flex justify-between items-center">
                         <p class="text-sm text-slate-600 dark:text-slate-400 save-status" style="display:none;"></p>
                         <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center gap-2">
@@ -1791,6 +1833,7 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_backup]" value="1" @checked(($settings['notify_container_backup'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Container Backup Completed</span>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
                                 </label>
                             </div>
                             <div>
@@ -1798,6 +1841,7 @@
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_backup_failure]" value="1" @checked(($settings['notify_container_backup_failure'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Container Backup Failed</span>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
                                 </label>
                             </div>
                             <div>

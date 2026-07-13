@@ -19,6 +19,7 @@ class ContainerBackupFactory extends Factory
             'node_id' => null,
             'backup_name' => 'backup-'.fake()->unique()->regexify('[a-z0-9]{8}'),
             'backup_path' => '/var/backups/'.fake()->uuid(),
+            'storage_driver' => 'node',
             'size_bytes' => fake()->numberBetween(1024, 10485760),
             'status' => 'completed',
             'type' => 'manual',

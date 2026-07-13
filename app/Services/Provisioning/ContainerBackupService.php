@@ -8,6 +8,7 @@ use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Exception;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Log;
 
 class ContainerBackupService
 {
@@ -16,6 +17,34 @@ class ContainerBackupService
     private const BACKUP_BASE_PATH = '/opt/talksasa/backups';
 
     private const BACKUP_TIMEOUT = 600; // 10 minutes
+
+    /** @var callable(Node): SSHService|null */
+    private $sshFactory = null;
+
+    public function __construct(
+        private ?HetznerStorageBoxClient $hetzner = null,
+    ) {
+        $this->hetzner ??= new HetznerStorageBoxClient;
+    }
+
+    /**
+     * @param  callable(Node): SSHService  $factory
+     */
+    public function usingSshFactory(callable $factory): self
+    {
+        $this->sshFactory = $factory;
+
+        return $this;
+    }
+
+    private function sshFor(Node $node): SSHService
+    {
+        if ($this->sshFactory) {
+            return ($this->sshFactory)($node);
+        }
+
+        return SSHService::forNode($node);
+    }
 
     /**
      * Create a manual or scheduled backup of a container
@@ -30,21 +59,22 @@ class ContainerBackupService
 
         $node = $deployment->node;
         $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHis');
-        $backupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
+        $localBackupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
 
         $backup = ContainerBackup::create([
             'container_deployment_id' => $deployment->id,
             'service_id' => $service->id,
             'node_id' => $node->id,
             'backup_name' => $backupName,
-            'backup_path' => $backupPath,
+            'backup_path' => $localBackupPath,
+            'storage_driver' => 'node',
             'status' => 'pending',
             'type' => $type,
             'started_at' => now(),
         ]);
 
         try {
-            $ssh = SSHService::forNode($node);
+            $ssh = $this->sshFor($node);
 
             // Create backup directory if needed
             $ssh->exec('mkdir -p '.self::BACKUP_BASE_PATH);
@@ -64,30 +94,40 @@ class ContainerBackupService
             try {
                 // Create tarball of container directory
                 $ssh->exec(
-                    "tar -czf {$backupPath} -C ".self::CONTAINER_BASE_PATH." {$deployment->container_name}",
+                    "tar -czf {$localBackupPath} -C ".self::CONTAINER_BASE_PATH." {$deployment->container_name}",
                     self::BACKUP_TIMEOUT
                 );
 
                 // Get backup size
-                $sizeOutput = $ssh->exec("du -b {$backupPath} | cut -f1");
+                $sizeOutput = $ssh->exec("du -b {$localBackupPath} | cut -f1");
                 $size = (int) trim($sizeOutput);
 
                 // Restart container - stop and remove first to handle conflicts
                 @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
                 $deploymentService->startComposeStack($ssh, $service, $deployment);
 
+                $finalPath = $localBackupPath;
+                $storageDriver = 'node';
+
+                if ($this->hetzner->usesHetzner()) {
+                    $finalPath = $this->offloadToHetzner($ssh, $backup, $localBackupPath);
+                    $storageDriver = 'hetzner';
+                }
+
                 // Update backup record
                 $backup->update([
                     'status' => 'completed',
-                    'backup_path' => $backupPath,
+                    'backup_path' => $finalPath,
+                    'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
                     'completed_at' => now(),
                 ]);
 
-                \Log::info('Container backup created successfully', [
+                Log::info('Container backup created successfully', [
                     'service_id' => $service->id,
                     'backup_id' => $backup->id,
                     'backup_name' => $backup->backup_name,
+                    'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
                 ]);
             } catch (Exception $e) {
@@ -97,6 +137,7 @@ class ContainerBackupService
                 throw $e;
             } finally {
                 $ssh->disconnect();
+                $this->hetzner->disconnect();
             }
         } catch (Exception $e) {
             $backup->update([
@@ -105,7 +146,7 @@ class ContainerBackupService
                 'completed_at' => now(),
             ]);
 
-            \Log::error("Container backup failed for service {$service->id}", [
+            Log::error("Container backup failed for service {$service->id}", [
                 'backup_id' => $backup->id,
                 'error' => $e->getMessage(),
             ]);
@@ -135,8 +176,11 @@ class ContainerBackupService
             throw new Exception('Backup service not found');
         }
 
+        $localArchive = self::BACKUP_BASE_PATH.'/'.basename((string) $backup->backup_path);
+        $cleanupLocal = false;
+
         try {
-            $ssh = SSHService::forNode($node);
+            $ssh = $this->sshFor($node);
             $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
             // Update backup status
@@ -155,11 +199,24 @@ class ContainerBackupService
             // Create fresh directory
             $ssh->mkdirp($containerPath);
 
+            if (($backup->storage_driver ?? 'node') === 'hetzner') {
+                $this->stageHetznerBackupOnNode($ssh, $backup, $localArchive);
+                $cleanupLocal = true;
+            }
+
+            $archiveOnNode = ($backup->storage_driver ?? 'node') === 'hetzner'
+                ? $localArchive
+                : $backup->backup_path;
+
             // Extract backup tarball
             $ssh->exec(
-                "tar -xzf {$backup->backup_path} -C ".self::CONTAINER_BASE_PATH,
+                'tar -xzf '.escapeshellarg($archiveOnNode).' -C '.self::CONTAINER_BASE_PATH,
                 self::BACKUP_TIMEOUT
             );
+
+            if ($cleanupLocal) {
+                @$ssh->exec('rm -f '.escapeshellarg($localArchive));
+            }
 
             // Restart container
             $deploymentService->startComposeStack($ssh, $service, $deployment);
@@ -170,17 +227,19 @@ class ContainerBackupService
             // Update backup status
             $backup->update(['status' => 'completed']);
 
-            \Log::info('Container restored from backup', [
+            Log::info('Container restored from backup', [
                 'backup_id' => $backup->id,
                 'service_id' => $backup->service_id,
                 'deployment_id' => $deployment->id,
+                'storage_driver' => $backup->storage_driver,
             ]);
 
             $ssh->disconnect();
+            $this->hetzner->disconnect();
         } catch (Exception $e) {
             $backup->update(['status' => 'failed']);
 
-            \Log::error("Container restore failed for backup {$backup->id}", [
+            Log::error("Container restore failed for backup {$backup->id}", [
                 'error' => $e->getMessage(),
             ]);
 
@@ -198,7 +257,7 @@ class ContainerBackupService
         // Mark backup as deleted in database
         $backup->update(['status' => 'deleted']);
 
-        \Log::info('Container backup marked as deleted', [
+        Log::info('Container backup marked as deleted', [
             'backup_id' => $backup->id,
         ]);
     }
@@ -218,7 +277,7 @@ class ContainerBackupService
     }
 
     /**
-     * Delete backup tarball from the node and remove the database row.
+     * Delete backup tarball from storage and remove the database row.
      */
     public function purgeBackup(ContainerBackup $backup): void
     {
@@ -228,26 +287,98 @@ class ContainerBackupService
         $serviceId = $backup->service_id;
         $backup->delete();
 
-        \Log::info('Container backup purged', [
+        Log::info('Container backup purged', [
             'backup_id' => $backupId,
             'service_id' => $serviceId,
         ]);
     }
 
+    private function offloadToHetzner(SSHService $ssh, ContainerBackup $backup, string $localBackupPath): string
+    {
+        if (! $this->hetzner->isConfigured()) {
+            throw new Exception('Hetzner Storage Box is selected but not configured.');
+        }
+
+        $tmpDir = storage_path('app/tmp/backups');
+        if (! is_dir($tmpDir)) {
+            mkdir($tmpDir, 0755, true);
+        }
+
+        $localTemp = $tmpDir.'/'.basename($localBackupPath);
+        $remotePath = $this->hetzner->remotePathFor(basename($localBackupPath));
+
+        try {
+            $ssh->downloadToLocal($localBackupPath, $localTemp);
+            $this->hetzner->uploadFromLocal($localTemp, $remotePath);
+            @$ssh->exec('rm -f '.escapeshellarg($localBackupPath));
+        } finally {
+            if (is_file($localTemp)) {
+                @unlink($localTemp);
+            }
+        }
+
+        Log::info('Container backup offloaded to Hetzner Storage Box', [
+            'backup_id' => $backup->id,
+            'remote_path' => $remotePath,
+        ]);
+
+        return $remotePath;
+    }
+
+    private function stageHetznerBackupOnNode(SSHService $ssh, ContainerBackup $backup, string $nodePath): void
+    {
+        $tmpDir = storage_path('app/tmp/backups');
+        if (! is_dir($tmpDir)) {
+            mkdir($tmpDir, 0755, true);
+        }
+
+        $localTemp = $tmpDir.'/restore-'.basename((string) $backup->backup_path);
+
+        try {
+            $this->hetzner->downloadToLocal((string) $backup->backup_path, $localTemp);
+            $ssh->exec('mkdir -p '.self::BACKUP_BASE_PATH);
+            $ssh->uploadFromLocal($localTemp, $nodePath);
+        } finally {
+            if (is_file($localTemp)) {
+                @unlink($localTemp);
+            }
+            $this->hetzner->disconnect();
+        }
+    }
+
     private function removeBackupFile(ContainerBackup $backup): void
     {
+        if (! $backup->backup_path) {
+            return;
+        }
+
+        if (($backup->storage_driver ?? 'node') === 'hetzner') {
+            try {
+                $this->hetzner->delete((string) $backup->backup_path);
+                $this->hetzner->disconnect();
+            } catch (Exception $e) {
+                Log::warning('Failed to delete backup file from Hetzner Storage Box', [
+                    'backup_id' => $backup->id,
+                    'backup_path' => $backup->backup_path,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            return;
+        }
+
         $node = $backup->node;
 
-        if (! $node || ! $backup->backup_path) {
+        if (! $node) {
             return;
         }
 
         try {
-            $ssh = SSHService::forNode($node);
+            $ssh = $this->sshFor($node);
             @$ssh->exec('rm -f '.escapeshellarg($backup->backup_path));
             $ssh->disconnect();
         } catch (Exception $e) {
-            \Log::warning("Failed to delete backup file from node {$node->id}", [
+            Log::warning("Failed to delete backup file from node {$node->id}", [
                 'backup_id' => $backup->id,
                 'backup_path' => $backup->backup_path,
                 'error' => $e->getMessage(),
