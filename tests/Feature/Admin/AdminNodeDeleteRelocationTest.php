@@ -281,4 +281,36 @@ class AdminNodeDeleteRelocationTest extends TestCase
 
         $this->assertSame($source->id, $service->fresh()->node_id);
     }
+
+    public function test_detach_clears_remaining_records_and_allows_delete(): void
+    {
+        $admin = $this->adminUser();
+        $node = Node::factory()->directAdmin()->create();
+
+        $service = Service::factory()->create([
+            'node_id' => $node->id,
+            'status' => 'terminated',
+            'external_reference' => 'siriyetu',
+            'service_meta' => ['username' => 'siriyetu'],
+            'provisioning_driver_key' => 'directadmin',
+        ]);
+
+        $reseller = User::factory()->reseller()->create([
+            'reseller_node_id' => $node->id,
+            'directadmin_username' => 'res_left',
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('admin.nodes.detach-services', $node))
+            ->assertRedirect(route('admin.nodes.delete-confirm', $node));
+
+        $this->assertNull($service->fresh()->node_id);
+        $this->assertNull($reseller->fresh()->reseller_node_id);
+
+        $this->actingAs($admin)
+            ->delete(route('admin.nodes.delete', $node))
+            ->assertRedirect(route('admin.nodes.index'));
+
+        $this->assertDatabaseMissing('nodes', ['id' => $node->id]);
+    }
 }

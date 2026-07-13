@@ -125,6 +125,22 @@
             @endif
         </div>
 
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-3">
+            <h2 class="text-lg font-semibold text-slate-900 dark:text-white">Accounts not on another server?</h2>
+            <p class="text-sm text-slate-600 dark:text-slate-400">
+                Use this for leftover suspended/terminated services (like yours) that were never moved, or cannot be found on a destination.
+                This only clears the platform link to this node — it does <strong>not</strong> delete DirectAdmin users or data on the machine.
+            </p>
+            <form method="POST" action="{{ route('admin.nodes.detach-services', $node) }}"
+                data-confirm="Detach all remaining services{{ $isDirectAdmin ? ' and resellers' : '' }} from this node in Talksasa Cloud? Server accounts are not deleted."
+                data-confirm-title="Detach platform records">
+                @csrf
+                <button type="submit" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg text-sm">
+                    Detach remaining records from this node
+                </button>
+            </form>
+        </div>
+
         @if (! empty($scanResults['rows']))
             <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800">

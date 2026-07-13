@@ -486,6 +486,16 @@ class NodeController extends Controller
         }
     }
 
+    public function detachServices(Node $node)
+    {
+        $result = app(NodeServiceRelocationService::class)->detachAllFromNode($node);
+        $total = $result['services'] + $result['resellers'];
+
+        return redirect()
+            ->route('admin.nodes.delete-confirm', $node)
+            ->with('success', "Detached {$total} platform record(s) from this node (services: {$result['services']}, resellers: {$result['resellers']}). Nothing was deleted on the server. You can delete the node now.");
+    }
+
     public function delete(Node $node)
     {
         if (app(NodeServiceRelocationService::class)->remainingCount($node) > 0) {

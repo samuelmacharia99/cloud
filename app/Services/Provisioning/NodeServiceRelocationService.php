@@ -98,6 +98,57 @@ class NodeServiceRelocationService
     }
 
     /**
+     * Clear platform node links so the node record can be deleted.
+     * Does not touch DirectAdmin accounts, containers, or files on the server.
+     *
+     * @return array{services: int, resellers: int, deployments: int}
+     */
+    public function detachAllFromNode(Node $node): array
+    {
+        $servicesDetached = 0;
+        $deploymentsDetached = 0;
+
+        $services = $node->servicesOnNodeQuery()
+            ->with('containerDeployment')
+            ->get();
+
+        foreach ($services as $service) {
+            $deployment = $service->containerDeployment;
+            if ($deployment && (int) $deployment->node_id === (int) $node->id) {
+                $deployment->update(['node_id' => null]);
+                $deploymentsDetached++;
+            }
+
+            if ((int) $service->node_id === (int) $node->id) {
+                $service->update(['node_id' => null]);
+            }
+
+            $servicesDetached++;
+        }
+
+        $resellersDetached = 0;
+        if ($node->type === 'directadmin') {
+            $resellersDetached = User::query()
+                ->where('is_reseller', true)
+                ->where('reseller_node_id', $node->id)
+                ->update(['reseller_node_id' => null]);
+        }
+
+        Log::info('Detached platform records from node before delete', [
+            'node_id' => $node->id,
+            'services' => $servicesDetached,
+            'deployments' => $deploymentsDetached,
+            'resellers' => $resellersDetached,
+        ]);
+
+        return [
+            'services' => $servicesDetached,
+            'resellers' => $resellersDetached,
+            'deployments' => $deploymentsDetached,
+        ];
+    }
+
+    /**
      * @return list<array<string, mixed>>
      */
     public function scan(Node $source, Node $target): array
