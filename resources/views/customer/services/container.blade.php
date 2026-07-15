@@ -283,7 +283,7 @@
                                         Manual and scheduled archives of your container directory (app files + compose volumes).
                                     </p>
                                 </div>
-                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Queue a backup now? It runs in the background (refresh this tab for status). The container will stop briefly while archiving." data-confirm-title="Create backup">
+                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Queue a backup now? It runs in the background with little or no downtime (refresh this tab for status)." data-confirm-title="Create backup">
                                     @csrf
                                     <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
                                         Create backup
@@ -293,7 +293,7 @@
 
                             <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-1">
                                 <p><strong>Background job:</strong> backups are queued so large sites are not killed by the web server’s 30s timeout. Refresh this tab to watch pending → running → completed.</p>
-                                <p><strong>Brief downtime:</strong> backups stop the stack while archiving, then restart it. Prefer off-peak windows for large apps.</p>
+                                <p><strong>Faster backups:</strong> archives run live (no stop/start) and upload straight from the container node to Hetzner when configured — no double hop through the app server. Cache/temp dirs are skipped.</p>
                                 <p>
                                     <strong>Scheduled backups:</strong> running containers are backed up automatically about every 24 hours.
                                     @if (! empty($scheduledBackupDue))

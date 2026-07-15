@@ -176,6 +176,42 @@ class HetznerStorageBoxClient
         }
     }
 
+    public function ensureBaseDirectoryExists(): void
+    {
+        $base = trim($this->basePath(), '/');
+        if ($base === '') {
+            return;
+        }
+
+        $sftp = $this->connect();
+        $this->ensureRemoteDirectory($sftp, $base);
+    }
+
+    public function remoteFilesize(string $remotePath): int
+    {
+        $remotePath = ltrim(str_replace('\\', '/', $remotePath), '/');
+        $sftp = $this->connect();
+        $size = $sftp->filesize($remotePath);
+        if ($size === false) {
+            throw new Exception($this->formatSftpFailure('stat', $remotePath, $sftp));
+        }
+
+        return (int) $size;
+    }
+
+    /**
+     * @return array{host: string, port: int, username: string, password: string}
+     */
+    public function connectionConfig(): array
+    {
+        return [
+            'host' => $this->host(),
+            'port' => $this->port(),
+            'username' => $this->username(),
+            'password' => $this->password(),
+        ];
+    }
+
     public function disconnect(): void
     {
         if ($this->sftp) {

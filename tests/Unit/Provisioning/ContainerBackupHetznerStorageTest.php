@@ -144,4 +144,15 @@ class ContainerBackupHetznerStorageTest extends TestCase
 
         $this->assertSame('backups/containers/backup-9-test.tar.gz', $remote);
     }
+
+    public function test_build_tar_create_command_excludes_wordpress_caches(): void
+    {
+        $service = new ContainerBackupService;
+        $cmd = $service->buildTarCreateCommand('user-1-service-1-wordpress', '/opt/talksasa/backups/a.tar.gz');
+
+        $this->assertStringContainsString('--exclude=', $cmd);
+        $this->assertStringContainsString('wp-content/cache', $cmd);
+        $this->assertStringContainsString('user-1-service-1-wordpress', $cmd);
+        $this->assertStringContainsString('/opt/talksasa/backups/a.tar.gz', $cmd);
+    }
 }

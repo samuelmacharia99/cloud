@@ -152,62 +152,56 @@ class ContainerBackupService
 
         $node = $deployment->node;
         $localBackupPath = (string) $backup->backup_path;
+        $containerName = (string) $deployment->container_name;
 
         try {
             $ssh = $this->sshFor($node);
-
-            // Create backup directory if needed
             $ssh->exec('mkdir -p '.self::BACKUP_BASE_PATH);
 
-            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-
-            // Update backup status to running
             $backup->update(['status' => 'running']);
 
-            // Ensure docker-compose.yml exists before using it
             $deploymentService = new ContainerDeploymentService;
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
-            // Stop container briefly during backup (keeps volumes; lighter than down).
-            $this->softExec($ssh, "cd {$containerPath} && docker compose -f docker-compose.yml stop", 60);
-
+            // Live archive (no stop/start). Large WP sites spent hours downtimed just so
+            // we could relay the tarball through the app server twice.
             try {
-                // Create tarball of container directory
-                $ssh->exec(
-                    'tar -czf '.escapeshellarg($localBackupPath)
-                    .' -C '.escapeshellarg(self::CONTAINER_BASE_PATH)
-                    .' '.escapeshellarg($deployment->container_name),
-                    self::BACKUP_TIMEOUT
-                );
-
-                // Get backup size
-                $sizeOutput = $ssh->exec('du -b '.escapeshellarg($localBackupPath).' | cut -f1');
-                $size = (int) trim($sizeOutput);
-
-                // Long tar leaves phpseclib channels dirty — fresh session before restart.
-                $this->restartStackAfterBackup($ssh, $deploymentService, $service, $deployment);
-
                 $finalPath = $localBackupPath;
                 $storageDriver = 'node';
+                $size = 0;
 
-                if ($this->hetzner->usesHetzner()) {
+                if ($this->hetzner->usesHetzner() && $this->hetzner->isConfigured()) {
                     try {
-                        $finalPath = $this->offloadToHetzner($ssh, $backup, $localBackupPath);
+                        $remotePath = $this->hetzner->remotePathFor(basename($localBackupPath));
+                        $size = $this->archiveDirectlyToHetzner($ssh, $containerName, $remotePath);
+                        $finalPath = $remotePath;
                         $storageDriver = 'hetzner';
-                    } catch (\Throwable $offloadError) {
-                        // Archive already exists on the node — don't fail the whole backup.
-                        Log::error('Hetzner offload failed; keeping node copy', [
+                    } catch (\Throwable $directError) {
+                        Log::warning('Direct node→Hetzner backup failed; falling back to node archive + platform relay', [
                             'backup_id' => $backup->id,
-                            'service_id' => $service->id,
-                            'error' => $offloadError->getMessage(),
+                            'error' => $directError->getMessage(),
                         ]);
-                        $finalPath = $localBackupPath;
-                        $storageDriver = 'node';
-                        $backup->error_message = 'Archive saved on node; Hetzner upload failed: '.$offloadError->getMessage();
+
+                        $size = $this->createNodeArchive($ssh, $containerName, $localBackupPath);
+
+                        try {
+                            $finalPath = $this->offloadToHetzner($ssh, $backup, $localBackupPath);
+                            $storageDriver = 'hetzner';
+                            $size = $this->hetzner->remoteFilesize($finalPath);
+                        } catch (\Throwable $offloadError) {
+                            Log::error('Hetzner offload failed; keeping node copy', [
+                                'backup_id' => $backup->id,
+                                'error' => $offloadError->getMessage(),
+                            ]);
+                            $finalPath = $localBackupPath;
+                            $storageDriver = 'node';
+                            $backup->error_message = 'Archive saved on node; Hetzner upload failed: '.$offloadError->getMessage();
+                        }
                     }
+                } else {
+                    $size = $this->createNodeArchive($ssh, $containerName, $localBackupPath);
                 }
 
-                // Update backup record
                 $backup->update([
                     'status' => 'completed',
                     'backup_path' => $finalPath,
@@ -223,18 +217,8 @@ class ContainerBackupService
                     'backup_name' => $backup->backup_name,
                     'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
+                    'live' => true,
                 ]);
-            } catch (Exception $e) {
-                // Make sure container is restarted even on backup failure
-                try {
-                    $this->restartStackAfterBackup($ssh, $deploymentService, $service, $deployment);
-                } catch (\Throwable $restartError) {
-                    Log::warning('Failed to restart container after backup error', [
-                        'service_id' => $service->id,
-                        'error' => $restartError->getMessage(),
-                    ]);
-                }
-                throw $e;
             } finally {
                 $ssh->disconnect();
                 $this->hetzner->disconnect();
@@ -255,6 +239,147 @@ class ContainerBackupService
         }
 
         return $backup->fresh();
+    }
+
+    /**
+     * Create a compressed archive on the container node (excludes caches / junk).
+     */
+    private function createNodeArchive(SSHService $ssh, string $containerName, string $localBackupPath): int
+    {
+        $ssh->exec(
+            $this->buildTarCreateCommand($containerName, $localBackupPath),
+            self::BACKUP_TIMEOUT
+        );
+
+        $sizeOutput = $ssh->exec('du -b '.escapeshellarg($localBackupPath).' | cut -f1');
+
+        return (int) trim($sizeOutput);
+    }
+
+    /**
+     * Tar on the node, then push node → Hetzner (no app-server hop).
+     *
+     * @return int Remote file size in bytes
+     */
+    private function archiveDirectlyToHetzner(SSHService $ssh, string $containerName, string $remotePath): int
+    {
+        $this->hetzner->ensureBaseDirectoryExists();
+
+        $config = $this->hetzner->connectionConfig();
+        $localBackupPath = self::BACKUP_BASE_PATH.'/'.basename($remotePath);
+        $this->createNodeArchive($ssh, $containerName, $localBackupPath);
+
+        $netrcFile = '/tmp/talksasa-hetzner-'.bin2hex(random_bytes(6));
+        $passFile = $netrcFile.'.pass';
+        $netrc = "machine {$config['host']}\nlogin {$config['username']}\npassword {$config['password']}\n";
+        $errors = [];
+        $uploaded = false;
+
+        try {
+            $ssh->upload($netrc, $netrcFile);
+            $ssh->upload($config['password']."\n", $passFile);
+            $ssh->exec('chmod 600 '.escapeshellarg($netrcFile).' '.escapeshellarg($passFile));
+
+            $curlSupportsSftp = str_contains(
+                strtolower($ssh->exec('curl -V 2>&1 || true')),
+                'sftp'
+            );
+
+            if ($curlSupportsSftp) {
+                try {
+                    $url = sprintf(
+                        'sftp://%s:%d/%s',
+                        $config['host'],
+                        $config['port'],
+                        ltrim($remotePath, '/')
+                    );
+                    $ssh->exec(
+                        'curl --fail --show-error --connect-timeout 30 --max-time '
+                        .self::BACKUP_TIMEOUT
+                        .' --netrc-file '.escapeshellarg($netrcFile)
+                        .' --upload-file '.escapeshellarg($localBackupPath).' '
+                        .escapeshellarg($url),
+                        self::BACKUP_TIMEOUT
+                    );
+                    $uploaded = true;
+                } catch (\Throwable $e) {
+                    $errors[] = 'curl: '.$e->getMessage();
+                }
+            } else {
+                $errors[] = 'curl has no sftp protocol';
+            }
+
+            if (! $uploaded) {
+                $hasSshpass = trim($ssh->exec('command -v sshpass >/dev/null && echo yes || echo no')) === 'yes';
+                if ($hasSshpass) {
+                    try {
+                        $dest = escapeshellarg(
+                            $config['username'].'@'.$config['host'].':'.ltrim($remotePath, '/')
+                        );
+                        $ssh->exec(
+                            'sshpass -f '.escapeshellarg($passFile)
+                            .' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P '
+                            .(int) $config['port'].' '
+                            .escapeshellarg($localBackupPath).' '.$dest,
+                            self::BACKUP_TIMEOUT
+                        );
+                        $uploaded = true;
+                    } catch (\Throwable $e) {
+                        $errors[] = 'scp: '.$e->getMessage();
+                    }
+                } else {
+                    $errors[] = 'sshpass not installed on node';
+                }
+            }
+
+            if (! $uploaded) {
+                throw new Exception(
+                    'Could not upload from node to Hetzner ('.implode('; ', $errors)
+                    .'). Install curl-with-sftp or sshpass on the container node.'
+                );
+            }
+
+            $this->softExec($ssh, 'rm -f '.escapeshellarg($localBackupPath), 30);
+
+            return $this->hetzner->remoteFilesize($remotePath);
+        } finally {
+            $this->softExec(
+                $ssh,
+                'rm -f '.escapeshellarg($netrcFile).' '.escapeshellarg($passFile),
+                10
+            );
+        }
+    }
+
+    public function buildTarCreateCommand(string $containerName, string $archivePath): string
+    {
+        $excludes = [];
+        foreach ([
+            $containerName.'/app/wp-content/cache',
+            $containerName.'/app/wp-content/upgrade',
+            $containerName.'/app/wp-content/temp',
+            $containerName.'/app/wp-content/tmp',
+            $containerName.'/app/wp-content/wflogs',
+            $containerName.'/app/wp-content/uploads/cache',
+            $containerName.'/app/node_modules',
+            $containerName.'/app/.git',
+            $containerName.'/*.log',
+        ] as $exclude) {
+            $excludes[] = '--exclude='.escapeshellarg($exclude);
+        }
+
+        $tar = 'tar -czf '.escapeshellarg($archivePath)
+            .' '.implode(' ', $excludes)
+            .' -C '.escapeshellarg(self::CONTAINER_BASE_PATH)
+            .' '.escapeshellarg($containerName);
+
+        // Live backups often change underfoot; GNU tar exit 1 is OK if the archive exists.
+        return $tar
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ -s '.escapeshellarg($archivePath).' ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
     }
 
     /**
