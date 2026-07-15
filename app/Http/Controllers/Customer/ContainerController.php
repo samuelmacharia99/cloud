@@ -1861,12 +1861,12 @@ class ContainerController extends Controller
 
         try {
             $backupService = new ContainerBackupService;
-            $backup = $backupService->createBackup($service, 'manual');
+            $backup = $backupService->queueBackup($service, 'manual');
 
             return $this->redirectToContainerTab($service, 'backups')
-                ->with('success', "Backup '{$backup->backup_name}' created successfully. Brief downtime may have occurred while the archive was created.");
+                ->with('success', "Backup '{$backup->backup_name}' queued. Refresh this tab in a few minutes — large sites can take a while (brief downtime while archiving).");
         } catch (\Exception $e) {
-            \Log::error("Failed to create backup for service {$service->id}: ".$e->getMessage());
+            \Log::error("Failed to queue backup for service {$service->id}: ".$e->getMessage());
 
             return $this->redirectToContainerTab($service, 'backups')
                 ->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);

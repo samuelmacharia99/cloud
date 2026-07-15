@@ -16,7 +16,7 @@ class ContainerBackupService
 
     private const BACKUP_BASE_PATH = '/opt/talksasa/backups';
 
-    private const BACKUP_TIMEOUT = 600; // 10 minutes
+    private const BACKUP_TIMEOUT = 3600; // 60 minutes — large WP volumes need longer than PHP-FPM ever allows
 
     /** @var callable(Node): SSHService|null */
     private $sshFactory = null;
@@ -47,10 +47,74 @@ class ContainerBackupService
     }
 
     /**
-     * Create a manual or scheduled backup of a container
+     * Queue a manual backup so tar/Hetzner offload are not bound by PHP-FPM's 30s limit.
+     */
+    public function queueBackup(Service $service, string $type = 'manual'): ContainerBackup
+    {
+        $deployment = $service->containerDeployment;
+
+        if (! $deployment || ! $deployment->node) {
+            throw new Exception('Container deployment not found for service');
+        }
+
+        $inFlight = ContainerBackup::query()
+            ->where('service_id', $service->id)
+            ->whereIn('status', ['pending', 'running'])
+            ->exists();
+
+        if ($inFlight) {
+            throw new Exception('A backup is already queued or running for this service. Refresh the Backups tab shortly.');
+        }
+
+        $backupName = 'backup-'.$service->id.'-'.now()->format('YmdHis');
+        $localBackupPath = self::BACKUP_BASE_PATH.'/'.$backupName.'.tar.gz';
+
+        $backup = ContainerBackup::create([
+            'container_deployment_id' => $deployment->id,
+            'service_id' => $service->id,
+            'node_id' => $deployment->node->id,
+            'backup_name' => $backupName,
+            'backup_path' => $localBackupPath,
+            'storage_driver' => 'node',
+            'status' => 'pending',
+            'type' => $type,
+            'started_at' => now(),
+        ]);
+
+        \App\Jobs\CreateContainerBackupJob::dispatch($backup->id)->afterResponse();
+
+        return $backup;
+    }
+
+    /**
+     * Execute a previously queued backup row (used by CreateContainerBackupJob).
+     */
+    public function runQueuedBackup(ContainerBackup $backup): ContainerBackup
+    {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $backup->loadMissing('service.containerDeployment.node');
+        $service = $backup->service;
+        if (! $service) {
+            throw new Exception('Backup service is missing.');
+        }
+
+        return $this->performBackup($service, $backup);
+    }
+
+    /**
+     * Create a manual or scheduled backup of a container (synchronous — cron / jobs).
      */
     public function createBackup(Service $service, string $type = 'manual'): ContainerBackup
     {
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
         $deployment = $service->containerDeployment;
 
         if (! $deployment || ! $deployment->node) {
@@ -72,6 +136,22 @@ class ContainerBackupService
             'type' => $type,
             'started_at' => now(),
         ]);
+
+        return $this->performBackup($service, $backup);
+    }
+
+    /**
+     * @throws Exception
+     */
+    private function performBackup(Service $service, ContainerBackup $backup): ContainerBackup
+    {
+        $deployment = $service->containerDeployment;
+        if (! $deployment || ! $deployment->node) {
+            throw new Exception('Container deployment not found for service');
+        }
+
+        $node = $deployment->node;
+        $localBackupPath = (string) $backup->backup_path;
 
         try {
             $ssh = $this->sshFor($node);
@@ -122,6 +202,7 @@ class ContainerBackupService
                     'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
                     'completed_at' => now(),
+                    'error_message' => null,
                 ]);
 
                 Log::info('Container backup created successfully', [
@@ -161,7 +242,7 @@ class ContainerBackupService
             throw $e;
         }
 
-        return $backup;
+        return $backup->fresh();
     }
 
     /**

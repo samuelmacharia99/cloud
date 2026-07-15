@@ -145,7 +145,7 @@ class ContainerApiController extends Controller
 
         try {
             $backupService = new ContainerBackupService;
-            $backup = $backupService->createBackup($service, 'manual');
+            $backup = $backupService->queueBackup($service, 'manual');
 
             return response()->json([
                 'id' => $backup->id,
@@ -153,7 +153,8 @@ class ContainerApiController extends Controller
                 'status' => $backup->status,
                 'size_bytes' => $backup->size_bytes,
                 'created_at' => $backup->created_at->toIso8601String(),
-            ], 201);
+                'message' => 'Backup queued. Poll list endpoints until status is completed or failed.',
+            ], 202);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }

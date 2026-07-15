@@ -302,11 +302,11 @@ class ContainerController extends Controller
 
         try {
             $backupService = new ContainerBackupService;
-            $backup = $backupService->createBackup($service, 'manual');
+            $backup = $backupService->queueBackup($service, 'manual');
 
-            return back()->with('success', "Backup '{$backup->backup_name}' created successfully.");
+            return back()->with('success', "Backup '{$backup->backup_name}' queued. Refresh shortly for progress.");
         } catch (\Exception $e) {
-            \Log::error("Failed to create backup for service {$service->id}: ".$e->getMessage());
+            \Log::error("Failed to queue backup for service {$service->id}: ".$e->getMessage());
 
             return back()->withErrors(['error' => 'Backup failed: '.$e->getMessage()]);
         }

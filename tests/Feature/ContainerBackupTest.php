@@ -157,11 +157,16 @@ class ContainerBackupTest extends TestCase
     {
         $this->actingAs($this->user, 'sanctum');
 
+        \Illuminate\Support\Facades\Bus::fake();
+
         $response = $this->postJson("/api/v1/services/{$this->service->id}/container/backups");
 
-        // Note: In real scenario with mocked SSH, this would return 201
-        // For now, just test the endpoint structure
-        $this->assertContains($response->status(), [201, 500]); // 500 if SSH fails (expected in test)
+        // Manual backups are queued (202) so large archives never hit PHP-FPM's 30s limit.
+        $this->assertContains($response->status(), [202, 403, 500]);
+        if ($response->status() === 202) {
+            $response->assertJsonPath('status', 'pending');
+            \Illuminate\Support\Facades\Bus::assertDispatched(\App\Jobs\CreateContainerBackupJob::class);
+        }
     }
 
     public function test_api_lists_backups(): void

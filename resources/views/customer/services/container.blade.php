@@ -283,7 +283,7 @@
                                         Manual and scheduled archives of your container directory (app files + compose volumes).
                                     </p>
                                 </div>
-                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Create a backup now? The container will stop briefly while the archive is created, then start again." data-confirm-title="Create backup">
+                                <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Queue a backup now? It runs in the background (refresh this tab for status). The container will stop briefly while archiving." data-confirm-title="Create backup">
                                     @csrf
                                     <button type="submit" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition">
                                         Create backup
@@ -292,6 +292,7 @@
                             </div>
 
                             <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-1">
+                                <p><strong>Background job:</strong> backups are queued so large sites are not killed by the web server’s 30s timeout. Refresh this tab to watch pending → running → completed.</p>
                                 <p><strong>Brief downtime:</strong> backups stop the stack while archiving, then restart it. Prefer off-peak windows for large apps.</p>
                                 <p>
                                     <strong>Scheduled backups:</strong> running containers are backed up automatically about every 24 hours.
@@ -318,6 +319,16 @@
                                                         Size: {{ formatBytes($backup->size_bytes) }} • {{ $backup->created_at->diffForHumans() }}
                                                         @if ($backup->type)
                                                             • <span class="capitalize">{{ $backup->type }}</span>
+                                                        @endif
+                                                        @if (($backup->storage_driver ?? 'node') === 'hetzner')
+                                                            • Storage Box
+                                                        @endif
+                                                    @elseif (in_array($backup->status, ['pending', 'running'], true))
+                                                        Status: {{ ucfirst($backup->status) }} — in progress, refresh shortly
+                                                    @elseif ($backup->status === 'failed')
+                                                        Status: Failed
+                                                        @if ($backup->error_message)
+                                                            • <span class="text-red-600 dark:text-red-400">{{ \Illuminate\Support\Str::limit($backup->error_message, 120) }}</span>
                                                         @endif
                                                     @else
                                                         Status: {{ ucfirst($backup->status) }}
