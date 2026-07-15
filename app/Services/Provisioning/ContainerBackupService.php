@@ -191,8 +191,20 @@ class ContainerBackupService
                 $storageDriver = 'node';
 
                 if ($this->hetzner->usesHetzner()) {
-                    $finalPath = $this->offloadToHetzner($ssh, $backup, $localBackupPath);
-                    $storageDriver = 'hetzner';
+                    try {
+                        $finalPath = $this->offloadToHetzner($ssh, $backup, $localBackupPath);
+                        $storageDriver = 'hetzner';
+                    } catch (\Throwable $offloadError) {
+                        // Archive already exists on the node — don't fail the whole backup.
+                        Log::error('Hetzner offload failed; keeping node copy', [
+                            'backup_id' => $backup->id,
+                            'service_id' => $service->id,
+                            'error' => $offloadError->getMessage(),
+                        ]);
+                        $finalPath = $localBackupPath;
+                        $storageDriver = 'node';
+                        $backup->error_message = 'Archive saved on node; Hetzner upload failed: '.$offloadError->getMessage();
+                    }
                 }
 
                 // Update backup record
@@ -202,7 +214,7 @@ class ContainerBackupService
                     'storage_driver' => $storageDriver,
                     'size_bytes' => $size,
                     'completed_at' => now(),
-                    'error_message' => null,
+                    'error_message' => $storageDriver === 'hetzner' ? null : ($backup->error_message ?? null),
                 ]);
 
                 Log::info('Container backup created successfully', [
@@ -438,6 +450,11 @@ class ContainerBackupService
 
         try {
             $ssh->downloadToLocal($localBackupPath, $localTemp);
+
+            if (! is_file($localTemp) || filesize($localTemp) <= 0) {
+                throw new Exception('Downloaded backup from node is missing or empty before Hetzner upload.');
+            }
+
             $this->hetzner->uploadFromLocal($localTemp, $remotePath);
             $ssh->reconnect();
             $this->softExec($ssh, 'rm -f '.escapeshellarg($localBackupPath), 30);
@@ -445,6 +462,7 @@ class ContainerBackupService
             if (is_file($localTemp)) {
                 @unlink($localTemp);
             }
+            $this->hetzner->disconnect();
         }
 
         Log::info('Container backup offloaded to Hetzner Storage Box', [

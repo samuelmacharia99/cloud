@@ -1386,7 +1386,8 @@
                         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container backup storage</legend>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
                             Prefer Hetzner Storage Box so backup archives are not kept on production container nodes.
-                            Flow: tar on the node → upload via SFTP → delete local copy.
+                            Flow: tar on the node → download to platform → SFTP upload → delete node copy.
+                            Paths are relative to the Storage Box home (sub-accounts cannot write absolute <code class="font-mono text-xs">/backups</code> at filesystem root).
                         </p>
                         <div class="space-y-4">
                             <div>
@@ -1418,8 +1419,37 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remote base path</label>
-                                <input type="text" name="settings[hetzner_storage_path]" value="{{ $settings['hetzner_storage_path'] ?? '/backups/containers' }}" placeholder="/backups/containers" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remote base path (relative to home)</label>
+                                <input type="text" name="settings[hetzner_storage_path]" value="{{ $settings['hetzner_storage_path'] ?? 'backups/containers' }}" placeholder="backups/containers" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Use <code class="font-mono">backups/containers</code> (no leading slash). Leading <code class="font-mono">/</code> is stripped automatically.</p>
+                            </div>
+                            <div>
+                                <button type="button"
+                                    class="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded-lg"
+                                    onclick="(async () => {
+                                        const btn = event.currentTarget;
+                                        btn.disabled = true;
+                                        btn.textContent = 'Testing…';
+                                        try {
+                                            const res = await fetch('{{ route('admin.settings.test-hetzner-storage') }}', {
+                                                method: 'POST',
+                                                headers: {
+                                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content
+                                                        || document.querySelector('input[name=_token]')?.value,
+                                                    'Accept': 'application/json',
+                                                },
+                                            });
+                                            const data = await res.json();
+                                            alert((data.ok ? 'OK: ' : 'Failed: ') + (data.message || JSON.stringify(data)));
+                                        } catch (e) {
+                                            alert('Test request failed: ' + e.message);
+                                        } finally {
+                                            btn.disabled = false;
+                                            btn.textContent = 'Test Storage Box connection';
+                                        }
+                                    })()">
+                                    Test Storage Box connection
+                                </button>
                             </div>
                         </div>
                     </fieldset>

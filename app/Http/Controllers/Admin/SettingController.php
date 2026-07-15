@@ -713,6 +713,13 @@ class SettingController extends Controller
         return response()->json(app(CloudflareDnsService::class)->testConnection());
     }
 
+    public function testHetznerStorage(Request $request)
+    {
+        $this->authorize('batchUpdate', Setting::class);
+
+        return response()->json(app(\App\Services\Provisioning\HetznerStorageBoxClient::class)->testConnection());
+    }
+
     public function testPayPal(Request $request)
     {
         $this->authorize('batchUpdate', Setting::class);

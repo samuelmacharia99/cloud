@@ -29,7 +29,21 @@ class ContainerBackupHetznerStorageTest extends TestCase
         $client = new HetznerStorageBoxClient;
 
         $this->assertTrue($client->usesHetzner());
-        $this->assertSame('/backups/containers/backup-1.tar.gz', $client->remotePathFor('backup-1.tar.gz'));
+        $this->assertSame('backups/containers/backup-1.tar.gz', $client->remotePathFor('backup-1.tar.gz'));
+    }
+
+    public function test_hetzner_client_test_connection_reports_missing_config(): void
+    {
+        Setting::setValue('backup_storage_driver', 'hetzner');
+        Setting::setValue('hetzner_storage_host', '');
+        Setting::setValue('hetzner_storage_username', '');
+        Setting::setValue('hetzner_storage_password', '');
+
+        $client = new HetznerStorageBoxClient;
+        $result = $client->testConnection();
+
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('required', strtolower($result['message']));
     }
 
     public function test_hetzner_client_decrypts_stored_password(): void
@@ -103,7 +117,7 @@ class ContainerBackupHetznerStorageTest extends TestCase
         $ssh->shouldReceive('downloadToLocal')
             ->once()
             ->withArgs(function (string $remote, string $local) {
-                touch($local);
+                file_put_contents($local, 'backup-bytes');
 
                 return $remote === '/opt/talksasa/backups/backup-9-test.tar.gz';
             });
@@ -116,10 +130,11 @@ class ContainerBackupHetznerStorageTest extends TestCase
         $hetzner->shouldReceive('isConfigured')->andReturn(true);
         $hetzner->shouldReceive('remotePathFor')
             ->with('backup-9-test.tar.gz')
-            ->andReturn('/backups/containers/backup-9-test.tar.gz');
+            ->andReturn('backups/containers/backup-9-test.tar.gz');
         $hetzner->shouldReceive('uploadFromLocal')
             ->once()
-            ->withArgs(fn (string $local, string $remote) => $remote === '/backups/containers/backup-9-test.tar.gz' && is_file($local));
+            ->withArgs(fn (string $local, string $remote) => $remote === 'backups/containers/backup-9-test.tar.gz' && is_file($local) && filesize($local) > 0);
+        $hetzner->shouldReceive('disconnect')->once();
 
         $backupService = new ContainerBackupService($hetzner);
         $method = new ReflectionMethod(ContainerBackupService::class, 'offloadToHetzner');
@@ -127,6 +142,6 @@ class ContainerBackupHetznerStorageTest extends TestCase
 
         $remote = $method->invoke($backupService, $ssh, $backup, '/opt/talksasa/backups/backup-9-test.tar.gz');
 
-        $this->assertSame('/backups/containers/backup-9-test.tar.gz', $remote);
+        $this->assertSame('backups/containers/backup-9-test.tar.gz', $remote);
     }
 }

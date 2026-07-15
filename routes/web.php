@@ -260,6 +260,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/settings/paypal/disconnect', [SettingController::class, 'disconnectPayPal'])->name('admin.settings.paypal.disconnect');
         Route::post('admin/settings/paypal/refresh', [SettingController::class, 'refreshPayPalConnection'])->name('admin.settings.paypal.refresh');
         Route::post('admin/settings/test-cloudflare', [SettingController::class, 'testCloudflare'])->name('admin.settings.test-cloudflare');
+        Route::post('admin/settings/test-hetzner-storage', [SettingController::class, 'testHetznerStorage'])->name('admin.settings.test-hetzner-storage');
         Route::post('admin/settings/test-mpesa', [SettingController::class, 'testMpesa'])->name('admin.settings.test-mpesa');
         Route::post('admin/settings/test-paypal', [SettingController::class, 'testPayPal'])->name('admin.settings.test-paypal');
         Route::post('admin/settings/register-mpesa-urls', [SettingController::class, 'registerMpesaUrls'])->name('admin.settings.register-mpesa-urls');
