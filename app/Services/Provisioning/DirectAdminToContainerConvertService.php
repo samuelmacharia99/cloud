@@ -36,6 +36,9 @@ class DirectAdminToContainerConvertService
      *     },
      *     can_convert: bool,
      *     blockers: list<string>,
+     *     detected_stack: string,
+     *     has_addon_sites: bool,
+     *     container_products: list<Product>,
      *     wordpress_products: list<Product>,
      *     products_are_fallback: bool
      * }
@@ -50,57 +53,91 @@ class DirectAdminToContainerConvertService
         $email = $this->emailPreflight($service);
         $blockers = [];
 
-        if ($inventory['stack'] !== 'wordpress' && ! $inventory['has_wp_config']) {
-            $blockers[] = 'Site does not look like WordPress (wp-config.php not found).';
+        $stack = $this->normalizeConvertibleStack($inventory);
+        $supported = in_array($stack, ['wordpress', 'laravel', 'php', 'static_or_php'], true);
+
+        if (! $supported) {
+            $blockers[] = 'Site stack could not be detected as WordPress, Laravel, PHP, or static. Confirm the primary docroot path.';
         }
 
         if (! $email['success']) {
             $blockers[] = 'Could not list email accounts: '.$email['message'];
         }
 
-        $productPick = $this->availableWordPressProducts();
+        $productPick = $this->availableProductsForStack($stack);
         $products = $productPick['products'];
         $productsAreFallback = $productPick['fallback'];
 
         $activeEligible = $productsAreFallback
-            ? $products->filter(fn (Product $product) => $product->is_active && $this->productIsWordPressContainer($product))
+            ? $products->filter(fn (Product $product) => $product->is_active && $this->productMatchesStack($product, $stack))
             : $products->where('is_active', true);
 
         if ($activeEligible->isEmpty()) {
-            $blockers[] = 'No active WordPress App Hosting products are available. Create or activate a product with the WordPress container template under Admin → Products.';
+            $blockers[] = sprintf(
+                'No active App Hosting products are available for detected stack (%s). Create or activate a matching container product under Admin → Products.',
+                str_replace('_', ' ', $stack)
+            );
         }
 
-        $looksLikeWordpress = $inventory['stack'] === 'wordpress' || $inventory['has_wp_config'];
+        $addonCount = (int) ($inventory['addon_site_count'] ?? 0);
 
         return [
             'inventory' => $inventory,
             'email' => $email,
-            'can_convert' => $blockers === [] && $looksLikeWordpress,
+            'can_convert' => $blockers === [] && $supported,
             'blockers' => $blockers,
+            'detected_stack' => $stack,
+            'has_addon_sites' => $addonCount > 0,
+            'container_products' => $products->all(),
+            // Backward-compatible alias for older views/controllers.
             'wordpress_products' => $products->all(),
             'products_are_fallback' => $productsAreFallback,
         ];
     }
 
     /**
-     * WordPress App Hosting catalog for the convert dropdown.
+     * @param  array{stack?: string, has_wp_config?: bool}  $inventory
+     */
+    public function normalizeConvertibleStack(array $inventory): string
+    {
+        if (($inventory['has_wp_config'] ?? false) || ($inventory['stack'] ?? '') === 'wordpress') {
+            return 'wordpress';
+        }
+
+        $stack = (string) ($inventory['stack'] ?? 'unknown');
+
+        return in_array($stack, ['laravel', 'php', 'static_or_php'], true) ? $stack : $stack;
+    }
+
+    /**
+     * App Hosting catalog for the convert dropdown, filtered by detected stack.
      *
      * @return array{products: Collection<int, Product>, fallback: bool}
      */
-    public function availableWordPressProducts(): array
+    public function availableProductsForStack(string $stack): array
     {
+        $stack = $stack === 'wordpress' || ($stack !== '' && $this->stackKeywords($stack) !== [])
+            ? $stack
+            : 'wordpress';
+
         $base = Product::query()
             ->where('type', 'container_hosting')
             ->with('containerTemplate');
 
-        $wordpress = (clone $base)
-            ->where(function ($query) {
-                $query->whereHas('containerTemplate', function ($template) {
-                    $template->whereRaw('LOWER(slug) = ?', ['wordpress'])
-                        ->orWhereRaw('LOWER(slug) LIKE ?', ['%wordpress%'])
-                        ->orWhereRaw('LOWER(name) LIKE ?', ['%wordpress%']);
-                })->orWhereRaw('LOWER(name) LIKE ?', ['%wordpress%'])
-                    ->orWhereRaw('LOWER(slug) LIKE ?', ['%wordpress%']);
+        $keywords = $this->stackKeywords($stack);
+        $matched = (clone $base)
+            ->where(function ($query) use ($keywords) {
+                foreach ($keywords as $keyword) {
+                    $like = '%'.$keyword.'%';
+                    $query->orWhere(function ($inner) use ($keyword, $like) {
+                        $inner->whereHas('containerTemplate', function ($template) use ($keyword, $like) {
+                            $template->whereRaw('LOWER(slug) = ?', [$keyword])
+                                ->orWhereRaw('LOWER(slug) LIKE ?', [$like])
+                                ->orWhereRaw('LOWER(name) LIKE ?', [$like]);
+                        })->orWhereRaw('LOWER(name) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(slug) LIKE ?', [$like]);
+                    });
+                }
             })
             ->orderByDesc('is_active')
             ->orderBy('order')
@@ -109,8 +146,8 @@ class DirectAdminToContainerConvertService
             ->orderBy('name')
             ->get();
 
-        if ($wordpress->isNotEmpty()) {
-            return ['products' => $wordpress, 'fallback' => false];
+        if ($matched->isNotEmpty()) {
+            return ['products' => $matched, 'fallback' => false];
         }
 
         $all = (clone $base)
@@ -122,23 +159,57 @@ class DirectAdminToContainerConvertService
         return ['products' => $all, 'fallback' => $all->isNotEmpty()];
     }
 
-    public function productIsWordPressContainer(Product $product): bool
+    /**
+     * @return list<string>
+     */
+    public function stackKeywords(string $stack): array
+    {
+        return match ($stack) {
+            'wordpress' => ['wordpress'],
+            'laravel' => ['laravel'],
+            'php' => ['php'],
+            'static_or_php' => ['static-site', 'static', 'php'],
+            default => [],
+        };
+    }
+
+    /**
+     * @deprecated Use availableProductsForStack('wordpress')
+     * @return array{products: Collection<int, Product>, fallback: bool}
+     */
+    public function availableWordPressProducts(): array
+    {
+        return $this->availableProductsForStack('wordpress');
+    }
+
+    public function productMatchesStack(Product $product, string $stack): bool
     {
         $product->loadMissing('containerTemplate');
-        $slug = strtolower((string) ($product->containerTemplate?->slug ?? ''));
-        $templateName = strtolower((string) ($product->containerTemplate?->name ?? ''));
-        $name = strtolower((string) $product->name);
-        $productSlug = strtolower((string) ($product->slug ?? ''));
-
         if ($product->type !== 'container_hosting') {
             return false;
         }
 
-        return $slug === 'wordpress'
-            || str_contains($slug, 'wordpress')
-            || str_contains($templateName, 'wordpress')
-            || str_contains($name, 'wordpress')
-            || str_contains($productSlug, 'wordpress');
+        $haystacks = [
+            strtolower((string) ($product->containerTemplate?->slug ?? '')),
+            strtolower((string) ($product->containerTemplate?->name ?? '')),
+            strtolower((string) $product->name),
+            strtolower((string) ($product->slug ?? '')),
+        ];
+
+        foreach ($this->stackKeywords($stack) as $keyword) {
+            foreach ($haystacks as $haystack) {
+                if ($haystack === $keyword || str_contains($haystack, $keyword)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    public function productIsWordPressContainer(Product $product): bool
+    {
+        return $this->productMatchesStack($product, 'wordpress');
     }
 
     /**
@@ -242,7 +313,7 @@ class DirectAdminToContainerConvertService
     }
 
     /**
-     * Convert the same service row from DA shared hosting to WordPress App Hosting.
+     * Convert the same service row from DA shared hosting to App Hosting (stack-aware).
      * No invoice. No customer notification. Preserves next_due_date and billing_cycle.
      *
      * @return array{ok: bool, message: string, steps: list<string>}
@@ -252,6 +323,7 @@ class DirectAdminToContainerConvertService
         Product $containerProduct,
         bool $acknowledgeExtraMailboxes = false,
         ?string $databaseName = null,
+        bool $acknowledgeAddonSites = false,
     ): array {
         if (function_exists('set_time_limit')) {
             @set_time_limit(0);
@@ -269,8 +341,17 @@ class DirectAdminToContainerConvertService
             );
         }
 
-        if (! $this->productIsWordPressContainer($containerProduct)) {
-            throw new \InvalidArgumentException('Select a WordPress App Hosting product (container product with WordPress template).');
+        if (($preflight['has_addon_sites'] ?? false) && ! $acknowledgeAddonSites) {
+            throw new \InvalidArgumentException(
+                'This DA user has additional domains/sites. Acknowledge that only the primary site converts on this service; other sites need separate App Hosting services.'
+            );
+        }
+
+        $stack = (string) ($preflight['detected_stack'] ?? 'unknown');
+        if (! $this->productMatchesStack($containerProduct, $stack) && ! ($preflight['products_are_fallback'] ?? false)) {
+            throw new \InvalidArgumentException(
+                'Select an App Hosting product that matches the detected stack ('.$stack.').'
+            );
         }
 
         if (! $containerProduct->is_active) {
@@ -279,6 +360,7 @@ class DirectAdminToContainerConvertService
 
         $service->loadMissing('node', 'product', 'user');
         $inventory = $preflight['inventory'];
+        $inventory['stack'] = $stack;
         $daNode = $service->node;
         if (! $daNode) {
             throw new \InvalidArgumentException('DirectAdmin node is missing.');
@@ -292,10 +374,11 @@ class DirectAdminToContainerConvertService
             'status' => $service->status?->value ?? (string) $service->status,
         ];
 
-        $steps = ['Preflight OK'];
+        $steps = ['Preflight OK · stack '.$stack];
         $this->writeConvertMeta($service, [
             'status' => 'running',
             'mode' => 'convert_in_place',
+            'stack' => $stack,
             'started_at' => now()->toIso8601String(),
             'previous' => $previous,
             'steps' => $steps,
@@ -307,9 +390,9 @@ class DirectAdminToContainerConvertService
         $export = null;
 
         try {
-            $steps[] = 'Exporting WordPress files and database from DirectAdmin';
+            $steps[] = 'Exporting site files'.(in_array($stack, ['wordpress', 'laravel', 'php'], true) ? ' and database' : '').' from DirectAdmin';
             $this->appendConvertStep($service, $steps);
-            $export = $this->migrator->exportWordPressFromDirectAdmin($service, $inventory, $databaseName);
+            $export = $this->migrator->exportSiteFromDirectAdmin($service, $inventory, $databaseName);
 
             $creds = $service->getHostingCredentials() ?? [];
             $meta = is_array($service->service_meta) ? $service->service_meta : [];
@@ -318,6 +401,8 @@ class DirectAdminToContainerConvertService
                 'domain' => $inventory['domain'],
                 'da_node_id' => $daNode->id,
                 'docroot' => $inventory['docroot'],
+                'stack' => $stack,
+                'addon_sites' => $inventory['sites'] ?? [],
                 'converted_at' => now()->toIso8601String(),
                 'keep_email_on_da' => true,
                 'had_extra_mailboxes' => $preflight['email']['has_extra_mailboxes'],
@@ -346,19 +431,20 @@ class DirectAdminToContainerConvertService
 
             $service->refresh()->load('product.containerTemplate', 'user');
 
-            $steps[] = 'Provisioning WordPress container (silent — no customer notification)';
+            $steps[] = 'Provisioning '.$stack.' container (silent — no customer notification)';
             $this->appendConvertStep($service, $steps);
             $this->deployments->deploy($service, ContainerDeployOptions::quietConvert());
 
             $service->refresh()->load('containerDeployment.node', 'product.containerTemplate');
 
-            $steps[] = 'Importing WordPress into container';
+            $steps[] = 'Importing site into container';
             $this->appendConvertStep($service, $steps);
-            $this->migrator->importWordPressIntoContainer(
+            $this->migrator->importSiteIntoContainer(
                 $service,
-                $export['local_dump'],
+                $export['local_dump'] ?? null,
                 $export['local_tar'],
                 $export['remote_work'],
+                (string) ($export['stack'] ?? $stack),
                 $daNode,
                 function (string $detail) use ($service, &$steps): void {
                     $steps[] = 'Import: '.$detail;
@@ -367,10 +453,14 @@ class DirectAdminToContainerConvertService
             );
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
+            $addonNote = ($preflight['has_addon_sites'] ?? false)
+                ? ' Addon domains on this DA user still need their own App Hosting services.'
+                : '';
             $steps[] = sprintf(
-                'Convert complete. Next due %s · renewal will bill App Hosting (~%s). Email remains on DirectAdmin.',
+                'Convert complete. Next due %s · renewal will bill App Hosting (~%s). Email remains on DirectAdmin.%s',
                 optional($service->next_due_date)->toDateString() ?? 'n/a',
-                number_format($renewalPreview, 2)
+                number_format($renewalPreview, 2),
+                $addonNote
             );
 
             $this->writeConvertMeta($service, [
@@ -379,6 +469,7 @@ class DirectAdminToContainerConvertService
                 'steps' => $steps,
                 'target_product_id' => $containerProduct->id,
                 'renewal_unit_price' => $renewalPreview,
+                'stack' => $stack,
             ]);
 
             // Mirror into da_migration for any existing overview banners

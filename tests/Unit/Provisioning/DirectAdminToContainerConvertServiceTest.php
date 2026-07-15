@@ -196,4 +196,52 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         $this->assertTrue($pick['products']->contains('id', $product->id));
         $this->assertTrue($service->productIsWordPressContainer($product->fresh('containerTemplate')));
     }
+
+    public function test_available_products_for_laravel_and_static_stacks(): void
+    {
+        $laravelTemplate = ContainerTemplate::query()->create([
+            'name' => 'Laravel Application',
+            'slug' => 'laravel-'.uniqid(),
+            'docker_image' => 'talksasa/laravel-runtime:8.3',
+            'is_active' => true,
+        ]);
+        $staticTemplate = ContainerTemplate::query()->create([
+            'name' => 'Static Website',
+            'slug' => 'static-site-'.uniqid(),
+            'docker_image' => 'nginx:alpine',
+            'is_active' => true,
+        ]);
+
+        $laravelProduct = Product::query()->create([
+            'name' => 'Laravel App Hosting',
+            'slug' => 'laravel-app-hosting-'.uniqid(),
+            'type' => 'container_hosting',
+            'price' => 2500,
+            'monthly_price' => 2500,
+            'is_active' => true,
+            'container_template_id' => $laravelTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+        $staticProduct = Product::query()->create([
+            'name' => 'Static App Hosting',
+            'slug' => 'static-app-hosting-'.uniqid(),
+            'type' => 'container_hosting',
+            'price' => 800,
+            'monthly_price' => 800,
+            'is_active' => true,
+            'container_template_id' => $staticTemplate->id,
+            'provisioning_driver_key' => 'container',
+        ]);
+
+        $convert = app(DirectAdminToContainerConvertService::class);
+
+        $laravelPick = $convert->availableProductsForStack('laravel');
+        $this->assertFalse($laravelPick['fallback']);
+        $this->assertTrue($laravelPick['products']->contains('id', $laravelProduct->id));
+        $this->assertTrue($convert->productMatchesStack($laravelProduct->fresh('containerTemplate'), 'laravel'));
+
+        $staticPick = $convert->availableProductsForStack('static_or_php');
+        $this->assertTrue($staticPick['products']->contains('id', $staticProduct->id));
+        $this->assertTrue($convert->productMatchesStack($staticProduct->fresh('containerTemplate'), 'static_or_php'));
+    }
 }

@@ -23,6 +23,7 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
         public int $productId,
         public bool $acknowledgeExtraMailboxes = false,
         public ?string $databaseName = null,
+        public bool $acknowledgeAddonSites = false,
     ) {}
 
     public function handle(DirectAdminToContainerConvertService $convert): void
@@ -42,6 +43,7 @@ class ConvertDirectAdminServiceToContainerJob implements ShouldQueue
                 $product,
                 $this->acknowledgeExtraMailboxes,
                 $this->databaseName,
+                $this->acknowledgeAddonSites,
             );
         } catch (\Throwable $e) {
             // convertInPlace already records da_convert=failed; keep sync drivers from 500'ing the admin UI.

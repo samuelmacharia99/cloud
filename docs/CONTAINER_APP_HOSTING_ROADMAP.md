@@ -78,9 +78,9 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | # | Deliverable | Notes |
 |---|-------------|--------|
 | 3.1 | WordPress convert-in-place MVP | Admin silent convert + mailbox preflight |
-| 3.2 | Laravel / plain PHP migrator | Next |
-| 3.3 | Static / custom PHP | |
-| 3.4 | Admin wizard UI | Preflight, extra-mailbox ack, queue job |
+| 3.2 | Laravel / plain PHP migrator | ✅ Stack-aware convert (export/import + product picker) |
+| 3.3 | Static / custom PHP | ✅ `static_or_php` + static-site bind mount |
+| 3.4 | Admin wizard UI | ✅ Preflight, multi-site inventory, mailbox/addon ack, queue job |
 | 3.5 | cPanel path | Only if needed — zero cPanel code today |
 
 **Email reality:** Site + DB move to container. Mailboxes stay on DA. Extra mailboxes require admin acknowledgement.
@@ -138,6 +138,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | 2026-07-11 | Added QA testing checklist for Phases 1–4 MVP. |
 | 2026-07-11 | Fixed console tab IA: removed fake App/Data/… labels; Docs tab always mounts for deep links. |
 | 2026-07-11 | **Admin convert-in-place:** same service, no invoice/notify, keep due date, container price at renewal, mailbox preflight; customer dual-service migrator removed. |
+| 2026-07-15 | **Phase 3.2–3.4:** Stack-aware convert (WP/Laravel/PHP/static), multi-domain DA inventory + addon ack, SSH channel harden, static-site host bind mount. Mail product still deferred. |
 
 ### Phase checklists
 

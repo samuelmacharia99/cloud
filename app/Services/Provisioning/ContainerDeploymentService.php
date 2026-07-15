@@ -978,7 +978,7 @@ class ContainerDeploymentService
             foreach ($template->volume_paths as $volumeName => $mountPath) {
                 // Bind host app dir for Laravel (/app) and WordPress (/var/www/html) so the
                 // customer file manager and convert import share the same filesystem.
-                if ($hostAppPath && in_array($volumeName, ['app_data', 'wp_data'], true)) {
+                if ($hostAppPath && in_array($volumeName, ['app_data', 'wp_data', 'web_root'], true)) {
                     $compose['services'][$containerName]['volumes'][] = "{$hostAppPath}:{$mountPath}";
                     if ($volumeName === 'wp_data') {
                         $wordpressBindMounted = true;
@@ -1756,7 +1756,9 @@ class ContainerDeploymentService
 
         if (array_key_exists('app_data', $template->volume_paths)
             || array_key_exists('wp_data', $template->volume_paths)
-            || $slug === 'wordpress') {
+            || array_key_exists('web_root', $template->volume_paths)
+            || $slug === 'wordpress'
+            || $slug === 'static-site') {
             return $path;
         }
 

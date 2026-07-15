@@ -36,7 +36,7 @@ class DirectAdminContainerMigrationController extends Controller
         $currentCycle = $service->billing_cycle ?? 'monthly';
 
         $productEstimates = [];
-        foreach ($preflight['wordpress_products'] ?? [] as $product) {
+        foreach ($preflight['container_products'] ?? $preflight['wordpress_products'] ?? [] as $product) {
             $probe = Service::make([
                 'billing_cycle' => $service->billing_cycle,
                 'custom_price' => null,
@@ -51,10 +51,10 @@ class DirectAdminContainerMigrationController extends Controller
 
         // Always surface catalog even if inventory/preflight partially failed
         if ($preflight === null) {
-            $pick = $convert->availableWordPressProducts();
-            $wordpressProductsStandalone = $pick['products'];
+            $pick = $convert->availableProductsForStack('wordpress');
+            $containerProductsStandalone = $pick['products'];
             $productsAreFallback = $pick['fallback'];
-            foreach ($wordpressProductsStandalone as $product) {
+            foreach ($containerProductsStandalone as $product) {
                 $probe = Service::make([
                     'billing_cycle' => $service->billing_cycle,
                     'custom_price' => null,
@@ -67,7 +67,7 @@ class DirectAdminContainerMigrationController extends Controller
                 $productEstimates[$product->id] = $renewalPricing->unitPrice($probe);
             }
         } else {
-            $wordpressProductsStandalone = $preflight['wordpress_products'] ?? [];
+            $containerProductsStandalone = $preflight['container_products'] ?? $preflight['wordpress_products'] ?? [];
             $productsAreFallback = (bool) ($preflight['products_are_fallback'] ?? false);
         }
 
@@ -78,7 +78,8 @@ class DirectAdminContainerMigrationController extends Controller
             'currentDue' => $currentDue,
             'currentCycle' => $currentCycle,
             'productEstimates' => $productEstimates,
-            'wordpressProducts' => $wordpressProductsStandalone,
+            'containerProducts' => $containerProductsStandalone,
+            'wordpressProducts' => $containerProductsStandalone,
             'productsAreFallback' => $productsAreFallback,
             'convertMeta' => $service->service_meta['da_convert'] ?? null,
         ]);
@@ -97,16 +98,23 @@ class DirectAdminContainerMigrationController extends Controller
             'product_id' => 'required|exists:products,id',
             'database_name' => 'nullable|string|max:64',
             'acknowledge_extra_mailboxes' => 'nullable|boolean',
+            'acknowledge_addon_sites' => 'nullable|boolean',
             'confirm_silent' => 'accepted',
         ]);
 
         $product = Product::with('containerTemplate')->findOrFail($validated['product_id']);
 
+        $preflight = null;
         try {
             $preflight = $convert->preflight($service);
             if ($preflight['email']['has_extra_mailboxes'] && ! $request->boolean('acknowledge_extra_mailboxes')) {
                 return back()->withErrors([
                     'acknowledge_extra_mailboxes' => 'Acknowledge that extra mailboxes stay on DirectAdmin.',
+                ])->withInput();
+            }
+            if (($preflight['has_addon_sites'] ?? false) && ! $request->boolean('acknowledge_addon_sites')) {
+                return back()->withErrors([
+                    'acknowledge_addon_sites' => 'Acknowledge that addon/extra domains need separate App Hosting services.',
                 ])->withInput();
             }
         } catch (\InvalidArgumentException $e) {
@@ -119,6 +127,7 @@ class DirectAdminContainerMigrationController extends Controller
             'mode' => 'convert_in_place',
             'queued_at' => now()->toIso8601String(),
             'target_product_id' => $product->id,
+            'stack' => $preflight['detected_stack'] ?? null,
             'quiet' => true,
             'no_invoice' => true,
         ];
@@ -129,6 +138,7 @@ class DirectAdminContainerMigrationController extends Controller
             $product->id,
             $request->boolean('acknowledge_extra_mailboxes'),
             $validated['database_name'] ?? null,
+            $request->boolean('acknowledge_addon_sites'),
         )->afterResponse();
 
         return redirect()

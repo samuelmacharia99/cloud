@@ -12,7 +12,7 @@ use Illuminate\Support\Str;
 
 /**
  * ETL pipeline: DirectAdmin shared hosting → container app hosting.
- * WordPress-first. Email stays on DirectAdmin.
+ * Supports WordPress, Laravel, plain PHP, and static sites. Email stays on DirectAdmin.
  */
 class DirectAdminToContainerMigrationService
 {
@@ -101,13 +101,16 @@ class DirectAdminToContainerMigrationService
         $warnings = [
             'Email mailboxes stay on DirectAdmin — only site files and database are moved.',
             'DNS must be updated to the container host after cutover.',
+            'Each live website needs its own App Hosting container — addon sites are listed below and must be converted as separate services after the primary.',
         ];
         if ($stackError) {
             $warnings[] = 'Could not SSH-detect application stack: '.$stackError;
         }
-        if (! $detection['has_wp_config']) {
+        if ($detection['stack'] === 'wordpress' && ! $detection['has_wp_config']) {
             $warnings[] = 'wp-config.php was not detected at the expected docroot. Migration may fail until the path is confirmed.';
         }
+
+        $sites = $this->listSitesOnDirectAdminUser($source->node, $username, is_string($domain) ? $domain : null);
 
         $daAccount = is_array($meta['directadmin_account'] ?? null) ? $meta['directadmin_account'] : [];
         $packageUsage = is_array($meta['package_usage'] ?? null) ? $meta['package_usage'] : [];
@@ -120,6 +123,8 @@ class DirectAdminToContainerMigrationService
             'docroot' => $docroot,
             'has_wp_config' => $detection['has_wp_config'],
             'email_stays_on_da' => true,
+            'sites' => $sites,
+            'addon_site_count' => max(0, count(array_filter($sites, fn ($site) => ! ($site['is_primary'] ?? false)))),
             'warnings' => $warnings,
             'account' => [
                 'service_id' => $source->id,
@@ -152,35 +157,121 @@ class DirectAdminToContainerMigrationService
     }
 
     /**
+     * List domains under /home/{user}/domains with stack detection.
+     *
+     * @return list<array{
+     *     domain: string,
+     *     docroot: string,
+     *     stack: string,
+     *     has_wp_config: bool,
+     *     is_primary: bool,
+     *     recommended_action: string
+     * }>
+     */
+    public function listSitesOnDirectAdminUser(Node $node, string $username, ?string $primaryDomain): array
+    {
+        $ssh = SSHService::forNode($node);
+        $sites = [];
+
+        try {
+            $domainsRoot = '/home/'.trim($username, '/').'/domains';
+            $listing = trim($ssh->exec(
+                'if [ -d '.escapeshellarg($domainsRoot).' ]; then ls -1 '.escapeshellarg($domainsRoot).'; else echo ""; fi'
+            ));
+            $names = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $listing) ?: [])));
+
+            if ($names === [] && filled($primaryDomain)) {
+                $names = [$primaryDomain];
+            }
+
+            foreach ($names as $name) {
+                if ($name === '' || str_contains($name, '/') || $name === '.' || $name === '..') {
+                    continue;
+                }
+
+                $docroot = $domainsRoot.'/'.$name.'/public_html';
+                try {
+                    $detection = $this->detectStackViaSsh($ssh, $docroot);
+                } catch (\Throwable) {
+                    $detection = ['stack' => 'unknown', 'has_wp_config' => false];
+                }
+
+                $isPrimary = filled($primaryDomain) && strcasecmp($name, $primaryDomain) === 0;
+                $sites[] = [
+                    'domain' => $name,
+                    'docroot' => $docroot,
+                    'stack' => $detection['stack'],
+                    'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
+                    'is_primary' => $isPrimary,
+                    'recommended_action' => $isPrimary
+                        ? 'Convert this service in-place to one App Hosting container.'
+                        : 'Create a separate App Hosting service for this site after primary convert (1 site = 1 container).',
+                ];
+            }
+
+            usort($sites, function (array $a, array $b): int {
+                if (($a['is_primary'] ?? false) === ($b['is_primary'] ?? false)) {
+                    return strcmp($a['domain'], $b['domain']);
+                }
+
+                return ($a['is_primary'] ?? false) ? -1 : 1;
+            });
+        } finally {
+            $ssh->disconnect();
+        }
+
+        return $sites;
+    }
+
+    /**
      * @return array{stack: string, has_wp_config: bool}
      */
     public function detectStackOnNode(Node $node, string $docroot): array
     {
         $ssh = SSHService::forNode($node);
         try {
-            $escaped = escapeshellarg($docroot);
-            $wp = trim($ssh->exec("test -f {$escaped}/wp-config.php && echo yes || echo no"));
-            $artisan = trim($ssh->exec("test -f {$escaped}/artisan && echo yes || echo no"));
-            $composer = trim($ssh->exec("test -f {$escaped}/composer.json && echo yes || echo no"));
-
-            $stack = 'unknown';
-            if ($wp === 'yes') {
-                $stack = 'wordpress';
-            } elseif ($artisan === 'yes') {
-                $stack = 'laravel';
-            } elseif ($composer === 'yes') {
-                $stack = 'php';
-            } elseif (trim($ssh->exec("test -d {$escaped} && echo yes || echo no")) === 'yes') {
-                $stack = 'static_or_php';
-            }
-
-            return [
-                'stack' => $stack,
-                'has_wp_config' => $wp === 'yes',
-            ];
+            return $this->detectStackViaSsh($ssh, $docroot);
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * @return array{stack: string, has_wp_config: bool}
+     */
+    public function detectStackViaSsh(SSHService $ssh, string $docroot): array
+    {
+        $escaped = escapeshellarg($docroot);
+        $checks = trim($ssh->exec(
+            'echo WP:$(test -f '.$escaped.'/wp-config.php && echo yes || echo no);'
+            .'echo ART:$(test -f '.$escaped.'/artisan && echo yes || echo no);'
+            .'echo CMP:$(test -f '.$escaped.'/composer.json && echo yes || echo no);'
+            .'echo IDX:$(test -f '.$escaped.'/index.php -o -f '.$escaped.'/index.html -o -f '.$escaped.'/index.htm && echo yes || echo no);'
+            .'echo DIR:$(test -d '.$escaped.' && echo yes || echo no)'
+        ));
+        $wp = str_contains($checks, 'WP:yes');
+        $artisan = str_contains($checks, 'ART:yes');
+        $composer = str_contains($checks, 'CMP:yes');
+        $index = str_contains($checks, 'IDX:yes');
+        $dir = str_contains($checks, 'DIR:yes');
+
+        $stack = 'unknown';
+        if ($wp) {
+            $stack = 'wordpress';
+        } elseif ($artisan) {
+            $stack = 'laravel';
+        } elseif ($composer) {
+            $stack = 'php';
+        } elseif ($dir && $index) {
+            $stack = 'static_or_php';
+        } elseif ($dir) {
+            $stack = 'static_or_php';
+        }
+
+        return [
+            'stack' => $stack,
+            'has_wp_config' => $wp,
+        ];
     }
 
     public function assertCanMigrate(Service $source, Service $target): void
@@ -465,6 +556,451 @@ class DirectAdminToContainerMigrationService
         if ($cleanupDaNode) {
             @$this->cleanupDaWork($cleanupDaNode, $remoteWork);
         }
+    }
+
+    /**
+     * Stack-aware DA export used by convert-in-place (WordPress, Laravel, PHP, static).
+     *
+     * @param  array{docroot: ?string, databases: list<array{name: string}>, domain: ?string, stack: string, has_wp_config: bool}  $inventory
+     * @return array{local_dump: ?string, local_tar: string, remote_work: string, db_name: ?string, stack: string}
+     */
+    public function exportSiteFromDirectAdmin(Service $source, array $inventory, ?string $databaseName = null): array
+    {
+        $stack = (string) ($inventory['stack'] ?? 'unknown');
+        if ($stack === 'wordpress' || ($inventory['has_wp_config'] ?? false)) {
+            $export = $this->exportWordPressFromDirectAdmin($source, $inventory, $databaseName);
+
+            return array_merge($export, ['stack' => 'wordpress']);
+        }
+
+        $source->loadMissing('node');
+        if (! $source->node) {
+            throw new \InvalidArgumentException('DirectAdmin node is missing.');
+        }
+
+        $workId = 'site-export-'.$source->id.'-'.Str::lower(Str::random(6));
+        $remoteWork = self::WORK_BASE.'/'.$workId;
+        $dumpFile = $remoteWork.'/db.sql';
+        $filesTar = $remoteWork.'/files.tar.gz';
+        $localDump = storage_path('app/migrations/'.$workId.'-db.sql');
+        $localTar = storage_path('app/migrations/'.$workId.'-files.tar.gz');
+
+        if (! is_dir(dirname($localDump))) {
+            mkdir(dirname($localDump), 0755, true);
+        }
+
+        $needsDatabase = in_array($stack, ['laravel', 'php'], true);
+        $dbName = null;
+        $localDumpPath = null;
+
+        $daSsh = SSHService::forNode($source->node);
+        try {
+            $daSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+
+            $docroot = (string) ($inventory['docroot'] ?? '');
+            if ($docroot === '') {
+                throw new \RuntimeException('Docroot is missing from inventory.');
+            }
+
+            if ($needsDatabase) {
+                $dbCreds = $stack === 'laravel'
+                    ? $this->parseLaravelEnvDatabaseCredentials($daSsh, $docroot)
+                    : $this->parseGenericPhpDatabaseCredentials($daSsh, $docroot, $inventory);
+
+                $dbName = $databaseName
+                    ?: ($dbCreds['DB_NAME'] ?? null)
+                    ?: ($inventory['databases'][0]['name'] ?? null);
+
+                if ($dbName && ! blank($dbCreds['DB_USER'] ?? null)) {
+                    $defaultsFile = $remoteWork.'/mysqldump.cnf';
+                    $this->writeRemoteMysqlDefaultsFile($daSsh, $defaultsFile, $dbCreds);
+                    try {
+                        $daSsh->exec(
+                            $this->buildMysqlDumpCommand($dbCreds, $dbName, $dumpFile, $defaultsFile),
+                            600
+                        );
+                        $daSsh->downloadToLocal($dumpFile, $localDump);
+                        $localDumpPath = $localDump;
+                    } finally {
+                        @$daSsh->exec('rm -f '.escapeshellarg($defaultsFile));
+                    }
+                } elseif ($needsDatabase && $stack === 'laravel') {
+                    throw new \RuntimeException(
+                        'Could not determine Laravel database credentials from .env / inventory. Pass database_name or fix .env DB_* values.'
+                    );
+                }
+            }
+
+            $daSsh->exec(
+                $this->buildGenericDocrootTarCommand($docroot, $filesTar, $stack),
+                900
+            );
+            $daSsh->downloadToLocal($filesTar, $localTar);
+        } finally {
+            $daSsh->disconnect();
+        }
+
+        return [
+            'local_dump' => $localDumpPath,
+            'local_tar' => $localTar,
+            'remote_work' => $remoteWork,
+            'db_name' => $dbName,
+            'stack' => $stack === 'unknown' ? 'static_or_php' : $stack,
+        ];
+    }
+
+    /**
+     * Import a generic/Laravel/static export into a deployed container (bind-mounted host app path).
+     *
+     * @param  (callable(string): void)|null  $onProgress
+     */
+    public function importSiteIntoContainer(
+        Service $target,
+        ?string $localDump,
+        string $localTar,
+        string $remoteWork,
+        string $stack,
+        ?Node $cleanupDaNode = null,
+        ?callable $onProgress = null,
+    ): void {
+        if ($stack === 'wordpress') {
+            if (! is_string($localDump) || $localDump === '') {
+                throw new \InvalidArgumentException('WordPress import requires a MySQL dump.');
+            }
+            $this->importWordPressIntoContainer(
+                $target,
+                $localDump,
+                $localTar,
+                $remoteWork,
+                $cleanupDaNode,
+                $onProgress
+            );
+
+            return;
+        }
+
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
+        }
+        @ini_set('max_execution_time', '0');
+
+        $progress = static function (string $detail) use ($onProgress): void {
+            if ($onProgress) {
+                $onProgress($detail);
+            }
+        };
+
+        $target->loadMissing('containerDeployment.node', 'product.containerTemplate');
+        $deployment = $target->containerDeployment;
+        if (! $deployment?->node) {
+            throw new \InvalidArgumentException('Target container is not deployed.');
+        }
+
+        $filesTar = rtrim($remoteWork, '/').'/files.tar.gz';
+        $dumpFile = rtrim($remoteWork, '/').'/db.sql';
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $appService = $deployment->container_name;
+        $hostAppPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name.'/app';
+
+        $targetSsh = SSHService::forNode($deployment->node);
+        try {
+            $progress('Uploading export archives to container node');
+            $targetSsh->exec('mkdir -p '.escapeshellarg($remoteWork));
+            $targetSsh->uploadFromLocal($localTar, $filesTar);
+            if (is_string($localDump) && is_file($localDump)) {
+                $targetSsh->uploadFromLocal($localDump, $dumpFile);
+            }
+
+            $progress('Extracting site files onto host bind mount');
+            $targetSsh->exec('mkdir -p '.escapeshellarg($hostAppPath));
+            $targetSsh->exec(
+                $this->buildGenericHostExtractCommand($filesTar, $hostAppPath),
+                900
+            );
+
+            if (is_string($localDump) && is_file($localDump) && in_array($stack, ['laravel', 'php'], true)) {
+                $db = $this->resolveGenericImportCredentials($target, $targetSsh, $containerPath);
+                $dbService = $db['service'];
+
+                $live = $this->readLiveMysqlSidecarEnv($targetSsh, $containerPath, $dbService);
+                if (($live['MYSQL_ROOT_PASSWORD'] ?? '') !== '') {
+                    $db['root_password'] = $live['MYSQL_ROOT_PASSWORD'];
+                }
+                if (($live['MYSQL_PASSWORD'] ?? '') !== '') {
+                    $db['password'] = $live['MYSQL_PASSWORD'];
+                }
+                if (($live['MYSQL_USER'] ?? '') !== '') {
+                    $db['user'] = $live['MYSQL_USER'];
+                }
+                if (($live['MYSQL_DATABASE'] ?? '') !== '') {
+                    $db['database'] = $live['MYSQL_DATABASE'];
+                }
+
+                $progress('Waiting for MySQL sidecar');
+                $this->waitForComposeMysql(
+                    $targetSsh,
+                    $containerPath,
+                    $dbService,
+                    $db['root_password'] !== '' ? $db['root_password'] : $db['password'],
+                    180
+                );
+
+                $importPass = $db['root_password'] !== '' ? $db['root_password'] : $db['password'];
+                $importUser = $db['root_password'] !== '' ? 'root' : $db['user'];
+                if ($importPass === '') {
+                    throw new \RuntimeException(
+                        'Container MySQL password is missing (check deployment env_values / MYSQL_ROOT_PASSWORD).'
+                    );
+                }
+
+                $safeUser = preg_replace('/[^a-zA-Z0-9_]/', '', $importUser) ?: 'root';
+                $safeDatabase = preg_replace('/[^a-zA-Z0-9_]/', '', $db['database']) ?: 'appdb';
+
+                $createDbSql = 'CREATE DATABASE IF NOT EXISTS `'.$safeDatabase.'`;';
+                $this->execMysqlInCompose(
+                    $targetSsh,
+                    $containerPath,
+                    $dbService,
+                    $safeUser,
+                    $importPass,
+                    $createDbSql,
+                    null,
+                    60
+                );
+
+                $progress('Importing MySQL dump');
+                $this->importMysqlDumpViaCompose(
+                    $targetSsh,
+                    $containerPath,
+                    $dbService,
+                    $dumpFile,
+                    $safeUser,
+                    $importPass,
+                    $safeDatabase,
+                );
+
+                $progress('Rewriting application database settings');
+                $this->rewriteAppEnvDatabase(
+                    $targetSsh,
+                    $hostAppPath,
+                    [
+                        'DB_CONNECTION' => 'mysql',
+                        'DB_HOST' => $dbService,
+                        'DB_PORT' => '3306',
+                        'DB_DATABASE' => $safeDatabase,
+                        'DB_USERNAME' => $db['user'] !== '' ? $db['user'] : 'appuser',
+                        'DB_PASSWORD' => $db['password'] !== '' ? $db['password'] : $importPass,
+                    ]
+                );
+            } else {
+                $progress('No database dump imported (static/files-only or missing dump)');
+            }
+
+            $progress('Restarting application container');
+            @$targetSsh->exec("cd {$containerPath} && docker compose restart {$appService}", 120);
+            @$targetSsh->exec('rm -rf '.escapeshellarg($remoteWork));
+        } finally {
+            $targetSsh->disconnect();
+        }
+
+        if ($cleanupDaNode) {
+            @$this->cleanupDaWork($cleanupDaNode, $remoteWork);
+        }
+    }
+
+    /**
+     * @return array{service: string, database: string, user: string, password: string, root_password: string}
+     */
+    public function resolveGenericImportCredentials(Service $target, SSHService $ssh, string $containerPath): array
+    {
+        $wp = $this->resolveWordpressImportCredentials($target, $ssh, $containerPath);
+        $target->loadMissing('containerDeployment');
+        $env = is_array($target->containerDeployment?->env_values) ? $target->containerDeployment->env_values : [];
+        $fromFile = $this->readContainerDbEnv($ssh, $containerPath);
+
+        $database = (string) (
+            $env['DB_DATABASE']
+            ?? $env['MYSQL_DATABASE']
+            ?? $fromFile['DB_DATABASE']
+            ?? $fromFile['MYSQL_DATABASE']
+            ?? $wp['database']
+            ?? 'appdb'
+        );
+        $user = (string) (
+            $env['DB_USERNAME']
+            ?? $env['MYSQL_USER']
+            ?? $fromFile['DB_USERNAME']
+            ?? $fromFile['MYSQL_USER']
+            ?? $wp['user']
+            ?? 'appuser'
+        );
+        $password = (string) (
+            $env['DB_PASSWORD']
+            ?? $env['MYSQL_PASSWORD']
+            ?? $fromFile['DB_PASSWORD']
+            ?? $fromFile['MYSQL_PASSWORD']
+            ?? $wp['password']
+            ?? ''
+        );
+
+        return [
+            'service' => $wp['service'],
+            'database' => $database !== '' ? $database : 'appdb',
+            'user' => $user !== '' ? $user : 'appuser',
+            'password' => $password,
+            'root_password' => $wp['root_password'],
+        ];
+    }
+
+    /**
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseLaravelEnvDatabaseCredentials(SSHService $ssh, string $docroot): array
+    {
+        $envPath = rtrim($docroot, '/').'/.env';
+        $raw = $ssh->exec('grep -E "^(DB_HOST|DB_PORT|DB_DATABASE|DB_USERNAME|DB_PASSWORD)=" '.escapeshellarg($envPath).' 2>/dev/null || true');
+
+        $creds = [
+            'DB_NAME' => null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+
+        foreach (explode("\n", $raw) as $line) {
+            $line = trim($line);
+            if ($line === '' || ! str_contains($line, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value, " \t\"'");
+            match ($key) {
+                'DB_HOST' => $creds['DB_HOST'] = $value !== '' ? $value : 'localhost',
+                'DB_DATABASE' => $creds['DB_NAME'] = $value !== '' ? $value : null,
+                'DB_USERNAME' => $creds['DB_USER'] = $value !== '' ? $value : null,
+                'DB_PASSWORD' => $creds['DB_PASSWORD'] = $value,
+                default => null,
+            };
+        }
+
+        return $creds;
+    }
+
+    /**
+     * @param  array{databases?: list<array{name: string}>}  $inventory
+     * @return array{DB_NAME: ?string, DB_USER: ?string, DB_PASSWORD: ?string, DB_HOST: string}
+     */
+    public function parseGenericPhpDatabaseCredentials(SSHService $ssh, string $docroot, array $inventory = []): array
+    {
+        $laravelStyle = $this->parseLaravelEnvDatabaseCredentials($ssh, $docroot);
+        if (! blank($laravelStyle['DB_USER'] ?? null)) {
+            return $laravelStyle;
+        }
+
+        // Best-effort: first DA database name only — credentials still required for dump.
+        return [
+            'DB_NAME' => $inventory['databases'][0]['name'] ?? null,
+            'DB_USER' => null,
+            'DB_PASSWORD' => null,
+            'DB_HOST' => 'localhost',
+        ];
+    }
+
+    public function buildGenericDocrootTarCommand(string $docroot, string $filesTar, string $stack): string
+    {
+        $excludes = [
+            './node_modules',
+            './.git',
+            './storage/logs',
+            './storage/framework/cache',
+            './storage/framework/sessions',
+            './storage/framework/views',
+            './*.log',
+        ];
+
+        if ($stack === 'wordpress') {
+            return $this->buildWordPressFilesTarCommand($docroot, $filesTar);
+        }
+
+        $excludeArgs = array_map(fn ($path) => '--exclude='.escapeshellarg($path), $excludes);
+        $tar = 'tar -czf '.escapeshellarg($filesTar)
+            .' '.implode(' ', $excludeArgs)
+            .' -C '.escapeshellarg($docroot)
+            .' .';
+
+        return $tar
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ -s '.escapeshellarg($filesTar).' ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
+    }
+
+    public function buildGenericHostExtractCommand(string $filesTar, string $hostAppPath): string
+    {
+        return 'mkdir -p '.escapeshellarg($hostAppPath)
+            .' && tar -xzf '.escapeshellarg($filesTar).' -C '.escapeshellarg($hostAppPath)
+            .' ; status=$?'
+            .' ; if [ "$status" -eq 0 ] || [ "$status" -eq 1 ]; then'
+            .'   if [ "$(ls -A '.escapeshellarg($hostAppPath).' 2>/dev/null)" ]; then exit 0; fi'
+            .' ; fi'
+            .' ; exit "$status"';
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     */
+    public function rewriteAppEnvDatabase(SSHService $ssh, string $hostAppPath, array $values): void
+    {
+        $envPath = rtrim($hostAppPath, '/').'/.env';
+        $exists = trim($ssh->exec('test -f '.escapeshellarg($envPath).' && echo yes || echo no'));
+
+        if ($exists !== 'yes') {
+            $lines = [];
+            foreach ($values as $key => $value) {
+                $lines[] = $key.'='.$value;
+            }
+            $ssh->exec('printf %s '.escapeshellarg(implode("\n", $lines)."\n").' > '.escapeshellarg($envPath));
+
+            return;
+        }
+
+        $payload = base64_encode(json_encode($values, JSON_UNESCAPED_SLASHES));
+        $php = <<<'PHP'
+$envPath = $argv[1] ?? '';
+$json = base64_decode($argv[2] ?? '', true);
+$values = is_string($json) ? json_decode($json, true) : null;
+if (! is_file($envPath) || ! is_array($values)) {
+    fwrite(STDERR, "invalid env rewrite\n");
+    exit(1);
+}
+$text = file_get_contents($envPath);
+foreach ($values as $key => $value) {
+    $key = (string) $key;
+    $value = str_replace(["\r", "\n"], '', (string) $value);
+    $line = $key.'='.$value;
+    $pattern = '/^'.preg_quote($key, '/').'=.*$/m';
+    if (preg_match($pattern, $text)) {
+        $text = preg_replace($pattern, $line, $text, 1);
+    } else {
+        $text = rtrim($text)."\n".$line."\n";
+    }
+}
+file_put_contents($envPath, $text);
+PHP;
+
+        $ssh->exec(
+            'php -r '.escapeshellarg($php).' '.escapeshellarg($envPath).' '.escapeshellarg($payload).' 2>/dev/null'
+            .' || python3 -c '.escapeshellarg(
+                'import json,base64,re,sys; p=sys.argv[1]; vals=json.loads(base64.b64decode(sys.argv[2])); t=open(p).read();\n'
+                .'for k,v in vals.items():\n'
+                .' v=str(v).replace("\\r","").replace("\\n",""); line=f"{k}={v}";\n'
+                .' t=re.sub(rf"^{re.escape(k)}=.*$", line, t, count=1, flags=re.M) if re.search(rf"^{re.escape(k)}=.*$", t, flags=re.M) else t.rstrip()+"\\n"+line+"\\n";\n'
+                .'open(p,"w").write(t)'
+            ).' '.escapeshellarg($envPath).' '.escapeshellarg($payload),
+            60
+        );
     }
 
     /**
