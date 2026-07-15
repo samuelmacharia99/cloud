@@ -88,23 +88,24 @@ class ContainerBackupService
             $deploymentService = new ContainerDeploymentService;
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
-            // Stop container briefly during backup
-            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml stop", 60);
+            // Stop container briefly during backup (keeps volumes; lighter than down).
+            $this->softExec($ssh, "cd {$containerPath} && docker compose -f docker-compose.yml stop", 60);
 
             try {
                 // Create tarball of container directory
                 $ssh->exec(
-                    "tar -czf {$localBackupPath} -C ".self::CONTAINER_BASE_PATH." {$deployment->container_name}",
+                    'tar -czf '.escapeshellarg($localBackupPath)
+                    .' -C '.escapeshellarg(self::CONTAINER_BASE_PATH)
+                    .' '.escapeshellarg($deployment->container_name),
                     self::BACKUP_TIMEOUT
                 );
 
                 // Get backup size
-                $sizeOutput = $ssh->exec("du -b {$localBackupPath} | cut -f1");
+                $sizeOutput = $ssh->exec('du -b '.escapeshellarg($localBackupPath).' | cut -f1');
                 $size = (int) trim($sizeOutput);
 
-                // Restart container - stop and remove first to handle conflicts
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
-                $deploymentService->startComposeStack($ssh, $service, $deployment);
+                // Long tar leaves phpseclib channels dirty — fresh session before restart.
+                $this->restartStackAfterBackup($ssh, $deploymentService, $service, $deployment);
 
                 $finalPath = $localBackupPath;
                 $storageDriver = 'node';
@@ -132,8 +133,14 @@ class ContainerBackupService
                 ]);
             } catch (Exception $e) {
                 // Make sure container is restarted even on backup failure
-                @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", 60);
-                $deploymentService->startComposeStack($ssh, $service, $deployment);
+                try {
+                    $this->restartStackAfterBackup($ssh, $deploymentService, $service, $deployment);
+                } catch (\Throwable $restartError) {
+                    Log::warning('Failed to restart container after backup error', [
+                        'service_id' => $service->id,
+                        'error' => $restartError->getMessage(),
+                    ]);
+                }
                 throw $e;
             } finally {
                 $ssh->disconnect();
@@ -191,7 +198,8 @@ class ContainerBackupService
             $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
             // Stop and remove current container
-            @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down", 120);
+            $ssh->reconnect();
+            $this->softExec($ssh, "cd {$containerPath} && docker compose -f docker-compose.yml down", 120);
 
             // Remove current directory
             @$ssh->deleteDir($containerPath);
@@ -215,10 +223,11 @@ class ContainerBackupService
             );
 
             if ($cleanupLocal) {
-                @$ssh->exec('rm -f '.escapeshellarg($localArchive));
+                $this->softExec($ssh, 'rm -f '.escapeshellarg($localArchive), 30);
             }
 
-            // Restart container
+            // Restart container on a fresh SSH session after long extract
+            $ssh->reconnect();
             $deploymentService->startComposeStack($ssh, $service, $deployment);
 
             // Wait a bit for health check
@@ -293,6 +302,45 @@ class ContainerBackupService
         ]);
     }
 
+    private function restartStackAfterBackup(
+        SSHService $ssh,
+        ContainerDeploymentService $deploymentService,
+        Service $service,
+        $deployment,
+    ): void {
+        // Fresh SSH after long tar — avoids phpseclib "close the channel" races.
+        $ssh->reconnect();
+
+        try {
+            // Prefer start (containers already exist after stop) before a heavier up.
+            $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+            $ssh->exec(
+                'cd '.escapeshellarg($containerPath)
+                .' && docker compose -f docker-compose.yml start',
+                120
+            );
+        } catch (\Throwable $e) {
+            Log::warning('compose start after backup failed; falling back to compose up', [
+                'service_id' => $service->id,
+                'error' => $e->getMessage(),
+            ]);
+            $ssh->reconnect();
+            $deploymentService->startComposeStack($ssh, $service, $deployment);
+        }
+    }
+
+    private function softExec(SSHService $ssh, string $command, int $timeout = 60): void
+    {
+        try {
+            $ssh->exec($command, $timeout);
+        } catch (\Throwable $e) {
+            Log::warning('Soft SSH exec failed during backup', [
+                'command' => $command,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function offloadToHetzner(SSHService $ssh, ContainerBackup $backup, string $localBackupPath): string
     {
         if (! $this->hetzner->isConfigured()) {
@@ -310,7 +358,8 @@ class ContainerBackupService
         try {
             $ssh->downloadToLocal($localBackupPath, $localTemp);
             $this->hetzner->uploadFromLocal($localTemp, $remotePath);
-            @$ssh->exec('rm -f '.escapeshellarg($localBackupPath));
+            $ssh->reconnect();
+            $this->softExec($ssh, 'rm -f '.escapeshellarg($localBackupPath), 30);
         } finally {
             if (is_file($localTemp)) {
                 @unlink($localTemp);

@@ -107,6 +107,7 @@ class ContainerBackupHetznerStorageTest extends TestCase
 
                 return $remote === '/opt/talksasa/backups/backup-9-test.tar.gz';
             });
+        $ssh->shouldReceive('reconnect')->once();
         $ssh->shouldReceive('exec')
             ->once()
             ->withArgs(fn (string $cmd) => str_contains($cmd, 'rm -f'));

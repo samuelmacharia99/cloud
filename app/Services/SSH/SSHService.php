@@ -43,8 +43,8 @@ class SSHService
      */
     private function ensureConnected(): void
     {
-        if (! $this->connected) {
-            $this->connect();
+        if (! $this->connected || $this->ssh === null || ! $this->ssh->isConnected()) {
+            $this->forceReconnectSsh();
         }
     }
 
@@ -88,6 +88,9 @@ class SSHService
 
             $this->connected = true;
         } catch (\Exception $e) {
+            $this->connected = false;
+            $this->ssh = null;
+
             throw new SSHConnectionException(
                 $this->node->ip_address,
                 $e->getMessage(),
@@ -98,36 +101,74 @@ class SSHService
     }
 
     /**
-     * Execute a remote command and return output
+     * Execute a remote command and return output.
+     * Retries with a fresh SSH session when phpseclib hits stale channel races.
      */
     public function exec(string $command, int $timeout = 60): string
     {
-        $this->ensureConnected();
+        $attempts = 3;
+        $lastError = null;
 
-        try {
-            $this->ssh->setTimeout($timeout);
-            $output = $this->ssh->exec($command);
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                if ($attempt > 1) {
+                    $this->forceReconnectSsh();
+                } else {
+                    $this->ensureConnected();
+                }
 
-            if ($this->ssh->getExitStatus() !== 0) {
+                $this->ssh->setTimeout($timeout);
+                $output = $this->ssh->exec($command);
+                $exitStatus = $this->ssh->getExitStatus();
+
+                // Long-running commands can leave the SSH2 bitmap mid-channel; clear it for the next call.
+                if (method_exists($this->ssh, 'reset')) {
+                    @$this->ssh->reset();
+                }
+
+                if ($exitStatus !== 0) {
+                    throw new SSHCommandException(
+                        $command,
+                        (string) ($output ?? ''),
+                        'Command exited with status '.$exitStatus
+                    );
+                }
+
+                return $output ?? '';
+            } catch (SSHCommandException $e) {
+                $lastError = $e;
+                if ($attempt < $attempts && $this->isChannelConflictMessage($e->getMessage())) {
+                    continue;
+                }
+
+                throw $e;
+            } catch (\Throwable $e) {
+                $lastError = $e;
+                if ($attempt < $attempts && $this->isChannelConflictMessage($e->getMessage())) {
+                    continue;
+                }
+
                 throw new SSHCommandException(
                     $command,
-                    $output,
-                    'Command exited with status '.$this->ssh->getExitStatus()
+                    '',
+                    $e->getMessage(),
+                    0,
+                    $e instanceof \Exception ? $e : null
                 );
             }
-
-            return $output;
-        } catch (SSHCommandException $e) {
-            throw $e;
-        } catch (\Exception $e) {
-            throw new SSHCommandException(
-                $command,
-                '',
-                $e->getMessage(),
-                0,
-                $e
-            );
         }
+
+        throw $lastError instanceof \Throwable
+            ? $lastError
+            : new SSHCommandException($command, '', 'SSH exec failed after retries');
+    }
+
+    /**
+     * Force a brand-new SSH session (use after long backups/uploads before the next command).
+     */
+    public function reconnect(): void
+    {
+        $this->forceReconnectSsh();
     }
 
     /**
@@ -149,6 +190,20 @@ class SSHService
                 throw new \Exception('File not found or read failed');
             }
         } catch (\Exception $e) {
+            if ($this->isChannelConflictMessage($e->getMessage())) {
+                $this->resetSftp();
+                $this->initSFTP();
+                if ($this->sftp->get($remotePath, $localPath) === false) {
+                    throw new \RuntimeException(
+                        "Failed to download {$remotePath}: File not found or read failed",
+                        0,
+                        $e
+                    );
+                }
+
+                return;
+            }
+
             throw new \RuntimeException(
                 "Failed to download {$remotePath}: ".$e->getMessage(),
                 0,
@@ -182,6 +237,25 @@ class SSHService
 
             @$this->sftp->chmod(0644, $remotePath);
         } catch (\Exception $e) {
+            if ($this->isChannelConflictMessage($e->getMessage())) {
+                $this->resetSftp();
+                $this->initSFTP();
+                $directory = dirname($remotePath);
+                if ($directory !== '/') {
+                    $this->mkdirp($directory);
+                }
+                if (! $this->sftp->put($remotePath, $localPath, SFTP::SOURCE_LOCAL_FILE)) {
+                    throw new \RuntimeException(
+                        "Failed to upload {$remotePath}: ".$e->getMessage(),
+                        0,
+                        $e
+                    );
+                }
+                @$this->sftp->chmod(0644, $remotePath);
+
+                return;
+            }
+
             throw new \RuntimeException(
                 "Failed to upload {$remotePath}: ".$e->getMessage(),
                 0,
@@ -401,39 +475,42 @@ class SSHService
     }
 
     /**
-     * Initialize SFTP subsystem
+     * Initialize SFTP subsystem (dedicated connection — never share channels with exec).
      */
     private function initSFTP(): void
     {
-        if ($this->sftp === null) {
-            $this->sftp = new SFTP($this->node->ip_address, (int) $this->node->ssh_port);
-            $this->sftp->setTimeout($this->timeout);
+        if ($this->sftp !== null && $this->sftp->isConnected()) {
+            return;
+        }
 
-            $authenticated = false;
+        $this->sftp = new SFTP($this->node->ip_address, (int) $this->node->ssh_port);
+        $this->sftp->setTimeout($this->timeout);
 
-            // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
-            // Do NOT call decrypt() on it again
-            if ($this->node->ssh_password) {
-                $authenticated = @$this->sftp->login(
-                    $this->node->ssh_username,
-                    $this->node->ssh_password
+        $authenticated = false;
+
+        // NOTE: $this->node->ssh_password is already decrypted by the Model's 'encrypted' cast
+        // Do NOT call decrypt() on it again
+        if ($this->node->ssh_password) {
+            $authenticated = @$this->sftp->login(
+                $this->node->ssh_username,
+                $this->node->ssh_password
+            );
+        }
+
+        if (! $authenticated && $this->node->da_login_key) {
+            try {
+                $key = PublicKeyLoader::load($this->node->da_login_key);
+                $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
+            } catch (\Exception $e) {
+                throw new \Exception(
+                    'SFTP key format invalid: '.$e->getMessage()
                 );
             }
+        }
 
-            if (! $authenticated && $this->node->da_login_key) {
-                try {
-                    $key = PublicKeyLoader::load($this->node->da_login_key);
-                    $authenticated = @$this->sftp->login($this->node->ssh_username, $key);
-                } catch (\Exception $e) {
-                    throw new \Exception(
-                        'SFTP key format invalid: '.$e->getMessage()
-                    );
-                }
-            }
-
-            if (! $authenticated) {
-                throw new SSHConnectionException($this->node->ip_address, 'SFTP authentication failed - check credentials');
-            }
+        if (! $authenticated) {
+            $this->sftp = null;
+            throw new SSHConnectionException($this->node->ip_address, 'SFTP authentication failed - check credentials');
         }
     }
 
@@ -444,13 +521,39 @@ class SSHService
     {
         if ($this->ssh !== null) {
             @$this->ssh->disconnect();
+            $this->ssh = null;
             $this->connected = false;
         }
 
+        $this->resetSftp();
+    }
+
+    private function forceReconnectSsh(): void
+    {
+        if ($this->ssh !== null) {
+            @$this->ssh->disconnect();
+            $this->ssh = null;
+        }
+        $this->connected = false;
+        $this->connect();
+    }
+
+    private function resetSftp(): void
+    {
         if ($this->sftp !== null) {
             @$this->sftp->disconnect();
             $this->sftp = null;
         }
+    }
+
+    private function isChannelConflictMessage(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'close the channel')
+            || str_contains($lower, 'before trying to open it again')
+            || str_contains($lower, 'connection closed prematurely')
+            || str_contains($lower, 'no connection');
     }
 
     /**
