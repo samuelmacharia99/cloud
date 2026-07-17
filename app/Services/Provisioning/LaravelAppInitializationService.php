@@ -152,9 +152,12 @@ class LaravelAppInitializationService
 
             $this->runStep($initialization, $ssh, $deployment, 'environment', function () use ($ssh, $deployment, $service, $envValues) {
                 $hostAppPath = $this->appDirectory->hostAppPath($deployment);
-                $envContent = $this->buildEnvFileContent($ssh, $deployment, $envValues);
+                $envContent = $this->ensureAppKeyInEnvContent(
+                    $this->buildEnvFileContent($ssh, $deployment, $envValues)
+                );
 
                 $ssh->upload($envContent, $hostAppPath.'/.env');
+                $this->makeEnvWritableByAppUser($ssh, $deployment, '/app');
                 $this->dockerExec(
                     $ssh,
                     $deployment->container_name,
@@ -170,14 +173,9 @@ class LaravelAppInitializationService
             });
 
             $this->runStep($initialization, $ssh, $deployment, 'app_key', function () use ($ssh, $deployment, $timeout) {
-                $output = $this->dockerExec(
-                    $ssh,
-                    $deployment->container_name,
-                    'set -e; cd /app; php artisan key:generate --force --no-interaction',
-                    $timeout
-                );
+                $this->ensureApplicationKey($ssh, $deployment, $timeout, '/app');
 
-                return ['message' => 'Application key generated.', 'output' => $output];
+                return ['message' => 'Application key generated.', 'output' => null];
             });
 
             $this->runStep($initialization, $ssh, $deployment, 'migrations', function () use ($ssh, $deployment, $timeout, $initialization) {
@@ -376,8 +374,13 @@ class LaravelAppInitializationService
             $message = 'Laravel .env updated from deployment credentials.';
         }
 
+        // Inject APP_KEY before upload so we never rely on www-data writing a root-owned .env
+        // via `php artisan key:generate` (common after SSH upload from Git pulls).
+        $envContent = $this->ensureAppKeyInEnvContent($envContent);
+
         $ssh->upload($envContent, $envHostPath);
         $this->assertHostFileExists($ssh, $envHostPath);
+        $this->makeEnvWritableByAppUser($ssh, $deployment, $projectRoot);
 
         $serviceMeta = is_array($service->service_meta) ? $service->service_meta : [];
         $serviceMeta['laravel_env_configured_at'] = now()->toIso8601String();
@@ -888,11 +891,97 @@ class LaravelAppInitializationService
             return;
         }
 
+        // Do not use `artisan key:generate` as www-data: host-uploaded .env files are often
+        // root-owned and cause "Failed to open stream: Permission denied".
+        $this->upsertEnvKeyAsRoot(
+            $ssh,
+            $deployment,
+            $projectRoot,
+            'APP_KEY',
+            $this->generateApplicationKeyValue()
+        );
+        $this->makeEnvWritableByAppUser($ssh, $deployment, $projectRoot);
+
+        if (! $this->envValuePresent($ssh, $deployment, 'APP_KEY', $projectRoot)) {
+            throw new \RuntimeException(
+                'Failed to write APP_KEY into '.rtrim($projectRoot, '/').'/.env (permission denied or missing file).'
+            );
+        }
+    }
+
+    public function generateApplicationKeyValue(): string
+    {
+        return 'base64:'.base64_encode(random_bytes(32));
+    }
+
+    /**
+     * Ensure APP_KEY is present and non-empty in dotenv content.
+     */
+    public function ensureAppKeyInEnvContent(string $content): string
+    {
+        if (preg_match('/^APP_KEY=(.*)$/m', $content, $matches) === 1) {
+            $value = trim((string) $matches[1], " \t\"'");
+            if ($value !== '') {
+                return $content;
+            }
+
+            return (string) preg_replace(
+                '/^APP_KEY=.*$/m',
+                'APP_KEY='.$this->generateApplicationKeyValue(),
+                $content,
+                1
+            );
+        }
+
+        return rtrim($content)."\nAPP_KEY=".$this->generateApplicationKeyValue()."\n";
+    }
+
+    private function makeEnvWritableByAppUser(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $projectRoot
+    ): void {
+        $envPath = rtrim($projectRoot, '/').'/.env';
+        $script = 'if [ ! -f '.escapeshellarg($envPath).' ]; then exit 0; fi; '
+            .'if id www-data >/dev/null 2>&1; then chown www-data:www-data '.escapeshellarg($envPath).'; '
+            .'else chown 33:33 '.escapeshellarg($envPath).'; fi; '
+            .'chmod 664 '.escapeshellarg($envPath).' 2>/dev/null || true';
+
+        try {
+            $this->dockerExec($ssh, $deployment->container_name, $script, 20, asRoot: true);
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to chown Laravel .env for www-data', [
+                'container_name' => $deployment->container_name,
+                'project_root' => $projectRoot,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function upsertEnvKeyAsRoot(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $projectRoot,
+        string $key,
+        string $value
+    ): void {
+        $envPath = rtrim($projectRoot, '/').'/.env';
+        $php = '$p='.var_export($envPath, true).';'
+            .'$k='.var_export($key, true).';'
+            .'$v='.var_export($value, true).';'
+            .'$c=is_file($p)?file_get_contents($p):""; '
+            .'if ($c===false) { fwrite(STDERR,"read failed\n"); exit(1);} '
+            .'if (preg_match("/^".preg_quote($k,"/")."=/m", $c)) {'
+            .' $c=preg_replace("/^".preg_quote($k,"/")."=.*$/m", $k."=".$v, $c, 1);'
+            .'} else { $c=rtrim($c)."\n".$k."=".$v."\n"; } '
+            .'if (file_put_contents($p, $c)===false) { fwrite(STDERR,"write failed\n"); exit(1);}';
+
         $this->dockerExec(
             $ssh,
             $deployment->container_name,
-            'set -e; cd '.escapeshellarg($projectRoot).'; php artisan key:generate --force --no-interaction',
-            $timeout
+            'php -r '.escapeshellarg($php),
+            30,
+            asRoot: true
         );
     }
 

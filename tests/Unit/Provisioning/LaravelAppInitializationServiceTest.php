@@ -78,4 +78,24 @@ ENV;
         $this->assertStringContainsString('DB_DATABASE=appdb', $merged);
         $this->assertStringContainsString('APP_URL=https://app.example.test', $merged);
     }
+
+    #[Test]
+    public function it_injects_app_key_when_missing_or_empty_in_env_content(): void
+    {
+        $service = new LaravelAppInitializationService(
+            new ContainerAppDirectoryService,
+            new LaravelWelcomePageService,
+            new LaravelProjectPathResolver,
+        );
+
+        $withKey = $service->ensureAppKeyInEnvContent("APP_NAME=Demo\nAPP_KEY=base64:keep-me\n");
+        $this->assertStringContainsString('APP_KEY=base64:keep-me', $withKey);
+
+        $emptyKey = $service->ensureAppKeyInEnvContent("APP_NAME=Demo\nAPP_KEY=\n");
+        $this->assertMatchesRegularExpression('/^APP_KEY=base64:[A-Za-z0-9+\/=]+$/m', $emptyKey);
+        $this->assertStringNotContainsString('APP_KEY=\n', $emptyKey);
+
+        $missingKey = $service->ensureAppKeyInEnvContent("APP_NAME=Demo\n");
+        $this->assertMatchesRegularExpression('/^APP_KEY=base64:[A-Za-z0-9+\/=]+$/m', $missingKey);
+    }
 }
