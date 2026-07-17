@@ -9,6 +9,7 @@ use App\Models\NodeMonitoring;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Provisioning\DirectAdminService;
+use App\Services\Provisioning\MailcowService;
 use App\Services\Provisioning\NodeServiceRelocationService;
 use App\Services\ResellerDirectAdminService;
 use App\Services\SSH\SSHService;
@@ -62,7 +63,7 @@ class NodeController extends Controller
 
         // Get distinct regions for filter
         $regions = Node::distinct()->pluck('region')->filter()->sort();
-        $types = ['dedicated_server', 'container_host', 'load_balancer', 'database_server'];
+        $types = ['dedicated_server', 'container_host', 'load_balancer', 'database_server', 'directadmin', 'mailcow'];
         $statuses = ['online', 'offline', 'degraded', 'maintenance'];
 
         // Calculate summary stats
@@ -85,6 +86,7 @@ class NodeController extends Controller
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
             'directadmin' => 'DirectAdmin Server',
+            'mailcow' => 'Mailcow (Email)',
         ];
         $type = request('type', '');
 
@@ -94,6 +96,36 @@ class NodeController extends Controller
     public function store(Request $request)
     {
         $type = $request->input('type');
+
+        if ($type === 'mailcow') {
+            $validated = $request->validate([
+                'name' => 'required|string|max:255',
+                'hostname' => 'required|string|unique:nodes,hostname',
+                'ip_address' => 'required|ip|unique:nodes,ip_address',
+                'type' => 'required|in:mailcow',
+                'api_url' => 'nullable|url',
+                'api_token' => 'required|string',
+                'verify_ssl' => 'nullable|boolean',
+                'region' => 'nullable|string|max:50',
+                'datacenter' => 'nullable|string|max:255',
+                'description' => 'nullable|string',
+                'is_active' => 'nullable|boolean',
+            ]);
+            $validated['status'] = 'offline';
+            $validated['cpu_cores'] = 0;
+            $validated['ram_gb'] = 0;
+            $validated['storage_gb'] = 0;
+            $validated['ssh_port'] = '22';
+            $validated['verify_ssl'] = $request->boolean('verify_ssl', true);
+            $validated['api_url'] = $validated['api_url']
+                ?: ('https://'.rtrim((string) $validated['hostname'], '/'));
+            $validated['is_active'] = $request->has('is_active');
+
+            Node::create($validated);
+
+            return redirect()->route('admin.nodes.index')
+                ->with('success', 'Mailcow node created. Run Test connection to bring it online.');
+        }
 
         if ($type === 'directadmin') {
             $validated = $request->validate([
@@ -154,7 +186,7 @@ class NodeController extends Controller
                 'name' => 'required|string|max:255',
                 'hostname' => 'required|string|unique:nodes,hostname',
                 'ip_address' => 'required|ip|unique:nodes,ip_address',
-                'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
+                'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin,mailcow',
                 'status' => 'required|in:online,offline,degraded,maintenance',
                 'cpu_cores' => 'required|integer|min:1',
                 'ram_gb' => 'required|integer|min:1',
@@ -339,6 +371,8 @@ class NodeController extends Controller
             'container_host' => 'Container Host',
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
+            'directadmin' => 'DirectAdmin Server',
+            'mailcow' => 'Mailcow (Email)',
         ];
 
         return view('admin.nodes.edit', compact('node', 'regions', 'types'));
@@ -347,13 +381,13 @@ class NodeController extends Controller
     public function update(Request $request, Node $node)
     {
         $nodeType = $request->input('type', $node->type);
-        $hardwareMin = $nodeType === 'directadmin' ? 0 : 1;
+        $hardwareMin = in_array($nodeType, ['directadmin', 'mailcow'], true) ? 0 : 1;
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'hostname' => 'required|string|unique:nodes,hostname,'.$node->id,
             'ip_address' => 'required|ip|unique:nodes,ip_address,'.$node->id,
-            'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin',
+            'type' => 'required|in:dedicated_server,container_host,load_balancer,database_server,directadmin,mailcow',
             'status' => 'required|in:online,offline,degraded,maintenance',
             'cpu_cores' => 'required|integer|min:'.$hardwareMin,
             'ram_gb' => 'required|integer|min:'.$hardwareMin,
@@ -395,6 +429,15 @@ class NodeController extends Controller
             $this->normalizeNameserverFields($validated);
         } elseif ($nodeType === 'container_host') {
             $this->normalizeNameserverFields($validated);
+        } elseif ($nodeType === 'mailcow') {
+            if (empty($validated['api_url'])) {
+                $validated['api_url'] = 'https://'.rtrim((string) $validated['hostname'], '/');
+            }
+            if ($request->filled('api_token')) {
+                $validated['api_token'] = $request->input('api_token');
+            } else {
+                unset($validated['api_token']);
+            }
         }
 
         $node->update($validated);
@@ -744,8 +787,34 @@ class NodeController extends Controller
 
     public function testConnection(Node $node)
     {
+        if ($node->type === 'mailcow') {
+            try {
+                $service = MailcowService::forNode($node);
+
+                if (! $service->isConfigured()) {
+                    return back()->with('error', 'Mailcow API URL and API token are required. Edit the node and save credentials.');
+                }
+
+                $result = $service->testConnection();
+                if (! $result['success']) {
+                    return back()->with('error', 'Mailcow connection failed: '.$result['message']);
+                }
+
+                $node->update(['status' => 'online']);
+
+                $message = 'Mailcow connection successful! Node is now online.';
+                if (! empty($result['version'])) {
+                    $message .= ' Version: '.$result['version'];
+                }
+
+                return back()->with('success', $message);
+            } catch (\Exception $e) {
+                return back()->with('error', 'Mailcow connection test failed: '.$e->getMessage());
+            }
+        }
+
         if ($node->type !== 'directadmin') {
-            return back()->with('error', 'This node is not a DirectAdmin server.');
+            return back()->with('error', 'Connection tests are available for DirectAdmin and Mailcow nodes.');
         }
 
         try {

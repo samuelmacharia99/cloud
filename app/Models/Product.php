@@ -73,6 +73,12 @@ class Product extends Model
             if ($product->type === 'container_hosting' && ! $product->provisioning_driver_key) {
                 $product->provisioning_driver_key = 'container';
             }
+            if ($product->type === 'email_hosting' && ! $product->provisioning_driver_key) {
+                $product->provisioning_driver_key = 'mailcow';
+            }
+            if ($product->type === 'email_hosting' && $product->provisioning_driver_key === 'roundcube') {
+                $product->provisioning_driver_key = 'mailcow';
+            }
         });
     }
 

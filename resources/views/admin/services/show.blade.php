@@ -218,6 +218,9 @@
                     <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
                         Convert to App Hosting
                     </a>
+                    <a href="{{ route('admin.services.migrate-mail', $service) }}" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition text-sm">
+                        Migrate mail to Mailcow
+                    </a>
                 @endif
 
                 @if ($canRevertDaConvert ?? false)

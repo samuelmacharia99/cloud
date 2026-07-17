@@ -260,6 +260,12 @@ class Service extends Model
             || $this->provisioningDriver() === 'container';
     }
 
+    public function isEmailHosting(): bool
+    {
+        return $this->product?->type === 'email_hosting'
+            || $this->provisioningDriver() === 'mailcow';
+    }
+
     public function supportsLiveStatusProbe(): bool
     {
         return $this->isSharedHosting() || $this->isContainerHosting();

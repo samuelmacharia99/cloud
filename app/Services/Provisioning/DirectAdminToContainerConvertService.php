@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * Admin-only convert-in-place: DA shared hosting → App Hosting on the same Service.
  * Keeps next_due_date / billing_cycle, switches product to container pricing, no invoice, no customer notify.
- * Email stays on DirectAdmin (account is not deleted).
+ * Email may remain on DirectAdmin temporarily, or be moved to Mailcow via the mail migration wizard.
  */
 class DirectAdminToContainerConvertService
 {
@@ -337,7 +337,7 @@ class DirectAdminToContainerConvertService
 
         if ($preflight['email']['has_extra_mailboxes'] && ! $acknowledgeExtraMailboxes) {
             throw new \InvalidArgumentException(
-                'This account has mailboxes beyond the default DA user mailbox. Acknowledge that email stays on DirectAdmin before converting.'
+                'This account has mailboxes beyond the default DA user mailbox. Acknowledge that email stays on DirectAdmin (or migrate mail to Mailcow first) before converting.'
             );
         }
 
@@ -482,7 +482,7 @@ class DirectAdminToContainerConvertService
 
             return [
                 'ok' => true,
-                'message' => 'Service converted to App Hosting. Billing date unchanged; container rates apply at next renewal. Email stays on DirectAdmin.',
+                'message' => 'Service converted to App Hosting. Billing date unchanged; container rates apply at next renewal. Email remains on DirectAdmin until migrated to Mailcow.',
                 'steps' => $steps,
             ];
         } catch (\Throwable $e) {

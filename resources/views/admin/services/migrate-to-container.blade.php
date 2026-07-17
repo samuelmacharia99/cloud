@@ -29,7 +29,8 @@
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Convert to App Hosting</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             Admin-only, convert-in-place. Same service ID — no second service, no invoice, no customer notification.
-            Keeps DirectAdmin due date; next renewal uses the App Hosting price. Email stays on DirectAdmin until a mail product exists.
+            Keeps DirectAdmin due date; next renewal uses the App Hosting price.
+            Prefer migrating mail to <strong>Mailcow</strong> first (or leave MX on DA only as a temporary bridge).
             Detected stacks: WordPress, Laravel, PHP, or static.
         </p>
     </div>

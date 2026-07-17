@@ -192,4 +192,22 @@ class ServicePolicy
             ? Response::allow()
             : Response::deny('You can only manage hosting for your own services.');
     }
+
+    /**
+     * Customer can manage Mailcow email hosting for their own active email services.
+     */
+    public function manageEmailHosting(User $user, Service $service): Response
+    {
+        if (! $service->isEmailHosting()) {
+            return Response::deny('Email console is only available for email hosting services.');
+        }
+
+        if ($service->status !== ServiceStatus::Active) {
+            return Response::deny('Email console is only available for active services.');
+        }
+
+        return $user->is_admin || $user->id === $service->user_id
+            ? Response::allow()
+            : Response::deny('You can only manage email for your own services.');
+    }
 }

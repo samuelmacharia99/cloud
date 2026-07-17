@@ -15,7 +15,8 @@
 @section('content')
 @php
     $isDirectAdmin = old('type', $node->type) === 'directadmin';
-    $hardwareMin = $isDirectAdmin ? 0 : 1;
+    $isMailcow = old('type', $node->type) === 'mailcow';
+    $hardwareMin = ($isDirectAdmin || $isMailcow) ? 0 : 1;
     $sshPortDefault = '22';
     if ($isDirectAdmin && $node->ssh_port && $node->da_port && (string) $node->ssh_port === (string) $node->da_port) {
         $sshPortDefault = '22';
@@ -59,6 +60,7 @@
                             <option value="load_balancer" @selected(old('type', $node->type) === 'load_balancer')>Load Balancer</option>
                             <option value="database_server" @selected(old('type', $node->type) === 'database_server')>Database Server</option>
                             <option value="directadmin" @selected(old('type', $node->type) === 'directadmin')>DirectAdmin Server</option>
+                            <option value="mailcow" @selected(old('type', $node->type) === 'mailcow')>Mailcow (Email)</option>
                         </select>
                         @error('type')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>

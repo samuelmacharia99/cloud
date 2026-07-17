@@ -75,6 +75,10 @@ class ServiceController extends Controller
             return redirect()->route('customer.services.container.show', $service);
         }
 
+        if ($service->isEmailHosting()) {
+            return redirect()->route('customer.services.email.show', $service);
+        }
+
         $service->load(['product.directAdminPackage', 'invoice', 'node']);
 
         $packageUsageInsight = null;

@@ -19,6 +19,14 @@
             <p class="text-slate-600 dark:text-slate-400 mt-1">{{ $node->hostname }} ({{ $node->ip_address }})</p>
         </div>
         <div class="flex gap-2">
+            @if($node->type === 'mailcow')
+                <form method="POST" action="{{ route('admin.nodes.test-connection', $node) }}" class="inline">
+                    @csrf
+                    <button type="submit" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition text-sm inline-flex items-center gap-2">
+                        Test Mailcow API
+                    </button>
+                </form>
+            @endif
             @if(in_array($node->type, ['container_host', 'database_server', 'directadmin']))
                 <form method="POST" action="{{ route('admin.nodes.test-health', $node) }}" class="inline">
                     @csrf

@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\CustomerController;
 use App\Http\Controllers\Admin\DatabaseTemplateController;
 use App\Http\Controllers\Admin\DirectAdminContainerMigrationController;
+use App\Http\Controllers\Admin\DirectAdminMailcowMigrationController;
 use App\Http\Controllers\Admin\DomainController;
 use App\Http\Controllers\Admin\DomainOrderController;
 use App\Http\Controllers\Admin\DomainRenewalController;
@@ -364,6 +365,8 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/services/{service}/container/migrate', [ContainerMigrationController::class, 'migrate'])->name('admin.services.container.migrate.confirm');
         Route::get('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'show'])->name('admin.services.migrate-to-container');
         Route::post('admin/services/{service}/migrate-to-container', [DirectAdminContainerMigrationController::class, 'store'])->name('admin.services.migrate-to-container.store');
+        Route::get('admin/services/{service}/migrate-mail', [DirectAdminMailcowMigrationController::class, 'show'])->name('admin.services.migrate-mail');
+        Route::post('admin/services/{service}/migrate-mail', [DirectAdminMailcowMigrationController::class, 'store'])->name('admin.services.migrate-mail.store');
         Route::post('admin/services/{service}/revert-from-container', [DirectAdminContainerMigrationController::class, 'revert'])->name('admin.services.revert-from-container');
         Route::post('admin/nodes/{node}/migrate-containers', [ContainerMigrationController::class, 'migrateNode'])->name('admin.nodes.migrate-containers');
 
@@ -564,6 +567,14 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->middleware('throttle:10,1')
             ->name('customer.services.wordpress-admin');
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
+        Route::prefix('my/services/{service}/email')->name('customer.services.email.')->group(function () {
+            Route::get('/', [App\Http\Controllers\Customer\EmailHostingController::class, 'show'])->name('show');
+            Route::post('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeMailbox'])->middleware('throttle:20,1')->name('mailboxes.store');
+            Route::delete('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyMailbox'])->middleware('throttle:20,1')->name('mailboxes.destroy');
+            Route::post('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
+            Route::delete('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
+            Route::post('dns/apply', [App\Http\Controllers\Customer\EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
+        });
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::get('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renewForm'])->name('customer.services.renew');
         Route::post('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renew'])->name('customer.services.renew.store');

@@ -152,9 +152,13 @@
                                         bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300
                                     @elseif($node->type === 'database_server')
                                         bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300
+                                    @elseif($node->type === 'mailcow')
+                                        bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300
+                                    @elseif($node->type === 'directadmin')
+                                        bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300
                                     @endif
                                 ">
-                                    {{ ucfirst(str_replace('_', ' ', $node->type)) }}
+                                    {{ $node->getTypeLabel() }}
                                 </span>
                             </td>
                             <td class="px-6 py-4">
@@ -356,6 +360,18 @@ function nodePolling() {
                 </div>
                 <h3 class="font-semibold text-slate-900 dark:text-white mb-1">Container Server</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400">Infrastructure server for deploying containers</p>
+            </a>
+
+            <!-- Mailcow -->
+            <a href="{{ route('admin.nodes.create', ['type' => 'mailcow']) }}"
+               class="group p-6 border-2 border-slate-200 dark:border-slate-700 rounded-xl hover:border-teal-500 dark:hover:border-teal-400 transition cursor-pointer flex flex-col items-center text-center col-span-2 sm:col-span-1">
+                <div class="w-16 h-16 rounded-2xl bg-teal-100 dark:bg-teal-950 flex items-center justify-center mb-4 group-hover:bg-teal-200 dark:group-hover:bg-teal-900 transition">
+                    <svg class="w-8 h-8 text-teal-600 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                </div>
+                <h3 class="font-semibold text-slate-900 dark:text-white mb-1">Mailcow</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Email hosting appliance (replaces DA mail)</p>
             </a>
         </div>
 

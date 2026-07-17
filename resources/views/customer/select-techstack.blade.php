@@ -130,6 +130,7 @@
                     </button>
 
                     <button type="button" @click="selectDeploymentPlatform('shared')"
+                        @if(!($sharedHostingSalesEnabled ?? true)) x-show="false" @endif
                         class="p-5 border-2 rounded-xl text-left transition-all"
                         :class="deploymentPlatform === 'shared'
                             ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-md'

@@ -336,6 +336,56 @@
                     @include('admin.nodes.partials.nameserver-fields')
                 </div>
 
+            @elseif($type === 'mailcow')
+                <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-teal-100 dark:bg-teal-950 rounded-lg mb-6">
+                    <div class="w-2 h-2 rounded-full bg-teal-600 dark:bg-teal-400"></div>
+                    <span class="text-sm font-medium text-teal-700 dark:text-teal-300">Mailcow Email Node</span>
+                </div>
+
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900 dark:text-white mb-6">Basic Information</h2>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div>
+                            <label for="name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Node Name</label>
+                            <input type="text" id="name" name="name" value="{{ old('name') }}" placeholder="e.g. Mail-01" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-white text-sm" required>
+                            @error('name')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label for="ip_address" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">IP Address</label>
+                            <input type="text" id="ip_address" name="ip_address" value="{{ old('ip_address') }}" placeholder="203.0.113.10" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-white text-sm" required>
+                            @error('ip_address')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label for="hostname" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Mail hostname</label>
+                            <input type="text" id="hostname" name="hostname" value="{{ old('hostname') }}" placeholder="mail.example.com" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-white text-sm" required>
+                            <p class="mt-1 text-xs text-slate-500">Must match PTR / reverse DNS.</p>
+                            @error('hostname')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label for="api_url" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">API URL</label>
+                            <input type="url" id="api_url" name="api_url" value="{{ old('api_url') }}" placeholder="https://mail.example.com" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-white text-sm">
+                            <p class="mt-1 text-xs text-slate-500">Defaults to https://hostname if empty.</p>
+                            @error('api_url')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label for="api_token" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">API token (Read-Write)</label>
+                            <input type="password" id="api_token" name="api_token" value="{{ old('api_token') }}" autocomplete="new-password" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-white text-sm font-mono" required>
+                            <p class="mt-1 text-xs text-slate-500">Whitelist this app server IP in Mailcow API settings. See docs/MAILCOW_SETUP.md.</p>
+                            @error('api_token')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label for="region" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Region</label>
+                            <input type="text" id="region" name="region" value="{{ old('region') }}" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white text-sm">
+                        </div>
+                        <div>
+                            <label class="flex items-center gap-3 cursor-pointer mt-8">
+                                <input type="checkbox" name="verify_ssl" value="1" class="w-4 h-4 text-teal-600 rounded" @checked(old('verify_ssl', true))>
+                                <span class="text-sm text-slate-700 dark:text-slate-300">Verify SSL</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
             @else
                 <!-- Fallback: No type selected -->
                 <div class="p-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-lg">
@@ -343,7 +393,7 @@
                 </div>
             @endif
 
-            @if($type === 'directadmin' || $type === 'container_host')
+            @if($type === 'directadmin' || $type === 'container_host' || $type === 'mailcow')
                 <!-- Description -->
                 <div>
                     <label for="description" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Description <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
@@ -356,7 +406,7 @@
                 <!-- Active Status -->
                 <div>
                     <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" name="is_active" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('is_active') === '1' || old('is_active') === true)>
+                        <input type="checkbox" name="is_active" value="1" class="w-4 h-4 text-blue-600 rounded" @checked(old('is_active') === '1' || old('is_active') === true || $type === 'mailcow')>
                         <span class="text-sm text-slate-700 dark:text-slate-300">Node is Active</span>
                     </label>
                 </div>

@@ -166,6 +166,17 @@ class CheckoutController extends Controller
             fn ($item) => ($item['type'] ?? null) === 'shared_hosting'
         ));
 
+        $emailHostingItems = [];
+        foreach ($cartItems as $item) {
+            if (($item['type'] ?? null) !== 'product' || empty($item['product_id'])) {
+                continue;
+            }
+            $product = Product::find($item['product_id']);
+            if ($product && $product->type === 'email_hosting') {
+                $emailHostingItems[] = $item;
+            }
+        }
+
         $domainExtensions = DomainExtension::where('enabled', true)->orderBy('extension')->get();
         $nameserverService = app(ResellerNameserverService::class);
         $defaultNameservers = $nameserverService->defaultsForCustomer($user);
@@ -178,9 +189,16 @@ class CheckoutController extends Controller
             }
         }
 
+        $customerDomains = Domain::query()
+            ->where('user_id', $user->id)
+            ->orderBy('name')
+            ->get();
+
         return view('customer.checkout.index', [
             'cartItems' => $cartItems,
             'sharedHostingItems' => $sharedHostingItems,
+            'emailHostingItems' => $emailHostingItems,
+            'customerDomains' => $customerDomains,
             'linkedHostingDomains' => $linkedHostingDomains,
             'domainExtensions' => $domainExtensions,
             'defaultNameservers' => $defaultNameservers,
@@ -395,6 +413,19 @@ class CheckoutController extends Controller
                                 $order,
                                 $hostingContext['invoice_items']
                             );
+                        }
+
+                        if ($product->type === 'email_hosting') {
+                            $emailDomain = strtolower(trim((string) $request->input('email_domain.'.$item['key'], '')));
+                            $emailDomain = preg_replace('#^https?://#', '', $emailDomain) ?? $emailDomain;
+                            $emailDomain = rtrim(explode('/', $emailDomain)[0] ?? $emailDomain, '.');
+                            if ($emailDomain === '' || ! str_contains($emailDomain, '.')) {
+                                throw new \InvalidArgumentException('Email hosting requires a valid domain for '.$product->name);
+                            }
+                            $serviceMeta['mailcow_domain'] = $emailDomain;
+                            $serviceMeta['domain'] = $emailDomain;
+                            $mailNode = app(\App\Services\Provisioning\MailcowProvisioningService::class)->resolveNode();
+                            $nodeId = $mailNode?->id;
                         }
 
                         // For server types, capture OS and IP count from cart item
@@ -1133,6 +1164,19 @@ class CheckoutController extends Controller
                                 $order,
                                 $hostingContext['invoice_items']
                             );
+                        }
+
+                        if ($product->type === 'email_hosting' && $request) {
+                            $emailDomain = strtolower(trim((string) $request->input('email_domain.'.$item['key'], '')));
+                            $emailDomain = preg_replace('#^https?://#', '', $emailDomain) ?? $emailDomain;
+                            $emailDomain = rtrim(explode('/', $emailDomain)[0] ?? $emailDomain, '.');
+                            if ($emailDomain === '' || ! str_contains($emailDomain, '.')) {
+                                throw new \InvalidArgumentException('Email hosting requires a valid domain for '.$product->name);
+                            }
+                            $serviceMeta['mailcow_domain'] = $emailDomain;
+                            $serviceMeta['domain'] = $emailDomain;
+                            $mailNode = app(\App\Services\Provisioning\MailcowProvisioningService::class)->resolveNode();
+                            $nodeId = $mailNode?->id;
                         }
 
                         // For server types, capture OS and IP count from cart item

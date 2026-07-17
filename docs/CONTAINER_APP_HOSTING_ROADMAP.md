@@ -95,7 +95,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 |---|-------------|--------|
 | 4.1 | Staging / preview environments | Link sibling container + sync env (MVP) |
 | 4.2 | Curated app templates | Softaculous replacement (apps only) — existing stacks + docs polish |
-| 4.3 | Mail as separate product | Unlocks dropping DA entirely — **not started** |
+| 4.3 | Mail as separate product | **Mailcow** — node type, API client, `email_hosting` driver, customer console, DNS helpers, DA→Mailcow migrate wizard. Ops: [MAILCOW_SETUP.md](MAILCOW_SETUP.md). |
 | 4.4 | Team access / BYO Dockerfile | Up-market — **not started** |
 
 ---
@@ -138,7 +138,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | 2026-07-11 | Added QA testing checklist for Phases 1–4 MVP. |
 | 2026-07-11 | Fixed console tab IA: removed fake App/Data/… labels; Docs tab always mounts for deep links. |
 | 2026-07-11 | **Admin convert-in-place:** same service, no invoice/notify, keep due date, container price at renewal, mailbox preflight; customer dual-service migrator removed. |
-| 2026-07-15 | **Phase 3.2–3.4:** Stack-aware convert (WP/Laravel/PHP/static), multi-domain DA inventory + addon ack, SSH channel harden, static-site host bind mount. Mail product still deferred. |
+| 2026-07-17 | **Phase 4.3 Mailcow:** email_hosting provisions via Mailcow API; customer mail console; Cloudflare DNS helpers; DA→Mailcow admin migrate; shared hosting sales toggle. |
 
 ### Phase checklists
 
@@ -153,12 +153,12 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 
 **Phase 3:**
 - [x] 3.1 WordPress convert-in-place MVP (admin silent)
-- [ ] 3.2 Laravel / PHP migrator
+- [x] 3.2 Laravel / PHP migrator
 - [x] 3.4 Admin wizard UI (preflight + queue)
 
 **Phase 4:**
 - [x] 4.1 Staging link MVP
-- [ ] 4.3 Mail product
+- [x] 4.3 Mail product (Mailcow)
 - [ ] 4.4 Team / BYO Dockerfile
 
 ---

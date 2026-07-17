@@ -33,6 +33,7 @@ class ServiceBrowserController extends Controller
             'databases' => $databases,
             'cartCount' => $cartCount,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
+            'sharedHostingSalesEnabled' => \App\Support\SharedHostingSales::enabled(),
         ]);
     }
 
@@ -239,6 +240,9 @@ class ServiceBrowserController extends Controller
         $productsQuery = Product::where('is_active', true);
 
         if ($routing['hosting_type'] === 'directadmin') {
+            if (! \App\Support\SharedHostingSales::enabled()) {
+                return collect();
+            }
             $productsQuery->where('type', 'shared_hosting');
         } else {
             $productsQuery->where('type', 'container_hosting')
@@ -331,6 +335,10 @@ class ServiceBrowserController extends Controller
             $query->where('type', $selectedType);
         }
 
+        if (! \App\Support\SharedHostingSales::enabled()) {
+            $query->where('type', '!=', 'shared_hosting');
+        }
+
         $products = $query->orderBy('category')->orderBy('order')->get();
 
         // Group products by type
@@ -338,6 +346,7 @@ class ServiceBrowserController extends Controller
 
         // Get all available types for filtering
         $allTypes = Product::where('is_active', true)
+            ->when(! \App\Support\SharedHostingSales::enabled(), fn ($q) => $q->where('type', '!=', 'shared_hosting'))
             ->distinct()
             ->pluck('type')
             ->mapWithKeys(function ($type) {

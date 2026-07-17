@@ -78,8 +78,19 @@
                 @if (!empty($sharedHostingItems))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared plan domain (DirectAdmin)</h2>
-                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Email and classic shared hosting live on DirectAdmin. Prefer app hosting for new websites.</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Email and classic shared hosting live on DirectAdmin. Prefer app hosting for new websites and Email Hosting (Mailcow) for mail.</p>
                         @include('customer.checkout.partials.shared-hosting-domain', ['linkedHostingDomains' => $linkedHostingDomains ?? []])
+                    </div>
+                @endif
+
+                @if (!empty($emailHostingItems))
+                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Email domain (Mailcow)</h2>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Choose the domain that will receive mail on Mailcow. Point MX to your mail hostname after provision.</p>
+                        @include('customer.checkout.partials.email-hosting-domain', [
+                            'emailHostingItems' => $emailHostingItems,
+                            'customerDomains' => $customerDomains ?? collect(),
+                        ])
                     </div>
                 @endif
 

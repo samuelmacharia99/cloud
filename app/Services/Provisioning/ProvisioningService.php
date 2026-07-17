@@ -36,6 +36,8 @@ class ProvisioningService
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService;
                 $containerService->deploy($service);
+            } elseif ($driver === 'mailcow') {
+                app(MailcowProvisioningService::class)->provision($service);
             } elseif ($driver === 'server') {
                 $serverService = new ServerProvisioningService;
                 $serverService->provision($service);
@@ -45,12 +47,12 @@ class ProvisioningService
                     $service->update(['status' => 'active']);
                     app(DomainActivationService::class)->activateFromService($service);
                 } else {
-                    throw new \Exception("Unknown provisioning driver '{$driver}' for service type '{$service->product->type}'. Service requires a valid driver (directadmin, container, server).");
+                    throw new \Exception("Unknown provisioning driver '{$driver}' for service type '{$service->product->type}'. Service requires a valid driver (directadmin, container, mailcow, server).");
                 }
             }
 
             // Send service activated notification (only if not already sent by the driver)
-            if ($service->status === 'active' && $driver !== 'container') {
+            if ($service->status === 'active' && ! in_array($driver, ['container'], true)) {
                 app(NotificationService::class)->notifyServiceActivated($service->fresh());
             }
         } catch (\Exception $e) {
@@ -91,6 +93,9 @@ class ProvisioningService
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService;
                 $containerService->suspend($service);
+                $suspended = true;
+            } elseif ($driver === 'mailcow') {
+                app(MailcowProvisioningService::class)->suspend($service);
                 $suspended = true;
             } else {
                 // For drivers without active suspension, just update status
@@ -152,6 +157,8 @@ class ProvisioningService
             } elseif ($driver === 'container') {
                 $containerService = new ContainerDeploymentService;
                 $containerService->unsuspend($service);
+            } elseif ($driver === 'mailcow') {
+                app(MailcowProvisioningService::class)->unsuspend($service);
             }
 
             // Update status if not already updated by driver
@@ -211,6 +218,8 @@ class ProvisioningService
                 $containerService->terminate($service);
             } elseif ($driver === 'container') {
                 \Log::info("Container workload already absent for service {$service->id} — skipping terminate API call");
+            } elseif ($driver === 'mailcow') {
+                app(MailcowProvisioningService::class)->terminate($service);
             }
 
             // Update status if not already updated by driver

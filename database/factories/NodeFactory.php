@@ -41,23 +41,17 @@ class NodeFactory extends Factory
         ]);
     }
 
-    public function directAdmin(): static
+    public function mailcow(): static
     {
         return $this->state(fn () => [
-            'type' => 'directadmin',
-            'status' => 'offline',
+            'type' => 'mailcow',
+            'status' => 'online',
             'cpu_cores' => 0,
             'ram_gb' => 0,
             'storage_gb' => 0,
-            'da_port' => '2222',
-            'ssh_port' => '2222',
-            'api_url' => 'https://da.example.com:2222',
-            'da_admin_username' => 'admin',
-            'da_login_key' => 'test-login-key',
-            'ssh_username' => 'root',
-            'ssh_password' => 'ssh-secret',
-            'nameserver_1' => 'ns1.example.com',
-            'nameserver_2' => 'ns2.example.com',
+            'api_url' => 'https://mail.example.com',
+            'api_token' => 'test-mailcow-api-key',
+            'verify_ssl' => true,
             'is_active' => true,
         ]);
     }

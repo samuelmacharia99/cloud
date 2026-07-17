@@ -112,7 +112,7 @@ class Node extends Model
     // Helper Methods
     public function isMonitored(): bool
     {
-        return in_array($this->type, ['container_host', 'database_server', 'directadmin']);
+        return in_array($this->type, ['container_host', 'database_server', 'directadmin', 'mailcow']);
     }
 
     public function isHealthy(): bool
@@ -191,8 +191,32 @@ class Node extends Model
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
             'directadmin' => 'DirectAdmin Server',
+            'mailcow' => 'Mailcow (Email)',
             default => 'Unknown',
         };
+    }
+
+    public function getMailcowPanelUrl(): ?string
+    {
+        if ($this->type !== 'mailcow') {
+            return null;
+        }
+
+        $url = trim((string) ($this->api_url ?: ''));
+        if ($url !== '') {
+            return rtrim($url, '/');
+        }
+
+        if (empty($this->hostname)) {
+            return null;
+        }
+
+        return 'https://'.$this->hostname;
+    }
+
+    public function isMailcow(): bool
+    {
+        return $this->type === 'mailcow';
     }
 
     public function getDirectAdminPanelUrl(): ?string

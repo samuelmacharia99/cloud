@@ -1297,9 +1297,18 @@
                             </div>
 
                             <div>
+                                <input type="hidden" name="settings[shared_hosting_sales_enabled]" value="0">
+                                <label class="flex items-center gap-2">
+                                    <input type="checkbox" name="settings[shared_hosting_sales_enabled]" value="1" @checked(\App\Support\SharedHostingSales::enabled()) class="rounded" />
+                                    <span class="text-slate-700 dark:text-slate-300">Sell DirectAdmin shared hosting to customers</span>
+                                </label>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Turn off to hide shared hosting from browse/techstack while converting the fleet to App Hosting + Mailcow. Admin convert and existing services are unaffected.</p>
+                            </div>
+
+                            <div>
                                 <input type="hidden" name="settings[auto_provision]" value="0">
                                 <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[auto_provision]" value="1" @checked(($settings['auto_provision'] ?? '0') == '1')" class="rounded" />
+                                    <input type="checkbox" name="settings[auto_provision]" value="1" @checked(($settings['auto_provision'] ?? '0') == '1') class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Auto-provision on payment (platform direct customers)</span>
                                 </label>
                             </div>
