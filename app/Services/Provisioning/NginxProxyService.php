@@ -273,10 +273,14 @@ class NginxProxyService
         $node = $deployment->node;
         $port = $deployment->assigned_port;
 
+        // Default nginx client_max_body_size is 1m — WordPress media uploads return 413 without this.
+        $uploadLimit = $this->clientMaxBodySize();
+
         $httpBlock = <<<EOL
 server {
     listen 80;
     server_name {$domain->domain};
+    client_max_body_size {$uploadLimit};
 
     location / {
         proxy_pass http://127.0.0.1:{$port};
@@ -285,6 +289,9 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_redirect off;
+        proxy_request_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
 EOL;
@@ -306,6 +313,7 @@ server {
 server {
     listen 443 ssl http2;
     server_name {$domain->domain};
+    client_max_body_size {$uploadLimit};
 
     ssl_certificate {$certPath};
     ssl_certificate_key {$keyPath};
@@ -320,9 +328,25 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_redirect off;
+        proxy_request_buffering off;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
 EOL;
+    }
+
+    /**
+     * Max upload size for container reverse-proxy vhosts (WordPress media, etc.).
+     */
+    public function clientMaxBodySize(): string
+    {
+        $mb = (int) config('security.container_file_upload.max_size_mb', 100);
+        if ($mb < 1) {
+            $mb = 100;
+        }
+
+        return $mb.'M';
     }
 
     /**
