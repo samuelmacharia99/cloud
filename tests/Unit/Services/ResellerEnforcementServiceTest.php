@@ -225,6 +225,49 @@ class ResellerEnforcementServiceTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_should_suspend_reseller_on_exact_suspend_day(): void
+    {
+        // due Jul 13 + 5 grace = suspend Jul 18; must be eligible that morning.
+        Carbon::setTestNow(Carbon::parse('2026-07-18 00:05:00'));
+
+        $reseller = User::factory()->reseller()->create([
+            'package_expires_at' => Carbon::parse('2026-07-13'),
+        ]);
+
+        Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'type' => 'reseller_subscription',
+            'status' => 'overdue',
+            'due_date' => Carbon::parse('2026-07-13'),
+        ]);
+
+        $this->assertTrue($this->enforcement->shouldSuspendReseller($reseller));
+        $this->assertTrue($this->enforcement->enforceOverdueSuspension($reseller->fresh()));
+        $this->assertTrue($reseller->fresh()->isResellerSuspended());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_should_not_suspend_reseller_day_before_suspend_date(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-07-17 23:59:00'));
+
+        $reseller = User::factory()->reseller()->create([
+            'package_expires_at' => Carbon::parse('2026-07-13'),
+        ]);
+
+        Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'type' => 'reseller_subscription',
+            'status' => 'overdue',
+            'due_date' => Carbon::parse('2026-07-13'),
+        ]);
+
+        $this->assertFalse($this->enforcement->shouldSuspendReseller($reseller));
+
+        Carbon::setTestNow();
+    }
+
     public function test_should_suspend_reseller_when_subscription_invoice_overdue(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-06-15'));

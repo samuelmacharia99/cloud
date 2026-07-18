@@ -144,11 +144,11 @@ class ResellerEnforcementService
             ->where(function (Builder $query) use ($graceCutoff) {
                 $query->where(function (Builder $expired) use ($graceCutoff) {
                     $expired->whereNotNull('package_expires_at')
-                        ->whereDate('package_expires_at', '<', $graceCutoff->toDateString());
+                        ->whereDate('package_expires_at', '<=', $graceCutoff->toDateString());
                 })->orWhereHas('invoices', function (Builder $invoice) use ($graceCutoff) {
                     $invoice->where('type', 'reseller_subscription')
                         ->whereIn('status', ['unpaid', 'overdue'])
-                        ->whereDate('due_date', '<', $graceCutoff->toDateString());
+                        ->whereDate('due_date', '<=', $graceCutoff->toDateString());
                 });
             });
     }
@@ -184,7 +184,9 @@ class ResellerEnforcementService
 
         $graceCutoff = $this->overdueEnforcement->graceCutoffDate();
 
-        if ($reseller->package_expires_at && $reseller->package_expires_at->lt($graceCutoff)) {
+        // Suspend when due_date + grace_period_days <= today (inclusive of the suspend day shown in admin UI).
+        if ($reseller->package_expires_at
+            && $reseller->package_expires_at->copy()->startOfDay()->lte($graceCutoff)) {
             return true;
         }
 
@@ -192,7 +194,7 @@ class ResellerEnforcementService
             ->where('user_id', $reseller->id)
             ->where('type', 'reseller_subscription')
             ->whereIn('status', ['unpaid', 'overdue'])
-            ->whereDate('due_date', '<', $graceCutoff->toDateString())
+            ->whereDate('due_date', '<=', $graceCutoff->toDateString())
             ->exists();
     }
 

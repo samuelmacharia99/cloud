@@ -29,6 +29,11 @@ class ServiceOverdueEnforcementService
         return max(0, (int) Setting::getValue('grace_period_days', 5));
     }
 
+    /**
+     * Start of the calendar day that is still inside the grace window relative to $reference.
+     * Invoices/package periods with due_date on or before this date are past grace
+     * (suspend day = due_date + grace_period_days).
+     */
     public function graceCutoffDate(?Carbon $reference = null): Carbon
     {
         return ($reference ?? now())->copy()->startOfDay()->subDays($this->gracePeriodDays());
@@ -262,7 +267,7 @@ class ServiceOverdueEnforcementService
     {
         $this->applyBillingInvoiceScope($query);
         $query->where('status', 'overdue')
-            ->whereDate('due_date', '<', $graceCutoff->toDateString());
+            ->whereDate('due_date', '<=', $graceCutoff->toDateString());
     }
 
     private function applyUnpaidDueOnConstraint(Builder $query, string $dueDate): void
@@ -317,7 +322,7 @@ class ServiceOverdueEnforcementService
     {
         foreach ($this->billingInvoicesForService($service) as $invoice) {
             if ($this->invoiceIsOpenForBilling($invoice)
-                && $invoice->due_date?->lt($graceCutoff)) {
+                && $invoice->due_date?->copy()->startOfDay()->lte($graceCutoff)) {
                 return true;
             }
         }
