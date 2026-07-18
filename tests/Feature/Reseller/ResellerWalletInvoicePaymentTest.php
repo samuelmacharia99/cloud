@@ -57,6 +57,55 @@ class ResellerWalletInvoicePaymentTest extends TestCase
         $this->assertSame(7500.0, (float) $reseller->wallet->balance);
     }
 
+    public function test_full_wallet_payment_works_for_reseller_subscription_invoice(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+
+        $this->mock(DomainPushService::class, function ($mock) {
+            $mock->shouldReceive('handlePaidResellerInvoice')->zeroOrMoreTimes();
+        });
+
+        $this->mock(NotificationService::class, function ($mock) {
+            $mock->shouldReceive('notifyPaymentReceived')->once();
+        });
+
+        $reseller = User::factory()->reseller()->create();
+        app(ResellerWalletService::class)->getOrCreate($reseller)->update(['balance' => 6152]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'type' => 'reseller_subscription',
+            'status' => 'unpaid',
+            'invoice_number' => 'INV-9YBDTTTWD5',
+            'subtotal' => 6148,
+            'tax' => 0,
+            'total' => 6148,
+        ]);
+
+        $response = $this->actingAs($reseller)->post(route('reseller.payment.initiate', $invoice), [
+            'method' => 'wallet',
+            'apply_wallet' => '1',
+        ]);
+
+        $response->assertRedirect(route('reseller.invoices.show', $invoice));
+        $response->assertSessionHas('success');
+
+        $invoice->refresh();
+        $reseller->refresh();
+
+        $this->assertSame('paid', $invoice->status->value);
+        $this->assertSame(6148.0, (float) $invoice->wallet_amount_applied);
+        $this->assertSame(4.0, (float) $reseller->wallet->balance);
+        $this->assertDatabaseHas('wallet_transactions', [
+            'wallet_id' => $reseller->wallet->id,
+            'type' => 'subscription_debit',
+            'amount' => 6148,
+            'reference_id' => $invoice->id,
+            'reference_type' => 'Invoice',
+            'status' => 'completed',
+        ]);
+    }
+
     public function test_partial_wallet_leaves_invoice_unpaid_until_gateway_pays(): void
     {
         Setting::setValue('tax_enabled', 'false');

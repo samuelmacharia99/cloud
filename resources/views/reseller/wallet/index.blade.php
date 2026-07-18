@@ -215,7 +215,7 @@
                             <td class="px-6 py-3">
                                 <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {{ match($transaction->type) {
                                     'deposit' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
-                                    'domain_debit' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
+                                    'domain_debit', 'subscription_debit' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
                                     'refund' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
                                     'adjustment' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
                                     default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
@@ -224,8 +224,8 @@
                                 </span>
                             </td>
                             <td class="px-6 py-3 text-sm text-slate-900 dark:text-white">{{ $transaction->description }}</td>
-                            <td class="px-6 py-3 text-right text-sm font-medium {{ $transaction->type === 'domain_debit' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
-                                {{ $transaction->type === 'domain_debit' ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
+                            <td class="px-6 py-3 text-right text-sm font-medium {{ $transaction->isDebit() ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400' }}">
+                                {{ $transaction->isDebit() ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
                             </td>
                             <td class="px-6 py-3 text-right text-sm text-slate-900 dark:text-white">KSH {{ number_format($transaction->balance_after, 2) }}</td>
                             <td class="px-6 py-3 text-sm text-slate-600 dark:text-slate-400">{{ $transaction->created_at->format('M d, Y') }}</td>

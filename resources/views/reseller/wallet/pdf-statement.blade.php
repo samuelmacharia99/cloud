@@ -76,7 +76,7 @@
                 <td class="type-{{ str_replace('_', '-', $transaction->type) }}">{{ ucfirst(str_replace('_', ' ', $transaction->type)) }}</td>
                 <td>{{ $transaction->description }}</td>
                 <td style="text-align: right;">
-                    {{ $transaction->type === 'domain_debit' ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
+                    {{ $transaction->isDebit() ? '-' : '+' }}KSH {{ number_format($transaction->amount, 2) }}
                 </td>
                 <td style="text-align: right;">KSH {{ number_format($transaction->balance_after, 2) }}</td>
             </tr>

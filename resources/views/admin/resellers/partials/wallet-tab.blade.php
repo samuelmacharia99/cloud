@@ -95,7 +95,7 @@
                                 <td class="py-3 px-4">
                                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium {{ match($transaction->type) {
                                         'deposit' => 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300',
-                                        'domain_debit' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
+                                        'domain_debit', 'subscription_debit' => 'bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-300',
                                         'refund' => 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300',
                                         'adjustment' => 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300',
                                         default => 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300',

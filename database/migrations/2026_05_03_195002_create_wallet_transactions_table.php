@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('wallet_transactions', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('wallet_id');
-            $table->enum('type', ['deposit', 'domain_debit', 'refund', 'adjustment']);
+            $table->enum('type', ['deposit', 'domain_debit', 'subscription_debit', 'refund', 'adjustment']);
             $table->decimal('amount', 12, 2);
             $table->decimal('balance_before', 12, 2);
             $table->decimal('balance_after', 12, 2);

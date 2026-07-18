@@ -46,7 +46,12 @@ class WalletTransaction extends Model
 
     public function scopeDebits(Builder $query): Builder
     {
-        return $query->where('type', 'domain_debit');
+        return $query->whereIn('type', ['domain_debit', 'subscription_debit']);
+    }
+
+    public function isDebit(): bool
+    {
+        return in_array($this->type, ['domain_debit', 'subscription_debit'], true);
     }
 
     public function scopeRefunds(Builder $query): Builder
