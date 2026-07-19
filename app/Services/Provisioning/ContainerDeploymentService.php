@@ -2302,7 +2302,7 @@ class ContainerDeploymentService
 
         $existing = (string) ($deployment->docker_compose_content ?? '');
         $needsRefresh = $existing === ''
-            || ! preg_match('/^\s*mem_limit:\s*[\'"]?1[gG]/gmi', $existing)
+            || ! preg_match('/^\s*mem_limit:\s*[\'"]?1[gG][\'"]?\s*$/mi', $existing)
             || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
             || ! str_contains($existing, 'service_healthy')
             || ! str_contains($existing, 'innodb-buffer-pool-size');
