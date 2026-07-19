@@ -543,6 +543,10 @@ class DirectAdminToContainerMigrationService
             // With the host app bind-mount, this updates the same files the file manager sees.
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
             $this->ensureWordPressProxyHttpsAwareness($targetSsh, $containerPath, $appService);
+            app(WordPressContainerHardeningService::class)->ensureSystemCronJob($service->fresh([
+                'product.containerTemplate',
+                'containerDeployment',
+            ]));
             $this->sanitizeWordPressHostRuntimeConfig($targetSsh, $hostAppPath);
             $this->normalizeWordPressAppPermissions($targetSsh, $hostAppPath, $containerPath, $appService);
 
@@ -1674,36 +1678,8 @@ PHP;
         string $containerPath,
         string $appService
     ): void {
-        $snippet = <<<'SNIP'
-/* TALKASA_PROXY_HTTPS */
-if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
-    $_SERVER['HTTPS'] = 'on';
-}
-$sessionDir = '/var/www/html/wp-content/uploads/sessions';
-if (is_dir($sessionDir) || @mkdir($sessionDir, 0775, true)) {
-    @ini_set('session.save_path', $sessionDir);
-} else {
-    @ini_set('session.save_path', '/tmp');
-}
-
-SNIP;
-
-        $php = '$cfg = \'/var/www/html/wp-config.php\';'
-            .' if (! is_file($cfg)) { fwrite(STDERR, "wp-config.php missing\\n"); exit(1); }'
-            .' $text = file_get_contents($cfg);'
-            .' if (str_contains($text, \'TALKASA_PROXY_HTTPS\')) { exit(0); }'
-            .' $snippet = '.var_export($snippet, true).';'
-            .' if (preg_match(\'/<\?php\\b/\', $text)) {'
-            .'   $text = preg_replace(\'/<\?php\\b/\', "<?php\\n".$snippet, $text, 1);'
-            .' } else {'
-            .'   $text = "<?php\\n".$snippet.$text;'
-            .' }'
-            .' file_put_contents($cfg, $text);';
-
-        $ssh->exec(
-            "cd {$containerPath} && docker compose exec -T {$appService} php -r ".escapeshellarg($php),
-            60
-        );
+        app(WordPressContainerHardeningService::class)
+            ->ensureWpConfigHardening($ssh, $containerPath, $appService);
     }
 
     private function normalizeWordPressAppPermissions(

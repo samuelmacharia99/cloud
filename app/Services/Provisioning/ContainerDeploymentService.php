@@ -35,6 +35,8 @@ class ContainerDeploymentService
 
     private ContainerApplicationRuntimeService $applicationRuntime;
 
+    private WordPressContainerHardeningService $wordpressHardening;
+
     private const PORT_RANGE_START = 30000;
 
     private const PORT_RANGE_END = 40000;
@@ -51,12 +53,14 @@ class ContainerDeploymentService
         ?ContainerTemplateEnvironmentService $templateEnvironment = null,
         ?ContainerStackCommandService $stackCommands = null,
         ?ContainerApplicationRuntimeService $applicationRuntime = null,
+        ?WordPressContainerHardeningService $wordpressHardening = null,
     ) {
         $this->runtimeImages = $runtimeImages ?? new RuntimeImageProvisioner;
         $this->appDirectory = $appDirectory ?? new ContainerAppDirectoryService;
         $this->templateEnvironment = $templateEnvironment ?? new ContainerTemplateEnvironmentService;
         $this->stackCommands = $stackCommands ?? new ContainerStackCommandService;
         $this->applicationRuntime = $applicationRuntime ?? new ContainerApplicationRuntimeService;
+        $this->wordpressHardening = $wordpressHardening ?? new WordPressContainerHardeningService;
     }
 
     /**
@@ -273,6 +277,10 @@ class ContainerDeploymentService
                     $this->runtimeImages->ensureImage($ssh, $template, $selectedVersion, $service, $deployment);
                 }
 
+                if (($template->slug ?? '') === 'wordpress') {
+                    $this->wordpressHardening->ensureUploadsIniFile($ssh, $containerName);
+                }
+
                 // Deploy container
                 $this->composeUp(
                     $ssh,
@@ -352,6 +360,15 @@ class ContainerDeploymentService
                     'credentials' => json_encode($credentials),
                     'service_meta' => $serviceMeta,
                 ]);
+
+                if (($template->slug ?? '') === 'wordpress') {
+                    $this->wordpressHardening->hardenDeployedStack(
+                        $ssh,
+                        $service->fresh(['product.containerTemplate', 'containerDeployment']),
+                        $containerName,
+                        $containerPath
+                    );
+                }
 
                 // Ensure existing bound domains always follow the latest deployment
                 // row/port after redeploys, otherwise nginx may point to stale ports.
@@ -1010,6 +1027,14 @@ class ContainerDeploymentService
         if ($hostAppPath && empty($compose['services'][$containerName]['volumes'])) {
             $mount = ($template->slug ?? '') === 'wordpress' ? '/var/www/html' : '/app';
             $compose['services'][$containerName]['volumes'] = ["{$hostAppPath}:{$mount}"];
+        }
+
+        if (($template->slug ?? '') === 'wordpress') {
+            $compose['services'][$containerName]['volumes'] ??= [];
+            $uploadsMount = $this->wordpressHardening->uploadsIniVolumeMount($containerName);
+            if (! in_array($uploadsMount, $compose['services'][$containerName]['volumes'], true)) {
+                $compose['services'][$containerName]['volumes'][] = $uploadsMount;
+            }
         }
 
         // Add sidecar services from template
@@ -1689,6 +1714,10 @@ class ContainerDeploymentService
             $this->runtimeImages->ensureImage($ssh, $template, $deployment->selected_version, $service, $deployment);
         }
 
+        if (($template?->slug ?? '') === 'wordpress') {
+            $this->wordpressHardening->ensureUploadsIniFile($ssh, $deployment->container_name);
+        }
+
         if ($recreate) {
             @$ssh->exec("cd {$containerPath} && docker compose -f docker-compose.yml down --remove-orphans", self::DEPLOY_TIMEOUT);
         }
@@ -1696,6 +1725,16 @@ class ContainerDeploymentService
         $this->composeUp($ssh, $containerPath, (bool) $usesRuntimeImage, useExplicitComposeFile: true);
         $this->syncPhpExtensionsIfSupported($ssh, $service, $deployment);
         $this->syncDatabaseCredentialsAfterStart($ssh, $service, $deployment, $containerPath);
+
+        $service->loadMissing('product.containerTemplate');
+        if (($service->product?->containerTemplate?->slug ?? '') === 'wordpress') {
+            $this->wordpressHardening->hardenDeployedStack(
+                $ssh,
+                $service->fresh(['product.containerTemplate', 'containerDeployment']),
+                $deployment->container_name,
+                $containerPath
+            );
+        }
     }
 
     private function syncDatabaseCredentialsAfterStart(
@@ -2309,7 +2348,8 @@ class ContainerDeploymentService
             || ! str_contains($existing, '127.0.0.1')
             || str_contains($existing, "-h', 'localhost'")
             || str_contains($existing, '-h localhost')
-            || ! str_contains($existing, 'start_period: 300s');
+            || ! str_contains($existing, 'start_period: 300s')
+            || ! str_contains($existing, 'uploads.ini');
 
         if (! $needsRefresh) {
             return;
@@ -2335,6 +2375,7 @@ class ContainerDeploymentService
         $databaseTemplate = $this->resolveDatabaseTemplateForService($service);
 
         try {
+            $this->wordpressHardening->ensureUploadsIniFile($ssh, $containerName);
             $composeYaml = $this->renderCompose(
                 $template,
                 $containerName,

@@ -28,8 +28,13 @@ class ContainerStackCommandService
             return (string) $volumePaths['app_data'];
         }
 
+        if (is_array($volumePaths) && isset($volumePaths['wp_data'])) {
+            return (string) $volumePaths['wp_data'];
+        }
+
         return match ($template->slug ?? null) {
             'strapi' => '/srv/app',
+            'wordpress' => '/var/www/html',
             default => '/app',
         };
     }

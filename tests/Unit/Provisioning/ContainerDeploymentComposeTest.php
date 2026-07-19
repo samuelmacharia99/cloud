@@ -121,6 +121,8 @@ class ContainerDeploymentComposeTest extends TestCase
         $this->assertStringContainsString('mem_limit', $yaml);
         $this->assertStringContainsString('innodb-buffer-pool-size', $yaml);
         $this->assertStringContainsString('mysql_data:/var/lib/mysql', $yaml);
+        $this->assertStringContainsString('uploads.ini', $yaml);
+        $this->assertStringContainsString('/usr/local/etc/php/conf.d/uploads.ini', $yaml);
         $this->assertMatchesRegularExpression('/volumes:\s*\n(?:.*\n)*?\s+mysql_data:/', $yaml);
     }
 
