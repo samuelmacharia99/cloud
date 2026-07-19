@@ -2305,7 +2305,11 @@ class ContainerDeploymentService
             || ! preg_match('/^\s*mem_limit:\s*[\'"]?1[gG][\'"]?\s*$/mi', $existing)
             || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
             || ! str_contains($existing, 'service_healthy')
-            || ! str_contains($existing, 'innodb-buffer-pool-size');
+            || ! str_contains($existing, 'innodb-buffer-pool-size')
+            || ! str_contains($existing, '127.0.0.1')
+            || str_contains($existing, "-h', 'localhost'")
+            || str_contains($existing, '-h localhost')
+            || ! str_contains($existing, 'start_period: 300s');
 
         if (! $needsRefresh) {
             return;

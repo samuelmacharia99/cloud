@@ -87,15 +87,18 @@ class ContainerTemplateEnvironmentService
             ];
         }
 
-        if (! isset($compose['services']['mysql']['healthcheck'])) {
-            $compose['services']['mysql']['healthcheck'] = [
-                'test' => ['CMD', 'mysqladmin', 'ping', '-h', 'localhost'],
-                'interval' => '10s',
-                'timeout' => '5s',
-                'retries' => 10,
-                'start_period' => '60s',
-            ];
-        }
+        // Use TCP (127.0.0.1), not the unix socket — during InnoDB recovery the sock is often missing
+        // and healthchecks fail with "Can't connect ... mysqld.sock". Long start_period covers reboot recovery.
+        $compose['services']['mysql']['healthcheck'] = [
+            'test' => [
+                'CMD-SHELL',
+                'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent',
+            ],
+            'interval' => '10s',
+            'timeout' => '5s',
+            'retries' => 30,
+            'start_period' => '300s',
+        ];
 
         $compose['services'][$appServiceName]['restart'] = 'always';
         $compose['services'][$appServiceName]['depends_on'] = [

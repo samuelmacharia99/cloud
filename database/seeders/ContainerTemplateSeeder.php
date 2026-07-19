@@ -104,11 +104,14 @@ class ContainerTemplateSeeder extends Seeder
                             'mysql_data:/var/lib/mysql',
                         ],
                         'healthcheck' => [
-                            'test' => ['CMD', 'mysqladmin', 'ping', '-h', 'localhost'],
+                            'test' => [
+                                'CMD-SHELL',
+                                'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent',
+                            ],
                             'interval' => '10s',
                             'timeout' => '5s',
-                            'retries' => 10,
-                            'start_period' => '60s',
+                            'retries' => 30,
+                            'start_period' => '300s',
                         ],
                     ],
                 ],

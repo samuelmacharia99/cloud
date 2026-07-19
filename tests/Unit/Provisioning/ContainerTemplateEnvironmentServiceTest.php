@@ -98,6 +98,9 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertSame('always', $compose['services']['mysql']['restart']);
         $this->assertSame('1g', $compose['services']['mysql']['mem_limit']);
         $this->assertSame('always', $compose['services']['app-service']['restart']);
+        $this->assertSame('CMD-SHELL', $compose['services']['mysql']['healthcheck']['test'][0]);
+        $this->assertStringContainsString('127.0.0.1', $compose['services']['mysql']['healthcheck']['test'][1]);
+        $this->assertSame('300s', $compose['services']['mysql']['healthcheck']['start_period']);
         $this->assertSame(
             ['mysql' => ['condition' => 'service_healthy']],
             $compose['services']['app-service']['depends_on']
