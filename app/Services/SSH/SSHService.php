@@ -119,32 +119,41 @@ class SSHService
 
                 $this->ssh->setTimeout($timeout);
                 $output = $this->ssh->exec($command);
-                $exitStatus = $this->ssh->getExitStatus();
 
                 // Long-running commands can leave the SSH2 bitmap mid-channel; clear it for the next call.
                 if (method_exists($this->ssh, 'reset')) {
                     @$this->ssh->reset();
                 }
 
-                if ($exitStatus !== 0) {
+                // Channel open/request failed inside phpseclib (often surfaces as false or "Undefined array key 1").
+                if ($output === false) {
+                    throw new \RuntimeException(
+                        'SSH exec returned false (session channel open or exec request failed)'
+                    );
+                }
+
+                $exitStatus = $this->ssh->getExitStatus();
+
+                // false/null means the server never sent exit-status; do not treat that as a non-zero exit.
+                if (is_int($exitStatus) && $exitStatus !== 0) {
                     throw new SSHCommandException(
                         $command,
-                        (string) ($output ?? ''),
+                        (string) $output,
                         'Command exited with status '.$exitStatus
                     );
                 }
 
-                return $output ?? '';
+                return (string) $output;
             } catch (SSHCommandException $e) {
                 $lastError = $e;
-                if ($attempt < $attempts && $this->isChannelConflictMessage($e->getMessage())) {
+                if ($attempt < $attempts && $this->isRetryableSshFailure($e->getMessage())) {
                     continue;
                 }
 
                 throw $e;
             } catch (\Throwable $e) {
                 $lastError = $e;
-                if ($attempt < $attempts && $this->isChannelConflictMessage($e->getMessage())) {
+                if ($attempt < $attempts && $this->isRetryableSshFailure($e->getMessage())) {
                     continue;
                 }
 
@@ -548,12 +557,25 @@ class SSHService
 
     private function isChannelConflictMessage(string $message): bool
     {
+        return $this->isRetryableSshFailure($message);
+    }
+
+    /**
+     * Transient phpseclib / network failures that usually succeed after a fresh SSH session.
+     */
+    private function isRetryableSshFailure(string $message): bool
+    {
         $lower = strtolower($message);
 
         return str_contains($lower, 'close the channel')
             || str_contains($lower, 'before trying to open it again')
             || str_contains($lower, 'connection closed prematurely')
-            || str_contains($lower, 'no connection');
+            || str_contains($lower, 'no connection')
+            || str_contains($lower, 'undefined array key')
+            || str_contains($lower, 'exec returned false')
+            || str_contains($lower, 'channel open')
+            || str_contains($lower, 'connection timed out')
+            || str_contains($lower, 'timed out whilst');
     }
 
     /**

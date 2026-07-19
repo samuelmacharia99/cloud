@@ -35,15 +35,19 @@ class PollNodeHealthCommand extends BaseCronCommand
                 // Create SSH connection
                 $ssh = SSHService::forNode($node);
 
+                // 5s was too aggressive for channel open under load and surfaced as
+                // phpseclib "Undefined array key 1" (CHANNEL_EXEC) wrapped as SSH failures.
+                $timeout = 20;
+
                 // Test connectivity
-                $ssh->exec('echo "OK"', 5);
+                $ssh->exec('echo "OK"', $timeout);
 
                 // Collect system metrics
-                $uptime = $ssh->exec('uptime -p', 5);
-                $freeOutput = $ssh->exec('free -b | grep Mem', 5);
-                $dfOutput = $ssh->exec('df /opt/talksasa/containers -B1 2>/dev/null | tail -1 || df / -B1 | tail -1', 5);
-                $cpuOutput = $ssh->exec('grep -c ^processor /proc/cpuinfo', 5);
-                $loadOutput = $ssh->exec('cat /proc/loadavg | awk \'{print $1, $2, $3}\'', 5);
+                $uptime = $ssh->exec('uptime -p', $timeout);
+                $freeOutput = $ssh->exec('free -b | grep Mem', $timeout);
+                $dfOutput = $ssh->exec('df /opt/talksasa/containers -B1 2>/dev/null | tail -1 || df / -B1 | tail -1', $timeout);
+                $cpuOutput = $ssh->exec('grep -c ^processor /proc/cpuinfo', $timeout);
+                $loadOutput = $ssh->exec('cat /proc/loadavg | awk \'{print $1, $2, $3}\'', $timeout);
 
                 // Parse memory
                 preg_match('/Mem:\s+(\d+)\s+(\d+)\s+(\d+)/', $freeOutput, $memMatches);
@@ -111,7 +115,21 @@ class PollNodeHealthCommand extends BaseCronCommand
             } catch (\Exception $e) {
                 $failed++;
                 Log::error("NODE POLL FAILED: {$node->name} ({$node->ip_address}) - {$e->getMessage()}");
-                $node->update(['status' => 'offline']);
+
+                // Transient SSH/channel races: keep heartbeat-fresh nodes degraded, not offline,
+                // so admin UI doesn't flap while the node agent is still reporting in.
+                $message = strtolower($e->getMessage());
+                $transient = str_contains($message, 'undefined array key')
+                    || str_contains($message, 'exec returned false')
+                    || str_contains($message, 'timed out')
+                    || str_contains($message, 'channel');
+
+                $heartbeatFresh = $node->last_heartbeat_at
+                    && $node->last_heartbeat_at->greaterThan(now()->subMinutes(5));
+
+                $node->update([
+                    'status' => ($transient && $heartbeatFresh) ? 'degraded' : 'offline',
+                ]);
             }
         }
 
