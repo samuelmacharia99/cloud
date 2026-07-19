@@ -3,6 +3,7 @@
 namespace App\Services\Provisioning;
 
 use App\Models\ContainerCronJob;
+use App\Models\ContainerDomain;
 use App\Models\Service;
 use App\Services\SSH\SSHService;
 use Illuminate\Support\Facades\Log;
@@ -196,5 +197,37 @@ SNIP;
         $this->ensureUploadsIniFile($ssh, $containerName);
         $this->ensureWpConfigHardening($ssh, $containerPath, $containerName);
         $this->ensureSystemCronJob($service);
+        $this->ensureNginxUploadLimits($service);
+    }
+
+    /**
+     * Legacy nginx vhosts default to 1m and return HTML 413 on media uploads.
+     */
+    public function ensureNginxUploadLimits(Service $service): void
+    {
+        $service->loadMissing('containerDeployment.domains');
+
+        $domains = $service->containerDeployment?->domains
+            ?? ContainerDomain::query()
+                ->whereHas('deployment', fn ($q) => $q->where('service_id', $service->id))
+                ->get();
+
+        if (! $domains || $domains->isEmpty()) {
+            return;
+        }
+
+        $nginx = app(NginxProxyService::class);
+
+        foreach ($domains as $domain) {
+            try {
+                $nginx->ensureUploadLimit($domain);
+            } catch (\Throwable $e) {
+                Log::warning('WordPress nginx upload-limit refresh failed', [
+                    'service_id' => $service->id,
+                    'domain' => $domain->domain,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }

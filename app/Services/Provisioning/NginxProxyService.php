@@ -337,6 +337,82 @@ EOL;
     }
 
     /**
+     * Rewrite nginx vhost if it is missing client_max_body_size (legacy 1m default → WP 413).
+     *
+     * @return bool true when the config was rewritten
+     */
+    public function ensureUploadLimit(ContainerDomain $domain): bool
+    {
+        $domain->loadMissing('deployment.node');
+
+        $node = $domain->deployment?->node;
+        if (! $node || ! in_array($domain->status, ['active', 'pending'], true)) {
+            return false;
+        }
+
+        $ssh = SSHService::forNode($node);
+
+        try {
+            if (! $this->isNginxInstalled($ssh)) {
+                return false;
+            }
+
+            $configPath = $domain->nginx_config_path
+                ?: $this->resolveNginxConfigDir($ssh).'/'.$domain->domain.'.conf';
+
+            $existing = '';
+            try {
+                $existing = $ssh->downloadFile($configPath);
+            } catch (\Throwable) {
+                // Missing file — full bind will recreate it.
+            }
+
+            $required = 'client_max_body_size '.$this->clientMaxBodySize();
+            if ($existing !== '' && str_contains($existing, $required)) {
+                return false;
+            }
+
+            $this->bind($domain->fresh(['deployment.node']));
+
+            return true;
+        } finally {
+            $ssh->disconnect();
+        }
+    }
+
+    /**
+     * Refresh upload limits for every active/pending container domain.
+     *
+     * @return array{checked: int, updated: int, failed: int}
+     */
+    public function ensureUploadLimitsForAllDomains(): array
+    {
+        $summary = ['checked' => 0, 'updated' => 0, 'failed' => 0];
+
+        $domains = ContainerDomain::query()
+            ->whereIn('status', ['active', 'pending'])
+            ->with('deployment.node')
+            ->get();
+
+        foreach ($domains as $domain) {
+            $summary['checked']++;
+            try {
+                if ($this->ensureUploadLimit($domain)) {
+                    $summary['updated']++;
+                }
+            } catch (\Throwable $e) {
+                $summary['failed']++;
+                \Log::warning('Failed to refresh nginx upload limit for domain', [
+                    'domain' => $domain->domain,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $summary;
+    }
+
+    /**
      * Max upload size for container reverse-proxy vhosts (WordPress media, etc.).
      */
     public function clientMaxBodySize(): string
