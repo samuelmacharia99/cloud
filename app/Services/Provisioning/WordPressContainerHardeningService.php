@@ -32,7 +32,7 @@ class WordPressContainerHardeningService
             '; Managed by Talksasa — keep PHP limits aligned with nginx client_max_body_size',
             "upload_max_filesize = {$mb}M",
             "post_max_size = {$mb}M",
-            'memory_limit = 256M',
+            'memory_limit = 512M',
             'max_execution_time = 300',
             'max_input_time = 300',
             'max_file_uploads = 50',

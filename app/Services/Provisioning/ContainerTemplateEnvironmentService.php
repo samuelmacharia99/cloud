@@ -74,18 +74,18 @@ class ContainerTemplateEnvironmentService
         // Host reboots / docker restarts: always bring the DB back even if it was stopped for maintenance.
         $compose['services']['mysql']['restart'] = 'always';
 
-        // Cap MySQL so it cannot starve the host or the WordPress PHP container.
-        $compose['services']['mysql']['mem_limit'] = $compose['services']['mysql']['mem_limit'] ?? '1g';
+        // Cap MySQL for shared container hosts (many WP stacks per node).
+        // 1g + 512M buffer pool per site caused host pressure → slow MySQL → nginx 504s.
+        $compose['services']['mysql']['mem_limit'] = '512M';
         $compose['services']['mysql']['cpus'] = $compose['services']['mysql']['cpus'] ?? 1.0;
 
-        // Keep InnoDB within the container memory budget (avoids OOM + lock-wait storms).
-        if (! isset($compose['services']['mysql']['command'])) {
-            $compose['services']['mysql']['command'] = [
-                '--innodb-buffer-pool-size=512M',
-                '--max-connections=150',
-                '--table-open-cache=400',
-            ];
-        }
+        // Keep InnoDB comfortably inside the 512M container budget.
+        $compose['services']['mysql']['command'] = [
+            '--innodb-buffer-pool-size=256M',
+            '--max-connections=50',
+            '--table-open-cache=200',
+            '--performance-schema=OFF',
+        ];
 
         // Use TCP (127.0.0.1), not the unix socket — during InnoDB recovery the sock is often missing
         // and healthchecks fail with "Can't connect ... mysqld.sock". Long start_period covers reboot recovery.

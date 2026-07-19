@@ -27,7 +27,7 @@ class WordPressContainerHardeningServiceTest extends TestCase
 
         $this->assertStringContainsString('upload_max_filesize = 100M', $ini);
         $this->assertStringContainsString('post_max_size = 100M', $ini);
-        $this->assertStringContainsString('memory_limit = 256M', $ini);
+        $this->assertStringContainsString('memory_limit = 512M', $ini);
         $this->assertStringContainsString(
             '/opt/talksasa/containers/user-1-wordpress/php/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini:ro',
             $service->uploadsIniVolumeMount('user-1-wordpress')
