@@ -18,7 +18,7 @@ class ContainerTemplateSeeder extends Seeder
                 'category' => 'web',
                 'docker_image' => 'wordpress:latest',
                 'default_port' => 80,
-                'required_ram_mb' => 512,
+                'required_ram_mb' => 768,
                 'required_cpu_cores' => 1.0,
                 'required_storage_gb' => 5,
                 'versions' => [
@@ -86,7 +86,14 @@ class ContainerTemplateSeeder extends Seeder
                     'mysql' => [
                         'image' => 'mysql:8.0',
                         'container_name' => 'mysql-wordpress',
-                        'restart' => 'unless-stopped',
+                        'restart' => 'always',
+                        'mem_limit' => '1g',
+                        'cpus' => 1.0,
+                        'command' => [
+                            '--innodb-buffer-pool-size=512M',
+                            '--max-connections=150',
+                            '--table-open-cache=400',
+                        ],
                         'environment' => [
                             'MYSQL_DATABASE' => 'wordpress',
                             'MYSQL_USER' => 'wordpress',
@@ -100,7 +107,8 @@ class ContainerTemplateSeeder extends Seeder
                             'test' => ['CMD', 'mysqladmin', 'ping', '-h', 'localhost'],
                             'interval' => '10s',
                             'timeout' => '5s',
-                            'retries' => 5,
+                            'retries' => 10,
+                            'start_period' => '60s',
                         ],
                     ],
                 ],

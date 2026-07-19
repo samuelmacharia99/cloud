@@ -71,7 +71,36 @@ class ContainerTemplateEnvironmentService
         // Avoid colliding container names across customers (template default is static).
         $compose['services']['mysql']['container_name'] = $appServiceName.'-mysql';
 
-        $compose['services'][$appServiceName]['depends_on'] = ['mysql'];
+        // Host reboots / docker restarts: always bring the DB back even if it was stopped for maintenance.
+        $compose['services']['mysql']['restart'] = 'always';
+
+        // Cap MySQL so it cannot starve the host or the WordPress PHP container.
+        $compose['services']['mysql']['mem_limit'] = $compose['services']['mysql']['mem_limit'] ?? '1g';
+        $compose['services']['mysql']['cpus'] = $compose['services']['mysql']['cpus'] ?? 1.0;
+
+        // Keep InnoDB within the container memory budget (avoids OOM + lock-wait storms).
+        if (! isset($compose['services']['mysql']['command'])) {
+            $compose['services']['mysql']['command'] = [
+                '--innodb-buffer-pool-size=512M',
+                '--max-connections=150',
+                '--table-open-cache=400',
+            ];
+        }
+
+        if (! isset($compose['services']['mysql']['healthcheck'])) {
+            $compose['services']['mysql']['healthcheck'] = [
+                'test' => ['CMD', 'mysqladmin', 'ping', '-h', 'localhost'],
+                'interval' => '10s',
+                'timeout' => '5s',
+                'retries' => 10,
+                'start_period' => '60s',
+            ];
+        }
+
+        $compose['services'][$appServiceName]['restart'] = 'always';
+        $compose['services'][$appServiceName]['depends_on'] = [
+            'mysql' => ['condition' => 'service_healthy'],
+        ];
     }
 
     /**

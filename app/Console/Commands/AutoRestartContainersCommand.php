@@ -56,8 +56,9 @@ class AutoRestartContainersCommand extends BaseCronCommand
                     $deploymentService->ensureComposeFileExists($ssh, $deployment);
 
                     $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
+                    $sidecarDown = $this->embeddedDatabaseSidecarNeedsStart($ssh, $deployment);
 
-                    if (($inspect['running'] ?? false) === true) {
+                    if (($inspect['running'] ?? false) === true && ! $sidecarDown) {
                         if ($deployment->status !== 'running' || $deployment->restart_attempts > 0) {
                             $this->runtimeInspector->syncDeploymentStatus($deployment, $inspect);
                             $deployment->update(['restart_attempts' => 0]);
@@ -66,15 +67,19 @@ class AutoRestartContainersCommand extends BaseCronCommand
                         continue;
                     }
 
-                    $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id}...");
+                    $reason = ($inspect['running'] ?? false) !== true
+                        ? 'app container not running'
+                        : 'database sidecar not running';
+                    $this->line("  <fg=yellow>Restarting</> deployment {$deployment->id} ({$reason})...");
 
                     $deploymentService->startComposeStack($ssh, $deployment->service, $deployment);
 
                     sleep(3);
 
                     $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
+                    $sidecarDown = $this->embeddedDatabaseSidecarNeedsStart($ssh, $deployment);
 
-                    if (($inspect['running'] ?? false) === true) {
+                    if (($inspect['running'] ?? false) === true && ! $sidecarDown) {
                         if ($deployment->restart_attempts > 0) {
                             app(NotificationService::class)->notifyContainerAutoRestarted(
                                 $deployment->service,
@@ -132,5 +137,29 @@ class AutoRestartContainersCommand extends BaseCronCommand
         }
 
         return "Auto-restart complete: {$restarted} restarted, {$failed} failed, {$notified} notified.";
+    }
+
+    /**
+     * WordPress (and similar) stacks keep MySQL in a sibling container.
+     * After host reboot the app may come up while MySQL stays stopped — treat that as down.
+     */
+    private function embeddedDatabaseSidecarNeedsStart(SSHService $ssh, ContainerDeployment $deployment): bool
+    {
+        $compose = (string) ($deployment->docker_compose_content ?? '');
+        if ($compose === '') {
+            return false;
+        }
+
+        $mysqlContainer = $deployment->container_name.'-mysql';
+        $definesMysql = str_contains($compose, $mysqlContainer)
+            || preg_match('/^\s*mysql:\s*$/m', $compose) === 1;
+
+        if (! $definesMysql) {
+            return false;
+        }
+
+        $inspect = $this->runtimeInspector->inspect($ssh, $mysqlContainer);
+
+        return ($inspect['running'] ?? false) !== true;
     }
 }

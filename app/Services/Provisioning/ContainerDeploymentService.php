@@ -873,7 +873,7 @@ class ContainerDeploymentService
 
         $compose['services']['db'] = array_filter([
             'image' => $db->docker_image,
-            'restart' => 'unless-stopped',
+            'restart' => 'always',
             'mem_limit' => '512M',
             'environment' => $dbEnv ?: null,
             'volumes' => ["db_data:{$mountPath}"],
@@ -907,7 +907,7 @@ class ContainerDeploymentService
                 $containerName => [
                     'image' => $dockerImage,
                     'container_name' => $containerName,
-                    'restart' => $deployment?->restart_policy ?? 'unless-stopped',
+                    'restart' => $deployment?->restart_policy ?? 'always',
                     'environment' => $envVars,
                     'ports' => ["{$port}:".$template->default_port],
                     'mem_limit' => $memoryLimitStr,
@@ -1674,6 +1674,7 @@ class ContainerDeploymentService
         bool $recreate = false
     ): void {
         $this->ensureComposeFileExists($ssh, $deployment);
+        $this->refreshComposeYamlIfStale($ssh, $service, $deployment);
 
         $containerPath = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
 
@@ -2281,6 +2282,88 @@ class ContainerDeploymentService
                 'An administrator needs to configure SSH credentials for this node.'
             );
         }
+    }
+
+    /**
+     * Re-render and upload compose when WordPress MySQL sidecar is missing memory/restart hardening.
+     * Existing stacks keep volumes/env; only the YAML policy/limits are refreshed before compose up.
+     */
+    public function refreshComposeYamlIfStale(
+        SSHService $ssh,
+        Service $service,
+        ContainerDeployment $deployment
+    ): void {
+        $service->loadMissing('product.containerTemplate');
+        $template = $service->product?->containerTemplate;
+
+        if (! $template || ($template->slug ?? '') !== 'wordpress') {
+            return;
+        }
+
+        $existing = (string) ($deployment->docker_compose_content ?? '');
+        $needsRefresh = $existing === ''
+            || ! preg_match('/^\s*mem_limit:\s*[\'"]?1[gG]/gmi', $existing)
+            || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
+            || ! str_contains($existing, 'service_healthy')
+            || ! str_contains($existing, 'innodb-buffer-pool-size');
+
+        if (! $needsRefresh) {
+            return;
+        }
+
+        $containerName = $deployment->container_name;
+        $port = (int) ($deployment->assigned_port ?? 0);
+        if ($port <= 0) {
+            return;
+        }
+
+        $envVars = is_array($deployment->env_values) ? $deployment->env_values : [];
+        if (trim((string) ($envVars['MYSQL_ROOT_PASSWORD'] ?? '')) === ''
+            || trim((string) ($envVars['WORDPRESS_DB_PASSWORD'] ?? $envVars['MYSQL_PASSWORD'] ?? '')) === '') {
+            \Log::warning('Skipping WordPress compose refresh: missing DB passwords', [
+                'deployment_id' => $deployment->id,
+            ]);
+
+            return;
+        }
+
+        $hostAppPath = $this->resolveHostAppPath($template, $containerName);
+        $databaseTemplate = $this->resolveDatabaseTemplateForService($service);
+
+        try {
+            $composeYaml = $this->renderCompose(
+                $template,
+                $containerName,
+                $port,
+                $envVars,
+                $databaseTemplate,
+                $deployment,
+                $deployment->selected_version,
+                $hostAppPath,
+                null,
+                null
+            );
+        } catch (\Throwable $e) {
+            \Log::warning('WordPress compose refresh failed', [
+                'deployment_id' => $deployment->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $deployment->update([
+            'docker_compose_content' => $composeYaml,
+            'restart_policy' => 'always',
+        ]);
+
+        $containerPath = self::CONTAINER_BASE_PATH.'/'.$containerName;
+        $ssh->upload($composeYaml, $containerPath.'/docker-compose.yml');
+
+        \Log::info('Refreshed WordPress docker-compose.yml with MySQL memory/restart hardening', [
+            'deployment_id' => $deployment->id,
+            'container_name' => $containerName,
+        ]);
     }
 
     /**
