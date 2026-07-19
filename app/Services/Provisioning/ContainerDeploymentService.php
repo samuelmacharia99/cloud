@@ -2345,7 +2345,8 @@ class ContainerDeploymentService
             || preg_match('/^\s*mem_limit:\s*[\'"]?1[gG][\'"]?\s*$/mi', $existing) === 1
             || str_contains($existing, 'innodb-buffer-pool-size=512M')
             || ! preg_match('/^\s*restart:\s*[\'"]?always[\'"]?\s*$/mi', $existing)
-            || ! str_contains($existing, 'service_healthy')
+            || str_contains($existing, 'service_healthy')
+            || ! str_contains($existing, 'service_started')
             || ! str_contains($existing, 'innodb-buffer-pool-size=256M')
             || ! str_contains($existing, '127.0.0.1')
             || str_contains($existing, "-h', 'localhost'")

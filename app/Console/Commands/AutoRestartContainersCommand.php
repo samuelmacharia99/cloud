@@ -8,6 +8,7 @@ use App\Services\NotificationService;
 use App\Services\Provisioning\ContainerDeploymentService;
 use App\Services\Provisioning\ContainerRuntimeInspector;
 use App\Services\SSH\SSHService;
+use Illuminate\Support\Str;
 
 class AutoRestartContainersCommand extends BaseCronCommand
 {
@@ -74,10 +75,20 @@ class AutoRestartContainersCommand extends BaseCronCommand
 
                     $deploymentService->startComposeStack($ssh, $deployment->service, $deployment);
 
-                    sleep(3);
+                    $waitSeconds = $this->restartWaitSeconds($deployment);
+                    $deadline = time() + $waitSeconds;
+                    $inspect = ['running' => false];
+                    $sidecarDown = true;
 
-                    $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
-                    $sidecarDown = $this->embeddedDatabaseSidecarNeedsStart($ssh, $deployment);
+                    do {
+                        sleep(5);
+                        $inspect = $this->runtimeInspector->inspect($ssh, $deployment->container_name);
+                        $sidecarDown = $this->embeddedDatabaseSidecarNeedsStart($ssh, $deployment);
+
+                        if (($inspect['running'] ?? false) === true && ! $sidecarDown) {
+                            break;
+                        }
+                    } while (time() < $deadline);
 
                     if (($inspect['running'] ?? false) === true && ! $sidecarDown) {
                         if ($deployment->restart_attempts > 0) {
@@ -96,8 +107,16 @@ class AutoRestartContainersCommand extends BaseCronCommand
                         $this->line("  <fg=green>✓ Restarted</> deployment {$deployment->id}");
                         $restarted++;
                     } else {
+                        $diagnostics = $this->captureRestartDiagnostics($ssh, $deployment);
                         $deployment->increment('restart_attempts');
                         $deployment->refresh();
+
+                        \Log::warning('Container auto-restart still down after wait', [
+                            'deployment_id' => $deployment->id,
+                            'container' => $deployment->container_name,
+                            'wait_seconds' => $waitSeconds,
+                            'diagnostics' => $diagnostics,
+                        ]);
 
                         if ($deployment->restart_attempts >= self::MAX_RESTART_ATTEMPTS) {
                             $message = 'Container failed to restart after '.self::MAX_RESTART_ATTEMPTS.' attempts';
@@ -111,10 +130,12 @@ class AutoRestartContainersCommand extends BaseCronCommand
                                 'service_meta' => array_merge($meta, [
                                     'container_restart_exhausted_at' => now()->toIso8601String(),
                                     'container_restart_message' => $message,
+                                    'container_restart_diagnostics' => Str::limit($diagnostics, 2000),
                                 ]),
                             ]);
 
                             $this->line("  <fg=red>✗ Failed</> deployment {$deployment->id} after {$deployment->restart_attempts} attempts");
+                            $this->line('    '.$diagnostics);
 
                             app(NotificationService::class)->notifyContainerFailed(
                                 $deployment->service,
@@ -124,6 +145,7 @@ class AutoRestartContainersCommand extends BaseCronCommand
                             $failed++;
                         } else {
                             $this->line("  <fg=yellow>⚠ Restart attempt {$deployment->restart_attempts}</> for deployment {$deployment->id}");
+                            $this->line('    '.$diagnostics);
                         }
                     }
                 } finally {
@@ -161,5 +183,36 @@ class AutoRestartContainersCommand extends BaseCronCommand
         $inspect = $this->runtimeInspector->inspect($ssh, $mysqlContainer);
 
         return ($inspect['running'] ?? false) !== true;
+    }
+
+    private function restartWaitSeconds(ContainerDeployment $deployment): int
+    {
+        $compose = (string) ($deployment->docker_compose_content ?? '');
+        if (str_contains($compose, 'mysql:') || str_contains($compose, '-mysql')) {
+            return 90;
+        }
+
+        return 30;
+    }
+
+    private function captureRestartDiagnostics(SSHService $ssh, ContainerDeployment $deployment): string
+    {
+        $path = self::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
+        $pathArg = escapeshellarg($path);
+
+        try {
+            $ps = trim($ssh->exec(
+                "cd {$pathArg} && docker compose -f docker-compose.yml ps -a 2>&1 | tail -n 20",
+                30
+            ));
+            $logs = trim($ssh->exec(
+                "cd {$pathArg} && docker compose -f docker-compose.yml logs --no-color --tail=30 2>&1 | tail -n 40",
+                45
+            ));
+
+            return trim("ps:\n{$ps}\nlogs:\n{$logs}");
+        } catch (\Throwable $e) {
+            return 'diagnostics failed: '.$e->getMessage();
+        }
     }
 }

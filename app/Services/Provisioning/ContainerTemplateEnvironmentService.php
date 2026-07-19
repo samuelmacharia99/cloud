@@ -100,9 +100,12 @@ class ContainerTemplateEnvironmentService
             'start_period' => '300s',
         ];
 
+        // Keep the healthcheck for Portainer/ops visibility, but do not block the app
+        // container on service_healthy — InnoDB recovery can take minutes and left sites
+        // on 504 while compose waited. WordPress retries DB connections itself.
         $compose['services'][$appServiceName]['restart'] = 'always';
         $compose['services'][$appServiceName]['depends_on'] = [
-            'mysql' => ['condition' => 'service_healthy'],
+            'mysql' => ['condition' => 'service_started'],
         ];
     }
 

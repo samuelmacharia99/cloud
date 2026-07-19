@@ -103,7 +103,7 @@ class ContainerTemplateEnvironmentServiceTest extends TestCase
         $this->assertStringContainsString('127.0.0.1', $compose['services']['mysql']['healthcheck']['test'][1]);
         $this->assertSame('300s', $compose['services']['mysql']['healthcheck']['start_period']);
         $this->assertSame(
-            ['mysql' => ['condition' => 'service_healthy']],
+            ['mysql' => ['condition' => 'service_started']],
             $compose['services']['app-service']['depends_on']
         );
     }
