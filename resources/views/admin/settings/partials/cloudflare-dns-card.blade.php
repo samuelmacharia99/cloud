@@ -6,6 +6,18 @@
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
             Managed DNS for domain-only customers and container hosting. Uses your Cloudflare account with branded nameservers.
         </p>
+        <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+            <p class="font-medium mb-1">API token permissions (required)</p>
+            <ul class="list-disc pl-5 space-y-1 text-amber-800 dark:text-amber-200/90">
+                <li><strong>Zone → Zone → Edit</strong> (account-wide — needed to <em>create</em> zones; “specific zone only” is not enough)</li>
+                <li><strong>Zone → DNS → Edit</strong></li>
+                <li><strong>Account → Account Settings → Read</strong> (for Test connection)</li>
+                <li>Account resources: your Talksasa Cloudflare account · Zone resources: <strong>All zones</strong> from that account</li>
+            </ul>
+            <p class="mt-2 text-xs text-amber-700 dark:text-amber-300/80">
+                “Edit zone DNS” templates often cannot create zones and will fail Enable DNS with <code class="font-mono">account.zone.create</code>.
+            </p>
+        </div>
 
         <div class="space-y-4">
             <div>
@@ -19,8 +31,8 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
-                    <input type="password" name="settings[cloudflare_api_token]" value="{{ $settings['cloudflare_api_token'] ?? '' }}" placeholder="Cloudflare API token (Zone:Edit)" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave blank to keep the current token.</p>
+                    <input type="password" name="settings[cloudflare_api_token]" value="{{ $settings['cloudflare_api_token'] ?? '' }}" placeholder="API token (Zone Edit + DNS Edit, all zones)" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave blank to keep the current token. Account ID must match the account this token can create zones in.</p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Account ID</label>
