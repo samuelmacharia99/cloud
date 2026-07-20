@@ -13,7 +13,7 @@
             <h3 style="color: #ea580c; margin-top: 0;">🔴 Hung Job Detected</h3>
             <p><strong>Job:</strong> {{ $issue['job']->name }}</p>
             <p><strong>Command:</strong> <code>{{ $issue['job']->command }}</code></p>
-            <p><strong>Running For:</strong> {{ $issue['duration'] }} seconds (max allowed: {{ \App\Models\Setting::getValue('max_execution_time', '120') }}s)</p>
+            <p><strong>Running For:</strong> {{ $issue['duration'] }} seconds (max allowed: {{ $issue['max_allowed'] ?? \App\Models\Setting::getValue('max_execution_time', '120') }}s)</p>
             <p>The job appears to be stuck. You may need to manually kill the process or investigate why it's not completing.</p>
         @elseif($issue['type'] === 'consecutive_failures')
             <h3 style="color: #dc2626; margin-top: 0;">🔴 Repeated Failures</h3>

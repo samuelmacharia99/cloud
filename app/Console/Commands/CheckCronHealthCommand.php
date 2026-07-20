@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Mail\CronHealthAlertMail;
+use App\Models\CronJob;
 use App\Models\CronJobLog;
 use App\Models\Setting;
 use App\Models\User;
@@ -18,31 +19,41 @@ class CheckCronHealthCommand extends BaseCronCommand
 
     protected function handleCron(): string
     {
-        $maxExecutionTime = (int) Setting::getValue('max_execution_time', 120);
+        $defaultMaxExecutionTime = (int) Setting::getValue('max_execution_time', 120);
         $issues = [];
 
-        $hungjobs = CronJobLog::where('status', 'running')
-            ->where('started_at', '<', now()->subSeconds($maxExecutionTime))
+        // Load all still-running logs; apply per-command thresholds below.
+        // A global WHERE on max_execution_time would miss long jobs that are fine.
+        $runningLogs = CronJobLog::where('status', 'running')
             ->with('cronJob')
             ->get();
 
-        foreach ($hungjobs as $log) {
+        foreach ($runningLogs as $log) {
+            $maxExecutionTime = $this->maxRuntimeSeconds($log->cronJob, $defaultMaxExecutionTime);
+            $duration = $log->started_at->diffInSeconds(now());
+
+            if ($duration < $maxExecutionTime) {
+                continue;
+            }
+
             $issues[] = [
                 'type' => 'hung',
                 'job' => $log->cronJob,
-                'duration' => $log->started_at->diffInSeconds(now()),
+                'duration' => $duration,
+                'max_allowed' => $maxExecutionTime,
             ];
 
-            Log::warning("Hung cron job detected: {$log->cronJob->name}", [
+            Log::warning("Hung cron job detected: {$log->cronJob?->name}", [
+                'command' => $log->cronJob?->command,
                 'started_at' => $log->started_at,
-                'duration_seconds' => $log->started_at->diffInSeconds(now()),
+                'duration_seconds' => $duration,
                 'max_allowed' => $maxExecutionTime,
             ]);
 
-            if ($log->started_at->diffInSeconds(now()) > ($maxExecutionTime * 2)) {
+            if ($duration > ($maxExecutionTime * 2)) {
                 $log->update([
                     'status' => 'failed',
-                    'exception' => 'Job exceeded maximum execution time and was marked as failed by health checker',
+                    'exception' => "Job exceeded maximum execution time ({$maxExecutionTime}s) and was marked as failed by health checker",
                     'finished_at' => now(),
                 ]);
             }
@@ -89,6 +100,7 @@ class CheckCronHealthCommand extends BaseCronCommand
                     'Job' => $issue['job']->name,
                     'Command' => $issue['job']->command,
                     'Running for' => $issue['duration'].' seconds',
+                    'Max allowed' => ($issue['max_allowed'] ?? '?').' seconds',
                 ]);
             } elseif ($issue['type'] === 'consecutive_failures') {
                 $bridge->systemAlert('Cron job failing repeatedly', [
@@ -112,5 +124,23 @@ class CheckCronHealthCommand extends BaseCronCommand
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Resolve how long a job may stay "running" before it is treated as hung.
+     */
+    public function maxRuntimeSeconds(?CronJob $job, ?int $default = null): int
+    {
+        $default ??= (int) Setting::getValue('max_execution_time', 120);
+        $command = $job?->command;
+
+        if ($command) {
+            $override = (int) config('cron.hang_thresholds.'.$command, 0);
+            if ($override > 0) {
+                return max($default, $override);
+            }
+        }
+
+        return max(30, $default);
     }
 }
