@@ -42,11 +42,21 @@ class CloudflareDnsService
     public function brandedNameservers(): array
     {
         return [
-            'ns1' => (string) Setting::getValue('cloudflare_branded_ns1', ''),
-            'ns2' => Setting::getValue('cloudflare_branded_ns2') ?: null,
-            'ns3' => Setting::getValue('cloudflare_branded_ns3') ?: null,
-            'ns4' => Setting::getValue('cloudflare_branded_ns4') ?: null,
+            'ns1' => $this->sanitizeNameserver(Setting::getValue('cloudflare_branded_ns1', '')) ?? '',
+            'ns2' => $this->sanitizeNameserver(Setting::getValue('cloudflare_branded_ns2')),
+            'ns3' => $this->sanitizeNameserver(Setting::getValue('cloudflare_branded_ns3')),
+            'ns4' => $this->sanitizeNameserver(Setting::getValue('cloudflare_branded_ns4')),
         ];
+    }
+
+    private function sanitizeNameserver(mixed $value): ?string
+    {
+        $value = strtolower(trim((string) ($value ?? '')));
+        if ($value === '' || $value === '0' || $value === '-') {
+            return null;
+        }
+
+        return $value;
     }
 
     /**
@@ -240,58 +250,87 @@ class CloudflareDnsService
             return ['success' => false, 'message' => 'Cloudflare API token is not configured.'];
         }
 
-        try {
-            $client = Http::withToken($token)
-                ->acceptJson()
-                ->timeout(30);
+        $attempts = 3;
+        $lastError = null;
 
-            $url = self::API_BASE.$path;
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            try {
+                $client = Http::withToken($token)
+                    ->acceptJson()
+                    ->connectTimeout(15)
+                    ->timeout(60);
 
-            $response = match (strtoupper($method)) {
-                'GET' => $client->get($url, $body),
-                'POST' => $client->post($url, $body),
-                'PATCH' => $client->patch($url, $body),
-                'DELETE' => $client->delete($url),
-                default => throw new \InvalidArgumentException("Unsupported HTTP method: {$method}"),
-            };
+                $url = self::API_BASE.$path;
 
-            $json = $response->json();
+                $response = match (strtoupper($method)) {
+                    'GET' => $client->get($url, $body),
+                    'POST' => $client->post($url, $body),
+                    'PATCH' => $client->patch($url, $body),
+                    'DELETE' => $client->delete($url),
+                    default => throw new \InvalidArgumentException("Unsupported HTTP method: {$method}"),
+                };
 
-            if (! is_array($json)) {
-                return ['success' => false, 'message' => 'Invalid response from Cloudflare API.'];
-            }
+                $json = $response->json();
 
-            if (! ($json['success'] ?? false)) {
-                $errors = collect($json['errors'] ?? [])
-                    ->pluck('message')
-                    ->filter()
-                    ->implode(' ');
+                if (! is_array($json)) {
+                    return ['success' => false, 'message' => 'Invalid response from Cloudflare API.'];
+                }
 
-                Log::warning('Cloudflare API error', [
-                    'path' => $path,
-                    'status' => $response->status(),
-                    'errors' => $json['errors'] ?? [],
-                ]);
+                if (! ($json['success'] ?? false)) {
+                    $errors = collect($json['errors'] ?? [])
+                        ->pluck('message')
+                        ->filter()
+                        ->implode(' ');
+
+                    Log::warning('Cloudflare API error', [
+                        'path' => $path,
+                        'status' => $response->status(),
+                        'errors' => $json['errors'] ?? [],
+                    ]);
+
+                    return [
+                        'success' => false,
+                        'message' => $errors !== '' ? $errors : 'Cloudflare API request failed.',
+                    ];
+                }
 
                 return [
-                    'success' => false,
-                    'message' => $errors !== '' ? $errors : 'Cloudflare API request failed.',
+                    'success' => true,
+                    'message' => 'OK',
+                    'data' => $json['result'] ?? null,
                 ];
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
+                $retryable = $this->isRetryableTransportError($lastError);
+
+                Log::error('Cloudflare API exception', [
+                    'path' => $path,
+                    'attempt' => $attempt,
+                    'retryable' => $retryable,
+                    'error' => $lastError,
+                ]);
+
+                if (! $retryable || $attempt === $attempts) {
+                    break;
+                }
+
+                usleep(250000 * $attempt);
             }
-
-            return [
-                'success' => true,
-                'message' => 'OK',
-                'data' => $json['result'] ?? null,
-            ];
-        } catch (\Throwable $e) {
-            Log::error('Cloudflare API exception', [
-                'path' => $path,
-                'error' => $e->getMessage(),
-            ]);
-
-            return ['success' => false, 'message' => $e->getMessage()];
         }
+
+        return ['success' => false, 'message' => $lastError ?? 'Cloudflare API request failed.'];
+    }
+
+    private function isRetryableTransportError(string $message): bool
+    {
+        $lower = strtolower($message);
+
+        return str_contains($lower, 'timed out')
+            || str_contains($lower, 'curl error 28')
+            || str_contains($lower, 'curl error 7')
+            || str_contains($lower, 'connection reset')
+            || str_contains($lower, 'could not resolve host')
+            || str_contains($lower, 'ssl connection timeout');
     }
 
     /**

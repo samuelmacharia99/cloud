@@ -168,7 +168,7 @@ class NodeNameserverService
 
         foreach ([$ns1, $ns2, $ns3, $ns4] as $value) {
             $value = trim((string) ($value ?? ''));
-            if ($value === '') {
+            if ($value === '' || $value === '0' || $value === '-') {
                 continue;
             }
 
