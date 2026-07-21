@@ -543,7 +543,7 @@ class DirectAdminToContainerMigrationService
             // With the host app bind-mount, this updates the same files the file manager sees.
             $this->rewriteWpConfigInContainer($targetSsh, $containerPath, $appService, $dbDefines);
             $this->ensureWordPressProxyHttpsAwareness($targetSsh, $containerPath, $appService);
-            app(WordPressContainerHardeningService::class)->ensureSystemCronJob($service->fresh([
+            app(WordPressContainerHardeningService::class)->ensureSystemCronJob($target->fresh([
                 'product.containerTemplate',
                 'containerDeployment',
             ]));
