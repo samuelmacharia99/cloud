@@ -198,17 +198,32 @@ class CloudflareDnsService
     /**
      * @return array{success: bool, message: string, record?: array<string, mixed>}
      */
-    public function createRecord(string $zoneId, string $type, string $name, string $content, int $ttl = 3600, ?int $priority = null): array
-    {
+    public function createRecord(
+        string $zoneId,
+        string $type,
+        string $name,
+        string $content,
+        int $ttl = 3600,
+        ?int $priority = null,
+        ?bool $proxied = null,
+    ): array {
+        $type = strtoupper($type);
         $payload = [
-            'type' => strtoupper($type),
+            'type' => $type,
             'name' => $name,
             'content' => $content,
-            'ttl' => max(60, $ttl),
+            'ttl' => max(1, $ttl),
         ];
 
-        if ($priority !== null && in_array(strtoupper($type), ['MX', 'SRV'], true)) {
+        if ($priority !== null && in_array($type, ['MX', 'SRV'], true)) {
             $payload['priority'] = $priority;
+        }
+
+        if ($this->supportsProxy($type) && $proxied !== null) {
+            $payload['proxied'] = $proxied;
+            if ($proxied) {
+                $payload['ttl'] = 1; // Cloudflare Auto when proxied
+            }
         }
 
         $response = $this->request('POST', '/zones/'.$zoneId.'/dns_records', $payload);
@@ -227,17 +242,33 @@ class CloudflareDnsService
     /**
      * @return array{success: bool, message: string, record?: array<string, mixed>}
      */
-    public function updateRecord(string $zoneId, string $recordId, string $type, string $name, string $content, int $ttl = 3600, ?int $priority = null): array
-    {
+    public function updateRecord(
+        string $zoneId,
+        string $recordId,
+        string $type,
+        string $name,
+        string $content,
+        int $ttl = 3600,
+        ?int $priority = null,
+        ?bool $proxied = null,
+    ): array {
+        $type = strtoupper($type);
         $payload = [
-            'type' => strtoupper($type),
+            'type' => $type,
             'name' => $name,
             'content' => $content,
-            'ttl' => max(60, $ttl),
+            'ttl' => max(1, $ttl),
         ];
 
-        if ($priority !== null && in_array(strtoupper($type), ['MX', 'SRV'], true)) {
+        if ($priority !== null && in_array($type, ['MX', 'SRV'], true)) {
             $payload['priority'] = $priority;
+        }
+
+        if ($this->supportsProxy($type) && $proxied !== null) {
+            $payload['proxied'] = $proxied;
+            if ($proxied) {
+                $payload['ttl'] = 1;
+            }
         }
 
         $response = $this->request('PATCH', '/zones/'.$zoneId.'/dns_records/'.$recordId, $payload);
@@ -251,6 +282,11 @@ class CloudflareDnsService
             'message' => 'Record updated.',
             'record' => $this->normalizeRecord($response['data'] ?? []),
         ];
+    }
+
+    public function supportsProxy(string $type): bool
+    {
+        return in_array(strtoupper($type), ['A', 'AAAA', 'CNAME'], true);
     }
 
     /**

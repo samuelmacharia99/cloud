@@ -158,8 +158,15 @@ class DomainCloudflareDnsService
     /**
      * @return array{success: bool, message: string}
      */
-    public function addRecord(Domain $domain, string $name, string $type, string $content, int $ttl = 3600, ?int $priority = null): array
-    {
+    public function addRecord(
+        Domain $domain,
+        string $name,
+        string $type,
+        string $content,
+        int $ttl = 3600,
+        ?int $priority = null,
+        ?bool $proxied = null,
+    ): array {
         $zoneId = $this->requireZoneId($domain);
 
         return $this->cloudflare->createRecord(
@@ -169,14 +176,23 @@ class DomainCloudflareDnsService
             $content,
             $ttl,
             $priority,
+            $proxied,
         );
     }
 
     /**
      * @return array{success: bool, message: string}
      */
-    public function updateRecord(Domain $domain, string $recordId, string $name, string $type, string $content, int $ttl = 3600, ?int $priority = null): array
-    {
+    public function updateRecord(
+        Domain $domain,
+        string $recordId,
+        string $name,
+        string $type,
+        string $content,
+        int $ttl = 3600,
+        ?int $priority = null,
+        ?bool $proxied = null,
+    ): array {
         $zoneId = $this->requireZoneId($domain);
 
         return $this->cloudflare->updateRecord(
@@ -187,6 +203,7 @@ class DomainCloudflareDnsService
             $content,
             $ttl,
             $priority,
+            $proxied,
         );
     }
 

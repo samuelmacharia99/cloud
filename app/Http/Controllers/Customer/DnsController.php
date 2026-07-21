@@ -100,53 +100,79 @@ class DnsController extends Controller
     {
         $this->authorize('manageDns', $domain);
 
-        $validated = $request->validate([
-            'name' => 'required|string',
-            'type' => 'required|in:A,AAAA,CNAME,MX,TXT,NS,SRV,CAA',
-            'content' => 'required|string',
-            'ttl' => 'nullable|integer|min:60|max:86400',
-            'priority' => 'nullable|integer',
-        ]);
+        $validated = $this->validateRecordPayload($request);
 
-        $result = $this->dns->addRecord(
-            $domain,
-            $validated['name'],
-            $validated['type'],
-            $validated['content'],
-            (int) ($validated['ttl'] ?? 3600),
-            isset($validated['priority']) ? (int) $validated['priority'] : null,
-        );
+        try {
+            $result = $this->dns->addRecord(
+                $domain,
+                $validated['name'],
+                $validated['type'],
+                $validated['content'],
+                (int) ($validated['ttl'] ?? 3600),
+                isset($validated['priority']) ? (int) $validated['priority'] : null,
+                $validated['proxied'] ?? null,
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
 
         return $result['success']
             ? back()->with('success', 'DNS record added successfully.')
-            : back()->with('error', $result['message']);
+            : back()->with('error', $result['message'])->withInput();
     }
 
     public function updateRecord(Request $request, Domain $domain, string $recordId)
     {
         $this->authorize('manageDns', $domain);
 
-        $validated = $request->validate([
-            'name' => 'required|string',
-            'type' => 'required|in:A,AAAA,CNAME,MX,TXT,NS,SRV,CAA',
-            'content' => 'required|string',
-            'ttl' => 'nullable|integer|min:60|max:86400',
-            'priority' => 'nullable|integer',
-        ]);
+        $validated = $this->validateRecordPayload($request);
 
-        $result = $this->dns->updateRecord(
-            $domain,
-            $recordId,
-            $validated['name'],
-            $validated['type'],
-            $validated['content'],
-            (int) ($validated['ttl'] ?? 3600),
-            isset($validated['priority']) ? (int) $validated['priority'] : null,
-        );
+        try {
+            $result = $this->dns->updateRecord(
+                $domain,
+                $recordId,
+                $validated['name'],
+                $validated['type'],
+                $validated['content'],
+                (int) ($validated['ttl'] ?? 3600),
+                isset($validated['priority']) ? (int) $validated['priority'] : null,
+                $validated['proxied'] ?? null,
+            );
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
 
         return $result['success']
             ? back()->with('success', 'DNS record updated successfully.')
-            : back()->with('error', $result['message']);
+            : back()->with('error', $result['message'])->withInput();
+    }
+
+    /**
+     * @return array{name: string, type: string, content: string, ttl?: int, priority?: int, proxied?: bool|null}
+     */
+    private function validateRecordPayload(Request $request): array
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => 'required|in:A,AAAA,CNAME,MX,TXT,NS,SRV,CAA',
+            'content' => 'required|string|max:2000',
+            'ttl' => 'nullable|integer|min:1|max:86400',
+            'priority' => 'nullable|integer|min:0|max:65535',
+            'proxied' => 'nullable|boolean',
+        ]);
+
+        $proxyable = in_array($validated['type'], ['A', 'AAAA', 'CNAME'], true);
+        if (array_key_exists('proxied', $validated)) {
+            $validated['proxied'] = $proxyable ? $request->boolean('proxied') : null;
+        } else {
+            $validated['proxied'] = null;
+        }
+
+        if (! empty($validated['proxied'])) {
+            $validated['ttl'] = 1;
+        }
+
+        return $validated;
     }
 
     public function deleteRecord(Domain $domain, string $recordId)
