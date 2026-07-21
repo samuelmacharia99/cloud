@@ -250,6 +250,18 @@ class SettingController extends Controller
                 continue;
             }
 
+            if ($key === 'cloudflare_api_token') {
+                $trimmedValue = preg_replace('/\s+/', '', $trimmedValue) ?? $trimmedValue;
+                if (str_starts_with(strtolower($trimmedValue), 'bearer')) {
+                    $trimmedValue = trim(substr($trimmedValue, 6));
+                }
+            }
+
+            if (in_array($key, ['cloudflare_branded_ns3', 'cloudflare_branded_ns4'], true)
+                && in_array(strtolower($trimmedValue), ['0', '-', 'ns.example.com'], true)) {
+                $trimmedValue = '';
+            }
+
             if ($key === 'hetzner_storage_password' && $trimmedValue !== '') {
                 $trimmedValue = Crypt::encryptString($trimmedValue);
             }

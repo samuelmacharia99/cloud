@@ -31,8 +31,18 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">API Token</label>
-                    <input type="password" name="settings[cloudflare_api_token]" value="{{ $settings['cloudflare_api_token'] ?? '' }}" placeholder="API token (Zone Edit + DNS Edit, all zones)" autocomplete="new-password" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Leave blank to keep the current token. Account ID must match the account this token can create zones in.</p>
+                    <input
+                        type="password"
+                        name="settings[cloudflare_api_token]"
+                        value=""
+                        placeholder="{{ ! empty($settings['cloudflare_api_token']) ? '•••••••• (leave blank to keep)' : 'Paste new API token' }}"
+                        autocomplete="new-password"
+                        class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm"
+                    />
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        Paste the full token once, then Save. Leave blank to keep the current token.
+                        Do not include the word <code class="font-mono">Bearer</code>. Account ID must match the account this token can create zones in.
+                    </p>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Account ID</label>
@@ -47,10 +57,11 @@
                     @foreach (['cloudflare_branded_ns1' => 'NS1', 'cloudflare_branded_ns2' => 'NS2', 'cloudflare_branded_ns3' => 'NS3 (optional)', 'cloudflare_branded_ns4' => 'NS4 (optional)'] as $key => $label)
                         <div>
                             <label class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{{ $label }}</label>
-                            <input type="text" name="settings[{{ $key }}]" value="{{ $settings[$key] ?? '' }}" placeholder="ns.example.com" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
+                            <input type="text" name="settings[{{ $key }}]" value="{{ old($key, in_array(($settings[$key] ?? ''), ['0', '-', 'ns.example.com'], true) ? '' : ($settings[$key] ?? '')) }}" placeholder="{{ str_contains($label, 'optional') ? 'leave blank' : 'ns.example.com' }}" class="block w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-mono text-sm" />
                         </div>
                     @endforeach
                 </div>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Leave NS3/NS4 empty unless you have real extra nameservers. Do not enter <code class="font-mono">0</code> or placeholders.</p>
             </div>
         </div>
     </fieldset>

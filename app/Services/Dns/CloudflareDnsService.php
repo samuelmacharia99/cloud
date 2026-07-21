@@ -26,7 +26,23 @@ class CloudflareDnsService
     {
         $token = Setting::getValue('cloudflare_api_token');
 
-        return filled($token) ? (string) $token : null;
+        if (! filled($token)) {
+            return null;
+        }
+
+        $token = trim((string) $token);
+        $token = preg_replace('/\s+/', '', $token) ?? $token;
+
+        if (str_starts_with(strtolower($token), 'bearer')) {
+            $token = trim(substr($token, 6));
+        }
+
+        // Cloudflare rejects malformed Authorization headers (6003) for truncated/garbage tokens.
+        if ($token === '' || ! preg_match('/^[A-Za-z0-9\-_]+$/', $token)) {
+            return null;
+        }
+
+        return $token;
     }
 
     public function accountId(): ?string
@@ -52,7 +68,7 @@ class CloudflareDnsService
     private function sanitizeNameserver(mixed $value): ?string
     {
         $value = strtolower(trim((string) ($value ?? '')));
-        if ($value === '' || $value === '0' || $value === '-') {
+        if ($value === '' || $value === '0' || $value === '-' || $value === 'ns.example.com') {
             return null;
         }
 
@@ -69,6 +85,14 @@ class CloudflareDnsService
         }
 
         if (! filled($this->apiToken())) {
+            $raw = Setting::getValue('cloudflare_api_token');
+            if (filled($raw)) {
+                return [
+                    'success' => false,
+                    'message' => 'Cloudflare API token looks malformed (often causes “Invalid request headers”). Paste the full token only — no “Bearer”, no spaces/newlines — then Save and test again.',
+                ];
+            }
+
             return ['success' => false, 'message' => 'Cloudflare API token is not configured.'];
         }
 
