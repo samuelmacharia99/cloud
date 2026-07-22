@@ -16,7 +16,7 @@
                 <li>Include a <code class="font-mono text-xs">start</code> script in <code class="font-mono text-xs">package.json</code>, e.g. <code class="font-mono text-xs">"start": "node server.js"</code>.</li>
                 <li>Listen on <code class="font-mono text-xs">process.env.PORT</code> (Talksasa sets <code class="font-mono text-xs">PORT</code> automatically).</li>
                 <li>After each Git pull, Talksasa performs a clean dependency install (removes stale <code class="font-mono text-xs">node_modules</code> first).</li>
-                <li>Plain apps use <code class="font-mono text-xs">npm ci --omit=dev</code> when a lockfile is present.</li>
+                <li>Plain apps use <code class="font-mono text-xs">npm ci --omit=dev</code> when a lockfile is present, and fall back to <code class="font-mono text-xs">npm install</code> if the lockfile is out of sync with <code class="font-mono text-xs">package.json</code>.</li>
             </ul>
         </div>
 
@@ -25,7 +25,7 @@
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
                 <li>These apps need a <strong>production build</strong> before <code class="font-mono text-xs">next start</code> or <code class="font-mono text-xs">nuxt start</code> can run.</li>
                 <li>Talksasa runs a prepare step before <code class="font-mono text-xs">npm run build</code> that patches TypeScript settings and relaxes Next.js type/lint blocking on hosted builds.</li>
-                <li>For Next.js/Nuxt apps, Talksasa runs <code class="font-mono text-xs">npm install --include=dev</code> → prepare → <code class="font-mono text-xs">npm run build</code> after each Git pull when a framework build is detected.</li>
+                <li>For Next.js/Nuxt apps, Talksasa prefers <code class="font-mono text-xs">npm ci --include=dev</code> (falls back to <code class="font-mono text-xs">npm install --include=dev</code> if the lockfile is stale) → prepare → <code class="font-mono text-xs">npm run build</code> after each Git pull when a framework build is detected.</li>
                 <li>If a build looks stuck or stale, pull again with <strong>Force clean rebuild</strong> enabled on the Git tab.</li>
                 <li>The build output (<code class="font-mono text-xs">.next</code> for Next.js) is <strong>not</strong> committed to Git — Talksasa rebuilds it on deploy.</li>
                 <li>Do <strong>not</strong> use <code class="font-mono text-xs">npm run dev</code> in production; keep <code class="font-mono text-xs">"start": "next start"</code>.</li>

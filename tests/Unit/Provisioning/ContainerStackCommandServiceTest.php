@@ -149,21 +149,53 @@ class ContainerStackCommandServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_removes_node_modules_on_the_host_before_post_pull_install(): void
+    public function it_detects_npm_ci_lockfile_out_of_sync_errors(): void
+    {
+        $service = new ContainerStackCommandService;
+
+        $this->assertTrue($service->isNpmLockfileOutOfSyncError(new \RuntimeException(
+            'npm error `npm ci` can only install packages when your package.json and package-lock.json or npm-shrinkwrap.json are in sync. Please update your lock file with `npm install` before continuing.'
+        )));
+        $this->assertTrue($service->isNpmLockfileOutOfSyncError(new \RuntimeException(
+            "npm error code EUSAGE\nnpm error\nnpm ci\nnpm error Missing: vitest@3.2.7 from lock file"
+        )));
+        $this->assertFalse($service->isNpmLockfileOutOfSyncError(new \RuntimeException(
+            'npm ERR! network request failed'
+        )));
+    }
+
+    #[Test]
+    public function it_falls_back_to_npm_install_when_npm_ci_lockfile_is_out_of_sync(): void
     {
         $service = new ContainerStackCommandService;
         $ssh = $this->createMock(SSHService::class);
-        $hostAppPath = '/opt/talksasa/containers/user-4-service-82-nodejs/app';
-
         $ssh->expects($this->once())
             ->method('exec')
-            ->with($this->callback(fn (string $command): bool => str_contains($command, '/node_modules')
-                && str_contains($command, '/.next')))
-            ->willReturn('');
+            ->with($this->callback(fn (string $command): bool => str_contains($command, '[ -f ')
+                && str_contains($command, 'package-lock.json')))
+            ->willReturn('yes');
 
+        $commands = [];
         $method = (new \ReflectionClass(ContainerStackCommandService::class))
-            ->getMethod('removeHostNodeInstallArtifacts');
+            ->getMethod('installNodeDependenciesPreferringLockfile');
         $method->setAccessible(true);
-        $method->invoke($service, $ssh, $hostAppPath, ['.next']);
+        $method->invoke(
+            $service,
+            $ssh,
+            '/opt/talksasa/containers/user-1-service-1/app',
+            true,
+            function (string $command) use (&$commands): void {
+                $commands[] = $command;
+                if (str_contains($command, 'npm ci') || str_contains($command, '/usr/local/bin/npm ci')) {
+                    throw new \RuntimeException(
+                        'npm error `npm ci` can only install packages when your package.json and package-lock.json are in sync. Missing: vitest@3.2.7 from lock file'
+                    );
+                }
+            }
+        );
+
+        $this->assertCount(2, $commands);
+        $this->assertTrue(str_contains($commands[0], 'npm ci') || str_contains($commands[0], '/usr/local/bin/npm ci'));
+        $this->assertTrue(str_contains($commands[1], 'npm install') || str_contains($commands[1], '/usr/local/bin/npm install'));
     }
 }

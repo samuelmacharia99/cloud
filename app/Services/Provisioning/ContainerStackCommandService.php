@@ -196,15 +196,20 @@ class ContainerStackCommandService
                     nodeDockerImage: $dockerImage,
                 );
 
-                $installCommand = $this->resolveNodeInstallCommand($ssh, $hostAppPath);
-
-                $this->runUnlimitedMemoryNodeCommand(
+                $this->installNodeDependenciesPreferringLockfile(
                     $ssh,
-                    $dockerImage,
                     $hostAppPath,
-                    $installCommand,
-                    '/app',
-                    $timeout
+                    preferDevDependencies: true,
+                    runner: function (string $command) use ($ssh, $dockerImage, $hostAppPath, $timeout): void {
+                        $this->runUnlimitedMemoryNodeCommand(
+                            $ssh,
+                            $dockerImage,
+                            $hostAppPath,
+                            $command,
+                            '/app',
+                            $timeout
+                        );
+                    },
                 );
                 $this->ensureNodeDevDependenciesInstalled(
                     $ssh,
@@ -263,11 +268,14 @@ class ContainerStackCommandService
                 $packageJson,
             );
 
-            $installCommand = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
-                ? $this->runtimeService->nodeCleanNpmCommand('ci --omit=dev --no-audit --no-fund', 'production')
-                : 'npm install --omit=dev';
-
-            $this->runOneOffInContainer($ssh, $containerPath, $containerName, $installCommand, '/app', $timeout);
+            $this->installNodeDependenciesPreferringLockfile(
+                $ssh,
+                $hostAppPath,
+                preferDevDependencies: false,
+                runner: function (string $command) use ($ssh, $containerPath, $containerName, $timeout): void {
+                    $this->runOneOffInContainer($ssh, $containerPath, $containerName, $command, '/app', $timeout);
+                },
+            );
             $this->restoreNodeModuleBinPermissions($ssh, $containerPath, $containerName);
 
             return ['Node dependencies updated.'];
@@ -415,21 +423,29 @@ class ContainerStackCommandService
             nodeDockerImage: $nodeDockerImage,
         );
 
-        $installCommand = $this->resolveNodeInstallCommand($ssh, $hostAppPath);
-        if ($nodeDockerImage !== null) {
-            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $installCommand, '/app', $timeout);
-        } else {
-            $this->runOneOffInContainer(
-                $ssh,
-                $containerPath,
-                $containerName,
-                $installCommand,
-                '/app',
-                $timeout,
-                $buildEnv,
-                true
-            );
-        }
+        $this->installNodeDependenciesPreferringLockfile(
+            $ssh,
+            $hostAppPath,
+            preferDevDependencies: true,
+            runner: function (string $command) use ($ssh, $nodeDockerImage, $hostAppPath, $containerPath, $containerName, $timeout, $buildEnv): void {
+                if ($nodeDockerImage !== null) {
+                    $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', $timeout);
+
+                    return;
+                }
+
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    $command,
+                    '/app',
+                    $timeout,
+                    $buildEnv,
+                    true
+                );
+            },
+        );
 
         if ($this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
             return;
@@ -580,11 +596,62 @@ class ContainerStackCommandService
         $ssh->exec('sh -lc '.escapeshellarg("rm -rf {$rmPaths}"), 300);
     }
 
-    private function resolveNodeInstallCommand(SSHService $ssh, string $hostAppPath): string
+    /**
+     * Prefer npm ci when a lockfile exists; fall back to npm install when the lock is out of sync.
+     *
+     * @param  callable(string): void  $runner
+     */
+    private function installNodeDependenciesPreferringLockfile(
+        SSHService $ssh,
+        string $hostAppPath,
+        bool $preferDevDependencies,
+        callable $runner,
+    ): void {
+        $hasLock = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
+
+        if ($preferDevDependencies) {
+            $ciCommand = $this->runtimeService->npmCiShellCommand();
+            $installCommand = $this->runtimeService->npmInstallShellCommand();
+        } else {
+            $ciCommand = $this->runtimeService->nodeCleanNpmCommand('ci --omit=dev --no-audit --no-fund', 'production');
+            $installCommand = 'npm install --omit=dev';
+        }
+
+        if (! $hasLock) {
+            $runner($installCommand);
+
+            return;
+        }
+
+        try {
+            $runner($ciCommand);
+        } catch (\Throwable $e) {
+            if (! $this->isNpmLockfileOutOfSyncError($e)) {
+                throw $e;
+            }
+
+            try {
+                \Log::warning('npm ci failed because package-lock.json is out of sync; falling back to npm install', [
+                    'host_app_path' => $hostAppPath,
+                    'error' => $e->getMessage(),
+                ]);
+            } catch (\Throwable) {
+                // Unit tests may run without the Log facade bootstrap.
+            }
+
+            $runner($installCommand);
+        }
+    }
+
+    public function isNpmLockfileOutOfSyncError(\Throwable $e): bool
     {
-        return $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json')
-            ? $this->runtimeService->npmCiShellCommand()
-            : $this->runtimeService->npmInstallShellCommand();
+        $message = strtolower($e->getMessage());
+
+        return str_contains($message, 'are in sync')
+            || str_contains($message, 'update your lock file')
+            || str_contains($message, 'npm-shrinkwrap.json are in sync')
+            || (str_contains($message, 'npm error code eusage') && str_contains($message, 'npm ci'))
+            || (str_contains($message, 'eusage') && str_contains($message, 'npm ci') && str_contains($message, 'missing:'));
     }
 
     private function resolveNodeDockerImage(ContainerDeployment $deployment): string
