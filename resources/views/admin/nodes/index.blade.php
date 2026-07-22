@@ -12,7 +12,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Infrastructure Nodes</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your servers and container hosts. Last updated: <span x-text="lastUpdated" class="font-mono">--:--:--</span></p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Manage your servers and application hosts. Last updated: <span x-text="lastUpdated" class="font-mono">--:--:--</span></p>
         </div>
         <div class="flex items-center gap-2">
             <button @click="refreshNow()" class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-lg transition text-sm flex items-center gap-2">
@@ -67,7 +67,7 @@
         <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-sm text-slate-600 dark:text-slate-400">Container Hosts</p>
+                    <p class="text-sm text-slate-600 dark:text-slate-400">Application Hosts</p>
                     <p class="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{{ $stats['container_hosts'] }}</p>
                 </div>
                 <div class="p-3 bg-blue-100 dark:bg-blue-950 rounded-lg">

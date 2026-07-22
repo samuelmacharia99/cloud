@@ -30,20 +30,20 @@ class ContainerTerminalController extends Controller
         try {
             if ($service->product?->type !== 'container_hosting') {
                 return response()->json([
-                    'error' => 'Service is not a container hosting service',
+                    'error' => 'Service is not an application hosting service',
                 ], 400);
             }
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
                 return response()->json([
-                    'error' => 'Container not deployed yet',
+                    'error' => 'Application not deployed yet',
                 ], 400);
             }
 
             if ($deployment->status !== 'running') {
                 return response()->json([
-                    'error' => 'Container is not running. Start the container first.',
+                    'error' => 'Application is not running. Start the app first.',
                 ], 400);
             }
 
@@ -56,7 +56,7 @@ class ContainerTerminalController extends Controller
                 'websocket_url' => $this->terminalService->resolveWebSocketUrl(),
                 'websocket_path' => $this->terminalService->resolveWebSocketPath(),
                 'mode' => 'pty',
-                'welcome_message' => "Connected to container: {$deployment->container_name}\nInteractive shell. Type 'exit' to close.",
+                'welcome_message' => "Connected to application: {$deployment->container_name}\nInteractive shell. Type 'exit' to close.",
             ]);
         } catch (\Exception $e) {
             \Log::error("Failed to create terminal session for service {$service->id}: ".$e->getMessage());
@@ -83,7 +83,7 @@ class ContainerTerminalController extends Controller
 
             if ($service->product?->type !== 'container_hosting') {
                 return response()->json([
-                    'error' => 'Service is not a container hosting service',
+                    'error' => 'Service is not an application hosting service',
                 ], 400);
             }
 

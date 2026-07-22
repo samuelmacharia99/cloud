@@ -123,7 +123,7 @@
                     <select name="service_type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
                         <option value="all" @selected(request('service_type', 'all') === 'all')>All service types</option>
                         <option value="shared_hosting" @selected(request('service_type') === 'shared_hosting')>Shared hosting</option>
-                        <option value="container_hosting" @selected(request('service_type') === 'container_hosting')>Container hosting</option>
+                        <option value="container_hosting" @selected(request('service_type') === 'container_hosting')>Application hosting</option>
                         <option value="vps" @selected(request('service_type') === 'vps')>VPS</option>
                         <option value="dedicated_server" @selected(request('service_type') === 'dedicated_server')>Dedicated server</option>
                     </select>

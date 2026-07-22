@@ -78,7 +78,7 @@
         class="text-left rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4 hover:border-blue-300 dark:hover:border-blue-600 transition group"
     >
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Logs</p>
-        <p class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">Container output</p>
+        <p class="mt-1 text-lg font-semibold text-slate-900 dark:text-white">App output</p>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Debug errors and deploy issues</p>
         <span class="mt-2 inline-block text-xs font-medium text-blue-600 dark:text-blue-400 group-hover:underline">View →</span>
     </button>

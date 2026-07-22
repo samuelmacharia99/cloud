@@ -16,10 +16,10 @@
 
         @if (! $hasInfrastructureNodes)
             <div class="px-6 py-10 text-center text-slate-500 dark:text-slate-400">
-                <p>No DirectAdmin or container host nodes configured yet.</p>
+                <p>No DirectAdmin or application host nodes configured yet.</p>
                 <div class="mt-3 flex flex-wrap justify-center gap-4 text-sm">
                     <a href="{{ route('admin.nodes.create', ['type' => 'directadmin']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Add DirectAdmin node</a>
-                    <a href="{{ route('admin.nodes.create', ['type' => 'container_host']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Add container host</a>
+                    <a href="{{ route('admin.nodes.create', ['type' => 'container_host']) }}" class="text-blue-600 dark:text-blue-400 hover:underline">Add application host</a>
                 </div>
             </div>
         @else
@@ -41,10 +41,10 @@
                 @if ($containerHostNodes->isNotEmpty())
                     <div class="space-y-4 {{ $directAdminNodes->isNotEmpty() ? 'pt-6 border-t border-slate-200 dark:border-slate-800' : '' }}">
                         <div>
-                            <h3 class="text-base font-semibold text-slate-900 dark:text-white">Container host nodes</h3>
+                            <h3 class="text-base font-semibold text-slate-900 dark:text-white">Application host nodes</h3>
                             <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                                Used when customers order domains alongside container hosting, or when a domain is linked to a container service on this node.
-                                Custom domains on containers still use an A record to the node IP; these nameservers apply to registrar DNS for domain orders.
+                                Used when customers order domains alongside application hosting, or when a domain is linked to an application hosting service on this node.
+                                Custom domains on apps still use an A record to the node IP; these nameservers apply to registrar DNS for domain orders.
                             </p>
                         </div>
                         @foreach ($containerHostNodes as $node)

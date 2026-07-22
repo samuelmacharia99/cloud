@@ -1,24 +1,34 @@
-# Container / App Hosting Roadmap
+# Application Hosting Roadmap
 
 **Status:** Active major initiative  
-**Last updated:** 2026-07-11  
-**Goal:** Grow on container (application) hosting, keep **one** DirectAdmin license for email + legacy shared hosting leftovers, and eventually make DA optional.
+**Last updated:** 2026-07-22  
+**Goal:** Grow on **Application Hosting**, keep **one** DirectAdmin license for email + legacy shared hosting leftovers, and eventually make DA optional.
+
+### Product naming (customer-facing)
+
+| Say (UI, emails, invoices) | Avoid | Keep internally |
+|----------------------------|-------|-----------------|
+| **Application Hosting** | Application hosting, Docker hosting | `type=container_hosting`, `provisioning_driver_key=container` |
+| Your app / instance | Container | Class names, routes, Docker Compose |
+| App logs / app shell | Container logs, docker logs | Ops runbooks may still say Docker |
+
+Do **not** rename driver keys, models, or API paths in copy-only passes.
 
 ---
 
 ## Strategic context
 
-Classic shared hosting (DirectAdmin / cPanel) margins are shrinking. Talksasa already has a production-shaped container console at:
+Classic shared hosting (DirectAdmin / cPanel) margins are shrinking. Talksasa already has a production-shaped Application Hosting console at:
 
 `/my/services/{service}/container`
 
-We will **evolve** that console into a first-class app hosting product (not rebuild from scratch), and add a **DA → container migration pipeline** so existing customers can move without pain.
+We will **evolve** that console into a first-class Application Hosting product (not rebuild from scratch), and add a **DA → Application Hosting migration pipeline** so existing customers can move without pain.
 
 ### Product split
 
 | Product | Role |
 |---------|------|
-| **Container / app hosting** | Growth SKU — Laravel, Node, PHP, WordPress templates, modern apps |
+| **Application Hosting** | Growth SKU — Laravel, Node, PHP, WordPress templates, modern apps |
 | **One DirectAdmin license** | Email + residual shared / Softaculous-style leftovers until mail is a separate product |
 
 ---
@@ -47,7 +57,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 | 1.2 | Environment / Secrets panel | CRUD env vars; restart/apply; platform DB keys protected |
 | 1.3 | Backup UX | Downtime warning, scheduled backup status, clearer restore copy |
 | 1.4 | Harden Laravel + Node path | Force rebuild, runtime skip fix, docs → Environment |
-| 1.5 | Positioning | Checkout/marketing: app hosting vs shared email/legacy |
+| 1.5 | Positioning | Checkout/marketing: application hosting vs shared email/legacy |
 
 **Success:** Customers manage apps without opening Files for `.env`; console feels like PaaS, not 11 flat tabs.
 
@@ -73,7 +83,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 
 > **Important:** This is **not** “restore a DA backup into a container.”  
 > Admin **convert-in-place** on the same service: no second service, no invoice, no customer notification.  
-> Keeps DA `next_due_date` / billing cycle; next renewal uses App Hosting product price. Email stays on DA.
+> Keeps DA `next_due_date` / billing cycle; next renewal uses Application Hosting product price. Email stays on DA.
 
 | # | Deliverable | Notes |
 |---|-------------|--------|
@@ -89,7 +99,7 @@ Not covered by containers: email, Softaculous catalog, classic multi-site shared
 
 ### Phase 4 — Platform differentiation *(foundations)*
 
-**Goal:** Own regional app hosting; DA becomes optional.
+**Goal:** Own regional application hosting; DA becomes optional.
 
 | # | Deliverable | Notes |
 |---|-------------|--------|
@@ -171,13 +181,13 @@ Use this on a staging/production-like environment with a real container host (an
 
 - [ ] Queue worker running (`php artisan queue:work` or Horizon) — git pulls, auto-deploy, and DA migrator jobs need it
 - [ ] At least one active `container_host` node with SSH
-- [ ] Customer account with an active App Hosting service (Laravel or Node for git; WordPress for migrator target)
+- [ ] Customer account with an active Application Hosting service (Laravel or Node for git; WordPress for migrator target)
 - [ ] (Migration only) Same customer has an active DirectAdmin shared hosting WordPress site
 - [ ] (Plan resize only) Two+ active products sharing the same `container_template_id` with different CPU/RAM
 
 ### Phase 1 — Console & positioning
 
-- [ ] `/my/services` and checkout/techstack show **App Hosting** / **Shared (email & legacy)** labels (not raw `container_hosting`)
+- [ ] `/my/services` and checkout/techstack show **Application Hosting** / **Shared (email & legacy)** labels (not raw `container_hosting`)
 - [ ] Container console shows only real tabs (Overview, Environment, … Docs) — not App/Data/Network/Ops/Help as clickable items
 - [ ] `?tab=documentation` opens Docs with stack-specific guide content
 - [ ] **Environment** tab: add a custom env var → Save & apply → container restarts → value persists after refresh
@@ -234,12 +244,12 @@ Use this on a staging/production-like environment with a real container host (an
 
 #### Admin wizard
 
-- [ ] Admin shared hosting → **Convert to App Hosting** shows inventory + mailbox preflight
+- [ ] Admin shared hosting → **Convert to Application Hosting** shows inventory + mailbox preflight
 - [ ] Extra mailboxes beyond DA username require acknowledgement
 - [ ] Queue convert: **same service ID**, no invoice, no customer email/SMS
-- [ ] After success: product is WordPress App Hosting; `next_due_date` unchanged; `custom_price` null (renewal = container retail)
+- [ ] After success: product is WordPress Application Hosting; `next_due_date` unchanged; `custom_price` null (renewal = container retail)
 - [ ] DA account still exists for mail; MX unchanged
-- [ ] Customer has **no** self-serve “Move to App Hosting” button
+- [ ] Customer has **no** self-serve “Move to Application Hosting” button
 
 #### Admin wizard (legacy copy path — removed)
 

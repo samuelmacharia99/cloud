@@ -97,7 +97,7 @@ class CustomerWordPressAdminLoginTest extends TestCase
             'name' => 'WordPress',
         ]);
         $product = Product::factory()->containerHosting()->create([
-            'name' => 'App Hosting WordPress',
+            'name' => 'Application Hosting WordPress',
             'container_template_id' => $template->id,
         ]);
         $service = Service::factory()->create([

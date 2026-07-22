@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Admin-only convert-in-place: DA shared hosting → App Hosting on the same Service.
+ * Admin-only convert-in-place: DA shared hosting → Application Hosting on the same Service.
  * Keeps next_due_date / billing_cycle, switches product to container pricing, no invoice, no customer notify.
  * Email may remain on DirectAdmin temporarily, or be moved to Mailcow via the mail migration wizard.
  */
@@ -74,7 +74,7 @@ class DirectAdminToContainerConvertService
 
         if ($activeEligible->isEmpty()) {
             $blockers[] = sprintf(
-                'No active App Hosting products are available for detected stack (%s). Create or activate a matching container product under Admin → Products.',
+                'No active Application Hosting products are available for detected stack (%s). Create or activate a matching container product under Admin → Products.',
                 str_replace('_', ' ', $stack)
             );
         }
@@ -110,7 +110,7 @@ class DirectAdminToContainerConvertService
     }
 
     /**
-     * App Hosting catalog for the convert dropdown, filtered by detected stack.
+     * Application Hosting catalog for the convert dropdown, filtered by detected stack.
      *
      * @return array{products: Collection<int, Product>, fallback: bool}
      */
@@ -313,7 +313,7 @@ class DirectAdminToContainerConvertService
     }
 
     /**
-     * Convert the same service row from DA shared hosting to App Hosting (stack-aware).
+     * Convert the same service row from DA shared hosting to Application Hosting (stack-aware).
      * No invoice. No customer notification. Preserves next_due_date and billing_cycle.
      *
      * @return array{ok: bool, message: string, steps: list<string>}
@@ -343,19 +343,19 @@ class DirectAdminToContainerConvertService
 
         if (($preflight['has_addon_sites'] ?? false) && ! $acknowledgeAddonSites) {
             throw new \InvalidArgumentException(
-                'This DA user has additional domains/sites. Acknowledge that only the primary site converts on this service; other sites need separate App Hosting services.'
+                'This DA user has additional domains/sites. Acknowledge that only the primary site converts on this service; other sites need separate Application Hosting services.'
             );
         }
 
         $stack = (string) ($preflight['detected_stack'] ?? 'unknown');
         if (! $this->productMatchesStack($containerProduct, $stack) && ! ($preflight['products_are_fallback'] ?? false)) {
             throw new \InvalidArgumentException(
-                'Select an App Hosting product that matches the detected stack ('.$stack.').'
+                'Select an Application Hosting product that matches the detected stack ('.$stack.').'
             );
         }
 
         if (! $containerProduct->is_active) {
-            throw new \InvalidArgumentException('The selected App Hosting product is inactive. Activate it first.');
+            throw new \InvalidArgumentException('The selected Application Hosting product is inactive. Activate it first.');
         }
 
         $service->loadMissing('node', 'product', 'user');
@@ -414,7 +414,7 @@ class DirectAdminToContainerConvertService
                 $meta['da_legacy']['password'] = $meta['password'];
             }
 
-            $steps[] = 'Switching service product to App Hosting (keeping due date; clearing custom price)';
+            $steps[] = 'Switching service product to Application Hosting (keeping due date; clearing custom price)';
             $this->appendConvertStep($service, $steps);
 
             DB::transaction(function () use ($service, $containerProduct, $meta) {
@@ -454,10 +454,10 @@ class DirectAdminToContainerConvertService
 
             $renewalPreview = $this->renewalPricing->unitPrice($service->fresh());
             $addonNote = ($preflight['has_addon_sites'] ?? false)
-                ? ' Addon domains on this DA user still need their own App Hosting services.'
+                ? ' Addon domains on this DA user still need their own Application Hosting services.'
                 : '';
             $steps[] = sprintf(
-                'Convert complete. Next due %s · renewal will bill App Hosting (~%s). Email remains on DirectAdmin.%s',
+                'Convert complete. Next due %s · renewal will bill Application Hosting (~%s). Email remains on DirectAdmin.%s',
                 optional($service->next_due_date)->toDateString() ?? 'n/a',
                 number_format($renewalPreview, 2),
                 $addonNote
@@ -482,7 +482,7 @@ class DirectAdminToContainerConvertService
 
             return [
                 'ok' => true,
-                'message' => 'Service converted to App Hosting. Billing date unchanged; container rates apply at next renewal. Email remains on DirectAdmin until migrated to Mailcow.',
+                'message' => 'Service converted to Application Hosting. Billing date unchanged; container rates apply at next renewal. Email remains on DirectAdmin until migrated to Mailcow.',
                 'steps' => $steps,
             ];
         } catch (\Throwable $e) {

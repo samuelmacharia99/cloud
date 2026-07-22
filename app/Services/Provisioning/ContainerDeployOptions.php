@@ -28,7 +28,7 @@ final class ContainerDeployOptions
     }
 
     /**
-     * Admin DA→App Hosting convert: silent deploy and always wipe DB volumes so
+     * Admin DA→Application Hosting convert: silent deploy and always wipe DB volumes so
      * leftover mysql_data from a failed attempt cannot keep a stale root password.
      */
     public static function quietConvert(): self

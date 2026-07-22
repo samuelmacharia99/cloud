@@ -44,7 +44,7 @@
     <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-6 space-y-3">
         <h4 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h4>
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
-            <li><strong>Container restart loop</strong> — Load <strong>Logs</strong>. If you see <em>"Could not find a production build in the '.next' directory"</em>, pull code again (build runs automatically) or run <code class="font-mono text-xs">npm run build</code> in Terminal.</li>
+            <li><strong>App restart loop</strong> — Load <strong>Logs</strong>. If you see <em>"Could not find a production build in the '.next' directory"</em>, pull code again (build runs automatically) or run <code class="font-mono text-xs">npm run build</code> in Terminal.</li>
             <li><strong>Port already in use</strong> — Bind to <code class="font-mono text-xs">process.env.PORT</code>, not a hard-coded port.</li>
             <li><strong>Build fails on pull</strong> — Check build logs in Terminal. Often missing env vars required at build time (e.g. Next.js <code class="font-mono text-xs">NEXT_PUBLIC_*</code>).</li>
         </ul>

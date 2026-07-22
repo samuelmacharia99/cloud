@@ -1,6 +1,6 @@
-<h2 style="margin:0 0 12px 0;">Container Backup Completed</h2>
+<h2 style="margin:0 0 12px 0;">Application Backup Completed</h2>
 
-<p>Your container backup for <strong>{{ $service->name }}</strong> has been completed successfully.</p>
+<p>Your application backup for <strong>{{ $service->name }}</strong> has been completed successfully.</p>
 
 <p><strong>Backup Details:</strong></p>
 <ul>

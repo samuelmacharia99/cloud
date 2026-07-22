@@ -60,7 +60,7 @@ class ContainerStagingService
         }
 
         if (! $production->isContainerHosting() || ! $staging->isContainerHosting()) {
-            throw new \InvalidArgumentException('Both services must be app hosting containers.');
+            throw new \InvalidArgumentException('Both services must be application hosting containers.');
         }
 
         $production->loadMissing('product');

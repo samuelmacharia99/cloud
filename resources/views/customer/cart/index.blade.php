@@ -25,7 +25,7 @@
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
                                 <h3 class="font-semibold text-slate-900 dark:text-white">Add a hosting plan?</h3>
-                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Optional — attach <strong>app hosting</strong> for your site, or a shared plan if you need email / classic DirectAdmin hosting. Domain and hosting stay on <strong>one invoice</strong> when you check out together.</p>
+                                <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">Optional — attach <strong>application hosting</strong> for your site, or a shared plan if you need email / classic DirectAdmin hosting. Domain and hosting stay on <strong>one invoice</strong> when you check out together.</p>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-2 shrink-0">
                                 <a href="{{ route('customer.cart.attach-hosting') }}" class="inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition">
@@ -98,7 +98,7 @@
                                                         <input type="checkbox" class="mt-1 rounded text-indigo-600" :checked="enabled" @change="toggle($event.target.checked)">
                                                         <div>
                                                             <p class="text-sm font-semibold text-slate-900 dark:text-white">Include managed DNS (Cloudflare)</p>
-                                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Manage A, CNAME, MX, and TXT records from your account — ideal for container hosting and domain-only setups.</p>
+                                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Manage A, CNAME, MX, and TXT records from your account — ideal for application hosting and domain-only setups.</p>
                                                             <p x-show="enabled" class="text-xs font-mono text-indigo-700 dark:text-indigo-300 mt-2">
                                                                 <template x-if="nameservers.ns1"><span x-text="nameservers.ns1"></span></template>
                                                                 <template x-if="nameservers.ns2"><span class="ml-2" x-text="nameservers.ns2"></span></template>

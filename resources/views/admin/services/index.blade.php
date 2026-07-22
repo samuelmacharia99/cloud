@@ -75,7 +75,7 @@
                 <select name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-sm">
                     <option value="all">All Types</option>
                     <option value="shared_hosting" @selected(request('type') === 'shared_hosting')>Shared Hosting</option>
-                    <option value="container_hosting" @selected(request('type') === 'container_hosting')>Container Hosting</option>
+                    <option value="container_hosting" @selected(request('type') === 'container_hosting')>Application Hosting</option>
                     <option value="ssl" @selected(request('type') === 'ssl')>SSL Certificate</option>
                     <option value="email_hosting" @selected(request('type') === 'email_hosting')>Email Hosting</option>
                     <option value="sms_bundle" @selected(request('type') === 'sms_bundle')>SMS Bundle</option>
@@ -102,7 +102,7 @@
                 @endif
             </p>
             <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
-                Platform = billing record · Live = DirectAdmin / Docker
+                Platform = billing record · Live = DirectAdmin / Application Hosting
             </p>
         </div>
 

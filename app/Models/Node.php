@@ -187,7 +187,7 @@ class Node extends Model
     {
         return match ($this->type) {
             'dedicated_server' => 'Dedicated Server',
-            'container_host' => 'Container Host',
+            'container_host' => 'Application Host',
             'load_balancer' => 'Load Balancer',
             'database_server' => 'Database Server',
             'directadmin' => 'DirectAdmin Server',

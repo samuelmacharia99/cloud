@@ -2,7 +2,7 @@
     <div class="rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-6">
         <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h4>
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
-            <li>Ghost starts automatically when the container is provisioned.</li>
+            <li>Ghost starts automatically when the app is provisioned.</li>
             <li>Complete setup at your service URL — create the owner account on first visit.</li>
             <li>Configure mail settings for member invites and newsletters.</li>
             <li>Bind a custom domain and set the canonical URL in Ghost Admin → Settings → General.</li>

@@ -596,7 +596,7 @@ class LaravelAppInitializationService
     private function assertCanInitialize(Service $service): void
     {
         if ($service->product?->type !== 'container_hosting') {
-            throw new \DomainException('Service is not a container hosting service.');
+            throw new \DomainException('Service is not a application hosting service.');
         }
 
         if (! $this->supportsTemplate($service->product?->containerTemplate?->slug)) {

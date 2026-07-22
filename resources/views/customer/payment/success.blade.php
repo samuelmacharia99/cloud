@@ -57,7 +57,7 @@
             <div class="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700">
                 <h3 class="font-semibold text-slate-900 dark:text-white mb-3">What's Next?</h3>
                 <ul class="text-sm text-slate-600 dark:text-slate-400 space-y-2 text-left">
-                    <li>✓ Services are provisioning on your dedicated container</li>
+                    <li>✓ Services are provisioning on your dedicated application environment</li>
                     <li>✓ You'll receive an email confirmation with connection details</li>
                     <li>✓ Access your services from your Dashboard</li>
                 </ul>

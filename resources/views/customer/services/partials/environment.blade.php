@@ -14,7 +14,7 @@
                 @if (! empty($environmentPanel['applies_dotenv']))
                     Changes also sync into your app <code class="font-mono text-xs">.env</code> when present.
                 @endif
-                Applying changes restarts the container briefly.
+                Applying changes restarts the app briefly.
             </p>
         </div>
     </div>
@@ -142,7 +142,7 @@ function containerEnvironmentPanel(initialRows) {
                 return;
             }
 
-            if (!confirm(`Remove ${row.key}? The container will restart to apply.`)) {
+            if (!confirm(`Remove ${row.key}? The app will restart to apply.`)) {
                 return;
             }
 

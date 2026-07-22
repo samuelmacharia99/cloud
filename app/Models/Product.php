@@ -58,7 +58,7 @@ class Product extends Model
 
     const TYPES = [
         'shared_hosting' => 'Shared (email & legacy)',
-        'container_hosting' => 'App Hosting',
+        'container_hosting' => 'Application Hosting',
         'ssl' => 'SSL Certificate',
         'email_hosting' => 'Email Hosting',
         'vps' => 'VPS Server',

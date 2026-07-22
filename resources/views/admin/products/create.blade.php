@@ -69,7 +69,7 @@
                         <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required @change="productType = $el.value">
                             <option value="">Select a type...</option>
                             <option value="shared_hosting" @selected(old('type') === 'shared_hosting')>Shared Hosting</option>
-                            <option value="container_hosting" @selected(old('type') === 'container_hosting')>Container Hosting</option>
+                            <option value="container_hosting" @selected(old('type') === 'container_hosting')>Application Hosting</option>
                             <option value="vps" @selected(old('type') === 'vps')>VPS Server</option>
                             <option value="dedicated_server" @selected(old('type') === 'dedicated_server')>Dedicated Server</option>
                             <option value="ssl" @selected(old('type') === 'ssl')>SSL Certificate</option>
@@ -80,16 +80,16 @@
                         @enderror
                     </div>
 
-                    <!-- Container Template (conditional - only for container hosting) -->
+                    <!-- Container Template (conditional - only for application hosting) -->
                     <div x-show="productType === 'container_hosting'">
-                        <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Container Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for container hosting)</span></label>
+                        <label for="container_template_id" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Stack Template <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(required for application hosting)</span></label>
                         <select id="container_template_id" name="container_template_id" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('container_template_id') border-red-500 @enderror">
-                            <option value="">Select a container template...</option>
+                            <option value="">Select a stack template...</option>
                             @foreach(\App\Models\ContainerTemplate::all() as $template)
                                 <option value="{{ $template->id }}" @selected(old('container_template_id') == $template->id)>{{ $template->name }}</option>
                             @endforeach
                         </select>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select which container template this package is for (PHP, Node.js, Python, etc.)</p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select which stack template this package is for (PHP, Node.js, Python, etc.)</p>
                         @error('container_template_id')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
@@ -146,7 +146,7 @@
                         @enderror
                     </div>
 
-                    <!-- Wholesale Pricing Section (hidden for shared hosting & container hosting) -->
+                    <!-- Wholesale Pricing Section (hidden for shared hosting & application hosting) -->
                     <div x-show="productType !== 'shared_hosting' && productType !== 'container_hosting'" class="pt-4 border-t border-slate-200 dark:border-slate-700">
                         <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-4">Wholesale Rate (for Resellers)</p>
 
@@ -176,7 +176,7 @@
                         </div>
                     </div>
 
-                    <!-- Setup Fee (hidden for container hosting) -->
+                    <!-- Setup Fee (hidden for application hosting) -->
                     <div x-show="productType !== 'container_hosting'">
                         <label for="setup_fee" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Setup Fee <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
                         <div class="relative">
@@ -208,7 +208,7 @@
                             <span class="text-sm text-slate-700 dark:text-slate-300">Visible to Resellers</span>
                         </label>
                         <p class="text-xs text-slate-500 dark:text-slate-400 ml-7" x-show="productType === 'container_hosting'">
-                            Lets resellers add this container package to their catalog and set retail prices. Resellers are billed on disk pool usage, not per-container wholesale.
+                            Lets resellers add this application hosting package to their catalog and set retail prices. Resellers are billed on disk pool usage, not per-app wholesale.
                         </p>
                     </div>
                 </div>
@@ -226,9 +226,9 @@
 
             @include('admin.products.partials.container-resource-limits')
 
-            <!-- Container Overage Billing (conditional) -->
+            <!-- Application Overage Billing (conditional) -->
             <div x-show="productType === 'container_hosting'" class="border-t border-slate-200 dark:border-slate-800 pt-6">
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container Overage Billing</h3>
+                <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Application Overage Billing</h3>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Enable Overage -->
                     <div>

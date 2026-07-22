@@ -28,7 +28,7 @@ class NodeSeeder extends Seeder
                 'api_url' => 'https://api.us-east-01.internal',
                 'verify_ssl' => true,
                 'is_active' => true,
-                'description' => 'Primary container hosting node for US East region',
+                'description' => 'Primary application hosting node for US East region',
             ],
             [
                 'name' => 'US-West-01',

@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Deploy an application</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose <strong>app hosting</strong> for modern sites, or a shared plan when you need email / classic DirectAdmin hosting.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose <strong>application hosting</strong> for modern sites, or a shared plan when you need email / classic DirectAdmin hosting.</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">

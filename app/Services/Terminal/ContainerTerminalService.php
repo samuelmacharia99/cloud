@@ -29,7 +29,7 @@ class ContainerTerminalService
         }
 
         if ($service->product?->type !== 'container_hosting') {
-            throw new Exception('Service is not a container hosting service');
+            throw new Exception('Service is not an application hosting service');
         }
 
         $deployment = $service->containerDeployment;

@@ -17,7 +17,7 @@
     <!-- Header -->
     <div>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Add to Catalog</h1>
-        <p class="text-slate-600 dark:text-slate-400 mt-1">Add platform shared hosting, container packages, VPS, and dedicated servers to your catalog. Set your retail prices — container hosting is billed against your disk pool.</p>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Add platform shared hosting, container packages, VPS, and dedicated servers to your catalog. Set your retail prices — application hosting is billed against your disk pool.</p>
     </div>
 
     <!-- Mode Toggle -->
@@ -52,7 +52,7 @@
                             <select x-model="serverFilter" @change="clearSelectionIfFilteredOut()" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
                                 <option value="all">All products</option>
                                 <option value="shared_hosting">Shared hosting (DirectAdmin)</option>
-                                <option value="container_hosting">Container hosting</option>
+                                <option value="container_hosting">Application hosting</option>
                                 <option value="vps">VPS</option>
                                 <option value="dedicated_server">Dedicated servers</option>
                             </select>

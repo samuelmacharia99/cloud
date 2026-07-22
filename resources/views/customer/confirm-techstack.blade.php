@@ -41,7 +41,7 @@
             </div>
             <div>
                 <p class="text-xs text-slate-600 dark:text-slate-400 mb-1">Hosting Type</p>
-                <p class="font-semibold text-slate-900 dark:text-white">{{ $routing['hosting_type'] === 'directadmin' ? '🌐 Shared (email & legacy)' : '🐳 App hosting' }}</p>
+                <p class="font-semibold text-slate-900 dark:text-white">{{ $routing['hosting_type'] === 'directadmin' ? '🌐 Shared (email & legacy)' : '🚀 Application hosting' }}</p>
             </div>
             <div class="text-right">
                 <a href="{{ route('customer.select-techstack') }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">Change →</a>

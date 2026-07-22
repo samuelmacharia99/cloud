@@ -64,7 +64,7 @@ class SettingSeeder extends Seeder
             // Provisioning settings
             ['key' => 'provisioning_mode', 'value' => 'automatic', 'description' => 'Provisioning mode (automatic/manual)'],
             ['key' => 'auto_provision', 'value' => 'true', 'description' => 'Auto-provision services'],
-            ['key' => 'reseller_auto_provision_hosting', 'value' => 'true', 'description' => 'Auto-provision shared and container hosting for reseller customers when their invoice is paid'],
+            ['key' => 'reseller_auto_provision_hosting', 'value' => 'true', 'description' => 'Auto-provision shared and application hosting for reseller customers when their invoice is paid'],
             ['key' => 'suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend services when overdue'],
             ['key' => 'terminate_after_unpaid_months', 'value' => '4', 'description' => 'Months an invoice can remain unpaid before service termination'],
             ['key' => 'reseller_suspend_on_overdue', 'value' => 'true', 'description' => 'Suspend resellers when package subscription is overdue or expired'],

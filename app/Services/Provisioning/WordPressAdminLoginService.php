@@ -34,7 +34,7 @@ class WordPressAdminLoginService
         ]);
 
         if (! $this->isWordPressContainer($service)) {
-            throw new RuntimeException('This service is not a WordPress App Hosting container.');
+            throw new RuntimeException('This service is not a WordPress Application Hosting container.');
         }
 
         $deployment = $service->containerDeployment;

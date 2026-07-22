@@ -2,7 +2,7 @@
     <div class="rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 p-6">
         <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h4>
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
-            <li>Order a <strong>Laravel</strong> app hosting plan — MySQL is included as a sidecar.</li>
+            <li>Order a <strong>Laravel</strong> application hosting plan — MySQL is included as a sidecar.</li>
             <li>On the <strong>Overview</strong> tab, click <strong>Initialize Laravel app</strong> for a fresh skeleton, <em>or</em> connect Git and pull your existing repo.</li>
             <li>Talksasa auto-writes database credentials into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code> on first setup.</li>
             <li>Git pulls preserve your existing <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code>; only database and platform URL settings are refreshed. Add other secrets under <strong>Environment</strong>.</li>

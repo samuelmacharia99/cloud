@@ -764,7 +764,7 @@ class ServiceController extends Controller
         $this->authorize('refreshStatus', $service);
 
         if (! $service->supportsLiveStatusProbe()) {
-            return back()->with('warning', 'Live status checks are only available for DirectAdmin and container hosting services.');
+            return back()->with('warning', 'Live status checks are only available for DirectAdmin and application hosting services.');
         }
 
         try {

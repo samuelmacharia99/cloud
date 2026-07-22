@@ -12,7 +12,7 @@ Use this document as source material for marketing pages, landing sections, meta
 |-------|----------------|
 | **Title tag** | Talksasa Cloud — Web Hosting, Domains & Cloud Apps for Businesses & Resellers |
 | **Meta description** | Launch websites, register domains (.co.ke, .com), deploy apps, and pay with M-Pesa. White-label hosting reseller platform with automated billing, provisioning, and support. |
-| **Primary keywords** | web hosting Kenya, domain registration Kenya, M-Pesa hosting, reseller hosting platform, white label hosting, cloud app hosting, DirectAdmin hosting, .co.ke domains |
+| **Primary keywords** | web hosting Kenya, domain registration Kenya, M-Pesa hosting, reseller hosting platform, white label hosting, cloud application hosting, DirectAdmin hosting, .co.ke domains |
 | **Secondary keywords** | Laravel hosting, Node.js hosting, VPS Kenya, hosting billing software, domain reseller, automated provisioning, hosting control panel |
 
 ---
@@ -64,7 +64,7 @@ Talksasa Cloud gives you a modern customer portal to buy, manage, and pay for ev
 
 **SEO angle:** *Buy domain Kenya · .co.ke registration · domain transfer Kenya*
 
-### Cloud app hosting (container hosting)
+### Cloud application hosting (application hosting)
 
 Deploy modern applications without managing a server:
 
@@ -293,7 +293,7 @@ You sell hosting under your own company name and domain. Talksasa Cloud handles 
 Shared hosting and container services are provisioned automatically after successful payment. Domain registration depends on registry processing once the order is submitted.
 
 ### Can I host Laravel or Node.js applications?
-Yes. Container hosting supports multiple languages and frameworks with deployment, logs, terminal access, Git integration, and custom domains.
+Yes. Application hosting supports multiple languages and frameworks with deployment, logs, terminal access, Git integration, and custom domains.
 
 ### Is there a control panel for shared hosting?
 Yes. Shared hosting uses DirectAdmin. Customers receive login details and can access the panel at their domain on port 2222, or use simplified tools inside the Talksasa customer portal.
@@ -311,7 +311,7 @@ Yes. Shared hosting uses DirectAdmin. Customers receive login details and can ac
 | Home | `/` | Both |
 | Web hosting | `/web-hosting` | Customers |
 | Domain registration | `/domains` | Customers |
-| Cloud / app hosting | `/cloud-hosting` | Customers (developers) |
+| Cloud / application hosting | `/cloud-hosting` | Customers (developers) |
 | VPS & servers | `/servers` | Customers |
 | Become a reseller | `/reseller` or `/partners` | Resellers |
 | Pricing | `/pricing` | Both |

@@ -1,6 +1,6 @@
 # Mailcow setup (Talksasa Cloud)
 
-Ops checklist before enabling Email Hosting in production. Talksasa provisions domains/mailboxes via the Mailcow REST API; Mailcow itself is a dedicated appliance (not an App Hosting container).
+Ops checklist before enabling Email Hosting in production. Talksasa provisions domains/mailboxes via the Mailcow REST API; Mailcow itself is a dedicated appliance (not an Application Hosting container).
 
 ## 1. Server
 

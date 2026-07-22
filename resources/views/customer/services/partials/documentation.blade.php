@@ -1,6 +1,6 @@
 @php
     $templateSlug = $service->product?->containerTemplate?->slug ?? '';
-    $templateName = $service->product?->containerTemplate?->name ?? 'Container';
+    $templateName = $service->product?->containerTemplate?->name ?? 'Application';
 @endphp
 
 <div class="space-y-8">

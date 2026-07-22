@@ -5,8 +5,8 @@
     <div>
         <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Staging environment</h3>
         <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Link another container on the same stack as a staging sibling. Deploy a second plan from
-            <a href="{{ route('customer.select-techstack') }}" class="text-blue-600 dark:text-blue-400 hover:underline">App Hosting</a>
+            Link another app on the same stack as a staging sibling. Deploy a second plan from
+            <a href="{{ route('customer.select-techstack') }}" class="text-blue-600 dark:text-blue-400 hover:underline">Application Hosting</a>
             if you do not have one yet.
         </p>
     </div>
@@ -42,6 +42,6 @@
             <button type="submit" class="px-4 py-2 text-sm rounded-lg bg-slate-900 dark:bg-slate-700 text-white">Link staging</button>
         </form>
     @else
-        <p class="text-sm text-slate-500 dark:text-slate-400">No other same-stack containers available to link.</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">No other same-stack apps available to link.</p>
     @endif
 </div>

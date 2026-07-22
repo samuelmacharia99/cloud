@@ -21,7 +21,7 @@ class DirectAdminContainerMigrationController extends Controller
     ): View|RedirectResponse {
         if (! $service->isSharedHosting()) {
             return redirect()->route('admin.services.show', $service)
-                ->withErrors(['error' => 'Only DirectAdmin shared hosting can be converted to App Hosting.']);
+                ->withErrors(['error' => 'Only DirectAdmin shared hosting can be converted to Application Hosting.']);
         }
 
         try {
@@ -114,7 +114,7 @@ class DirectAdminContainerMigrationController extends Controller
             }
             if (($preflight['has_addon_sites'] ?? false) && ! $request->boolean('acknowledge_addon_sites')) {
                 return back()->withErrors([
-                    'acknowledge_addon_sites' => 'Acknowledge that addon/extra domains need separate App Hosting services.',
+                    'acknowledge_addon_sites' => 'Acknowledge that addon/extra domains need separate Application Hosting services.',
                 ])->withInput();
             }
         } catch (\InvalidArgumentException $e) {

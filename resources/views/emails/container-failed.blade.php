@@ -1,6 +1,6 @@
-<h2 style="margin:0 0 12px 0;">ALERT: Container Service Failed</h2>
+<h2 style="margin:0 0 12px 0;">ALERT: Application Service Failed</h2>
 
-<p>Your container service <strong>{{ $service->name }}</strong> has encountered a critical failure and is no longer running.</p>
+<p>Your application service <strong>{{ $service->name }}</strong> has encountered a critical failure and is no longer running.</p>
 
 <p><strong>Service Details:</strong></p>
 <ul>
@@ -11,10 +11,10 @@
 
 <p><strong>Failure Reason:</strong><br>{{ $reason }}</p>
 
-<p>Our system attempted to automatically restart your container, but it continues to fail. Please:</p>
+<p>Our system attempted to automatically restart your application, but it continues to fail. Please:</p>
 <ol>
-    <li>Review the container logs for error details</li>
-    <li>Check your docker-compose configuration</li>
+    <li>Review the application logs for error details</li>
+    <li>Check your application configuration and recent deploys</li>
     <li>Verify that your application is starting correctly</li>
     <li>Contact support if you need assistance</li>
 </ol>

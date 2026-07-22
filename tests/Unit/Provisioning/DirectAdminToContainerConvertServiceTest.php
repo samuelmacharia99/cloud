@@ -213,7 +213,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
         ]);
 
         $laravelProduct = Product::query()->create([
-            'name' => 'Laravel App Hosting',
+            'name' => 'Laravel Application Hosting',
             'slug' => 'laravel-app-hosting-'.uniqid(),
             'type' => 'container_hosting',
             'price' => 2500,
@@ -223,7 +223,7 @@ class DirectAdminToContainerConvertServiceTest extends TestCase
             'provisioning_driver_key' => 'container',
         ]);
         $staticProduct = Product::query()->create([
-            'name' => 'Static App Hosting',
+            'name' => 'Static Application Hosting',
             'slug' => 'static-app-hosting-'.uniqid(),
             'type' => 'container_hosting',
             'price' => 800,

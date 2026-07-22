@@ -32,7 +32,7 @@ class CustomerContainerPlanChangeService
         $service->loadMissing('product.containerTemplate', 'containerDeployment');
 
         if (! $service->isContainerHosting()) {
-            return 'Only app hosting (container) services can use this plan change.';
+            return 'Only application hosting services can use this plan change.';
         }
 
         if (! $service->product?->containerTemplate) {
@@ -40,7 +40,7 @@ class CustomerContainerPlanChangeService
         }
 
         if ($this->optionsForService($service)->isEmpty()) {
-            return 'No alternative app hosting plans are available for this stack right now.';
+            return 'No alternative application hosting plans are available for this stack right now.';
         }
 
         return null;

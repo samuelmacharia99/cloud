@@ -1,6 +1,6 @@
 @extends('layouts.admin')
 
-@section('title', 'Convert to App Hosting')
+@section('title', 'Convert to Application Hosting')
 
 @section('breadcrumb')
 <div class="flex items-center gap-2 text-sm">
@@ -8,7 +8,7 @@
     <span class="text-slate-400">/</span>
     <a href="{{ route('admin.services.show', $service) }}" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">{{ $service->name }}</a>
     <span class="text-slate-400">/</span>
-    <span class="font-medium text-slate-600 dark:text-slate-400">Convert to App Hosting</span>
+    <span class="font-medium text-slate-600 dark:text-slate-400">Convert to Application Hosting</span>
 </div>
 @endsection
 
@@ -26,10 +26,10 @@
 @endphp
 <div class="space-y-6 max-w-4xl">
     <div>
-        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Convert to App Hosting</h1>
+        <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Convert to Application Hosting</h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             Admin-only, convert-in-place. Same service ID — no second service, no invoice, no customer notification.
-            Keeps DirectAdmin due date; next renewal uses the App Hosting price.
+            Keeps DirectAdmin due date; next renewal uses the Application Hosting price.
             Prefer migrating mail to <strong>Mailcow</strong> first (or leave MX on DA only as a temporary bridge).
             Detected stacks: WordPress, Laravel, PHP, or static.
         </p>
@@ -151,8 +151,8 @@
                 </div>
                 @if ($addonSiteCount > 0)
                     <p class="text-xs text-amber-800 dark:text-amber-200">
-                        Policy: 1 live site = 1 container. This convert moves only the primary domain.
-                        Create additional App Hosting services for each extra live site afterward. Parked/redirect domains can be bound later.
+                        Policy: 1 live site = 1 app. This convert moves only the primary domain.
+                        Create additional Application Hosting services for each extra live site afterward. Parked/redirect domains can be bound later.
                     </p>
                 @endif
             </div>
@@ -276,23 +276,23 @@
     <form method="POST" action="{{ route('admin.services.migrate-to-container.store', $service) }}" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 space-y-4">
         @csrf
         <div>
-            <label class="block text-sm font-medium mb-2">App Hosting product for {{ str_replace('_', ' ', $detectedStack) }} (billing at next renewal)</label>
+            <label class="block text-sm font-medium mb-2">Application Hosting product for {{ str_replace('_', ' ', $detectedStack) }} (billing at next renewal)</label>
             @if ($products->isEmpty())
                 <div class="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-2">
-                    <p>No matching App Hosting products found in the catalog.</p>
-                    <p>Create an active product with type <strong>App Hosting</strong> and a container template matching this stack.</p>
+                    <p>No matching Application Hosting products found in the catalog.</p>
+                    <p>Create an active product with type <strong>Application Hosting</strong> and a container template matching this stack.</p>
                     <a href="{{ route('admin.products.create') }}" class="inline-flex text-indigo-700 dark:text-indigo-300 underline">Create product</a>
                 </div>
             @else
                 @if ($productsAreFallback ?? false)
                     <p class="text-xs text-amber-700 dark:text-amber-300 mb-2">
-                        No product is linked to a matching template — showing all App Hosting products. Prefer assigning the correct template first.
+                        No product is linked to a matching template — showing all Application Hosting products. Prefer assigning the correct template first.
                     </p>
                 @endif
                 <select name="product_id" required class="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2">
                     <option value="">Select product for this client…</option>
                     @if ($activeProducts->isNotEmpty())
-                        <optgroup label="Active App Hosting">
+                        <optgroup label="Active Application Hosting">
                             @foreach ($activeProducts as $product)
                                 <option value="{{ $product->id }}" @selected((string) old('product_id') === (string) $product->id)>
                                     {{ $product->name }}
@@ -338,14 +338,14 @@
         @if ($addonSiteCount > 0 || ($preflight['has_addon_sites'] ?? false))
             <label class="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="acknowledge_addon_sites" value="1" class="mt-1 rounded border-slate-300" required>
-                <span>I acknowledge only the primary site converts on this service; each extra live domain needs its own App Hosting service (1 site = 1 container). Email for all domains stays on DirectAdmin.</span>
+                <span>I acknowledge only the primary site converts on this service; each extra live domain needs its own Application Hosting service (1 site = 1 app). Email for all domains stays on DirectAdmin.</span>
             </label>
         @endif
 
         @if ($preflight['email']['has_extra_mailboxes'] ?? false)
             <label class="flex items-start gap-2 text-sm">
                 <input type="checkbox" name="acknowledge_extra_mailboxes" value="1" class="mt-1 rounded border-slate-300" required>
-                <span>I acknowledge extra mailboxes stay on DirectAdmin; only the website moves to the container.</span>
+                <span>I acknowledge extra mailboxes stay on DirectAdmin; only the website moves to Application Hosting.</span>
             </label>
         @endif
 

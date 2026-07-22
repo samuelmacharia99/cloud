@@ -173,7 +173,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return back()->withErrors(['error' => 'Container not deployed yet']);
+                return back()->withErrors(['error' => 'Application not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
@@ -206,7 +206,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return back()->withErrors(['error' => 'Container not deployed yet']);
+                return back()->withErrors(['error' => 'Application not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
@@ -239,7 +239,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return back()->withErrors(['error' => 'Container not deployed yet']);
+                return back()->withErrors(['error' => 'Application not deployed yet']);
             }
 
             // Pre-flight check: validate node has SSH credentials
@@ -272,7 +272,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return back()->withErrors(['error' => 'Container not deployed yet']);
+                return back()->withErrors(['error' => 'Application not deployed yet']);
             }
 
             if ($deployment->status === 'deploying' || $service->status === 'provisioning') {
@@ -331,7 +331,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment || $deployment->status !== 'running') {
-                return back()->withErrors(['error' => 'Start the container before initializing the Laravel application.']);
+                return back()->withErrors(['error' => 'Start the app before initializing the Laravel application.']);
             }
 
             $initialization = $initializationService->requestInitialization($service, auth()->user());
@@ -406,7 +406,7 @@ class ContainerController extends Controller
 
         $deployment = $service->containerDeployment;
         if (! $deployment || $deployment->status !== 'running' || ! $deployment->node) {
-            return back()->withErrors(['error' => 'Start the container before enabling PHP extensions.']);
+            return back()->withErrors(['error' => 'Start the app before enabling PHP extensions.']);
         }
 
         try {
@@ -486,10 +486,10 @@ class ContainerController extends Controller
         $deployment = $service->containerDeployment;
         if (! $deployment || $deployment->status !== 'running') {
             if ($request->expectsJson()) {
-                return response()->json(['error' => 'Start the container before pulling code from Git.'], 400);
+                return response()->json(['error' => 'Start the app before pulling code from Git.'], 400);
             }
 
-            return back()->withErrors(['error' => 'Start the container before pulling code from Git.']);
+            return back()->withErrors(['error' => 'Start the app before pulling code from Git.']);
         }
 
         try {
@@ -821,7 +821,7 @@ class ContainerController extends Controller
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['success' => false, 'message' => 'Container not deployed yet.'], 400);
+            return response()->json(['success' => false, 'message' => 'Application not deployed yet.'], 400);
         }
 
         if (! $deployment->isRunning()) {
@@ -882,7 +882,7 @@ class ContainerController extends Controller
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['success' => false, 'message' => 'Container not deployed yet.'], 400);
+            return response()->json(['success' => false, 'message' => 'Application not deployed yet.'], 400);
         }
 
         if (! $deployment->isRunning()) {
@@ -1119,7 +1119,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return response()->json(['error' => 'Container not deployed yet'], 400);
+                return response()->json(['error' => 'Application not deployed yet'], 400);
             }
 
             $ssh = SSHService::forNode($deployment->node);
@@ -1632,7 +1632,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not a container hosting service']);
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not an application hosting service']);
             }
 
             $validator = Validator::make($request->all(), [
@@ -1645,7 +1645,7 @@ class ContainerController extends Controller
 
             $deployment = $service->containerDeployment;
             if (! $deployment) {
-                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Container not deployed yet']);
+                return $this->domainsTabRedirect($service)->withErrors(['error' => 'Application not deployed yet']);
             }
 
             $hostname = strtolower($request->domain);
@@ -1813,7 +1813,7 @@ class ContainerController extends Controller
     private function assertContainerDomainOwnership(Service $service, ContainerDomain $domain): ?RedirectResponse
     {
         if ($service->product?->type !== 'container_hosting') {
-            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not a container hosting service']);
+            return $this->domainsTabRedirect($service)->withErrors(['error' => 'Service is not an application hosting service']);
         }
 
         if ($domain->container_deployment_id !== $service->containerDeployment?->id) {

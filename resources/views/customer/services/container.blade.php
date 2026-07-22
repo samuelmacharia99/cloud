@@ -1,6 +1,6 @@
 @extends('layouts.customer')
 
-@section('title', 'Container: ' . $service->name)
+@section('title', 'Application: ' . $service->name)
 
 @section('content')
 <div class="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 min-h-screen py-8">
@@ -12,7 +12,7 @@
                     <div class="flex items-center gap-4">
                         <div>
                             <h1 class="text-4xl font-bold text-slate-900 dark:text-white">{{ $service->name }}</h1>
-                            <p class="text-slate-600 dark:text-slate-400 mt-2">{{ $service->product->containerTemplate->name ?? 'Container Service' }}</p>
+                            <p class="text-slate-600 dark:text-slate-400 mt-2">{{ $service->product->containerTemplate->name ?? 'Application Service' }}</p>
                         </div>
                     </div>
                 </div>
@@ -109,7 +109,7 @@
                     </select>
 
                     {{-- Only real tabs are clickable. Group names are not tabs (that confused the IA). --}}
-                    <nav class="hidden md:block overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Container console sections">
+                    <nav class="hidden md:block overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Application console sections">
                         <div class="flex items-center gap-1 min-w-max">
                             @foreach ([
                                 ['overview', 'Overview'],
@@ -156,12 +156,12 @@
                                     <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ $daConvert['error'] }}</p>
                                 @endif
                                 @if (($daConvert['status'] ?? '') === 'completed')
-                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Web runs on App Hosting. Email stays on DirectAdmin — update web DNS when ready; leave MX on DA.</p>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Web runs on Application Hosting. Email stays on DirectAdmin — update web DNS when ready; leave MX on DA.</p>
                                 @endif
                             </div>
                         @elseif (!empty($daMigration['status']))
                             <div class="rounded-xl border p-4 {{ ($daMigration['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800' : (($daMigration['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800' : 'border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800') }}">
-                                <p class="text-sm font-semibold text-slate-900 dark:text-white">DA → container migration: <span class="uppercase">{{ $daMigration['status'] }}</span></p>
+                                <p class="text-sm font-semibold text-slate-900 dark:text-white">DA → Application Hosting migration: <span class="uppercase">{{ $daMigration['status'] }}</span></p>
                                 @if (!empty($daMigration['error']))
                                     <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ $daMigration['error'] }}</p>
                                 @endif
@@ -173,21 +173,21 @@
                                     </ul>
                                 @endif
                                 @if (($daMigration['status'] ?? '') === 'completed')
-                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Update DNS to this container. Email remains on DirectAdmin.</p>
+                                    <p class="text-xs text-slate-600 dark:text-slate-400 mt-2">Update DNS to this application. Email remains on DirectAdmin.</p>
                                 @endif
                             </div>
                         @endif
                         <!-- Quick Actions -->
                         <div class="flex gap-3 flex-wrap items-center">
                             @if ($deployment->isRunning())
-                                <form method="POST" action="{{ route('customer.services.container.stop', $service) }}" style="display:inline;" data-confirm="Stop this container? Your app will be unavailable until you start it again." data-confirm-title="Stop container">
+                                <form method="POST" action="{{ route('customer.services.container.stop', $service) }}" style="display:inline;" data-confirm="Stop this app? It will be unavailable until you start it again." data-confirm-title="Stop app">
                                     @csrf
                                     <button type="submit" class="px-5 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-medium transition">
                                         Stop
                                     </button>
                                 </form>
 
-                                <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" style="display:inline;" data-confirm="Restart the container? There will be brief downtime." data-confirm-title="Restart container">
+                                <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" style="display:inline;" data-confirm="Restart the app? There will be brief downtime." data-confirm-title="Restart app">
                                     @csrf
                                     <button type="submit" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
                                         Restart
@@ -207,7 +207,7 @@
                                     Visit service
                                 </a>
                             @else
-                                <span class="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg font-medium cursor-not-allowed" title="Start the container to visit your app">
+                                <span class="px-5 py-2 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg font-medium cursor-not-allowed" title="Start the app to visit it">
                                     Visit service
                                 </span>
                             @endif
@@ -221,7 +221,7 @@
                                     Advanced ▾
                                 </button>
                                 <div x-show="open" @click.outside="open = false" x-cloak class="absolute left-0 mt-2 z-20 w-72 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg p-4 space-y-3">
-                                    <p class="text-xs text-slate-500 dark:text-slate-400">Recreates the container runtime. Files in <code class="font-mono">/app</code> are kept unless you reset the database.</p>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400">Recreates the application runtime. Files in <code class="font-mono">/app</code> are kept unless you reset the database.</p>
                                     <form method="POST" action="{{ route('customer.services.container.redeploy', $service) }}" id="redeploy-form">
                                         @csrf
                                         <label class="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 mb-3">
@@ -278,9 +278,9 @@
                         <div class="space-y-6">
                             <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                 <div>
-                                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Container Backups</h3>
+                                    <h3 class="text-xl font-bold text-slate-900 dark:text-white">Backups</h3>
                                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                                        Manual and scheduled archives of your container directory (app files + compose volumes).
+                                        Manual and scheduled archives of your application files and data volumes.
                                     </p>
                                 </div>
                                 <form method="POST" action="{{ route('customer.services.container.backups.create', $service) }}" style="display:inline;" data-confirm="Queue a backup now? It runs in the background with little or no downtime (refresh this tab for status)." data-confirm-title="Create backup">
@@ -293,13 +293,13 @@
 
                             <div class="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-100 space-y-1">
                                 <p><strong>Background job:</strong> backups are queued so large sites are not killed by the web server’s 30s timeout. Refresh this tab to watch pending → running → completed.</p>
-                                <p><strong>Faster backups:</strong> archives run live (no stop/start) and upload straight from the container node to Hetzner when configured — no double hop through the app server. Cache/temp dirs are skipped.</p>
+                                <p><strong>Faster backups:</strong> archives run live (no stop/start) and upload straight from the application server to Hetzner when configured — no double hop through the app server. Cache/temp dirs are skipped.</p>
                                 <p>
                                     <strong>Scheduled backups:</strong> running containers are backed up automatically about every 24 hours.
                                     @if (! empty($scheduledBackupDue))
                                         Next window after your latest backup: {{ $scheduledBackupDue->format('M j, Y g:i A') }}.
                                     @else
-                                        Create a backup or wait for the first scheduled run once the container is running.
+                                        Create a backup or wait for the first scheduled run once the app is running.
                                     @endif
                                 </p>
                             </div>
@@ -337,7 +337,7 @@
                                             </div>
                                             <div class="flex gap-2">
                                                 @if ($backup->status === 'completed')
-                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;" data-confirm="Restore this backup? Current container data will be replaced and the app will restart." data-confirm-title="Restore backup">
+                                                    <form method="POST" action="{{ route('customer.services.container.backups.restore', [$service, $backup]) }}" style="display:inline;" data-confirm="Restore this backup? Current application data will be replaced and the app will restart." data-confirm-title="Restore backup">
                                                         @csrf
                                                         <button type="submit" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700">
                                                             Restore
@@ -437,7 +437,7 @@
                                                             </button>
                                                         </form>
                                                     @endif
-                                                    <form method="POST" action="{{ route('customer.services.container.domains.unbind', [$service, $domain]) }}" class="inline" onsubmit="return confirm('Remove {{ $domain->domain }} from this container? This also removes nginx routing and SSL for that hostname.');">
+                                                    <form method="POST" action="{{ route('customer.services.container.domains.unbind', [$service, $domain]) }}" class="inline" onsubmit="return confirm('Remove {{ $domain->domain }} from this app? This also removes routing and SSL for that hostname.');">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
@@ -515,7 +515,7 @@
                                     </div>
                                     @if(!empty($databaseContext['connection']))
                                         <div class="bg-slate-50 dark:bg-slate-700 p-4 rounded-lg border border-slate-200 dark:border-slate-600 md:col-span-2">
-                                            <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Connection (in container network)</p>
+                                            <p class="text-xs uppercase text-slate-500 dark:text-slate-400 mb-1">Connection (from your app)</p>
                                             <p class="font-mono text-sm text-slate-900 dark:text-white break-all">{{ $databaseContext['connection'] }}</p>
                                         </div>
                                     @endif
@@ -559,7 +559,7 @@
                                 </div>
 
                                 <p class="text-sm text-slate-600 dark:text-slate-400">
-                                    Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application container.
+                                    Database credentials are provisioned automatically on deploy and redeploy. Use host <code class="font-mono">db</code> from your application.
                                     For Laravel, tick <strong>Reset database</strong> on redeploy to wipe data and auto-update <code class="font-mono">/app/.env</code> plus migrations when the app is already installed.
                                 </p>
 
@@ -642,7 +642,7 @@
                                 <div class="text-center py-12 bg-slate-50 dark:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 space-y-3">
                                     <p class="text-slate-600 dark:text-slate-400">No database sidecar is configured for this service.</p>
                                     <p class="text-sm text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
-                                        Redeploy to auto-provision MySQL for Laravel/PHP apps, or order a new container with a database selected during tech stack setup.
+                                        Redeploy to auto-provision MySQL for Laravel/PHP apps, or order a new application hosting plan with a database selected during tech stack setup.
                                     </p>
                                 </div>
                             @endif
@@ -704,7 +704,7 @@
                 <!-- Mobile sticky actions -->
                 <div class="md:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 backdrop-blur px-4 py-3 flex gap-2 justify-center shadow-lg">
                     @if ($deployment->isRunning())
-                        <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" data-confirm="Restart the container? There will be brief downtime." data-confirm-title="Restart container">
+                        <form method="POST" action="{{ route('customer.services.container.restart', $service) }}" data-confirm="Restart the app? There will be brief downtime." data-confirm-title="Restart app">
                             @csrf
                             <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">Restart</button>
                         </form>
@@ -719,7 +719,7 @@
             </div>
         @else
             <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-lg p-8 text-center">
-                <p class="text-slate-600 dark:text-slate-400 text-lg">Container deployment in progress...</p>
+                <p class="text-slate-600 dark:text-slate-400 text-lg">Application deployment in progress...</p>
             </div>
         @endif
 
@@ -730,7 +730,7 @@
             >
                 <h2 class="text-lg font-semibold text-red-700 dark:text-red-400">Danger Zone</h2>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-2xl">
-                    Permanently delete this service and shut down its container. All data will be removed and this cannot be undone.
+                    Permanently delete this service and shut down the app. All data will be removed and this cannot be undone.
                 </p>
                 <button
                     type="button"
@@ -744,7 +744,7 @@
                     <div class="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6" @click.stop>
                         <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Delete Service</h3>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                            This will terminate the container and remove the service from your account. Type
+                            This will terminate the app and remove the service from your account. Type
                             <span class="font-mono font-semibold text-slate-900 dark:text-white">{{ $service->name }}</span>
                             to confirm.
                         </p>
@@ -892,7 +892,7 @@ function containerTabs(initialTab) {
 
 async function confirmRedeploy(form) {
     const resetDb = form.querySelector('input[name="reset_database"]')?.checked;
-    let message = 'Redeploy stack now? This recreates the container runtime and keeps /app files.';
+    let message = 'Redeploy stack now? This recreates the application runtime and keeps /app files.';
     if (resetDb) {
         message += '\n\nThe database volume will be wiped (all tables and data deleted).';
         message += '\nIf Laravel is installed, /app/.env will be refreshed and migrations will run.';

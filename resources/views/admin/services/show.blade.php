@@ -90,7 +90,7 @@
     @endphp
     @if (!empty($daConvert['status']))
         <div class="rounded-xl border px-4 py-3 text-sm {{ ($daConvert['status'] ?? '') === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100' : (($daConvert['status'] ?? '') === 'failed' ? 'border-red-200 bg-red-50 dark:bg-red-950/40 dark:border-red-800 text-red-900 dark:text-red-100' : (($daConvert['status'] ?? '') === 'reverted' ? 'border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-700 text-slate-800 dark:text-slate-200' : 'border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100')) }}">
-            <p class="font-semibold">DA → App Hosting convert: <span class="uppercase">{{ $daConvert['status'] }}</span></p>
+            <p class="font-semibold">DA → Application Hosting convert: <span class="uppercase">{{ $daConvert['status'] }}</span></p>
             @if (!empty($daConvert['error']))
                 <p class="mt-1">{{ $daConvert['error'] }}</p>
             @endif
@@ -216,7 +216,7 @@
                         Upgrade Hosting
                     </button>
                     <a href="{{ route('admin.services.migrate-to-container', $service) }}" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg transition text-sm">
-                        Convert to App Hosting
+                        Convert to Application Hosting
                     </a>
                     <a href="{{ route('admin.services.migrate-mail', $service) }}" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-lg transition text-sm">
                         Migrate mail to Mailcow

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * ETL pipeline: DirectAdmin shared hosting → container app hosting.
+ * ETL pipeline: DirectAdmin shared hosting → container application hosting.
  * Supports WordPress, Laravel, plain PHP, and static sites. Email stays on DirectAdmin.
  */
 class DirectAdminToContainerMigrationService
@@ -101,7 +101,7 @@ class DirectAdminToContainerMigrationService
         $warnings = [
             'Email mailboxes stay on DirectAdmin — only site files and database are moved.',
             'DNS must be updated to the container host after cutover.',
-            'Each live website needs its own App Hosting container — addon sites are listed below and must be converted as separate services after the primary.',
+            'Each live website needs its own Application Hosting container — addon sites are listed below and must be converted as separate services after the primary.',
         ];
         if ($stackError) {
             $warnings[] = 'Could not SSH-detect application stack: '.$stackError;
@@ -204,8 +204,8 @@ class DirectAdminToContainerMigrationService
                     'has_wp_config' => (bool) ($detection['has_wp_config'] ?? false),
                     'is_primary' => $isPrimary,
                     'recommended_action' => $isPrimary
-                        ? 'Convert this service in-place to one App Hosting container.'
-                        : 'Create a separate App Hosting service for this site after primary convert (1 site = 1 container).',
+                        ? 'Convert this service in-place to one Application Hosting container.'
+                        : 'Create a separate Application Hosting service for this site after primary convert (1 site = 1 container).',
                 ];
             }
 
@@ -288,7 +288,7 @@ class DirectAdminToContainerMigrationService
         }
 
         if (! $target->isContainerHosting()) {
-            throw new \InvalidArgumentException('Target must be an app hosting (container) service.');
+            throw new \InvalidArgumentException('Target must be an application hosting (container) service.');
         }
 
         $slug = $target->product?->containerTemplate?->slug;
@@ -1631,7 +1631,7 @@ PHP;
      * Neutralize cPanel/DA PHP overrides that break sessions inside the container.
      *
      * Migrated sites often ship .user.ini / php.ini / .htaccess with session.save_path
-     * under /var/cpanel/... which does not exist in App Hosting containers.
+     * under /var/cpanel/... which does not exist in Application Hosting containers.
      */
     public function buildWordPressRuntimeSanitizeCommand(string $hostAppPath): string
     {

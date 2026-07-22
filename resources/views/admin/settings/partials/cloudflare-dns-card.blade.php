@@ -4,7 +4,7 @@
     <fieldset>
         <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-2">Cloudflare DNS</legend>
         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Managed DNS for domain-only customers and container hosting. Uses your Cloudflare account with branded nameservers.
+            Managed DNS for domain-only customers and application hosting. Uses your Cloudflare account with branded nameservers.
         </p>
         <div class="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
             <p class="font-medium mb-1">API token permissions (required)</p>

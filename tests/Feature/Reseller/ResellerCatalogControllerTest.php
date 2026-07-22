@@ -70,7 +70,7 @@ class ResellerCatalogControllerTest extends TestCase
             ->get(route('reseller.catalog.create'))
             ->assertOk()
             ->assertSee('Product type')
-            ->assertSee('Container hosting')
+            ->assertSee('Application hosting')
             ->assertSee('Node Starter')
             ->assertSee('Basic VPS')
             ->assertSee('Metal Box')

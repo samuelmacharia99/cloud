@@ -29,9 +29,9 @@ class TechStackRoutingService
      *
      * Database Restrictions:
      * - PHP: MySQL and MariaDB only (DirectAdmin shared hosting)
-     * - WordPress & Laravel: customer chooses shared (DirectAdmin) or container hosting
-     * - Static Site: no database (Container hosting)
-     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Container hosting)
+     * - WordPress & Laravel: customer chooses shared (DirectAdmin) or application hosting
+     * - Static Site: no database (Application hosting)
+     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Application hosting)
      */
     public static function determineHostingType(
         ContainerTemplate $language,
@@ -73,7 +73,7 @@ class TechStackRoutingService
                 ->where('is_active', true)
                 ->first();
         } else {
-            // Get container hosting product that matches the language
+            // Get application hosting product that matches the language
             return Product::where('type', 'container_hosting')
                 ->where('container_template_id', $language->id)
                 ->where('is_active', true)
@@ -152,7 +152,7 @@ class TechStackRoutingService
                 ->get();
         }
 
-        // Other databases (PostgreSQL, MongoDB, Redis) only for container hosting
+        // Other databases (PostgreSQL, MongoDB, Redis) only for application hosting
         if ($database->hosting_type === 'container') {
             return ContainerTemplate::where('hosting_type', 'container')
                 ->active()

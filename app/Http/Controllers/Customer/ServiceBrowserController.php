@@ -100,7 +100,7 @@ class ServiceBrowserController extends Controller
             : null;
 
         if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && empty($validated['deployment_platform'])) {
-            return back()->with('error', 'Please choose shared or container hosting.');
+            return back()->with('error', 'Please choose shared or application hosting.');
         }
 
         if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && $database) {

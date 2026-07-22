@@ -1,13 +1,13 @@
 @extends('layouts.customer')
 
-@section('title', !empty($isContainerPlanChange) ? 'Change App Hosting Plan' : 'Change Hosting Plan')
+@section('title', !empty($isContainerPlanChange) ? 'Change Application Hosting Plan' : 'Change Hosting Plan')
 
 @section('content')
 <div class="space-y-6 max-w-3xl">
     <div>
         <a href="{{ route('customer.services.show', $service) }}" class="text-sm text-brand-600 hover:underline">&larr; Back to service</a>
         <h1 class="text-3xl font-bold text-slate-900 dark:text-white mt-2">
-            {{ !empty($isContainerPlanChange) ? 'Change app hosting plan' : 'Change hosting plan' }}
+            {{ !empty($isContainerPlanChange) ? 'Change application hosting plan' : 'Change hosting plan' }}
         </h1>
         <p class="text-slate-600 dark:text-slate-400 mt-1">
             Current plan: <strong>{{ $service->product->name }}</strong>
@@ -40,7 +40,7 @@
 
     @if ($planOptions->isEmpty())
         <div class="ui-card p-8 text-center text-slate-600 dark:text-slate-400">
-            <p>{{ $planChangeEmptyReason ?? (!empty($isContainerPlanChange) ? 'No other app hosting plans are available for this stack right now.' : 'No other shared hosting plans are available for this service right now.') }}</p>
+            <p>{{ $planChangeEmptyReason ?? (!empty($isContainerPlanChange) ? 'No other application hosting plans are available for this stack right now.' : 'No other shared hosting plans are available for this service right now.') }}</p>
         </div>
     @else
         <form
@@ -187,7 +187,7 @@
 
             <p class="text-sm text-slate-500">
                 @if (!empty($isContainerPlanChange))
-                    Confirming applies new CPU/memory limits to your running container after payment (or immediately when free).
+                    Confirming applies new CPU/memory limits to your running app after payment (or immediately when free).
                 @else
                     The amount due today is a prorated upgrade charge for the rest of your current billing period — not the full annual plan price. Downgrades apply at no extra cost after you confirm.
                 @endif

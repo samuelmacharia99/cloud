@@ -23,12 +23,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->query('path', '/');
@@ -60,12 +60,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = (string) $request->query('path', '');
@@ -100,12 +100,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = (string) $request->input('path');
@@ -143,12 +143,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            abort(400, 'Service is not a container hosting service');
+            abort(400, 'Service is not an application hosting service');
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            abort(400, 'Container not deployed yet');
+            abort(400, 'Application not deployed yet');
         }
 
         $path = $request->query('path');
@@ -189,12 +189,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->input('path');
@@ -238,12 +238,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->input('path');
@@ -275,12 +275,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->input('path');
@@ -312,12 +312,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->input('path');
@@ -352,12 +352,12 @@ class ContainerFileController extends Controller
         $this->authorize('manageFiles', $service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return response()->json(['error' => 'Service is not a container hosting service'], 400);
+            return response()->json(['error' => 'Service is not an application hosting service'], 400);
         }
 
         $deployment = $service->containerDeployment;
         if (! $deployment) {
-            return response()->json(['error' => 'Container not deployed yet'], 400);
+            return response()->json(['error' => 'Application not deployed yet'], 400);
         }
 
         $path = $request->input('path');

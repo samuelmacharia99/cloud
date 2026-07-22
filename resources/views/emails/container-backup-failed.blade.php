@@ -1,4 +1,4 @@
-<h2 style="margin:0 0 12px 0;">ALERT: Container Backup Failed</h2>
+<h2 style="margin:0 0 12px 0;">ALERT: Application Backup Failed</h2>
 
 <p>A scheduled backup for service <strong>{{ $service->name }}</strong> has failed.</p>
 

@@ -4,13 +4,13 @@
         <h3 class="text-xl font-bold text-slate-900 dark:text-white">PHP Extensions</h3>
         <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-3xl">
             Enable optional PHP extensions for your application. Built-in extensions ship with the Talksasa PHP runtime.
-            Changes apply immediately inside the running container; restart the container if your app still reports a missing extension.
+            Changes apply immediately while the app is running; restart the app if it still reports a missing extension.
         </p>
     </div>
 
     @if (! $phpExtensionsPanel['container_running'])
         <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-800 dark:text-amber-200 text-sm">
-            Start the container to install extensions and verify which modules are loaded.
+            Start the app to install extensions and verify which modules are loaded.
         </div>
     @endif
 
@@ -73,7 +73,7 @@
 
         <div class="flex items-center justify-between gap-4 flex-wrap">
             <p class="text-xs text-slate-500 dark:text-slate-400">
-                Unchecking an extension updates your saved preferences but does not remove it from the container image.
+                Unchecking an extension updates your saved preferences but does not remove it from the base runtime image.
             </p>
             <button
                 type="submit"

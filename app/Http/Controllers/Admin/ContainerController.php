@@ -31,7 +31,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $containerService = new ContainerDeploymentService;
@@ -54,7 +54,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $containerService = new ContainerDeploymentService;
@@ -85,7 +85,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $containerService = new ContainerDeploymentService;
@@ -108,7 +108,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return response()->json(['error' => 'Service is not a container hosting service'], 400);
+                return response()->json(['error' => 'Service is not a application hosting service'], 400);
             }
 
             $containerService = new ContainerDeploymentService;
@@ -131,7 +131,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $resetDatabase = $request->boolean('reset_database');
@@ -166,7 +166,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return response()->json(['error' => 'Service is not a container hosting service'], 400);
+                return response()->json(['error' => 'Service is not a application hosting service'], 400);
             }
 
             $deployment = $service->containerDeployment;
@@ -205,7 +205,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $request->validate([
@@ -245,7 +245,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
@@ -274,7 +274,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             if ($domain->container_deployment_id !== $service->containerDeployment?->id) {
@@ -360,7 +360,7 @@ class ContainerController extends Controller
         $this->authorizeServiceAccess($service);
 
         if ($service->product?->type !== 'container_hosting') {
-            return back()->withErrors(['error' => 'Service is not a container hosting service']);
+            return back()->withErrors(['error' => 'Service is not a application hosting service']);
         }
 
         $deployment = $service->containerDeployment;
@@ -384,7 +384,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $deployment = $service->containerDeployment;
@@ -424,7 +424,7 @@ class ContainerController extends Controller
 
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $deployment = $service->containerDeployment;

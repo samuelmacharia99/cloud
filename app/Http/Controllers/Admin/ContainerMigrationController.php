@@ -38,7 +38,7 @@ class ContainerMigrationController
     {
         try {
             if ($service->product?->type !== 'container_hosting') {
-                return back()->withErrors(['error' => 'Service is not a container hosting service']);
+                return back()->withErrors(['error' => 'Service is not a application hosting service']);
             }
 
             $request->validate([

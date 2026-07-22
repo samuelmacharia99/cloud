@@ -287,7 +287,7 @@ class ResellerHostedAccountDirectoryServiceTest extends TestCase
 
         $labels = app(ResellerHostedAccountDirectoryService::class)->serviceTypeLabelsForCustomer($customer);
 
-        $this->assertContains('App Hosting', $labels);
+        $this->assertContains('Application Hosting', $labels);
         $this->assertContains('VPS Server', $labels);
     }
 }

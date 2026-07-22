@@ -26,7 +26,7 @@
         @elseif($type === 'container_host')
             <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-100 dark:bg-purple-950 rounded-lg">
                 <div class="w-2 h-2 rounded-full bg-purple-600 dark:bg-purple-400"></div>
-                <span class="text-sm font-medium text-purple-700 dark:text-purple-300">Container Server</span>
+                <span class="text-sm font-medium text-purple-700 dark:text-purple-300">Application Server</span>
             </div>
         @endif
     </div>
@@ -216,7 +216,7 @@
                         <!-- Name -->
                         <div>
                             <label for="name" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Node Name</label>
-                            <input type="text" id="name" name="name" value="{{ old('name') }}" placeholder="e.g. Container-Host-01" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror" required>
+                            <input type="text" id="name" name="name" value="{{ old('name') }}" placeholder="e.g. App-Host-01" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('name') border-red-500 @enderror" required>
                             @error('name')
                                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                             @enderror

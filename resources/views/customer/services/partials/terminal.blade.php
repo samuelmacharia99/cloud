@@ -35,18 +35,18 @@
     <div x-show="!terminalVisible && !sessionStarting" class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 space-y-2">
         <p class="text-sm text-blue-800 dark:text-blue-200">
             @if (in_array($terminalTemplateSlug, ['laravel', 'php'], true))
-                Interactive shell inside your container. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
+                Interactive shell for your app. Supports <code class="font-mono text-xs">composer</code>, <code class="font-mono text-xs">php artisan</code>, and file cleanup in <code class="font-mono text-xs">/app</code>.
             @elseif ($terminalTemplateSlug === 'nodejs')
-                Interactive shell inside your Node.js container. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
+                Interactive shell for your Node.js app. Run <code class="font-mono text-xs">npm</code>, <code class="font-mono text-xs">node</code>, and inspect files in <code class="font-mono text-xs">/app</code>.
             @else
-                Interactive shell inside your container. Run stack commands and inspect files in <code class="font-mono text-xs">/app</code>.
+                Interactive shell for your app. Run stack commands and inspect files in <code class="font-mono text-xs">/app</code>.
             @endif
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
-            Full PTY mode uses the WebSocket service (<code class="font-mono">php artisan container:terminal-ws</code>). If that service is unavailable, the terminal falls back to one command at a time over HTTP.
+            Full interactive mode uses the platform terminal service. If that service is unavailable, the terminal falls back to one command at a time.
         </p>
         <p class="text-xs text-blue-700 dark:text-blue-400">
-            Dangerous commands (sudo, docker, etc.) are blocked when you press Enter.
+            Dangerous system commands are blocked when you press Enter.
         </p>
     </div>
 

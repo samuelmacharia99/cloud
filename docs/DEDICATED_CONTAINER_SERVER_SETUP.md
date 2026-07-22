@@ -3,7 +3,7 @@
 **Server Specs:**
 - RAM: 64 GB
 - Storage: 2 × 500GB HDD (1TB total)
-- Primary Use: Docker container hosting for Talksasa Cloud customers
+- Primary Use: Docker application hosting for Talksasa Cloud customers
 
 **Optimization Goals:**
 - Maximum resource utilization

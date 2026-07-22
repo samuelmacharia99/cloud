@@ -330,7 +330,7 @@
                             <span x-text="pulling ? 'Initializing…' : (isActive ? 'Syncing…' : 'Pull latest from Git')"></span>
                         </span>
                     </button>
-                    <p x-show="!canPull && !isActive" class="text-xs text-slate-500">Start the container to pull.</p>
+                    <p x-show="!canPull && !isActive" class="text-xs text-slate-500">Start the app to pull.</p>
                     <p x-show="errorMessage" x-transition class="text-sm text-red-500 dark:text-red-400 font-medium" x-text="errorMessage"></p>
                 </div>
             </div>

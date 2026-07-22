@@ -1302,7 +1302,7 @@
                                     <input type="checkbox" name="settings[shared_hosting_sales_enabled]" value="1" @checked(\App\Support\SharedHostingSales::enabled()) class="rounded" />
                                     <span class="text-slate-700 dark:text-slate-300">Sell DirectAdmin shared hosting to customers</span>
                                 </label>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Turn off to hide shared hosting from browse/techstack while converting the fleet to App Hosting + Mailcow. Admin convert and existing services are unaffected.</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Turn off to hide shared hosting from browse/techstack while converting the fleet to Application Hosting + Mailcow. Admin convert and existing services are unaffected.</p>
                             </div>
 
                             <div>
@@ -1317,7 +1317,7 @@
                                 <input type="hidden" name="settings[reseller_auto_provision_hosting]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[reseller_auto_provision_hosting]" value="1" @checked(in_array($settings['reseller_auto_provision_hosting'] ?? 'true', ['1', 'true'], true)) class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Auto-provision shared and container hosting for reseller customers</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Auto-provision shared and application hosting for reseller customers</span>
                                 </label>
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Runs when a reseller customer invoice is paid or when a reseller provisions hosting without billing. Works even if platform auto-provision above is off.</p>
                             </div>
@@ -1392,9 +1392,9 @@
                     </fieldset>
 
                     <fieldset>
-                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Container backup storage</legend>
+                        <legend class="text-lg font-semibold text-slate-900 dark:text-white mb-4">Application backup storage</legend>
                         <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-                            Prefer Hetzner Storage Box so backup archives are not kept on production container nodes.
+                            Prefer Hetzner Storage Box so backup archives are not kept on production application nodes.
                             Flow: tar on the node → download to platform → SFTP upload → delete node copy.
                             Paths are relative to the Storage Box home (sub-accounts cannot write absolute <code class="font-mono text-xs">/backups</code> at filesystem root).
                         </p>
@@ -1402,7 +1402,7 @@
                             <div>
                                 <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Storage driver</label>
                                 <select name="settings[backup_storage_driver]" class="block w-full px-4 py-2.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white">
-                                    <option value="node" @selected(($settings['backup_storage_driver'] ?? 'node') === 'node')>Keep on container node (legacy)</option>
+                                    <option value="node" @selected(($settings['backup_storage_driver'] ?? 'node') === 'node')>Keep on application node (legacy)</option>
                                     <option value="hetzner" @selected(($settings['backup_storage_driver'] ?? 'node') === 'hetzner')>Hetzner Storage Box (SFTP)</option>
                                 </select>
                             </div>
@@ -1871,7 +1871,7 @@
                                 <input type="hidden" name="settings[notify_container_backup]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_backup]" value="1" @checked(($settings['notify_container_backup'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Container Backup Completed</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Application Backup Completed</span>
                                     <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
                                 </label>
                             </div>
@@ -1879,7 +1879,7 @@
                                 <input type="hidden" name="settings[notify_container_backup_failure]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_backup_failure]" value="1" @checked(($settings['notify_container_backup_failure'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Container Backup Failed</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Application Backup Failed</span>
                                     <span class="text-xs text-slate-500 dark:text-slate-400">(email only)</span>
                                 </label>
                             </div>
@@ -1887,14 +1887,14 @@
                                 <input type="hidden" name="settings[notify_container_failure]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_failure]" value="1" @checked(($settings['notify_container_failure'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Container Failure</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Application Failure</span>
                                 </label>
                             </div>
                             <div>
                                 <input type="hidden" name="settings[notify_container_restart]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_container_restart]" value="1" @checked(($settings['notify_container_restart'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Container Auto-Restart</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Application Auto-Restart</span>
                                 </label>
                             </div>
 
@@ -1975,7 +1975,7 @@
                                 <input type="hidden" name="settings[notify_admin_node_offline]" value="0">
                                 <label class="flex items-center gap-2">
                                     <input type="checkbox" name="settings[notify_admin_node_offline]" value="1" @checked(($settings['notify_admin_node_offline'] ?? '0') == '1') class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Admin: Container Node Offline</span>
+                                    <span class="text-slate-700 dark:text-slate-300">Admin: Application Node Offline</span>
                                 </label>
                             </div>
                         </div>

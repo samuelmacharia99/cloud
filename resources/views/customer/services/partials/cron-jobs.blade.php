@@ -3,7 +3,7 @@
     <div>
         <h3 class="text-xl font-bold text-slate-900 dark:text-white">Cron Jobs</h3>
         <p class="text-sm text-slate-600 dark:text-slate-400 mt-2 max-w-3xl">
-            Schedule commands to run inside your container automatically. Jobs are managed here and executed by the platform
+            Schedule commands to run inside your app automatically. Jobs are managed here and executed by the platform
             (you cannot use <code class="font-mono text-xs">crontab -e</code> in the terminal).
             Use standard five-field schedules, e.g. <code class="font-mono text-xs">*/5 * * * *</code> or <code class="font-mono text-xs">0 2 * * *</code>.
         </p>
@@ -17,7 +17,7 @@
 
     @if ($deployment->status !== 'running')
         <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 text-amber-800 dark:text-amber-200 text-sm">
-            Start the container before adding cron jobs. Scheduled commands only run while the container is active.
+            Start the app before adding cron jobs. Scheduled commands only run while the app is active.
         </div>
     @endif
 

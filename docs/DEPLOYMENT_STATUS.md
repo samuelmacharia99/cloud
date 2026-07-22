@@ -23,7 +23,7 @@
 - View metrics and usage
 - Manage cron jobs and automation
 
-### Container Hosting (Complete)
+### Application Hosting (Complete)
 - Deploy containers (Docker Compose)
 - Multiple tech stacks (PHP, Node, Python, Ruby, Go, Java, Static)
 - Automatic provisioning on payment

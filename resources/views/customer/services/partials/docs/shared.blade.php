@@ -11,11 +11,11 @@
         </li>
         <li class="flex gap-3">
             <span class="text-blue-600 shrink-0">3.</span>
-            <span><strong class="text-slate-900 dark:text-white">Logs tab</strong> — If the container keeps restarting, load logs first. Most deploy issues show up in the last 50 lines.</span>
+            <span><strong class="text-slate-900 dark:text-white">Logs tab</strong> — If the app keeps restarting, load logs first. Most deploy issues show up in the last 50 lines.</span>
         </li>
         <li class="flex gap-3">
             <span class="text-blue-600 shrink-0">4.</span>
-            <span><strong class="text-slate-900 dark:text-white">Terminal tab</strong> — Run one-off commands inside the running container. Use this for debugging after a failed deploy.</span>
+            <span><strong class="text-slate-900 dark:text-white">Terminal tab</strong> — Run one-off commands inside the running app. Use this for debugging after a failed deploy.</span>
         </li>
     </ul>
 </section>

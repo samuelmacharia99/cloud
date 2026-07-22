@@ -56,7 +56,7 @@
                         <select id="type" name="type" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm @error('type') border-red-500 @enderror" required>
                             <option value="">Select a type...</option>
                             <option value="dedicated_server" @selected(old('type', $node->type) === 'dedicated_server')>Dedicated Server</option>
-                            <option value="container_host" @selected(old('type', $node->type) === 'container_host')>Container Host</option>
+                            <option value="container_host" @selected(old('type', $node->type) === 'container_host')>Application Host</option>
                             <option value="load_balancer" @selected(old('type', $node->type) === 'load_balancer')>Load Balancer</option>
                             <option value="database_server" @selected(old('type', $node->type) === 'database_server')>Database Server</option>
                             <option value="directadmin" @selected(old('type', $node->type) === 'directadmin')>DirectAdmin Server</option>

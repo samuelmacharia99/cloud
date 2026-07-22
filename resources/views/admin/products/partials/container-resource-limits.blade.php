@@ -4,7 +4,7 @@
 
 <div class="border-t border-slate-200 dark:border-slate-800 pt-6" x-show="productType === 'container_hosting'" x-cloak>
     <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Package Resource Limits</h3>
-    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Define the CPU, memory, and disk included with this container package.</p>
+    <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Define the CPU, memory, and disk included with this application hosting package.</p>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div>
