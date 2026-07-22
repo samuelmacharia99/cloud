@@ -79,9 +79,9 @@ Route::get('/', function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Exit impersonation (accessible by all authenticated users, including impersonated customers)
-    Route::post('admin/exit-impersonation', [CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
-    Route::post('/exit-impersonation', function () {
+    // Exit impersonation (GET allowed so bookmarks / address-bar opens don't 405)
+    Route::match(['get', 'post'], 'admin/exit-impersonation', [CustomerController::class, 'exitImpersonation'])->name('admin.exit-impersonation');
+    Route::match(['get', 'post'], '/exit-impersonation', function () {
         // Check if impersonating from reseller or admin
         if (session('impersonating_reseller')) {
             $resellerId = session('impersonating_reseller');
@@ -513,7 +513,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('reseller/directadmin-accounts/bulk-link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'bulkLink'])->name('reseller.directadmin-accounts.bulk-link');
             Route::post('reseller/services/{service}/connect-billing', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'connectBilling'])->name('reseller.directadmin-accounts.connect-billing');
             Route::get('reseller/directadmin-accounts/catalog-options', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'catalogOptions'])->name('reseller.directadmin-accounts.catalog-options');
-            Route::post('reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
+            Route::match(['get', 'post'], 'reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
             Route::resource('reseller/catalog', CatalogController::class)
                 ->parameters(['catalog' => 'catalogItem'])
                 ->names('reseller.catalog');
@@ -634,6 +634,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/my/catalog', [ResellerCatalogController::class, 'index'])->name('customer.catalog.index');
         Route::post('/my/catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.catalog.add');
         Route::get('/my/domains', [App\Http\Controllers\Customer\DomainController::class, 'index'])->name('customer.domains.index');
+        Route::post('/my/domains/dns', [App\Http\Controllers\Customer\DomainController::class, 'storeDnsDomain'])
+            ->middleware('throttle:10,1')
+            ->name('customer.domains.dns.store');
         Route::get('/my/domains/transfer/approval/{token}', [InterCustomerDomainTransferController::class, 'show'])->name('customer.domains.inter-transfer.approval');
         Route::post('/my/domains/transfer/approval/{token}/approve', [InterCustomerDomainTransferController::class, 'approve'])->name('customer.domains.inter-transfer.approve');
         Route::post('/my/domains/transfer/approval/{token}/reject', [InterCustomerDomainTransferController::class, 'reject'])->name('customer.domains.inter-transfer.reject');

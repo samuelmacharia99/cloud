@@ -11,6 +11,7 @@ use App\Models\InvoiceItem;
 use App\Models\Service;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
+use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\TaxService;
@@ -44,7 +45,125 @@ class DomainController extends Controller
         return view('customer.domains.index', [
             'domains' => $domains,
             'domainServices' => $domainServices,
+            'cloudflareDnsAvailable' => app(DomainCloudflareDnsService::class)->isAvailable(),
         ]);
+    }
+
+    /**
+     * Add an externally registered domain for DNS management (Cloudflare zone).
+     */
+    public function storeDnsDomain(Request $request)
+    {
+        $this->authorize('create', Domain::class);
+
+        $dns = app(DomainCloudflareDnsService::class);
+
+        if (! $dns->isAvailable()) {
+            return back()->with('error', 'Managed DNS is not available right now. Contact support.')->withInput();
+        }
+
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:253'],
+        ]);
+
+        $parsed = $this->parseCustomerDnsDomain((string) $validated['domain']);
+        if ($parsed === null) {
+            return back()
+                ->withErrors(['domain' => 'Enter a valid domain using a supported extension (e.g. example.co.ke).'])
+                ->withInput();
+        }
+
+        $exists = Domain::query()
+            ->whereRaw('LOWER(CONCAT(name, extension)) = ?', [$parsed['fqdn']])
+            ->exists();
+
+        if ($exists) {
+            return back()
+                ->withErrors(['domain' => 'This domain is already on the platform. Open it from your list to manage DNS.'])
+                ->withInput();
+        }
+
+        $user = $request->user();
+
+        $domain = Domain::create([
+            'user_id' => $user->id,
+            'reseller_id' => $user->reseller_id,
+            'name' => $parsed['name'],
+            'extension' => $parsed['extension'],
+            'type' => 'dns',
+            'status' => 'active',
+            'registrar' => 'external',
+            'registered_at' => null,
+            'expires_at' => null,
+            'auto_renew' => false,
+            'cloudflare_dns_enabled' => true,
+            'notes' => [
+                'source' => 'customer_dns_add',
+                'added_at' => now()->toIso8601String(),
+            ],
+        ]);
+
+        $result = $dns->provisionZone($domain->fresh());
+
+        if (! $result['success']) {
+            $domain->delete();
+
+            return back()
+                ->with('error', 'Could not create DNS zone: '.$result['message'])
+                ->withInput();
+        }
+
+        $domain->refresh();
+
+        return redirect()
+            ->route('customer.domains.dns.index', $domain)
+            ->with('success', 'Domain added. Point your registrar nameservers to the NS records shown below, then manage DNS here.');
+    }
+
+    /**
+     * @return array{name: string, extension: string, fqdn: string}|null
+     */
+    private function parseCustomerDnsDomain(string $input): ?array
+    {
+        $fqdn = strtolower(trim($input));
+        $fqdn = preg_replace('#^https?://#', '', $fqdn) ?? $fqdn;
+        $fqdn = explode('/', $fqdn)[0] ?? $fqdn;
+        $fqdn = explode('?', $fqdn)[0] ?? $fqdn;
+        $fqdn = rtrim($fqdn, '.');
+
+        if ($fqdn === '' || ! str_contains($fqdn, '.')) {
+            return null;
+        }
+
+        $extensions = DomainExtension::query()
+            ->where('enabled', true)
+            ->pluck('extension')
+            ->map(function (string $ext) {
+                $ext = strtolower(trim($ext));
+
+                return str_starts_with($ext, '.') ? $ext : '.'.$ext;
+            })
+            ->sortByDesc(fn (string $ext) => strlen($ext))
+            ->values();
+
+        foreach ($extensions as $extension) {
+            if (! str_ends_with($fqdn, $extension)) {
+                continue;
+            }
+
+            $name = substr($fqdn, 0, -strlen($extension));
+            if ($name === '' || str_contains($name, '.') || ! preg_match('/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i', $name)) {
+                return null;
+            }
+
+            return [
+                'name' => strtolower($name),
+                'extension' => $extension,
+                'fqdn' => strtolower($name).$extension,
+            ];
+        }
+
+        return null;
     }
 
     /**

@@ -34,4 +34,9 @@ class DomainPolicy
     {
         return $this->view($user, $domain);
     }
+
+    public function create(User $user): bool
+    {
+        return true;
+    }
 }

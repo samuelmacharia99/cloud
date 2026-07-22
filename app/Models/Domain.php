@@ -126,6 +126,11 @@ class Domain extends Model
         return $this->type === 'registration';
     }
 
+    public function isDnsManaged(): bool
+    {
+        return $this->type === 'dns';
+    }
+
     /**
      * Hide upstream provider details from reseller-facing responses.
      *
