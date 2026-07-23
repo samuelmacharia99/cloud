@@ -434,6 +434,50 @@ class ContainerApplicationRuntimeService
         return false;
     }
 
+    /**
+     * True when postinstall runs a frontend build tool that is normally a devDependency.
+     * Running that under `npm install --omit=dev` causes crash loops (e.g. `vite: not found`).
+     */
+    public function packageJsonPostinstallRequiresBuildTools(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $scripts = $data['scripts'] ?? [];
+        if (! is_array($scripts)) {
+            return false;
+        }
+
+        $postinstall = strtolower(trim((string) ($scripts['postinstall'] ?? '')));
+        if ($postinstall === '') {
+            return false;
+        }
+
+        foreach (['vite', 'next', 'nuxt', 'webpack', 'astro', 'react-scripts', 'npm run build', 'yarn build', 'pnpm run build'] as $needle) {
+            if (str_contains($postinstall, $needle)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function npmOmitDevInstallCommand(?string $packageJson = null): string
+    {
+        $command = 'npm install --omit=dev';
+        if ($this->packageJsonPostinstallRequiresBuildTools($packageJson)) {
+            $command .= ' --ignore-scripts';
+        }
+
+        return $command;
+    }
+
     public function packageJsonBuildOutputDir(?string $packageJson): string
     {
         if ($packageJson === null || trim($packageJson) === '') {
@@ -761,12 +805,12 @@ class ContainerApplicationRuntimeService
             : '';
 
         if (! $this->packageJsonRequiresProductionBuild($packageJson)) {
-            return '[ -f package.json ] && npm install --omit=dev && '.$binFix;
+            return '[ -f package.json ] && '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix;
         }
 
         $artifactMissingCheck = $this->packageJsonBuildArtifactMissingCheck($packageJson);
 
-        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else npm install --omit=dev && '.$binFix.'; fi; }';
+        return '[ -f package.json ] && { if '.$artifactMissingCheck.'; then rm -rf node_modules && '.$installForBuild.' && '.$binFix.' && '.$prepareStep.$buildCommand.' && '.$pruneCommand.' && '.$binFix.'; else '.$this->npmOmitDevInstallCommand($packageJson).' && '.$binFix.'; fi; }';
     }
 
     private function rubyBootstrap(): string

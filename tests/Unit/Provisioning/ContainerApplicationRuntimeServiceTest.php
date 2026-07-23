@@ -155,6 +155,31 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_ignores_scripts_on_omit_dev_install_when_postinstall_runs_vite(): void
+    {
+        $packageJson = json_encode([
+            'scripts' => [
+                'postinstall' => 'vite build',
+                'build' => 'vite build',
+                'start' => 'vite preview --host 0.0.0.0 --port 3000',
+            ],
+            'devDependencies' => [
+                'vite' => '^5.0.0',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $this->assertTrue($this->service->packageJsonPostinstallRequiresBuildTools($packageJson));
+        $this->assertSame(
+            'npm install --omit=dev --ignore-scripts',
+            $this->service->npmOmitDevInstallCommand($packageJson)
+        );
+        $this->assertStringContainsString(
+            'npm install --omit=dev --ignore-scripts',
+            $this->service->nodeBootstrap($packageJson)
+        );
+    }
+
+    #[Test]
     public function it_builds_next_js_on_container_start_when_artifact_is_missing(): void
     {
         $packageJson = json_encode([
