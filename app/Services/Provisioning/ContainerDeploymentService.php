@@ -1683,10 +1683,82 @@ class ContainerDeploymentService
     ): void {
         $fileFlag = $useExplicitComposeFile ? ' -f docker-compose.yml' : '';
         $pullFlag = $localRuntimeImage ? ' --pull never' : '';
-        $ssh->exec(
-            "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}",
-            self::DEPLOY_TIMEOUT
-        );
+        $command = "cd {$containerPath} && docker compose{$fileFlag} up -d{$pullFlag}";
+
+        try {
+            $ssh->exec($command, self::DEPLOY_TIMEOUT);
+        } catch (\Throwable $e) {
+            if (! $this->isDockerContainerNameConflict($e->getMessage())) {
+                throw $e;
+            }
+
+            $project = basename(rtrim($containerPath, '/'));
+            \Log::warning('Docker compose up hit a container name conflict; clearing leftovers and retrying', [
+                'container_path' => $containerPath,
+                'project' => $project,
+                'error' => $e->getMessage(),
+            ]);
+
+            $this->clearDockerComposeNameConflicts($ssh, $project, $e->getMessage());
+            $ssh->exec($command, self::DEPLOY_TIMEOUT);
+        }
+    }
+
+    public function isDockerContainerNameConflict(string $message): bool
+    {
+        $message = strtolower($message);
+
+        return str_contains($message, 'conflict. the container name')
+            || (str_contains($message, 'already in use by container') && str_contains($message, 'container name'));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function conflictingDockerRefsFromError(string $message): array
+    {
+        $refs = [];
+
+        if (preg_match_all('/container name\s+"\/?([^"]+)"/i', $message, $nameMatches)) {
+            foreach ($nameMatches[1] as $name) {
+                $refs[] = ltrim((string) $name, '/');
+            }
+        }
+
+        if (preg_match_all('/already in use by container\s+"([a-f0-9]{12,64})"/i', $message, $idMatches)) {
+            foreach ($idMatches[1] as $id) {
+                $refs[] = (string) $id;
+            }
+        }
+
+        return array_values(array_unique(array_filter($refs)));
+    }
+
+    private function clearDockerComposeNameConflicts(
+        SSHService $ssh,
+        string $projectName,
+        string $errorMessage
+    ): void {
+        $refs = $this->conflictingDockerRefsFromError($errorMessage);
+
+        foreach ($refs as $ref) {
+            $refArg = escapeshellarg($ref);
+            @$ssh->exec("docker rm -f {$refArg} 2>/dev/null || true", 30);
+        }
+
+        // Compose often leaves "<hash>_<project>" rename leftovers after a failed recreate.
+        // Only remove those exact leftover names — never sidecars like "<project>-mysql".
+        $safeProject = preg_replace('/[^a-zA-Z0-9_.-]/', '', $projectName) ?: '';
+        if ($safeProject === '') {
+            return;
+        }
+
+        $script = 'proj='.escapeshellarg($safeProject).'; '
+            .'docker ps -a --format "{{.ID}} {{.Names}}" 2>/dev/null | while read -r id name; do '
+            .'echo "$name" | grep -Eq "^[a-fA-F0-9]+_${proj}$" && docker rm -f "$id" 2>/dev/null || true; '
+            .'done';
+
+        @$ssh->exec($script, 60);
     }
 
     /**
