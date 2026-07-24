@@ -653,6 +653,33 @@ class ContainerApplicationRuntimeService
         );
     }
 
+    public function npmInstallNextPeersShellCommand(): string
+    {
+        return $this->nodeCleanNpmCommand(
+            'install react react-dom --production=false --no-audit --no-fund --no-save',
+            'development'
+        );
+    }
+
+    public function packageJsonUsesNext(?string $packageJson): bool
+    {
+        if ($packageJson === null || trim($packageJson) === '') {
+            return false;
+        }
+
+        $data = json_decode($packageJson, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        $dependencies = array_merge(
+            is_array($data['dependencies'] ?? null) ? $data['dependencies'] : [],
+            is_array($data['devDependencies'] ?? null) ? $data['devDependencies'] : [],
+        );
+
+        return isset($dependencies['next']);
+    }
+
     public function npmCacheCleanShellCommand(): string
     {
         return $this->nodeCleanNpmCommand('cache clean --force');
@@ -760,16 +787,31 @@ class ContainerApplicationRuntimeService
 
     /**
      * Relative path under /app used to verify a framework install is complete.
+     *
+     * @deprecated Prefer nodeIntegrityMarkerRelativePaths() — Next installs can
+     *             leave `next` present while `react` is missing.
      */
     public function nodeIntegrityMarkerRelativePath(?string $packageJson): ?string
     {
+        $markers = $this->nodeIntegrityMarkerRelativePaths($packageJson);
+
+        return $markers[0] ?? null;
+    }
+
+    /**
+     * Relative paths under /app that must all exist after npm ci/install.
+     *
+     * @return list<string>
+     */
+    public function nodeIntegrityMarkerRelativePaths(?string $packageJson): array
+    {
         if ($packageJson === null || trim($packageJson) === '') {
-            return null;
+            return [];
         }
 
         $data = json_decode($packageJson, true);
         if (! is_array($data)) {
-            return null;
+            return [];
         }
 
         $dependencies = array_merge(
@@ -778,14 +820,20 @@ class ContainerApplicationRuntimeService
         );
 
         if (isset($dependencies['next'])) {
-            return 'node_modules/next/dist/compiled/browserslist/index.js';
+            // next can be present while peers were not extracted (common 502/build failure).
+            return [
+                'node_modules/next/package.json',
+                'node_modules/react/package.json',
+                'node_modules/react/index.js',
+                'node_modules/react-dom/package.json',
+            ];
         }
 
         if (isset($dependencies['nuxt'])) {
-            return 'node_modules/nuxt/package.json';
+            return ['node_modules/nuxt/package.json'];
         }
 
-        return null;
+        return [];
     }
 
     /**

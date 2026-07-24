@@ -275,11 +275,24 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         ], JSON_THROW_ON_ERROR);
 
         $this->assertSame(
-            'node_modules/next/dist/compiled/browserslist/index.js',
+            [
+                'node_modules/next/package.json',
+                'node_modules/react/package.json',
+                'node_modules/react/index.js',
+                'node_modules/react-dom/package.json',
+            ],
+            $this->service->nodeIntegrityMarkerRelativePaths($next)
+        );
+        $this->assertSame(
+            'node_modules/next/package.json',
             $this->service->nodeIntegrityMarkerRelativePath($next)
         );
+        $this->assertSame(['node_modules/nuxt/package.json'], $this->service->nodeIntegrityMarkerRelativePaths($nuxt));
         $this->assertSame('node_modules/nuxt/package.json', $this->service->nodeIntegrityMarkerRelativePath($nuxt));
+        $this->assertSame([], $this->service->nodeIntegrityMarkerRelativePaths('{"dependencies":{"express":"^4"}}'));
         $this->assertNull($this->service->nodeIntegrityMarkerRelativePath('{"dependencies":{"express":"^4"}}'));
+        $this->assertTrue($this->service->packageJsonUsesNext($next));
+        $this->assertStringContainsString('install react react-dom', $this->service->npmInstallNextPeersShellCommand());
     }
 
     #[Test]

@@ -404,9 +404,7 @@ class ContainerStackCommandService
             return;
         }
 
-        $integrityMarker = $this->runtimeService->nodeIntegrityMarkerRelativePath($packageJson);
-        $integrityOk = $integrityMarker === null
-            || $this->hostFileExists($ssh, $hostAppPath.'/'.$integrityMarker);
+        $integrityOk = $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson);
 
         if ($integrityOk && $this->hostDirectoryExists($ssh, $hostAppPath.'/node_modules/'.$probePackage)) {
             return;
@@ -482,13 +480,14 @@ class ContainerStackCommandService
         ?string $packageJson,
         int $timeout
     ): void {
-        $marker = $this->runtimeService->nodeIntegrityMarkerRelativePath($packageJson);
-        if ($marker === null || $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
+        if ($this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)) {
             return;
         }
 
+        $missing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson);
+
         \Log::warning('Node dependency install is incomplete after npm ci/install; retrying with a clean npm install', [
-            'marker' => $marker,
+            'missing' => $missing,
             'host_app_path' => $hostAppPath,
         ]);
 
@@ -498,17 +497,64 @@ class ContainerStackCommandService
             $ssh,
             $nodeDockerImage,
             $hostAppPath,
-            $this->runtimeService->npmInstallShellCommand(),
+            $this->runtimeService->npmInstallShellCommand(true),
             '/app',
             $timeout
         );
 
-        if (! $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
-            throw new \RuntimeException(
-                'Node dependency install is incomplete (missing '.$marker.'). '
-                .'Refresh package-lock.json locally with npm install, commit it, and pull again.'
+        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)
+            && $this->runtimeService->packageJsonUsesNext($packageJson)
+        ) {
+            \Log::warning('Next.js install is missing react peers; installing react and react-dom explicitly', [
+                'missing' => $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson),
+                'host_app_path' => $hostAppPath,
+            ]);
+
+            $this->runUnlimitedMemoryNodeCommand(
+                $ssh,
+                $nodeDockerImage,
+                $hostAppPath,
+                $this->runtimeService->npmInstallNextPeersShellCommand(),
+                '/app',
+                $timeout
             );
         }
+
+        if (! $this->hostNodeModulesIntegrityOk($ssh, $hostAppPath, $packageJson)) {
+            $stillMissing = $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson);
+            $hint = $stillMissing !== [] ? implode(', ', $stillMissing) : 'framework packages';
+
+            throw new \RuntimeException(
+                'Node dependency install is incomplete (missing '.$hint.'). '
+                .'Ensure react and react-dom are listed in package.json, refresh package-lock.json locally with npm install, commit it, and pull again.'
+            );
+        }
+    }
+
+    private function hostNodeModulesIntegrityOk(
+        SSHService $ssh,
+        string $hostAppPath,
+        ?string $packageJson
+    ): bool {
+        return $this->missingNodeIntegrityMarkers($ssh, $hostAppPath, $packageJson) === [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function missingNodeIntegrityMarkers(
+        SSHService $ssh,
+        string $hostAppPath,
+        ?string $packageJson
+    ): array {
+        $missing = [];
+        foreach ($this->runtimeService->nodeIntegrityMarkerRelativePaths($packageJson) as $marker) {
+            if (! $this->hostFileExists($ssh, $hostAppPath.'/'.$marker)) {
+                $missing[] = $marker;
+            }
+        }
+
+        return $missing;
     }
 
     private function stopApplicationServiceForMaintenance(
