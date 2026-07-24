@@ -205,6 +205,54 @@ function wrapNuxtConfig() {
     return { skipped: 'nuxt-config-wrap' };
 }
 
+/**
+ * Strip hardcoded next start -p/--port and force -H 0.0.0.0.
+ * Next then honors the container PORT env (platform proxy target).
+ */
+function patchPackageJsonNextListen() {
+    const pkgPath = path.join(ROOT, 'package.json');
+    if (!fs.existsSync(pkgPath)) {
+        return null;
+    }
+
+    let pkg;
+    try {
+        pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    } catch {
+        return null;
+    }
+
+    if (!pkg.scripts || typeof pkg.scripts.start !== 'string') {
+        return null;
+    }
+
+    const original = pkg.scripts.start;
+    if (!/\bnext\s+start\b/i.test(original)) {
+        return null;
+    }
+
+    let start = original
+        .replace(/(^|\s)(-p|--port)\s+\d+/gi, ' ')
+        .replace(/(^|\s)(-H|--hostname)\s+\S+/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (!/\bnext\s+start\b/i.test(start)) {
+        return null;
+    }
+
+    start = start.replace(/\bnext\s+start\b/i, 'next start -H 0.0.0.0');
+
+    if (start === original) {
+        return null;
+    }
+
+    pkg.scripts.start = start;
+    writeJson(pkgPath, pkg);
+
+    return { from: original, to: start };
+}
+
 function main() {
     ensureTalksasaDir();
 
@@ -213,6 +261,7 @@ function main() {
         tsconfig: patchAllTsConfigs(),
         next: wrapNextConfig(),
         nuxt: wrapNuxtConfig(),
+        nextListen: patchPackageJsonNextListen(),
     };
 
     fs.writeFileSync(MARKER, JSON.stringify(result, null, 2) + '\n');

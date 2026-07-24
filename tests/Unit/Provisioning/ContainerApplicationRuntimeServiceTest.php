@@ -294,7 +294,42 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             3000
         );
 
+        $this->assertSame('next', $runtime->source);
         $this->assertStringContainsString('npm run build', $runtime->command[2]);
-        $this->assertStringContainsString('exec npm start', $runtime->command[2]);
+        $this->assertStringContainsString('npx next start -H 0.0.0.0 -p ${PORT:-3000}', $runtime->command[2]);
+        $this->assertStringNotContainsString('exec npm start', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_rewrites_hardcoded_next_start_port_to_platform_port(): void
+    {
+        $runtime = $this->service->detectNodeFromContents(
+            null,
+            '{"scripts":{"start":"next start -p 3001"},"dependencies":{"next":"14.0.0"}}',
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertSame('next', $runtime->source);
+        $this->assertStringContainsString('npx next start -H 0.0.0.0 -p ${PORT:-3000}', $runtime->command[2]);
+        $this->assertStringNotContainsString('3001', $runtime->command[2]);
+    }
+
+    #[Test]
+    public function it_rewrites_procfile_next_start_to_platform_port(): void
+    {
+        $runtime = $this->service->detectNodeFromContents(
+            'next start -p 3001',
+            '{"dependencies":{"next":"14.0.0"}}',
+            false,
+            false,
+            false,
+            3000
+        );
+
+        $this->assertSame('next', $runtime->source);
+        $this->assertStringContainsString('npx next start -H 0.0.0.0 -p ${PORT:-3000}', $runtime->command[2]);
     }
 }

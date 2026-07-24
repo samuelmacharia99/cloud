@@ -54,6 +54,17 @@ class ContainerApplicationRuntimeService
         int $defaultPort
     ): ApplicationRuntime {
         if ($procfileCommand !== null) {
+            $platformCommand = $this->platformNodeListenCommand($procfileCommand, $defaultPort);
+            if ($platformCommand !== null) {
+                return $this->shellRuntime(
+                    $platformCommand,
+                    $defaultPort,
+                    'next',
+                    'Next.js server',
+                    $this->nodeBootstrap($packageJson)
+                );
+            }
+
             return $this->shellRuntime(
                 $procfileCommand,
                 $defaultPort,
@@ -67,6 +78,18 @@ class ContainerApplicationRuntimeService
             $data = json_decode($packageJson, true);
             if (is_array($data)) {
                 if (! empty($data['scripts']['start'])) {
+                    $start = trim((string) $data['scripts']['start']);
+                    $platformCommand = $this->platformNodeListenCommand($start, $defaultPort);
+                    if ($platformCommand !== null) {
+                        return $this->shellRuntime(
+                            $platformCommand,
+                            $defaultPort,
+                            'next',
+                            'Next.js server',
+                            $this->nodeBootstrap($packageJson)
+                        );
+                    }
+
                     return $this->shellRuntime(
                         'npm start',
                         $defaultPort,
@@ -291,6 +314,19 @@ class ContainerApplicationRuntimeService
         }
 
         return $command;
+    }
+
+    /**
+     * Rewrite Next.js start commands that hardcode a listen port/hostname.
+     * Customer apps often use `next start -p 3001`, which 502s behind our PORT mapping.
+     */
+    public function platformNodeListenCommand(string $command, int $defaultPort): ?string
+    {
+        if (! preg_match('/\bnext\s+start\b/i', $command)) {
+            return null;
+        }
+
+        return 'npx next start -H 0.0.0.0 -p ${PORT:-'.$defaultPort.'}';
     }
 
     private function resolvePythonWsgiModule(string $wsgiContents): ?string
