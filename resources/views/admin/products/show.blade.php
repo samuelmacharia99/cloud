@@ -186,6 +186,37 @@
                             <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['disk'] ?? '—' }}</dd>
                         </div>
                     </dl>
+                @elseif ($product->type === 'email_hosting')
+                    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Mailboxes</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['mailboxes'] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Aliases</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['aliases'] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Total storage</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">
+                                @if(isset($product->resource_limits['quota_mb']))
+                                    {{ rtrim(rtrim(number_format(((float) $product->resource_limits['quota_mb']) / 1024, 2), '0'), '.') }} GB
+                                @else
+                                    —
+                                @endif
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Per-mailbox max</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">
+                                @if(isset($product->resource_limits['mailbox_quota_mb']))
+                                    {{ rtrim(rtrim(number_format(((float) $product->resource_limits['mailbox_quota_mb']) / 1024, 2), '0'), '.') }} GB
+                                @else
+                                    —
+                                @endif
+                            </dd>
+                        </div>
+                    </dl>
                 @elseif (in_array($product->type, ['vps', 'dedicated_server'], true))
                     @php
                         $configService = app(\App\Services\ServerProductConfigService::class);

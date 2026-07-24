@@ -194,12 +194,15 @@
                     </div>
 
                     <!-- Provisioning Driver Key -->
-                    <div>
+                    <div x-show="productType !== 'email_hosting' && productType !== 'container_hosting'">
                         <label for="provisioning_driver_key" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Provisioning Driver Key <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>
-                        <input type="text" id="provisioning_driver_key" name="provisioning_driver_key" value="{{ old('provisioning_driver_key', $product->provisioning_driver_key) }}" placeholder="driver_key" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm">
+                        <input type="text" id="provisioning_driver_key" name="provisioning_driver_key" value="{{ old('provisioning_driver_key', $product->provisioning_driver_key) }}" placeholder="driver_key" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm" :disabled="productType === 'email_hosting' || productType === 'container_hosting'">
                         @error('provisioning_driver_key')
                             <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
                         @enderror
+                    </div>
+                    <div x-show="productType === 'email_hosting'" x-cloak class="rounded-lg border border-teal-200 dark:border-teal-800 bg-teal-50/50 dark:bg-teal-950/20 px-4 py-3">
+                        <p class="text-sm text-teal-800 dark:text-teal-200">Provisioning driver is set to <strong>mailcow</strong> automatically.</p>
                     </div>
 
                     <!-- Featured & Reseller toggles -->
@@ -220,9 +223,9 @@
             </div>
 
             <!-- Resource Limits (JSON) - other product types only -->
-            <div x-show="productType !== 'vps' && productType !== 'dedicated_server' && productType !== 'shared_hosting' && productType !== 'container_hosting'">
+            <div x-show="productType !== 'vps' && productType !== 'dedicated_server' && productType !== 'shared_hosting' && productType !== 'container_hosting' && productType !== 'email_hosting'">
                 <label for="resource_limits" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Resource Limits <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(JSON format, optional)</span></label>
-                <textarea id="resource_limits" name="resource_limits" rows="4" placeholder='{"cpu": "2", "memory": "2GB", "disk": "20GB"}' class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono resize-none">{{ old('resource_limits') ? (is_array(old('resource_limits')) ? json_encode(old('resource_limits')) : old('resource_limits')) : ($product->resource_limits ? json_encode($product->resource_limits) : '') }}</textarea>
+                <textarea id="resource_limits" name="resource_limits" rows="4" placeholder='{"cpu": "2", "memory": "2GB", "disk": "20GB"}' :disabled="['vps','dedicated_server','shared_hosting','container_hosting','email_hosting'].includes(productType)" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono resize-none">{{ old('resource_limits') ? (is_array(old('resource_limits')) ? json_encode(old('resource_limits')) : old('resource_limits')) : ($product->resource_limits ? json_encode($product->resource_limits) : '') }}</textarea>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter valid JSON or leave blank</p>
                 @error('resource_limits')
                     <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
@@ -230,6 +233,7 @@
             </div>
 
             @include('admin.products.partials.container-resource-limits', ['limits' => $product->resource_limits ?? []])
+            @include('admin.products.partials.email-hosting-limits', ['limits' => $product->resource_limits ?? []])
 
             <!-- Application Overage Billing (conditional) -->
             @if ($product->type === 'container_hosting')

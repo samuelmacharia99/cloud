@@ -165,6 +165,18 @@ class ProductController extends Controller
             return $rules;
         }
 
+        if ($type === 'email_hosting') {
+            $rules['resource_limits'] = 'nullable|array';
+            $rules['resource_limits.mailboxes'] = 'nullable|integer|min:1|max:10000';
+            $rules['resource_limits.aliases'] = 'nullable|integer|min:0|max:10000';
+            $rules['resource_limits.quota_gb'] = 'nullable|numeric|min:0.1|max:10240';
+            $rules['resource_limits.mailbox_quota_gb'] = 'nullable|numeric|min:0.1|max:10240';
+            $rules['resource_limits.quota_mb'] = 'nullable|integer|min:100';
+            $rules['resource_limits.mailbox_quota_mb'] = 'nullable|integer|min:100';
+
+            return $rules;
+        }
+
         if (in_array($type, ['vps', 'dedicated_server'], true)) {
             $rules['resource_limits'] = 'nullable|array';
             $rules['resource_limits.cpu_cores'] = 'nullable|integer|min:1';
@@ -204,6 +216,11 @@ class ProductController extends Controller
             $validated['resource_limits'] = json_decode($validated['resource_limits'], true);
         }
 
+        // Empty optional number inputs arrive as null and break NOT NULL columns.
+        if (! array_key_exists('setup_fee', $validated) || $validated['setup_fee'] === null || $validated['setup_fee'] === '') {
+            $validated['setup_fee'] = 0;
+        }
+
         if ($type === 'shared_hosting') {
             $validated['wholesale_monthly_price'] = null;
             $validated['wholesale_yearly_price'] = null;
@@ -223,6 +240,15 @@ class ProductController extends Controller
             return $validated;
         }
 
+        if ($type === 'email_hosting') {
+            $validated['provisioning_driver_key'] = $validated['provisioning_driver_key'] ?: 'mailcow';
+            $validated['container_template_id'] = null;
+            $validated['direct_admin_package_id'] = null;
+            $validated['resource_limits'] = $this->normalizeEmailHostingResourceLimits($validated['resource_limits'] ?? null);
+
+            return $validated;
+        }
+
         if (in_array($type, ['vps', 'dedicated_server'], true)) {
             $validated['direct_admin_package_id'] = null;
             $validated['provisioning_driver_key'] = null;
@@ -236,6 +262,32 @@ class ProductController extends Controller
         $validated['direct_admin_package_id'] = null;
 
         return $validated;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $limits
+     * @return array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int}
+     */
+    private function normalizeEmailHostingResourceLimits(?array $limits): array
+    {
+        $limits = is_array($limits) ? $limits : [];
+
+        $quotaMb = $limits['quota_mb'] ?? null;
+        if (($quotaMb === null || $quotaMb === '') && isset($limits['quota_gb']) && $limits['quota_gb'] !== '' && $limits['quota_gb'] !== null) {
+            $quotaMb = (float) $limits['quota_gb'] * 1024;
+        }
+
+        $mailboxQuotaMb = $limits['mailbox_quota_mb'] ?? null;
+        if (($mailboxQuotaMb === null || $mailboxQuotaMb === '') && isset($limits['mailbox_quota_gb']) && $limits['mailbox_quota_gb'] !== '' && $limits['mailbox_quota_gb'] !== null) {
+            $mailboxQuotaMb = (float) $limits['mailbox_quota_gb'] * 1024;
+        }
+
+        return [
+            'mailboxes' => max(1, (int) ($limits['mailboxes'] ?? config('mailcow.default_mailboxes', 10))),
+            'aliases' => max(0, (int) ($limits['aliases'] ?? config('mailcow.default_aliases', 20))),
+            'quota_mb' => max(100, (int) round((float) ($quotaMb ?? config('mailcow.default_quota_mb', 51200)))),
+            'mailbox_quota_mb' => max(100, (int) round((float) ($mailboxQuotaMb ?? config('mailcow.default_mailbox_quota_mb', 5120)))),
+        ];
     }
 
     private function normalizeContainerResourceLimits(?array $limits): ?array
