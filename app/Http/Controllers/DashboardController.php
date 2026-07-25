@@ -230,6 +230,7 @@ class DashboardController extends Controller
                 ->get(),
             'creditBalance' => CreditService::getAvailableBalance($user),
             'packageUsageWarnings' => $packageUsageWarnings,
+            'nextSteps' => app(\App\Services\Customer\CustomerNextStepsService::class)->forUser($user),
         ]);
     }
 }

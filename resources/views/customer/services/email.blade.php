@@ -50,8 +50,28 @@
         </div>
     @endif
 
+    @if (!empty($health))
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Mailboxes</p>
+                <p class="text-lg font-semibold mt-1">{{ $health['mailbox_count'] }} / {{ $health['mailbox_limit'] }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Messages / day</p>
+                <p class="text-lg font-semibold mt-1">{{ number_format($limits['msgs_per_day'] ?? $health['msgs_per_day'] ?? 0) }}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">DNS</p>
+                <p class="text-sm font-medium mt-1 {{ ($health['dns_ok'] ?? null) === true ? 'text-emerald-700 dark:text-emerald-300' : (($health['dns_ok'] ?? null) === false ? 'text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300') }}">
+                    {{ $health['dns_note'] }}
+                </p>
+            </div>
+        </div>
+    @endif
+
     <div class="border-b border-slate-200 dark:border-slate-800 flex gap-6 overflow-x-auto">
         <button type="button" @click="tab='mailboxes'" :class="tab==='mailboxes' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Mailboxes</button>
+        <button type="button" @click="tab='manage'" :class="tab==='manage' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Manage</button>
         <button type="button" @click="tab='aliases'" :class="tab==='aliases' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Aliases</button>
         <button type="button" @click="tab='delivery'" :class="tab==='delivery' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Test delivery</button>
         <button type="button" @click="tab='dns'" :class="tab==='dns' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">DNS</button>
@@ -135,6 +155,120 @@
                     <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Create mailbox</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div x-show="tab==='manage'" x-cloak class="space-y-6">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="font-semibold text-lg mb-1">Change mailbox password</h2>
+            <p class="text-sm text-slate-500 mb-4">Reset a mailbox password without opening SOGo.</p>
+            @if (count($mailboxes) === 0)
+                <p class="text-sm text-slate-500">Create a mailbox first.</p>
+            @else
+                <form method="POST" action="{{ route('customer.services.email.mailboxes.password', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Mailbox</label>
+                        <select name="email" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            @foreach($mailboxes as $mailbox)
+                                @php $email = $mailbox['username'] ?? $mailbox['email'] ?? ($mailbox['local_part'] ?? '').'@'.($mailDomain ?? ''); @endphp
+                                <option value="{{ $email }}">{{ $email }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">New password</label>
+                        <input type="password" name="password" required minlength="8" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Confirm password</label>
+                        <input type="password" name="password_confirmation" required minlength="8" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Update password</button>
+                    </div>
+                </form>
+            @endif
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="font-semibold text-lg mb-1">Display name</h2>
+            <p class="text-sm text-slate-500 mb-4">Shown as the From name in outgoing mail.</p>
+            @if (count($mailboxes) === 0)
+                <p class="text-sm text-slate-500">Create a mailbox first.</p>
+            @else
+                <form method="POST" action="{{ route('customer.services.email.mailboxes.name', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Mailbox</label>
+                        <select name="email" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            @foreach($mailboxes as $mailbox)
+                                @php $email = $mailbox['username'] ?? $mailbox['email'] ?? ($mailbox['local_part'] ?? '').'@'.($mailDomain ?? ''); @endphp
+                                <option value="{{ $email }}">{{ $email }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Display name</label>
+                        <input name="name" required maxlength="120" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm" placeholder="Acme Support">
+                    </div>
+                    <div class="md:col-span-2">
+                        <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Save name</button>
+                    </div>
+                </form>
+            @endif
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="font-semibold text-lg mb-1">Out of office</h2>
+            <p class="text-sm text-slate-500 mb-4">Auto-reply for a mailbox. Uses a Mailcow sieve filter managed from Talksasa.</p>
+            @if (count($mailboxes) === 0)
+                <p class="text-sm text-slate-500">Create a mailbox first.</p>
+            @else
+                <form method="POST" action="{{ route('customer.services.email.mailboxes.vacation.enable', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Mailbox</label>
+                        <select name="email" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            @foreach($mailboxes as $mailbox)
+                                @php $email = $mailbox['username'] ?? $mailbox['email'] ?? ($mailbox['local_part'] ?? '').'@'.($mailDomain ?? ''); @endphp
+                                <option value="{{ $email }}">{{ $email }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Repeat every (days)</label>
+                        <input type="number" name="days" value="1" min="1" max="30" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-1">Subject</label>
+                        <input name="subject" required value="{{ old('subject', 'Out of office') }}" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium mb-1">Message</label>
+                        <textarea name="body" required rows="4" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm" placeholder="Thanks for your email. I am away and will reply when I return.">{{ old('body') }}</textarea>
+                    </div>
+                    <div class="md:col-span-2 flex flex-wrap gap-3">
+                        <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Enable out of office</button>
+                    </div>
+                </form>
+                <form method="POST" action="{{ route('customer.services.email.mailboxes.vacation.disable', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4" onsubmit="return confirm('Disable out-of-office for the selected mailbox?')">
+                    @csrf
+                    @method('DELETE')
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Mailbox to disable</label>
+                        <select name="email" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            @foreach($mailboxes as $mailbox)
+                                @php $email = $mailbox['username'] ?? $mailbox['email'] ?? ($mailbox['local_part'] ?? '').'@'.($mailDomain ?? ''); @endphp
+                                <option value="{{ $email }}">{{ $email }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm">Disable</button>
+                    </div>
+                </form>
+            @endif
         </div>
     </div>
 

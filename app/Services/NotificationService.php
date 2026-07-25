@@ -73,8 +73,27 @@ class NotificationService
     {
         try {
             $this->emailDelivery->sendCustomerMailable($customer, $mailable, $subject, $event, $logBody);
+            $this->pushInApp($customer, $event, $subject, $logBody);
         } catch (\Exception $e) {
             Log::error('Failed to send customer email', ['event' => $event->value, 'error' => $e->getMessage()]);
+        }
+    }
+
+    private function pushInApp(User $customer, NotificationEvent $event, string $title, ?string $body = null, ?string $actionUrl = null): void
+    {
+        try {
+            app(InAppNotificationService::class)->pushEvent(
+                $customer,
+                $event,
+                $title,
+                $body ? Str::limit(trim(strip_tags($body)), 280) : null,
+                $actionUrl,
+            );
+        } catch (\Throwable $e) {
+            Log::debug('In-app notification push skipped', [
+                'event' => $event->value,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

@@ -244,6 +244,12 @@
                             @endif
                         </a>
 
+                        <x-customer-notification-dropdown
+                            :unread="$customerUnreadNotifications ?? 0"
+                            :recent="$customerRecentNotifications ?? []"
+                            :next-steps="$customerNextSteps ?? []"
+                        />
+
                         <!-- Pay Invoice Quick Button -->
                         <a href="{{ route('customer.invoices.index') }}" class="hidden lg:flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-medium transition">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

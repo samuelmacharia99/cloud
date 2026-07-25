@@ -355,6 +355,50 @@ class MailcowService
     }
 
     /**
+     * @return array{success: bool, message: string, data?: list<array<string, mixed>>}
+     */
+    public function listFilters(string $mailbox): array
+    {
+        $response = $this->request('GET', '/api/v1/get/filters/'.rawurlencode(strtolower($mailbox)));
+        if (! $response['success']) {
+            return $response;
+        }
+
+        $data = $response['data'] ?? [];
+        if (! is_array($data)) {
+            $data = [];
+        }
+        if ($data !== [] && ! array_is_list($data)) {
+            $data = array_values($data);
+        }
+
+        return ['success' => true, 'message' => 'OK', 'data' => $data];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attr
+     * @return array{success: bool, message: string, data?: mixed}
+     */
+    public function addFilter(array $attr): array
+    {
+        return $this->request('POST', '/api/v1/add/filter', $attr);
+    }
+
+    /**
+     * @param  list<string|int>  $ids
+     * @return array{success: bool, message: string, data?: mixed}
+     */
+    public function deleteFilters(array $ids): array
+    {
+        $ids = array_values(array_filter(array_map(static fn ($id) => (string) $id, $ids)));
+        if ($ids === []) {
+            return ['success' => true, 'message' => 'Nothing to delete.'];
+        }
+
+        return $this->request('POST', '/api/v1/delete/filter', $ids);
+    }
+
+    /**
      * @param  array<string, mixed>  $body
      * @return array{success: bool, message: string, data?: mixed}
      */

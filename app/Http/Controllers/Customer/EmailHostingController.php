@@ -27,12 +27,14 @@ class EmailHostingController extends Controller
         $connection = [];
         $dnsRecords = [];
         $error = null;
+        $health = null;
 
         try {
             $domain = $provisioning->domainForService($service);
             $client = $provisioning->clientForService($service);
             $connection = $provisioning->connectionSettings($service);
             $dnsRecords = $dns->recommendedRecords($service);
+            $health = app(\App\Services\Customer\CustomerNextStepsService::class)->emailHealth($service);
 
             $mb = $client->listMailboxes($domain);
             if ($mb['success']) {
@@ -48,6 +50,7 @@ class EmailHostingController extends Controller
         }
 
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $limits = $provisioning->limitsForProduct($service->product);
 
         return view('customer.services.email', [
             'service' => $service->load('product', 'node'),
@@ -56,10 +59,12 @@ class EmailHostingController extends Controller
             'aliases' => $aliases,
             'connection' => $connection,
             'dnsRecords' => $dnsRecords,
+            'health' => $health,
             'limits' => [
-                'mailboxes' => (int) ($meta['mailbox_limit'] ?? $provisioning->limitsForProduct($service->product)['mailboxes']),
-                'aliases' => (int) ($meta['alias_limit'] ?? $provisioning->limitsForProduct($service->product)['aliases']),
-                'mailbox_quota_mb' => (int) ($meta['mailbox_quota_mb'] ?? $provisioning->limitsForProduct($service->product)['mailbox_quota_mb']),
+                'mailboxes' => (int) ($meta['mailbox_limit'] ?? $limits['mailboxes']),
+                'aliases' => (int) ($meta['alias_limit'] ?? $limits['aliases']),
+                'mailbox_quota_mb' => (int) ($meta['mailbox_quota_mb'] ?? $limits['mailbox_quota_mb']),
+                'msgs_per_day' => (int) ($meta['msgs_per_day'] ?? $limits['msgs_per_day']),
             ],
             'error' => $error,
         ]);
@@ -243,6 +248,113 @@ class EmailHostingController extends Controller
 
         if (! $result['success']) {
             return back()->withErrors(['error' => $result['message']])->withInput();
+        }
+
+        return back()->with('success', $result['message']);
+    }
+
+    public function updateMailboxPassword(
+        Request $request,
+        Service $service,
+        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string', 'min:8', 'max:128', 'confirmed'],
+        ]);
+
+        try {
+            $result = $ops->changePassword($service, $validated['email'], $validated['password']);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']])->withInput();
+        }
+
+        return back()->with('success', $result['message'])->with('tab', 'mailboxes');
+    }
+
+    public function updateMailboxName(
+        Request $request,
+        Service $service,
+        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'name' => ['required', 'string', 'max:120'],
+        ]);
+
+        try {
+            $result = $ops->updateDisplayName($service, $validated['email'], $validated['name']);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']])->withInput();
+        }
+
+        return back()->with('success', $result['message']);
+    }
+
+    public function enableVacation(
+        Request $request,
+        Service $service,
+        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+            'subject' => ['required', 'string', 'max:200'],
+            'body' => ['required', 'string', 'max:5000'],
+            'days' => ['nullable', 'integer', 'min:1', 'max:30'],
+        ]);
+
+        try {
+            $result = $ops->enableVacation(
+                $service,
+                $validated['email'],
+                $validated['subject'],
+                $validated['body'],
+                (int) ($validated['days'] ?? 1),
+            );
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()])->withInput();
+        }
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']])->withInput();
+        }
+
+        return back()->with('success', $result['message']);
+    }
+
+    public function disableVacation(
+        Request $request,
+        Service $service,
+        \App\Services\Provisioning\MailcowMailboxOpsService $ops
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        try {
+            $result = $ops->disableVacation($service, $validated['email']);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']]);
         }
 
         return back()->with('success', $result['message']);

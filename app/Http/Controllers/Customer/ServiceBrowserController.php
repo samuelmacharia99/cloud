@@ -396,8 +396,21 @@ class ServiceBrowserController extends Controller
             ->latest()
             ->get();
 
+        $nextSteps = app(\App\Services\Customer\CustomerNextStepsService::class);
+        $healthById = [];
+        foreach ($services as $service) {
+            $status = $service->status instanceof \App\Enums\ServiceStatus
+                ? $service->status
+                : \App\Enums\ServiceStatus::tryFrom((string) $service->status);
+
+            if ($status === \App\Enums\ServiceStatus::Active) {
+                $healthById[$service->id] = $nextSteps->emailHealth($service);
+            }
+        }
+
         return view('customer.email-inboxes', [
             'services' => $services,
+            'healthById' => $healthById,
         ]);
     }
 }

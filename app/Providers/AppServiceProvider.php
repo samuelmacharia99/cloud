@@ -69,6 +69,26 @@ class AppServiceProvider extends ServiceProvider
 
         $this->shareResellerWalletData();
         $this->shareAdminAttentionData();
+        $this->shareCustomerNotificationData();
+    }
+
+    private function shareCustomerNotificationData(): void
+    {
+        View::composer(['layouts.customer'], function ($view) {
+            if (! auth()->check()) {
+                return;
+            }
+
+            $user = auth()->user();
+            if ($user->isAdmin() && ! session('impersonating') && ! session('impersonating_reseller')) {
+                return;
+            }
+
+            $inApp = app(\App\Services\InAppNotificationService::class);
+            $view->with('customerUnreadNotifications', $inApp->unreadCount($user));
+            $view->with('customerRecentNotifications', $inApp->recentFor($user, 8));
+            $view->with('customerNextSteps', app(\App\Services\Customer\CustomerNextStepsService::class)->forUser($user));
+        });
     }
 
     private function shareAdminAttentionData(): void

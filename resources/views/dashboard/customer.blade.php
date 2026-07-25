@@ -78,6 +78,32 @@
         </div>
     </div>
 
+    @if (!empty($nextSteps))
+    <div class="ui-card p-5 sm:p-6">
+        <div class="flex items-center justify-between gap-3 mb-4">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-900 dark:text-white">What to do next</h2>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Prioritized actions so you can finish setup without hunting around.</p>
+            </div>
+            <a href="{{ route('customer.notifications.index') }}" class="text-sm font-medium text-teal-700 dark:text-teal-300 hover:underline">Notifications</a>
+        </div>
+        <div class="space-y-2">
+            @foreach($nextSteps as $step)
+                <a href="{{ $step['url'] }}" class="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-800 px-4 py-3 hover:border-teal-300 dark:hover:border-teal-700 transition">
+                    <span class="mt-1.5 h-2 w-2 rounded-full shrink-0
+                        @if(($step['tone'] ?? '') === 'danger') bg-red-500
+                        @elseif(($step['tone'] ?? '') === 'warning') bg-amber-500
+                        @else bg-teal-500 @endif"></span>
+                    <div class="min-w-0">
+                        <p class="text-sm font-semibold text-slate-900 dark:text-white">{{ $step['title'] }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{{ $step['body'] }}</p>
+                    </div>
+                </a>
+            @endforeach
+        </div>
+    </div>
+    @endif
+
     @if (($packageUsageWarnings ?? collect())->isNotEmpty() || $suspendedServices->count() > 0 || $provisioningServices->count() > 0 || $expiringDomains->count() > 0)
     <div class="space-y-3">
         @foreach ($packageUsageWarnings ?? [] as $warning)

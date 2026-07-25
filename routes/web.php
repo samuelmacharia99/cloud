@@ -572,6 +572,10 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeMailbox'])->middleware('throttle:20,1')->name('mailboxes.store');
             Route::delete('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyMailbox'])->middleware('throttle:20,1')->name('mailboxes.destroy');
             Route::post('mailboxes/open', [App\Http\Controllers\Customer\EmailHostingController::class, 'openMailbox'])->middleware('throttle:10,1')->name('mailboxes.open');
+            Route::post('mailboxes/password', [App\Http\Controllers\Customer\EmailHostingController::class, 'updateMailboxPassword'])->middleware('throttle:10,1')->name('mailboxes.password');
+            Route::post('mailboxes/name', [App\Http\Controllers\Customer\EmailHostingController::class, 'updateMailboxName'])->middleware('throttle:20,1')->name('mailboxes.name');
+            Route::post('mailboxes/vacation', [App\Http\Controllers\Customer\EmailHostingController::class, 'enableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.enable');
+            Route::delete('mailboxes/vacation', [App\Http\Controllers\Customer\EmailHostingController::class, 'disableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.disable');
             Route::post('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
             Route::delete('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
             Route::post('dns/apply', [App\Http\Controllers\Customer\EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
@@ -634,6 +638,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
         Route::get('/email-hosting', [ServiceBrowserController::class, 'emailHosting'])->name('customer.email-hosting');
         Route::get('/email/inboxes', [ServiceBrowserController::class, 'emailInboxes'])->name('customer.email.inboxes');
+        Route::get('/notifications', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'index'])->name('customer.notifications.index');
+        Route::post('/notifications/read-all', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'markAllRead'])->middleware('throttle:30,1')->name('customer.notifications.read-all');
+        Route::post('/notifications/{notification}/read', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'markRead'])->middleware('throttle:60,1')->name('customer.notifications.read');
         Route::redirect('/my/reseller-catalog', '/my/catalog');
         Route::get('/my/catalog', [ResellerCatalogController::class, 'index'])->name('customer.catalog.index');
         Route::post('/my/catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.catalog.add');
