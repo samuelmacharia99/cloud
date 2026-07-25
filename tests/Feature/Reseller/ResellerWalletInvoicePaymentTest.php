@@ -5,8 +5,10 @@ namespace Tests\Feature\Reseller;
 use App\Models\Invoice;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\WalletTransaction;
 use App\Services\DomainPushService;
 use App\Services\NotificationService;
+use App\Services\ResellerInvoicePaymentService;
 use App\Services\ResellerWalletService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -134,5 +136,43 @@ class ResellerWalletInvoicePaymentTest extends TestCase
         $this->assertSame('unpaid', $invoice->status->value);
         $this->assertSame(500.0, (float) $invoice->wallet_amount_applied);
         $this->assertSame(0.0, (float) $reseller->fresh()->wallet->balance);
+    }
+
+    public function test_additional_wallet_apply_debits_incrementally_without_double_counting(): void
+    {
+        Setting::setValue('tax_enabled', 'false');
+
+        $reseller = User::factory()->reseller()->create();
+        $walletService = app(ResellerWalletService::class);
+        $walletService->getOrCreate($reseller)->update(['balance' => 500]);
+
+        $invoice = Invoice::factory()->create([
+            'user_id' => $reseller->id,
+            'status' => 'unpaid',
+            'subtotal' => 2000,
+            'tax' => 0,
+            'total' => 2000,
+            'wallet_amount_applied' => 0,
+        ]);
+
+        $paymentService = app(ResellerInvoicePaymentService::class);
+
+        $first = $paymentService->applyWallet($invoice, $reseller, true);
+        $this->assertSame(500.0, $first['wallet_applied']);
+        $this->assertSame(1500.0, $first['amount_due']);
+        $this->assertSame(0.0, (float) $reseller->fresh()->wallet->balance);
+
+        $walletService->getOrCreate($reseller)->update(['balance' => 1500]);
+
+        $second = $paymentService->applyWallet($invoice->fresh(), $reseller, true);
+        $this->assertSame(2000.0, $second['wallet_applied']);
+        $this->assertSame(0.0, $second['amount_due']);
+        $this->assertSame(0.0, (float) $reseller->fresh()->wallet->balance);
+
+        $this->assertSame(2, WalletTransaction::query()
+            ->where('reference_id', $invoice->id)
+            ->where('reference_type', 'Invoice')
+            ->where('type', 'domain_debit')
+            ->count());
     }
 }

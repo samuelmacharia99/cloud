@@ -190,4 +190,23 @@ class DomainSearchPricingTest extends TestCase
         $this->assertSame(2500.0, $pricing->price);
         $this->assertSame(2100.0, $pricing->renewal_price);
     }
+
+    public function test_get_pricing_for_user_does_not_fall_back_to_platform_retail_for_reseller_customers(): void
+    {
+        $reseller = $this->createReseller();
+        $customer = User::factory()->create(['reseller_id' => $reseller->id]);
+        $extension = $this->seedExtensionPricing('.org', 800.00, 1200.00);
+
+        DomainPricing::create([
+            'domain_extension_id' => $extension->id,
+            'period_years' => 1,
+            'tier' => 'retail',
+            'price' => 1500.00,
+            'renewal_price' => 1400.00,
+            'enabled' => true,
+        ]);
+
+        $this->assertNotNull($extension->getRetailPricing(1));
+        $this->assertNull($extension->getPricingForUser($customer, 1));
+    }
 }

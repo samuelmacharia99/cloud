@@ -32,7 +32,10 @@ class PaymentGatewayFactory
     public static function makeForInvoice(PaymentMethod|string $method, Invoice $invoice): PaymentGatewayInterface
     {
         $invoice->loadMissing('user');
-        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
+        $settleToReseller = self::settlesToReseller($invoice->user);
+        $reseller = $settleToReseller
+            ? app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user)
+            : null;
 
         return self::make($method, $reseller);
     }
@@ -52,16 +55,21 @@ class PaymentGatewayFactory
             return self::makeForInvoice('mpesa', $payment->invoice);
         }
 
-        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($payment->user);
+        $user = $payment->user;
+        if (self::settlesToReseller($user)) {
+            return new MpesaService(app(ResellerBrandingResolver::class)->resellerForCustomer($user));
+        }
 
-        return new MpesaService($reseller);
+        return new MpesaService(null);
     }
 
     public static function makeMpesaForUser(?User $user): MpesaService
     {
-        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
+        if (self::settlesToReseller($user)) {
+            return new MpesaService(app(ResellerBrandingResolver::class)->resellerForCustomer($user));
+        }
 
-        return new MpesaService($reseller);
+        return new MpesaService(null);
     }
 
     /**
@@ -69,7 +77,7 @@ class PaymentGatewayFactory
      */
     public static function getAvailableGateways(): array
     {
-        return self::buildGatewayList(null);
+        return self::buildGatewayList(null, settleToReseller: false);
     }
 
     /**
@@ -80,8 +88,11 @@ class PaymentGatewayFactory
     public static function getAvailableGatewaysForUser(?User $user = null): array
     {
         $user ??= auth()->user();
-        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($user);
-        $gateways = self::buildGatewayList($reseller);
+        $settleToReseller = self::settlesToReseller($user);
+        $reseller = $settleToReseller
+            ? app(ResellerBrandingResolver::class)->resellerForCustomer($user)
+            : null;
+        $gateways = self::buildGatewayList($reseller, settleToReseller: $settleToReseller);
 
         return array_intersect_key($gateways, array_flip(['mpesa', 'stripe', 'paypal']));
     }
@@ -89,10 +100,13 @@ class PaymentGatewayFactory
     public static function getAvailableGatewaysForInvoice(Invoice $invoice): array
     {
         $invoice->loadMissing('user');
-        $reseller = app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user);
+        $settleToReseller = self::settlesToReseller($invoice->user);
+        $reseller = $settleToReseller
+            ? app(ResellerBrandingResolver::class)->resellerForCustomer($invoice->user)
+            : null;
 
         return self::filterGatewaysForInvoice(
-            self::buildGatewayList($reseller),
+            self::buildGatewayList($reseller, settleToReseller: $settleToReseller),
             $invoice
         );
     }
@@ -108,13 +122,21 @@ class PaymentGatewayFactory
     }
 
     /**
+     * Reseller-customer invoices settle to the reseller; resellers/platform customers settle to Talksasa.
+     */
+    private static function settlesToReseller(?User $user): bool
+    {
+        return (bool) ($user && ! $user->is_reseller && $user->reseller_id);
+    }
+
+    /**
      * @return array<string, array{label: string, icon: string, color: string, description: string}>
      */
-    private static function buildGatewayList(?User $reseller): array
+    private static function buildGatewayList(?User $reseller, bool $settleToReseller = false): array
     {
         $gateways = [];
 
-        $mpesa = self::resolveMpesaService($reseller);
+        $mpesa = self::resolveMpesaService($reseller, $settleToReseller);
         if ($mpesa->isConfigured()) {
             $gateways['mpesa'] = [
                 'label' => 'M-PESA',
@@ -124,28 +146,31 @@ class PaymentGatewayFactory
             ];
         }
 
-        try {
-            $stripe = new StripeService;
-            if ($stripe->isConfigured()) {
-                $gateways['stripe'] = [
-                    'label' => 'Stripe',
-                    'icon' => 'credit-card',
-                    'color' => 'purple',
-                    'description' => 'Pay with your credit or debit card',
+        // Stripe/PayPal always settle to the platform — never offer for reseller-customer invoices.
+        if (! $settleToReseller) {
+            try {
+                $stripe = new StripeService;
+                if ($stripe->isConfigured()) {
+                    $gateways['stripe'] = [
+                        'label' => 'Stripe',
+                        'icon' => 'credit-card',
+                        'color' => 'purple',
+                        'description' => 'Pay with your credit or debit card',
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Stripe payment gateway unavailable', ['error' => $e->getMessage()]);
+            }
+
+            $paypal = new PayPalService;
+            if ($paypal->isConfigured()) {
+                $gateways['paypal'] = [
+                    'label' => 'PayPal',
+                    'icon' => 'globe',
+                    'color' => 'blue',
+                    'description' => 'Pay safely with your PayPal account',
                 ];
             }
-        } catch (\Throwable $e) {
-            Log::warning('Stripe payment gateway unavailable', ['error' => $e->getMessage()]);
-        }
-
-        $paypal = new PayPalService;
-        if ($paypal->isConfigured()) {
-            $gateways['paypal'] = [
-                'label' => 'PayPal',
-                'icon' => 'globe',
-                'color' => 'blue',
-                'description' => 'Pay safely with your PayPal account',
-            ];
         }
 
         $manual = new ManualPaymentService;
@@ -171,13 +196,10 @@ class PaymentGatewayFactory
         return $gateways;
     }
 
-    private static function resolveMpesaService(?User $reseller): MpesaService
+    private static function resolveMpesaService(?User $reseller, bool $settleToReseller = false): MpesaService
     {
-        if ($reseller) {
-            $resellerMpesa = new MpesaService($reseller);
-            if ($resellerMpesa->isConfigured()) {
-                return $resellerMpesa;
-            }
+        if ($settleToReseller && $reseller) {
+            return new MpesaService($reseller);
         }
 
         return new MpesaService(null);

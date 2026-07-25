@@ -167,6 +167,17 @@ class OpenproviderClient
     }
 
     /**
+     * @param  list<array{name: string}>  $nameServers
+     * @return array<string, mixed>
+     */
+    public function updateDomainNameservers(int $domainId, array $nameServers): array
+    {
+        return $this->put("domains/{$domainId}", [
+            'name_servers' => $nameServers,
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function searchDomain(string $name, string $extension): array

@@ -55,6 +55,6 @@ class ServiceDeletionService
     {
         $driver = $service->provisioning_driver_key ?: $service->product?->provisioning_driver_key;
 
-        return in_array($driver, ['container', 'directadmin'], true);
+        return in_array($driver, ['container', 'directadmin', 'mailcow'], true);
     }
 }

@@ -513,6 +513,7 @@ class CheckoutController extends Controller
                         // Create Domain
                         $domain = Domain::create([
                             'user_id' => $user->id,
+                            'reseller_id' => $user->reseller_id,
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',
@@ -1263,6 +1264,7 @@ class CheckoutController extends Controller
                         // Create Domain
                         $domain = Domain::create([
                             'user_id' => $user->id,
+                            'reseller_id' => $user->reseller_id,
                             'name' => $item['domain'],
                             'extension' => $item['extension'],
                             'status' => 'pending',

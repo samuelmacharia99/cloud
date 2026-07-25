@@ -101,15 +101,18 @@ class DomainExtension extends Model
                 ->where('enabled', true)
                 ->first();
 
-            if ($resellerPricing) {
-                $retail = (float) $resellerPricing->retail_price;
-                $renewal = $resellerPricing->effectiveRenewalRetailPrice();
-
-                return (object) [
-                    'price' => $retail,
-                    'renewal_price' => $renewal,
-                ];
+            if (! $resellerPricing) {
+                // Match registration: reseller customers only see reseller overrides.
+                return null;
             }
+
+            $retail = (float) $resellerPricing->retail_price;
+            $renewal = $resellerPricing->effectiveRenewalRetailPrice();
+
+            return (object) [
+                'price' => $retail,
+                'renewal_price' => $renewal,
+            ];
         }
 
         return $this->getRetailPricing($periodYears);

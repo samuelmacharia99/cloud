@@ -64,9 +64,10 @@ class ResellerWalletService
         ?int $refId = null,
         ?string $refType = null,
         string $type = 'domain_debit',
+        bool $idempotent = true,
     ): WalletTransaction {
-        return $this->db->transaction(function () use ($reseller, $amount, $description, $refId, $refType, $type) {
-            if ($refId !== null && $refType !== null) {
+        return $this->db->transaction(function () use ($reseller, $amount, $description, $refId, $refType, $type, $idempotent) {
+            if ($idempotent && $refId !== null && $refType !== null) {
                 $existing = WalletTransaction::query()
                     ->where('reference_id', $refId)
                     ->where('reference_type', $refType)

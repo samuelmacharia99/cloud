@@ -103,6 +103,9 @@
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
         <h2 class="font-semibold text-slate-900 dark:text-white mb-4">DNS records</h2>
+        <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            This is a read-only snapshot of locally stored DNS records. To edit DNS, impersonate the customer and manage records in their portal, or use your DirectAdmin / DNS provider panel.
+        </p>
         @if($dnsRecords->isEmpty())
             <p class="text-sm text-slate-500">No DNS zone records stored locally for this domain.</p>
         @else

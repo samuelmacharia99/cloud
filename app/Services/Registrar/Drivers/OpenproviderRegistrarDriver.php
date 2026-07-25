@@ -192,6 +192,44 @@ class OpenproviderRegistrarDriver implements RegistrarOperationsInterface
         ];
     }
 
+    public function updateNameservers(Registrar $registrar, Domain $domain, array $nameServers): array
+    {
+        if (! $domain->registrar_external_id) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => 'Domain has no registrar ID — nameservers cannot be pushed to the registry yet.',
+            ];
+        }
+
+        if (count($nameServers) < 2) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => 'At least two nameservers are required.',
+            ];
+        }
+
+        try {
+            $client = OpenproviderClient::forRegistrar($registrar);
+            $response = $client->updateDomainNameservers((int) $domain->registrar_external_id, $nameServers);
+            $data = $response['data'] ?? [];
+            $status = strtoupper((string) ($data['status'] ?? 'ACT'));
+
+            return [
+                'success' => true,
+                'status' => $status !== '' ? $status : 'ACT',
+                'message' => 'Nameservers updated at the registrar.',
+            ];
+        } catch (OpenproviderException $e) {
+            return [
+                'success' => false,
+                'status' => 'FAI',
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
     /**
      * @return array{owner: string, admin: string, tech: string, billing: string}
      */

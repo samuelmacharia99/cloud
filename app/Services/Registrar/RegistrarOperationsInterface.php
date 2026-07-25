@@ -33,4 +33,10 @@ interface RegistrarOperationsInterface extends RegistrarDriverInterface
      * @return array{success: bool, status: string, expiration_date: ?string, message: string}
      */
     public function syncDomainStatus(Registrar $registrar, Domain $domain): array;
+
+    /**
+     * @param  list<array{name: string}>  $nameServers
+     * @return array{success: bool, status: string, message: string}
+     */
+    public function updateNameservers(Registrar $registrar, Domain $domain, array $nameServers): array;
 }

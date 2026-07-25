@@ -342,6 +342,65 @@ class RegistrarFulfillmentService
     }
 
     /**
+     * Push nameserver changes to the registrar when the domain is registered there.
+     *
+     * @param  array{ns1?: string, ns2?: ?string, ns3?: ?string, ns4?: ?string}|list<string>  $nameservers
+     * @return array{success: bool, message: string, pushed: bool}
+     */
+    public function updateDomainNameservers(Domain $domain, array $nameservers): array
+    {
+        $nameServers = OpenproviderClient::nameServerRecords($nameservers);
+
+        if (count($nameServers) < 2) {
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'At least two unique nameservers are required.',
+            ];
+        }
+
+        $registrar = $this->resolveRegistrar($domain);
+        $driver = $this->operationsDriver($registrar);
+
+        if (! $driver || ! $domain->registrar_external_id) {
+            return [
+                'success' => true,
+                'pushed' => false,
+                'message' => 'Nameservers saved locally. This domain is not yet linked to a registrar API record, so the registry was not updated.',
+            ];
+        }
+
+        try {
+            $result = $driver->updateNameservers($registrar, $domain, $nameServers);
+
+            if (! ($result['success'] ?? false)) {
+                return [
+                    'success' => false,
+                    'pushed' => false,
+                    'message' => $result['message'] ?? 'Registrar rejected the nameserver update.',
+                ];
+            }
+
+            return [
+                'success' => true,
+                'pushed' => true,
+                'message' => $result['message'] ?? 'Nameservers updated at the registrar. DNS changes may take up to 48 hours to propagate.',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Nameserver update failed', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'pushed' => false,
+                'message' => 'Could not update nameservers at the registrar: '.$e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $result
      */
     private function applyOperationResult(Domain $domain, Registrar $registrar, array $result, ResellerDomainOrder $order): void

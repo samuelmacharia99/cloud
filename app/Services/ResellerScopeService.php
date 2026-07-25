@@ -39,7 +39,7 @@ class ResellerScopeService
      */
     public function managedPaymentsQuery(User $reseller): Builder
     {
-        $customerIds = $this->managedCustomerIds($reseller);
+        $customerIds = $this->allManagedCustomerIds($reseller);
 
         return Payment::query()
             ->whereHas('invoice', fn (Builder $query) => $query->whereIn('user_id', $customerIds ?: [0]));
@@ -50,9 +50,9 @@ class ResellerScopeService
      */
     public function managedInvoicesQuery(User $reseller): Builder
     {
-        return Invoice::query()->whereHas('user', function (Builder $query) use ($reseller) {
-            $query->where('reseller_id', $reseller->id);
-        });
+        $customerIds = $this->allManagedCustomerIds($reseller);
+
+        return Invoice::query()->whereIn('user_id', $customerIds ?: [0]);
     }
 
     /**

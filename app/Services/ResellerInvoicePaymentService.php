@@ -6,6 +6,8 @@ use App\Enums\PaymentStatus;
 use App\Models\Invoice;
 use App\Models\Payment;
 use App\Models\User;
+use App\Models\WalletTransaction;
+use Illuminate\Support\Facades\DB;
 
 class ResellerInvoicePaymentService
 {
@@ -23,51 +25,58 @@ class ResellerInvoicePaymentService
      */
     public function applyWallet(Invoice $invoice, User $reseller, bool $shouldApply): array
     {
-        if (! $shouldApply) {
+        return DB::transaction(function () use ($invoice, $reseller, $shouldApply) {
+            $invoice = Invoice::query()->lockForUpdate()->findOrFail($invoice->id);
+
+            $this->syncWalletAmountApplied($invoice);
+
+            if (! $shouldApply) {
+                return [
+                    'wallet_applied' => (float) $invoice->wallet_amount_applied,
+                    'amount_due' => $this->amountDue($invoice),
+                ];
+            }
+
+            $amountDue = $this->amountDue($invoice);
+
+            if ($amountDue <= 0) {
+                return [
+                    'wallet_applied' => (float) $invoice->wallet_amount_applied,
+                    'amount_due' => 0,
+                ];
+            }
+
+            $wallet = $this->walletService->getOrCreate($reseller);
+            $toApply = min((float) $wallet->balance, $amountDue);
+
+            if ($toApply <= 0) {
+                return [
+                    'wallet_applied' => (float) $invoice->wallet_amount_applied,
+                    'amount_due' => $amountDue,
+                ];
+            }
+
+            $debitType = $invoice->type === 'reseller_subscription' ? 'subscription_debit' : 'domain_debit';
+
+            $this->walletService->debit(
+                $reseller,
+                $toApply,
+                $invoice->type === 'reseller_subscription'
+                    ? "Package subscription invoice {$invoice->invoice_number}"
+                    : "Applied to invoice {$invoice->invoice_number}",
+                $invoice->id,
+                'Invoice',
+                $debitType,
+                idempotent: false,
+            );
+
+            $this->syncWalletAmountApplied($invoice->fresh());
+
             return [
-                'wallet_applied' => (float) $invoice->wallet_amount_applied,
-                'amount_due' => $this->amountDue($invoice),
+                'wallet_applied' => (float) $invoice->fresh()->wallet_amount_applied,
+                'amount_due' => $this->amountDue($invoice->fresh()),
             ];
-        }
-
-        $amountDue = $this->amountDue($invoice);
-
-        if ($amountDue <= 0) {
-            return [
-                'wallet_applied' => (float) $invoice->wallet_amount_applied,
-                'amount_due' => 0,
-            ];
-        }
-
-        $wallet = $this->walletService->getOrCreate($reseller);
-        $toApply = min((float) $wallet->balance, $amountDue);
-
-        if ($toApply <= 0) {
-            return [
-                'wallet_applied' => (float) $invoice->wallet_amount_applied,
-                'amount_due' => $amountDue,
-            ];
-        }
-
-        $this->walletService->debit(
-            $reseller,
-            $toApply,
-            $invoice->type === 'reseller_subscription'
-                ? "Package subscription invoice {$invoice->invoice_number}"
-                : "Applied to invoice {$invoice->invoice_number}",
-            $invoice->id,
-            'Invoice',
-            $invoice->type === 'reseller_subscription' ? 'subscription_debit' : 'domain_debit',
-        );
-
-        $invoice->update([
-            'wallet_amount_applied' => round((float) $invoice->wallet_amount_applied + $toApply, 2),
-        ]);
-
-        return [
-            'wallet_applied' => (float) $invoice->fresh()->wallet_amount_applied,
-            'amount_due' => $this->amountDue($invoice->fresh()),
-        ];
+        });
     }
 
     public function completeInvoiceIfFullyPaid(Invoice $invoice, ?Payment $gatewayPayment = null): bool
@@ -110,5 +119,22 @@ class ResellerInvoicePaymentService
         ]);
 
         return true;
+    }
+
+    private function syncWalletAmountApplied(Invoice $invoice): void
+    {
+        $applied = (float) WalletTransaction::query()
+            ->where('reference_id', $invoice->id)
+            ->where('reference_type', 'Invoice')
+            ->whereIn('type', ['subscription_debit', 'domain_debit'])
+            ->where('status', 'completed')
+            ->sum('amount');
+
+        $applied = round($applied, 2);
+
+        if (abs($applied - (float) $invoice->wallet_amount_applied) > 0.001) {
+            $invoice->update(['wallet_amount_applied' => $applied]);
+            $invoice->refresh();
+        }
     }
 }

@@ -38,8 +38,10 @@ use App\Http\Controllers\CurrencyPreferenceController;
 use App\Http\Controllers\Customer\CheckoutController;
 use App\Http\Controllers\Customer\ContainerFileController;
 use App\Http\Controllers\Customer\ContainerTerminalController;
+use App\Http\Controllers\Customer\CustomerNotificationController;
 use App\Http\Controllers\Customer\DnsController;
 use App\Http\Controllers\Customer\DomainSearchController;
+use App\Http\Controllers\Customer\EmailHostingController;
 use App\Http\Controllers\Customer\HostingPanelController;
 use App\Http\Controllers\Customer\InterCustomerDomainTransferController;
 use App\Http\Controllers\Customer\PaymentController;
@@ -93,7 +95,9 @@ Route::middleware(['auth'])->group(function () {
             }
             session()->forget(['impersonating_reseller', 'impersonating_user_id']);
             auth()->logout();
+            session()->regenerate();
             auth()->loginUsingId($resellerId);
+            session()->regenerate();
 
             return redirect()->route('reseller.customers.index')->with('success', 'Exited customer view.');
         } elseif (session('impersonating')) {
@@ -106,7 +110,9 @@ Route::middleware(['auth'])->group(function () {
             }
             session()->forget(['impersonating', 'impersonating_user_id']);
             auth()->logout();
+            session()->regenerate();
             auth()->loginUsingId($adminId);
+            session()->regenerate();
 
             return redirect()->route('admin.customers.index')->with('success', 'Exited customer view.');
         }
@@ -459,19 +465,16 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
             return redirect()->route('reseller.customer-invoices.create', $params);
         })->name('reseller.customer-orders.hosting.create');
-        Route::post('reseller/customer-orders/hosting', [CustomerOrderController::class, 'storeHosting'])->name('reseller.customer-orders.hosting.store');
         Route::get('reseller/customer-orders/domain', function (Request $request) {
             $params = $request->filled('customer') ? ['customer' => $request->integer('customer')] : [];
 
             return redirect()->route('reseller.domains.index', $params);
         })->name('reseller.customer-orders.domain.create');
-        Route::post('reseller/customer-orders/domain', [CustomerOrderController::class, 'storeDomain'])->name('reseller.customer-orders.domain.store');
         Route::get('reseller/customer-orders/create', function (Request $request) {
             $params = $request->filled('customer') ? ['customer' => $request->integer('customer')] : [];
 
             return redirect()->route('reseller.customer-invoices.create', $params);
         })->name('reseller.customer-orders.create');
-        Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
 
         Route::get('my/packages', [PackageController::class, 'index'])->name('reseller.packages.index');
         Route::post('my/packages/renew', [PackageController::class, 'renew'])->name('reseller.packages.renew');
@@ -507,13 +510,15 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('reseller/wallet/export', [WalletController::class, 'exportPdf'])->name('reseller.wallet.export');
 
         Route::middleware('reseller.limits')->group(function () {
+            Route::post('reseller/customer-orders/hosting', [CustomerOrderController::class, 'storeHosting'])->name('reseller.customer-orders.hosting.store');
+            Route::post('reseller/customer-orders/domain', [CustomerOrderController::class, 'storeDomain'])->name('reseller.customer-orders.domain.store');
+            Route::post('reseller/customer-orders', [CustomerOrderController::class, 'store'])->name('reseller.customer-orders.store');
             Route::resource('reseller/customers', App\Http\Controllers\Reseller\CustomerController::class)->names('reseller.customers');
             Route::post('reseller/customers/{customer}/impersonate', [App\Http\Controllers\Reseller\CustomerController::class, 'impersonate'])->name('reseller.customers.impersonate');
             Route::post('reseller/directadmin-accounts/link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'link'])->name('reseller.directadmin-accounts.link');
             Route::post('reseller/directadmin-accounts/bulk-link', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'bulkLink'])->name('reseller.directadmin-accounts.bulk-link');
             Route::post('reseller/services/{service}/connect-billing', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'connectBilling'])->name('reseller.directadmin-accounts.connect-billing');
             Route::get('reseller/directadmin-accounts/catalog-options', [App\Http\Controllers\Reseller\HostedDirectAdminAccountController::class, 'catalogOptions'])->name('reseller.directadmin-accounts.catalog-options');
-            Route::match(['get', 'post'], 'reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
             Route::resource('reseller/catalog', CatalogController::class)
                 ->parameters(['catalog' => 'catalogItem'])
                 ->names('reseller.catalog');
@@ -545,6 +550,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::post('reseller/checkout', [App\Http\Controllers\Reseller\CheckoutController::class, 'process'])->name('reseller.checkout.process');
         });
 
+        // Exit impersonation must stay outside reseller.limits — while impersonating the user is a customer.
+        Route::match(['get', 'post'], 'reseller/exit-impersonation', [App\Http\Controllers\Reseller\CustomerController::class, 'exitImpersonation'])->name('reseller.exit-impersonation');
+
         Route::get('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'selectMethod'])->name('reseller.payment.select-method');
         Route::post('reseller/invoices/{invoice}/pay', [App\Http\Controllers\Reseller\PaymentController::class, 'initiate'])->name('reseller.payment.initiate');
         Route::get('reseller/invoices/{invoice}/pay/mpesa/verify', [App\Http\Controllers\Reseller\PaymentController::class, 'verifyMpesa'])->name('reseller.payment.verify-mpesa');
@@ -568,18 +576,18 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             ->name('customer.services.wordpress-admin');
         Route::get('/my/services/{service}', [App\Http\Controllers\Customer\ServiceController::class, 'show'])->name('customer.services.show');
         Route::prefix('my/services/{service}/email')->name('customer.services.email.')->group(function () {
-            Route::get('/', [App\Http\Controllers\Customer\EmailHostingController::class, 'show'])->name('show');
-            Route::post('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeMailbox'])->middleware('throttle:20,1')->name('mailboxes.store');
-            Route::delete('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyMailbox'])->middleware('throttle:20,1')->name('mailboxes.destroy');
-            Route::post('mailboxes/open', [App\Http\Controllers\Customer\EmailHostingController::class, 'openMailbox'])->middleware('throttle:10,1')->name('mailboxes.open');
-            Route::post('mailboxes/password', [App\Http\Controllers\Customer\EmailHostingController::class, 'updateMailboxPassword'])->middleware('throttle:10,1')->name('mailboxes.password');
-            Route::post('mailboxes/name', [App\Http\Controllers\Customer\EmailHostingController::class, 'updateMailboxName'])->middleware('throttle:20,1')->name('mailboxes.name');
-            Route::post('mailboxes/vacation', [App\Http\Controllers\Customer\EmailHostingController::class, 'enableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.enable');
-            Route::delete('mailboxes/vacation', [App\Http\Controllers\Customer\EmailHostingController::class, 'disableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.disable');
-            Route::post('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
-            Route::delete('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
-            Route::post('dns/apply', [App\Http\Controllers\Customer\EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
-            Route::post('test-delivery', [App\Http\Controllers\Customer\EmailHostingController::class, 'testDelivery'])->middleware('throttle:5,1')->name('test-delivery');
+            Route::get('/', [EmailHostingController::class, 'show'])->name('show');
+            Route::post('mailboxes', [EmailHostingController::class, 'storeMailbox'])->middleware('throttle:20,1')->name('mailboxes.store');
+            Route::delete('mailboxes', [EmailHostingController::class, 'destroyMailbox'])->middleware('throttle:20,1')->name('mailboxes.destroy');
+            Route::post('mailboxes/open', [EmailHostingController::class, 'openMailbox'])->middleware('throttle:10,1')->name('mailboxes.open');
+            Route::post('mailboxes/password', [EmailHostingController::class, 'updateMailboxPassword'])->middleware('throttle:10,1')->name('mailboxes.password');
+            Route::post('mailboxes/name', [EmailHostingController::class, 'updateMailboxName'])->middleware('throttle:20,1')->name('mailboxes.name');
+            Route::post('mailboxes/vacation', [EmailHostingController::class, 'enableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.enable');
+            Route::delete('mailboxes/vacation', [EmailHostingController::class, 'disableVacation'])->middleware('throttle:10,1')->name('mailboxes.vacation.disable');
+            Route::post('aliases', [EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
+            Route::delete('aliases', [EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
+            Route::post('dns/apply', [EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
+            Route::post('test-delivery', [EmailHostingController::class, 'testDelivery'])->middleware('throttle:5,1')->name('test-delivery');
         });
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::get('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renewForm'])->name('customer.services.renew');
@@ -638,9 +646,9 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
         Route::get('/email-hosting', [ServiceBrowserController::class, 'emailHosting'])->name('customer.email-hosting');
         Route::get('/email/inboxes', [ServiceBrowserController::class, 'emailInboxes'])->name('customer.email.inboxes');
-        Route::get('/notifications', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'index'])->name('customer.notifications.index');
-        Route::post('/notifications/read-all', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'markAllRead'])->middleware('throttle:30,1')->name('customer.notifications.read-all');
-        Route::post('/notifications/{notification}/read', [App\Http\Controllers\Customer\CustomerNotificationController::class, 'markRead'])->middleware('throttle:60,1')->name('customer.notifications.read');
+        Route::get('/notifications', [CustomerNotificationController::class, 'index'])->name('customer.notifications.index');
+        Route::post('/notifications/read-all', [CustomerNotificationController::class, 'markAllRead'])->middleware('throttle:30,1')->name('customer.notifications.read-all');
+        Route::post('/notifications/{notification}/read', [CustomerNotificationController::class, 'markRead'])->middleware('throttle:60,1')->name('customer.notifications.read');
         Route::redirect('/my/reseller-catalog', '/my/catalog');
         Route::get('/my/catalog', [ResellerCatalogController::class, 'index'])->name('customer.catalog.index');
         Route::post('/my/catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.catalog.add');

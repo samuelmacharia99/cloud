@@ -336,7 +336,7 @@
                         </svg>
                         <span class="text-sm font-medium text-cyan-900 dark:text-cyan-100">You are viewing as a customer. <strong>{{ auth()->user()->name }}</strong></span>
                     </div>
-                    <form method="POST" action="{{ route('exit-impersonation') }}" class="flex items-center gap-2">
+                    <form method="POST" action="{{ route('exit-impersonation') }}" class="flex items-center gap-2" title="Return to your reseller account">
                         @csrf
                         <button type="submit" class="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 dark:bg-cyan-700 dark:hover:bg-cyan-600 text-white text-sm font-medium rounded-lg transition">
                             Exit View

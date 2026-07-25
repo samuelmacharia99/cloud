@@ -92,11 +92,11 @@ class PaymentGatewayFactoryTest extends TestCase
         $customer = User::factory()->customer()->create(['country' => 'KE']);
         $invoice = Invoice::factory()->create([
             'user_id' => $customer->id,
-            'currency' => 'USD',
             'status' => 'unpaid',
         ]);
+        $invoice->forceFill(['currency' => 'USD'])->saveQuietly();
 
-        $gateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);
+        $gateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice->fresh());
 
         $this->assertArrayNotHasKey('mpesa', $gateways);
     }
@@ -133,5 +133,32 @@ class PaymentGatewayFactoryTest extends TestCase
 
         $this->assertArrayNotHasKey('manual', $gateways);
         $this->assertArrayNotHasKey('bank_transfer', $gateways);
+    }
+
+    public function test_reseller_customer_invoice_hides_platform_stripe_and_paypal(): void
+    {
+        Setting::setValue('manual_enabled', '1');
+        Setting::setValue('bank_transfer_enabled', '0');
+        Setting::setValue('mpesa_enabled', '0');
+        Setting::setValue('stripe_enabled', '1');
+        Setting::setValue('stripe_key', 'sk_test');
+        Setting::setValue('stripe_publishable_key', 'pk_test');
+        Setting::setValue('paypal_enabled', '1');
+        Setting::setValue('paypal_client_id', 'paypal-id');
+        Setting::setValue('paypal_secret', 'paypal-secret');
+
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+        $invoice = Invoice::factory()->create([
+            'user_id' => $customer->id,
+            'currency' => 'KES',
+            'status' => 'unpaid',
+        ]);
+
+        $gateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);
+
+        $this->assertArrayNotHasKey('stripe', $gateways);
+        $this->assertArrayNotHasKey('paypal', $gateways);
+        $this->assertArrayHasKey('manual', $gateways);
     }
 }

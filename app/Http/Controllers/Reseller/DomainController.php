@@ -10,6 +10,7 @@ use App\Models\Service;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainRenewalService;
+use App\Services\Registrar\RegistrarFulfillmentService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerCustomerOrderService;
 use App\Services\ResellerDomainOrderService;
@@ -30,6 +31,7 @@ class DomainController extends Controller
         protected ResellerDomainTransferService $domainTransfer,
         protected ResellerScopeService $scope,
         protected ResellerCustomerCatalogService $catalog,
+        protected RegistrarFulfillmentService $registrarFulfillment,
     ) {}
 
     /**
@@ -241,6 +243,19 @@ class DomainController extends Controller
             'nameserver_4' => 'nullable|string|min:3|max:253',
         ]);
 
+        $nameservers = [
+            'ns1' => $validated['nameserver_1'],
+            'ns2' => $validated['nameserver_2'] ?? null,
+            'ns3' => $validated['nameserver_3'] ?? null,
+            'ns4' => $validated['nameserver_4'] ?? null,
+        ];
+
+        $result = $this->registrarFulfillment->updateDomainNameservers($domain, $nameservers);
+
+        if (! $result['success']) {
+            return back()->with('error', $result['message'])->withInput();
+        }
+
         $domain->update([
             'nameserver_1' => $validated['nameserver_1'],
             'nameserver_2' => $validated['nameserver_2'] ?? null,
@@ -248,7 +263,9 @@ class DomainController extends Controller
             'nameserver_4' => $validated['nameserver_4'] ?? null,
         ]);
 
-        return back()->with('success', 'Nameservers updated. Changes may take up to 48 hours to propagate.');
+        $flashKey = $result['pushed'] ? 'success' : 'warning';
+
+        return back()->with($flashKey, $result['message']);
     }
 
     public function initiateTransfer(Request $request, Domain $domain)

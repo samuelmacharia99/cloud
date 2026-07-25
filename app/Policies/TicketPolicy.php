@@ -43,7 +43,16 @@ class TicketPolicy
             return false;
         }
 
-        if ($user->isAdmin() || $user->isReseller()) {
+        if ($user->isAdmin()) {
+            return true;
+        }
+
+        if ($user->isReseller()) {
+            // After escalation, platform owns the thread — reseller can still view but not reply.
+            if ($ticket->user_id !== $user->id && $ticket->handled_by === TicketHandledBy::Platform) {
+                return false;
+            }
+
             return true;
         }
 

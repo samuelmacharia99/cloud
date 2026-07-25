@@ -240,6 +240,7 @@ class CheckoutController extends Controller
                     // Create domain
                     $domain = Domain::create(array_merge([
                         'user_id' => $reseller->id,
+                        'reseller_id' => $reseller->id,
                         'name' => $item['domain'],
                         'extension' => $item['extension'],
                         'status' => 'pending',

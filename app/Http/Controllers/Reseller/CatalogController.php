@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Reseller;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ResellerProduct;
+use App\Models\Service;
 use App\Services\ResellerDirectAdminService;
 use App\Services\ResellerDiskUsageService;
 use Illuminate\Http\Request;
@@ -15,6 +16,9 @@ class CatalogController extends Controller
 {
     /** @var list<string> */
     private const ADMIN_CATALOG_TYPES = ['shared_hosting', 'container_hosting', 'vps', 'dedicated_server'];
+
+    /** Types resellers may create as custom catalog items (no mailbox ops in reseller UI). */
+    private const DISALLOWED_CUSTOM_TYPES = ['email_hosting', 'domain'];
 
     public function __construct(
         private ResellerDirectAdminService $resellerDirectAdmin,
@@ -91,6 +95,19 @@ class CatalogController extends Controller
             abort(404);
         }
 
+        $inUse = Service::query()
+            ->where('reseller_id', auth()->id())
+            ->whereNotIn('status', ['terminated', 'cancelled', 'failed'])
+            ->where('service_meta->reseller_product_id', $catalogItem->id)
+            ->exists();
+
+        if ($inUse) {
+            return redirect()->back()->with(
+                'error',
+                'This catalog item is linked to active customer services. Terminate or reassign those services before deleting it.'
+            );
+        }
+
         $catalogItem->delete();
 
         return redirect()->route('reseller.catalog.index')
@@ -121,12 +138,14 @@ class CatalogController extends Controller
         ];
 
         $customProductTypes = collect(Product::TYPES)
-            ->except(self::ADMIN_CATALOG_TYPES)
+            ->except([...self::ADMIN_CATALOG_TYPES, ...self::DISALLOWED_CUSTOM_TYPES])
             ->all();
 
         return [
             'adminProducts' => $adminProducts,
-            'productTypes' => Product::TYPES,
+            'productTypes' => collect(Product::TYPES)
+                ->except(self::DISALLOWED_CUSTOM_TYPES)
+                ->all(),
             'customProductTypes' => $customProductTypes,
             'directAdminBinding' => $this->resellerDirectAdmin->hasDirectAdminBinding($reseller),
             'directAdminPackages' => $directAdminPackageResult['packages'],
@@ -146,11 +165,13 @@ class CatalogController extends Controller
             && $this->resellerDirectAdmin->hasDirectAdminBinding($reseller)
             && $packageResult['packages'] !== [];
 
+        $allowedTypes = array_keys(collect(Product::TYPES)->except(self::DISALLOWED_CUSTOM_TYPES)->all());
+
         $validated = $request->validate([
             'product_id' => 'nullable|exists:products,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'type' => 'required|in:'.implode(',', array_keys(Product::TYPES)),
+            'type' => 'required|in:'.implode(',', $allowedTypes),
             'direct_admin_package_name' => [
                 'nullable',
                 'string',

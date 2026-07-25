@@ -2,15 +2,20 @@
 
 namespace App\Http\Controllers\Reseller;
 
+use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Domain;
 use App\Models\ResellerProduct;
+use App\Models\Service;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
+use App\Services\AdminActivityService;
 use App\Services\ResellerCustomerWelcomeService;
 use App\Services\ResellerHostedAccountDirectoryService;
 use App\Services\ServiceEnforcementInsightService;
 use App\Services\UserCurrencyService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class CustomerController extends Controller
 {
@@ -230,6 +235,34 @@ class CustomerController extends Controller
     {
         $this->checkOwnership($customer);
 
+        $liveServices = Service::query()
+            ->where('user_id', $customer->id)
+            ->whereNotIn('status', [
+                ServiceStatus::Terminated->value,
+                ServiceStatus::Cancelled->value,
+                ServiceStatus::Failed->value,
+            ])
+            ->count();
+
+        if ($liveServices > 0) {
+            return redirect()->back()->with(
+                'error',
+                "Cannot delete {$customer->name}: they still have {$liveServices} service(s) that are not terminated. Terminate those services first, then delete the customer."
+            );
+        }
+
+        $liveDomains = Domain::query()
+            ->where('user_id', $customer->id)
+            ->whereIn('status', ['active', 'pending', 'transferring'])
+            ->count();
+
+        if ($liveDomains > 0) {
+            return redirect()->back()->with(
+                'error',
+                "Cannot delete {$customer->name}: they still have {$liveDomains} active or pending domain(s). Remove or transfer those domains first."
+            );
+        }
+
         $customerName = $customer->name;
         $customer->delete();
 
@@ -241,12 +274,29 @@ class CustomerController extends Controller
     {
         $this->checkOwnership($customer);
 
-        // Store the reseller ID in session for later exit
-        session(['impersonating_reseller' => auth()->id(), 'impersonating_user_id' => $customer->id]);
+        $reseller = auth()->user();
 
-        // Log out the current reseller and log in as the customer
+        AdminActivityService::log(
+            'reseller.customer.impersonate',
+            "Reseller {$reseller->name} started impersonating customer {$customer->name}",
+            $customer,
+            ['reseller_id' => $reseller->id],
+        );
+
+        Log::info('Reseller started customer impersonation', [
+            'reseller_id' => $reseller->id,
+            'customer_id' => $customer->id,
+        ]);
+
+        session([
+            'impersonating_reseller' => $reseller->id,
+            'impersonating_user_id' => $customer->id,
+        ]);
+
         auth()->logout();
+        session()->regenerate();
         auth()->loginUsingId($customer->id);
+        session()->regenerate();
 
         return redirect()->route('dashboard')
             ->with('success', "You are now viewing the dashboard as {$customer->name}.");
@@ -258,7 +308,8 @@ class CustomerController extends Controller
             return redirect()->route('dashboard');
         }
 
-        $resellerId = session('impersonating_reseller');
+        $resellerId = (int) session('impersonating_reseller');
+        $customerId = session('impersonating_user_id');
 
         $reseller = User::find($resellerId);
         if (! $reseller || ! $reseller->is_reseller) {
@@ -267,12 +318,17 @@ class CustomerController extends Controller
             abort(403, 'Invalid impersonation session');
         }
 
-        // Clear impersonation session data
         session()->forget(['impersonating_reseller', 'impersonating_user_id']);
 
-        // Log out and log back in as reseller
         auth()->logout();
+        session()->regenerate();
         auth()->loginUsingId($resellerId);
+        session()->regenerate();
+
+        Log::info('Reseller exited customer impersonation', [
+            'reseller_id' => $resellerId,
+            'customer_id' => $customerId,
+        ]);
 
         return redirect()->route('reseller.customers.index')
             ->with('success', 'Exited customer view.');

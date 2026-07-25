@@ -9,6 +9,53 @@ use Illuminate\Http\Request;
 class EnforceResellerLimits
 {
     /**
+     * Capacity-consuming actions blocked when over package limits.
+     * Catalog maintenance and domain wholesale ops remain available.
+     *
+     * @var list<string>
+     */
+    private const ALLOWED_WHEN_OVER_LIMIT = [
+        'reseller.catalog.index',
+        'reseller.catalog.show',
+        'reseller.catalog.edit',
+        'reseller.catalog.update',
+        'reseller.catalog.destroy',
+        'reseller.domains.index',
+        'reseller.domains.show',
+        'reseller.domains.nameservers',
+        'reseller.domains.transfer',
+        'reseller.domains.renew',
+        'reseller.domains.destroy',
+        'reseller.domains.pricing',
+        'reseller.domains.pricing.update',
+        'reseller.domains.pricing.api',
+        'reseller.domains.check',
+        'reseller.domain-orders.index',
+        'reseller.domain-orders.push',
+        'reseller.domain-orders.retry',
+        'reseller.domain-orders.cancel',
+        'reseller.domain-orders.destroy',
+        'reseller.cart.index',
+        'reseller.cart.context',
+        'reseller.cart.add',
+        'reseller.cart.transfer',
+        'reseller.cart.nameservers',
+        'reseller.cart.remove',
+        'reseller.cart.clear',
+        'reseller.checkout.show',
+        'reseller.checkout.process',
+        'reseller.customers.index',
+        'reseller.customers.show',
+        'reseller.customers.edit',
+        'reseller.customers.update',
+        'reseller.customers.destroy',
+        'reseller.customers.impersonate',
+        'reseller.exit-impersonation',
+        'reseller.services.index',
+        'reseller.services.show',
+    ];
+
+    /**
      * Handle an incoming request.
      */
     public function handle(Request $request, Closure $next)
@@ -37,17 +84,11 @@ class EnforceResellerLimits
                 ->with('warning', 'You must subscribe to a reseller package before managing services or customers.');
         }
 
-        // Over limits: allow catalog maintenance; block new capacity-consuming actions
+        // Over limits: allow catalog/domain maintenance; block new capacity-consuming actions
         if ($user->isOverPackageLimits()) {
-            $allowedWhenOverLimit = [
-                'reseller.catalog.index',
-                'reseller.catalog.show',
-                'reseller.catalog.edit',
-                'reseller.catalog.update',
-                'reseller.catalog.destroy',
-            ];
+            $routeName = $request->route()?->getName();
 
-            if (! in_array($request->route()?->getName(), $allowedWhenOverLimit, true)) {
+            if (! in_array($routeName, self::ALLOWED_WHEN_OVER_LIMIT, true)) {
                 return redirect()
                     ->route('reseller.packages.index')
                     ->with('limit_exceeded', true)

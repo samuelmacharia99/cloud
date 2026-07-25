@@ -878,35 +878,14 @@ class MpesaService implements PaymentGatewayInterface
             return $token;
         }
 
-        // If reseller credentials fail, fallback to platform credentials for continuity.
-        if ($this->usesResellerConfig && $this->canFallbackToPlatformCredentials()) {
-            Log::warning('M-Pesa reseller credentials failed, falling back to platform credentials', [
+        // If reseller credentials fail, do not fall back to platform — that would
+        // settle customer payments into Talksasa while the invoice belongs to the reseller.
+        if ($this->usesResellerConfig) {
+            Log::warning('M-Pesa reseller credentials failed; refusing platform fallback', [
                 'environment' => $this->isProduction ? 'production' : 'sandbox',
             ]);
 
-            $fallbackKey = $this->tokenCacheKeyFor(
-                $this->platformBusinessShortCode,
-                $this->platformConsumerKey,
-                $this->platformConsumerSecret,
-                false
-            );
-            $fallbackToken = Cache::get($fallbackKey);
-            if (! is_string($fallbackToken) || $fallbackToken === '') {
-                $fallbackToken = $this->requestAccessToken($this->platformConsumerKey, $this->platformConsumerSecret);
-                if (is_string($fallbackToken) && $fallbackToken !== '') {
-                    Cache::put($fallbackKey, $fallbackToken, 55 * 60);
-                }
-            }
-
-            if (is_string($fallbackToken) && $fallbackToken !== '') {
-                $this->consumerKey = $this->platformConsumerKey;
-                $this->consumerSecret = $this->platformConsumerSecret;
-                $this->businessShortCode = (string) $this->platformBusinessShortCode;
-                $this->passkey = $this->platformPasskey;
-                $this->usesResellerConfig = false;
-
-                return $fallbackToken;
-            }
+            return null;
         }
 
         return null;
@@ -1407,14 +1386,6 @@ class MpesaService implements PaymentGatewayInterface
 
             return null;
         }
-    }
-
-    private function canFallbackToPlatformCredentials(): bool
-    {
-        return ! empty($this->platformConsumerKey)
-            && ! empty($this->platformConsumerSecret)
-            && ! empty($this->platformBusinessShortCode)
-            && ! empty($this->platformPasskey);
     }
 
     public function getMethod(): string

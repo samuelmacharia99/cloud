@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\ResellerDomainPricing;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class DomainPricingController extends Controller
 {
@@ -44,6 +45,26 @@ class DomainPricingController extends Controller
             'renewal_retail_price' => 'nullable|numeric|min:0',
             'enabled' => 'boolean',
         ]);
+
+        $extension = DomainExtension::findOrFail($validated['domain_extension_id']);
+        $wholesale = $extension->getWholesalePricing((int) $validated['period_years']);
+        $wholesaleFloor = $wholesale ? (float) $wholesale->price : 0.0;
+
+        if ($wholesaleFloor > 0 && (float) $validated['retail_price'] < $wholesaleFloor) {
+            throw ValidationException::withMessages([
+                'retail_price' => 'Retail price cannot be below wholesale (KES '.number_format($wholesaleFloor, 2).').',
+            ]);
+        }
+
+        if (
+            $wholesaleFloor > 0
+            && filled($validated['renewal_retail_price'] ?? null)
+            && (float) $validated['renewal_retail_price'] < $wholesaleFloor
+        ) {
+            throw ValidationException::withMessages([
+                'renewal_retail_price' => 'Renewal retail price cannot be below wholesale (KES '.number_format($wholesaleFloor, 2).').',
+            ]);
+        }
 
         $validated['reseller_id'] = auth()->id();
         $validated['enabled'] = $request->boolean('enabled');

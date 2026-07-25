@@ -33,6 +33,7 @@ class EnsureResellerBillingCurrent
             'reseller.payment.*',
             'reseller.invoices.*',
             'reseller.wallet.*',
+            'reseller.settings.*',
             'dashboard',
         )) {
             return $next($request);
