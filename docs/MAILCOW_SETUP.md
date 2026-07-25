@@ -195,12 +195,16 @@ Expect JSON with a version string.
 
 Mailcow app passwords do **not** work for SOGo web login (you get `LDAPPasswordPolicyError: 65535`). Talksasa instead uses Mailcow’s admin-email SSO path plus a small drop-in:
 
-On the **mail VPS** (from the Talksasa repo `scripts/` tree, after the API key exists):
+On the **mail VPS** (after the API key exists). You only need this one script file — SSO PHP is embedded:
 
 ```bash
+# Copy scripts/setup-mailcow-node.sh from the Talksasa repo onto the mail host, then:
 export MAILCOW_API_KEY='same-rw-key-as-talksasa-node'
-sudo -E bash scripts/setup-mailcow-node.sh enable-sso
+# -E keeps MAILCOW_API_KEY under sudo
+sudo -E bash /path/to/setup-mailcow-node.sh enable-sso
 ```
+
+If Mailcow is not in `/opt/mailcow-dockerized`, set `MAILCOW_DIR=...` as well.
 
 This sets `ALLOW_ADMIN_EMAIL_LOGIN=y`, installs `data/web/talksasa-sogo-sso.php`, and stores the API key as the HMAC secret. Recreate/restart is included.
 

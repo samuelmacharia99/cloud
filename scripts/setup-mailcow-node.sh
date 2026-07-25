@@ -339,25 +339,136 @@ ensure_admin_email_login() {
   ok "ALLOW_ADMIN_EMAIL_LOGIN=y (required for Talksasa Open mailbox SSO)"
 }
 
+write_talksasa_sogo_sso_php() {
+  local dest=$1
+  # Embedded so a single copied setup-mailcow-node.sh works on the mail VPS
+  # (no need for scripts/mailcow/ beside this file).
+  cat > "$dest" <<'PHP'
+<?php
+/**
+ * Talksasa → Mailcow passwordless SOGo SSO.
+ * Requires: ALLOW_ADMIN_EMAIL_LOGIN=y and inc/talksasa-sso.secret.php
+ * Query: mailbox, exp (unix ts), sig = HMAC-SHA256(mailbox|exp, secret)
+ */
+$ALLOW_ADMIN_EMAIL_LOGIN = (bool) preg_match(
+    '/^([yY][eE][sS]|[yY])+$/',
+    (string) ($_ENV['ALLOW_ADMIN_EMAIL_LOGIN'] ?? getenv('ALLOW_ADMIN_EMAIL_LOGIN') ?: '')
+);
+if (! $ALLOW_ADMIN_EMAIL_LOGIN) {
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'ALLOW_ADMIN_EMAIL_LOGIN must be y in mailcow.conf (then recreate containers).';
+    exit;
+}
+$mailbox = strtolower(trim((string) ($_GET['mailbox'] ?? '')));
+$exp = (int) ($_GET['exp'] ?? 0);
+$sig = (string) ($_GET['sig'] ?? '');
+if ($mailbox === '' || ! filter_var($mailbox, FILTER_VALIDATE_EMAIL)) {
+    http_response_code(400);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Invalid mailbox.';
+    exit;
+}
+$now = time();
+if ($exp < $now || $exp > ($now + 600)) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'SSO link expired. Open the mailbox again from Talksasa.';
+    exit;
+}
+$secretFile = __DIR__.'/inc/talksasa-sso.secret.php';
+if (! is_readable($secretFile)) {
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'SSO secret missing. Run setup-mailcow-node.sh enable-sso on this host.';
+    exit;
+}
+$secret = require $secretFile;
+if (! is_string($secret) || $secret === '') {
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'SSO secret empty.';
+    exit;
+}
+$expected = hash_hmac('sha256', $mailbox.'|'.$exp, $secret);
+if (! hash_equals($expected, $sig)) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Invalid SSO signature.';
+    exit;
+}
+require_once $_SERVER['DOCUMENT_ROOT'].'/inc/prerequisites.inc.php';
+$exists = false;
+try {
+    $stmt = $pdo->prepare('SELECT `username` FROM `mailbox` WHERE `username` = :u AND `active` = "1" LIMIT 1');
+    $stmt->execute([':u' => $mailbox]);
+    $exists = (bool) $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Mailbox lookup failed.';
+    exit;
+}
+if (! $exists) {
+    http_response_code(404);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo 'Mailbox not found.';
+    exit;
+}
+$session_var_user_allowed = 'sogo-sso-user-allowed';
+if (! isset($_SESSION[$session_var_user_allowed]) || ! is_array($_SESSION[$session_var_user_allowed])) {
+    $_SESSION[$session_var_user_allowed] = [];
+}
+if (! in_array($mailbox, $_SESSION[$session_var_user_allowed], true)) {
+    $_SESSION[$session_var_user_allowed][] = $mailbox;
+}
+$_SESSION['mailcow_cc_username'] = $mailbox;
+$_SESSION['mailcow_cc_role'] = 'user';
+unset($_SESSION['pending_pw_update'], $_SESSION['pending_tfa_setup'], $_SESSION['dual-login']);
+try {
+    $stmt = $pdo->prepare('REPLACE INTO `sasl_log` (`service`, `app_password`, `username`, `real_rip`) VALUES ("SSO", 0, :username, :remote_addr)');
+    $stmt->execute([
+        ':username' => $mailbox,
+        ':remote_addr' => (string) ($_SERVER['HTTP_X_REAL_IP'] ?? $_SERVER['REMOTE_ADDR'] ?? ''),
+    ]);
+} catch (Throwable $e) {
+}
+header('Location: /SOGo/so/'.rawurlencode($mailbox).'/');
+exit;
+PHP
+  chmod 0644 "$dest"
+}
+
 cmd_enable_sso() {
   require_root
   ensure_mail_host
 
-  [[ -d "$MAILCOW_DIR" ]] || die "Mailcow not found at $MAILCOW_DIR"
+  [[ -d "$MAILCOW_DIR" ]] || die "Mailcow not found at $MAILCOW_DIR — set MAILCOW_DIR if it is not /opt/mailcow-dockerized"
   [[ -f "${MAILCOW_DIR}/mailcow.conf" ]] || die "Missing ${MAILCOW_DIR}/mailcow.conf"
 
-  local src_sso="${SCRIPT_DIR}/mailcow/talksasa-sogo-sso.php"
   local key="${MAILCOW_API_KEY:-}"
+  local src_sso="${SCRIPT_DIR}/mailcow/talksasa-sogo-sso.php"
+  local dest_sso="${MAILCOW_DIR}/data/web/talksasa-sogo-sso.php"
 
-  [[ -f "$src_sso" ]] || die "Missing $src_sso (run this script from the Talksasa repo scripts/ tree)"
-  [[ -n "$key" ]] || die "export MAILCOW_API_KEY=your-read-write-key (same token as the Talksasa node)"
+  [[ -n "$key" ]] || die "export MAILCOW_API_KEY=your-read-write-key then: sudo -E bash $0 enable-sso"
 
   ensure_admin_email_login
 
-  install -m 0644 "$src_sso" "${MAILCOW_DIR}/data/web/talksasa-sogo-sso.php"
+  mkdir -p "${MAILCOW_DIR}/data/web/inc"
+  if [[ -f "$src_sso" ]]; then
+    install -m 0644 "$src_sso" "$dest_sso"
+  else
+    log "Writing embedded talksasa-sogo-sso.php (no scripts/mailcow/ beside this script)"
+    write_talksasa_sogo_sso_php "$dest_sso"
+  fi
 
   local php_secret
-  php_secret=$(php -r 'echo var_export($argv[1], true);' -- "$key")
+  if command -v php >/dev/null 2>&1; then
+    php_secret=$(php -r 'echo var_export($argv[1], true);' -- "$key")
+  else
+    # Fallback when host PHP is missing (common on mail-only VPSes)
+    php_secret=$(printf '%s' "$key" | python3 -c 'import sys; print(repr(sys.stdin.read()))')
+  fi
   cat > "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php" <<EOF
 <?php
 if (basename((string) (\$_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__)) {
@@ -376,7 +487,6 @@ EOF
   ok "Talksasa SOGo SSO installed"
   echo "  Endpoint: https://${MAIL_HOST}/talksasa-sogo-sso.php"
   echo "  Secret matches MAILCOW_API_KEY / Talksasa node API token"
-  warn "Open mailbox from Talksasa will fail until this is done on the mail VPS"
 }
 
 cmd_install() {
