@@ -18,6 +18,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
+use App\Services\Checkout\EmailHostingCheckoutService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
 use App\Services\Dns\DomainCloudflareDnsService;
@@ -182,10 +183,18 @@ class CheckoutController extends Controller
         $defaultNameservers = $nameserverService->defaultsForCustomer($user);
 
         $hostingCheckout = app(SharedHostingCheckoutService::class);
+        $emailCheckout = app(EmailHostingCheckoutService::class);
         $linkedHostingDomains = [];
         foreach ($sharedHostingItems as $item) {
             if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
                 $linkedHostingDomains[$item['key']] = $details;
+            }
+        }
+
+        $linkedEmailDomains = [];
+        foreach ($emailHostingItems as $item) {
+            if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
+                $linkedEmailDomains[$item['key']] = $details;
             }
         }
 
@@ -200,6 +209,7 @@ class CheckoutController extends Controller
             'emailHostingItems' => $emailHostingItems,
             'customerDomains' => $customerDomains,
             'linkedHostingDomains' => $linkedHostingDomains,
+            'linkedEmailDomains' => $linkedEmailDomains,
             'domainExtensions' => $domainExtensions,
             'defaultNameservers' => $defaultNameservers,
             'subtotal' => $taxBreakdown['subtotal'],
@@ -246,6 +256,7 @@ class CheckoutController extends Controller
         }
 
         app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
+        app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
 
         try {
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -305,10 +316,12 @@ class CheckoutController extends Controller
                 }
 
                 $hostingCheckout = app(SharedHostingCheckoutService::class);
+                $emailCheckout = app(EmailHostingCheckoutService::class);
                 $cartItems = $hostingCheckout->sortCartItemsDomainsFirst($cartItems);
                 $domainsCreatedByCartKey = [];
 
-                $domainAddonTotal = $hostingCheckout->estimateDomainAddonTotal($request, $cart);
+                $domainAddonTotal = $hostingCheckout->estimateDomainAddonTotal($request, $cart)
+                    + $emailCheckout->estimateDomainAddonTotal($request, $cart);
 
                 $subtotal += $domainAddonTotal;
                 $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
@@ -416,16 +429,18 @@ class CheckoutController extends Controller
                         }
 
                         if ($product->type === 'email_hosting') {
-                            $emailDomain = strtolower(trim((string) $request->input('email_domain.'.$item['key'], '')));
-                            $emailDomain = preg_replace('#^https?://#', '', $emailDomain) ?? $emailDomain;
-                            $emailDomain = rtrim(explode('/', $emailDomain)[0] ?? $emailDomain, '.');
-                            if ($emailDomain === '' || ! str_contains($emailDomain, '.')) {
-                                throw new \InvalidArgumentException('Email hosting requires a valid domain for '.$product->name);
-                            }
-                            $serviceMeta['mailcow_domain'] = $emailDomain;
-                            $serviceMeta['domain'] = $emailDomain;
-                            $mailNode = app(\App\Services\Provisioning\MailcowProvisioningService::class)->resolveNode();
-                            $nodeId = $mailNode?->id;
+                            $emailContext = app(EmailHostingCheckoutService::class)->buildEmailHostingContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $invoice,
+                                $order,
+                                $cart,
+                                $domainsCreatedByCartKey,
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $emailContext['service_meta']);
+                            $nodeId = $emailContext['node_id'];
                         }
 
                         // For server types, capture OS and IP count from cart item
@@ -997,6 +1012,7 @@ class CheckoutController extends Controller
                     'source_repo_branch.*' => 'nullable|string|max:120|regex:/^[A-Za-z0-9._\\/-]+$/',
                 ]);
                 app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
+                app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
             }
 
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -1056,11 +1072,13 @@ class CheckoutController extends Controller
                 }
 
                 $hostingCheckout = app(SharedHostingCheckoutService::class);
+                $emailCheckout = app(EmailHostingCheckoutService::class);
                 $cartItems = $hostingCheckout->sortCartItemsDomainsFirst($cartItems);
                 $domainsCreatedByCartKey = [];
 
                 $domainAddonTotal = $request
-                    ? $hostingCheckout->estimateDomainAddonTotal($request, $cart)
+                    ? ($hostingCheckout->estimateDomainAddonTotal($request, $cart)
+                        + $emailCheckout->estimateDomainAddonTotal($request, $cart))
                     : 0.0;
 
                 $subtotal += $domainAddonTotal;
@@ -1167,16 +1185,18 @@ class CheckoutController extends Controller
                         }
 
                         if ($product->type === 'email_hosting' && $request) {
-                            $emailDomain = strtolower(trim((string) $request->input('email_domain.'.$item['key'], '')));
-                            $emailDomain = preg_replace('#^https?://#', '', $emailDomain) ?? $emailDomain;
-                            $emailDomain = rtrim(explode('/', $emailDomain)[0] ?? $emailDomain, '.');
-                            if ($emailDomain === '' || ! str_contains($emailDomain, '.')) {
-                                throw new \InvalidArgumentException('Email hosting requires a valid domain for '.$product->name);
-                            }
-                            $serviceMeta['mailcow_domain'] = $emailDomain;
-                            $serviceMeta['domain'] = $emailDomain;
-                            $mailNode = app(\App\Services\Provisioning\MailcowProvisioningService::class)->resolveNode();
-                            $nodeId = $mailNode?->id;
+                            $emailContext = app(EmailHostingCheckoutService::class)->buildEmailHostingContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $invoice,
+                                $order,
+                                $cart,
+                                $domainsCreatedByCartKey,
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $emailContext['service_meta']);
+                            $nodeId = $emailContext['node_id'];
                         }
 
                         // For server types, capture OS and IP count from cart item

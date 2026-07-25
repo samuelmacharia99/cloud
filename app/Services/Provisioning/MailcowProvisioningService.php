@@ -134,8 +134,22 @@ class MailcowProvisioningService
             'service_meta' => $meta,
         ]);
 
+        $fresh = $service->fresh(['node', 'product', 'user']);
+
+        if (! empty($meta['domain_id']) && empty($meta['transfer_pending'])) {
+            try {
+                app(\App\Services\DomainActivationService::class)->activateFromService($fresh);
+                $fresh = $service->fresh(['node', 'product', 'user']);
+            } catch (\Throwable $e) {
+                Log::info('Mailcow linked domain activation skipped or partial', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
         try {
-            app(MailDnsService::class)->applyRecommendedRecords($service->fresh(['node', 'product', 'user']));
+            app(MailDnsService::class)->applyRecommendedRecords($fresh);
         } catch (\Throwable $e) {
             Log::info('Mailcow DNS auto-apply skipped or partial', [
                 'service_id' => $service->id,

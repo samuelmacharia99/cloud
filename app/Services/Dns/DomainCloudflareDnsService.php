@@ -95,6 +95,15 @@ class DomainCloudflareDnsService
         if ($domain->cloudflare_zone_id) {
             $zone = $this->ensureLocalZone($domain, $domain->cloudflare_zone_id);
 
+            try {
+                app(\App\Services\Provisioning\MailDnsService::class)->applyForDomain($domain->fresh());
+            } catch (\Throwable $e) {
+                Log::info('Mail DNS apply for existing Cloudflare zone skipped', [
+                    'domain_id' => $domain->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             return ['success' => true, 'message' => 'DNS zone already provisioned.', 'zone' => $zone];
         }
 
@@ -127,6 +136,15 @@ class DomainCloudflareDnsService
             'fqdn' => $fqdn,
             'zone_id' => $zoneId,
         ]);
+
+        try {
+            app(\App\Services\Provisioning\MailDnsService::class)->applyForDomain($domain->fresh());
+        } catch (\Throwable $e) {
+            Log::info('Mail DNS apply after Cloudflare zone skipped', [
+                'domain_id' => $domain->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return ['success' => true, 'message' => 'DNS zone provisioned successfully.', 'zone' => $zone];
     }

@@ -383,4 +383,21 @@ class ServiceBrowserController extends Controller
             'cartCount' => count(session('cart', [])),
         ]);
     }
+
+    /**
+     * List the customer's email hosting services (inboxes hub).
+     */
+    public function emailInboxes(Request $request)
+    {
+        $services = $request->user()
+            ->services()
+            ->with(['product', 'node'])
+            ->whereHas('product', fn ($q) => $q->where('type', 'email_hosting'))
+            ->latest()
+            ->get();
+
+        return view('customer.email-inboxes', [
+            'services' => $services,
+        ]);
+    }
 }

@@ -171,6 +171,49 @@ class MailDnsService
         ];
     }
 
+    /**
+     * Re-apply mail DNS for every active email hosting service linked to this domain.
+     */
+    public function applyForDomain(Domain $domain): void
+    {
+        $fqdn = strtolower($domain->fqdn());
+
+        $services = Service::query()
+            ->where('user_id', $domain->user_id)
+            ->with(['product', 'node', 'user'])
+            ->get()
+            ->filter(function (Service $service) use ($domain, $fqdn) {
+                if (! $service->isEmailHosting()) {
+                    return false;
+                }
+
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                if (! empty($meta['domain_id']) && (int) $meta['domain_id'] === (int) $domain->id) {
+                    return true;
+                }
+
+                $mailDomain = strtolower((string) ($meta['mailcow_domain'] ?? $meta['domain'] ?? $service->external_reference ?? ''));
+
+                return $mailDomain !== '' && $mailDomain === $fqdn;
+            });
+
+        foreach ($services as $service) {
+            if ($service->status?->value !== 'active' && (string) $service->status !== 'active') {
+                continue;
+            }
+
+            try {
+                $this->applyRecommendedRecords($service);
+            } catch (\Throwable $e) {
+                Log::info('Mail DNS re-apply after zone provision skipped', [
+                    'service_id' => $service->id,
+                    'domain_id' => $domain->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
     private function absoluteName(string $relative, string $domain): string
     {
         $relative = trim($relative);
