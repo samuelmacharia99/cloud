@@ -478,7 +478,10 @@ if (basename((string) (\$_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE_
 
 return ${php_secret};
 EOF
-  chmod 0640 "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php"
+  chmod 0644 "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php"
+  # php-fpm runs as www-data; 0640 root:root makes is_readable() fail inside the container
+  chown root:root "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php" 2>/dev/null || true
+  chmod 0644 "${MAILCOW_DIR}/data/web/talksasa-sogo-sso.php"
 
   log "Recreating containers so ALLOW_ADMIN_EMAIL_LOGIN takes effect"
   cd "$MAILCOW_DIR"
