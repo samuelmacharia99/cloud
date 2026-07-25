@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Services\Provisioning\MailcowMailboxAccessService;
 use App\Services\Provisioning\MailcowService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -44,17 +43,13 @@ class MailcowMailboxAccessServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_issues_and_consumes_webmail_sso_token(): void
+    public function it_issues_signed_mailcow_sso_redirect(): void
     {
-        Http::fake([
-            'mail.example.com/api/v1/get/app-passwd/all/*' => Http::response([], 200),
-            'mail.example.com/api/v1/add/app-passwd' => Http::response([
-                ['type' => 'success', 'msg' => 'app_passwd_added'],
-            ], 200),
-        ]);
-
         $customer = User::factory()->customer()->create();
-        $node = Node::factory()->mailcow()->create();
+        $node = Node::factory()->mailcow()->create([
+            'api_url' => 'https://mail.example.com',
+            'api_token' => 'test-api-token-secret',
+        ]);
         $product = Product::factory()->emailHosting()->create();
         $service = Service::factory()->create([
             'user_id' => $customer->id,
@@ -66,19 +61,20 @@ class MailcowMailboxAccessServiceTest extends TestCase
             'external_reference' => 'example.com',
         ]);
 
-        $access = app(MailcowMailboxAccessService::class);
-        $issued = $access->issueWebmailSso($service, 'info@example.com');
+        $issued = app(MailcowMailboxAccessService::class)->issueWebmailSso($service, 'info@example.com');
 
         $this->assertTrue($issued['success'], $issued['message'] ?? '');
-        $this->assertNotEmpty($issued['token']);
+        $this->assertArrayHasKey('redirect', $issued);
+        $this->assertStringStartsWith('https://mail.example.com/talksasa-sogo-sso.php?', $issued['redirect']);
 
-        $payload = $access->consumeWebmailSso($service, $customer->id, $issued['token']);
-        $this->assertNotNull($payload);
-        $this->assertSame('info@example.com', $payload['mailbox']);
-        $this->assertNotEmpty($payload['password']);
-        $this->assertStringContainsString('/SOGo/connect', $payload['connect_url']);
-
-        $this->assertNull($access->consumeWebmailSso($service, $customer->id, $issued['token']));
+        $query = [];
+        parse_str(parse_url($issued['redirect'], PHP_URL_QUERY) ?: '', $query);
+        $this->assertSame('info@example.com', $query['mailbox'] ?? null);
+        $this->assertNotEmpty($query['exp'] ?? null);
+        $this->assertSame(
+            hash_hmac('sha256', 'info@example.com|'.$query['exp'], 'test-api-token-secret'),
+            $query['sig'] ?? null
+        );
     }
 
     #[Test]

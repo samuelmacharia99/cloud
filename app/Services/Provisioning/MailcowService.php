@@ -341,14 +341,6 @@ class MailcowService
     }
 
     /**
-     * Absolute SOGo login connect URL used for password form POSTs.
-     */
-    public function sogoConnectUrl(): string
-    {
-        return rtrim($this->baseUrl(), '/').'/SOGo/connect';
-    }
-
-    /**
      * @param  array<string, mixed>  $body
      * @return array{success: bool, message: string, data?: mixed}
      */

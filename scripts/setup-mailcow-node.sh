@@ -13,6 +13,7 @@
 #   check      Phase A + sizing + port sanity (no changes)
 #   bootstrap  Phase B + Docker (hostname, packages, UFW, Docker)
 #   install    Phase C (clone mailcow, generate config, pull, up)
+#   enable-sso Passwordless SOGo SSO for Talksasa (ALLOW_ADMIN_EMAIL_LOGIN + drop-in)
 #   status     docker compose ps + HTTPS probe
 #   api-test   curl Mailcow API (needs MAILCOW_API_KEY)
 #   all        check → bootstrap → install (stops if DNS/PTR fail unless --force)
@@ -24,6 +25,8 @@
 # See: docs/MAILCOW_SETUP.md
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -119,7 +122,7 @@ parse_args() {
       -h|--help) usage 0 ;;
       --force) FORCE=1; shift ;;
       --yes|-y) ASSUME_YES=1; shift ;;
-      check|bootstrap|install|status|api-test|all)
+      check|bootstrap|install|enable-sso|status|api-test|all)
         COMMAND=$1
         shift
         ;;
@@ -303,6 +306,7 @@ generate_mailcow_config() {
         fi
       fi
     fi
+    ensure_admin_email_login
     return 0
   fi
 
@@ -319,7 +323,60 @@ generate_mailcow_config() {
   if grep -q '^MAILCOW_HOSTNAME=' mailcow.conf; then
     sed -i "s/^MAILCOW_HOSTNAME=.*/MAILCOW_HOSTNAME=${MAIL_HOST}/" mailcow.conf
   fi
+  ensure_admin_email_login
   ok "mailcow.conf ready"
+}
+
+ensure_admin_email_login() {
+  local conf="${MAILCOW_DIR}/mailcow.conf"
+  [[ -f "$conf" ]] || return 0
+
+  if grep -q '^ALLOW_ADMIN_EMAIL_LOGIN=' "$conf"; then
+    sed -i 's/^ALLOW_ADMIN_EMAIL_LOGIN=.*/ALLOW_ADMIN_EMAIL_LOGIN=y/' "$conf"
+  else
+    printf '\nALLOW_ADMIN_EMAIL_LOGIN=y\n' >> "$conf"
+  fi
+  ok "ALLOW_ADMIN_EMAIL_LOGIN=y (required for Talksasa Open mailbox SSO)"
+}
+
+cmd_enable_sso() {
+  require_root
+  ensure_mail_host
+
+  [[ -d "$MAILCOW_DIR" ]] || die "Mailcow not found at $MAILCOW_DIR"
+  [[ -f "${MAILCOW_DIR}/mailcow.conf" ]] || die "Missing ${MAILCOW_DIR}/mailcow.conf"
+
+  local src_sso="${SCRIPT_DIR}/mailcow/talksasa-sogo-sso.php"
+  local key="${MAILCOW_API_KEY:-}"
+
+  [[ -f "$src_sso" ]] || die "Missing $src_sso (run this script from the Talksasa repo scripts/ tree)"
+  [[ -n "$key" ]] || die "export MAILCOW_API_KEY=your-read-write-key (same token as the Talksasa node)"
+
+  ensure_admin_email_login
+
+  install -m 0644 "$src_sso" "${MAILCOW_DIR}/data/web/talksasa-sogo-sso.php"
+
+  local php_secret
+  php_secret=$(php -r 'echo var_export($argv[1], true);' -- "$key")
+  cat > "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php" <<EOF
+<?php
+if (basename((string) (\$_SERVER['SCRIPT_FILENAME'] ?? '')) === basename(__FILE__)) {
+    http_response_code(404);
+    exit;
+}
+
+return ${php_secret};
+EOF
+  chmod 0640 "${MAILCOW_DIR}/data/web/inc/talksasa-sso.secret.php"
+
+  log "Recreating containers so ALLOW_ADMIN_EMAIL_LOGIN takes effect"
+  cd "$MAILCOW_DIR"
+  docker compose up -d
+
+  ok "Talksasa SOGo SSO installed"
+  echo "  Endpoint: https://${MAIL_HOST}/talksasa-sogo-sso.php"
+  echo "  Secret matches MAILCOW_API_KEY / Talksasa node API token"
+  warn "Open mailbox from Talksasa will fail until this is done on the mail VPS"
 }
 
 cmd_install() {
@@ -363,7 +420,8 @@ cmd_install() {
   echo "  2. Configuration → Access → API: create Read-Write key"
   echo "  3. Allowlist Talksasa app server IP (APP_IP)"
   echo "  4. From the app server:  MAILCOW_API_KEY=... bash $0 api-test"
-  echo "  5. Admin → Nodes → Add Mailcow node in Talksasa (see docs/MAILCOW_SETUP.md)"
+  echo "  5. On this VPS: MAILCOW_API_KEY=... bash $0 enable-sso"
+  echo "  6. Admin → Nodes → Add Mailcow node in Talksasa (see docs/MAILCOW_SETUP.md)"
 }
 
 cmd_status() {
@@ -412,6 +470,7 @@ case "$COMMAND" in
   check) cmd_check ;;
   bootstrap) cmd_bootstrap ;;
   install) cmd_install ;;
+  enable-sso) cmd_enable_sso ;;
   status) cmd_status ;;
   api-test) cmd_api_test ;;
   all) cmd_all ;;

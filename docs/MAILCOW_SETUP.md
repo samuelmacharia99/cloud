@@ -191,6 +191,21 @@ Expect JSON with a version string.
 
 **Checkpoint:** curl from the app server succeeds. If it fails from the app but works from your laptop, fix allowlist / firewall / DNS first.
 
+### Passwordless “Open mailbox” (required for Talksasa SSO)
+
+Mailcow app passwords do **not** work for SOGo web login (you get `LDAPPasswordPolicyError: 65535`). Talksasa instead uses Mailcow’s admin-email SSO path plus a small drop-in:
+
+On the **mail VPS** (from the Talksasa repo `scripts/` tree, after the API key exists):
+
+```bash
+export MAILCOW_API_KEY='same-rw-key-as-talksasa-node'
+sudo -E bash scripts/setup-mailcow-node.sh enable-sso
+```
+
+This sets `ALLOW_ADMIN_EMAIL_LOGIN=y`, installs `data/web/talksasa-sogo-sso.php`, and stores the API key as the HMAC secret. Recreate/restart is included.
+
+**Checkpoint:** `https://MAIL_HOST/talksasa-sogo-sso.php` responds (invalid/missing params → 400/403, not 404).
+
 ---
 
 ## Phase F — Register the node in Talksasa
@@ -288,6 +303,7 @@ Update Mailcow only via upstream docs (`update.sh`) during a maintenance window 
 - [ ] Phase C: `docker compose ps` healthy; HTTPS admin works
 - [ ] Phase D: admin password changed
 - [ ] Phase E: API RW key + `APP_IP` allowlist; curl from **app server** OK
+- [ ] Phase E SSO: `MAILCOW_API_KEY=... bash setup-mailcow-node.sh enable-sso`
 - [ ] Phase F: Talksasa Mailcow node **online**
 - [ ] Phase G: test domain send/receive OK
 - [ ] Phase H: warm-up plan agreed; DA MX cutover only per customer after sync

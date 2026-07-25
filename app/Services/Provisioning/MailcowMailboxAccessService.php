@@ -12,22 +12,26 @@ use Symfony\Component\Mime\Address;
 use Symfony\Component\Mime\Email;
 
 /**
- * Passwordless webmail SSO + delivery tests via Mailcow app passwords.
+ * Passwordless webmail SSO + delivery tests.
+ *
+ * Open mailbox uses a signed URL into Mailcow's talksasa-sogo-sso.php
+ * (requires ALLOW_ADMIN_EMAIL_LOGIN + SSO secret = API token).
+ * Delivery tests still use temporary Mailcow app passwords over SMTP.
  */
 class MailcowMailboxAccessService
 {
     public const APP_PASSWORD_PREFIX = 'Talksasa console';
 
-    public const SSO_CACHE_PREFIX = 'mailcow_sso:';
+    public const SSO_TTL_SECONDS = 90;
 
     public function __construct(
         private MailcowProvisioningService $provisioning,
     ) {}
 
     /**
-     * Issue a one-time SSO token that auto-logs into SOGo for this mailbox.
+     * Issue a one-time signed SSO URL that opens SOGo for this mailbox.
      *
-     * @return array{success: bool, message: string, token?: string, redirect?: string}
+     * @return array{success: bool, message: string, redirect?: string}
      */
     public function issueWebmailSso(Service $service, string $mailbox): array
     {
@@ -39,64 +43,28 @@ class MailcowMailboxAccessService
         }
 
         $client = $this->provisioning->clientForService($service);
-        $password = $this->createRotatedAppPassword($client, $mailbox, self::APP_PASSWORD_PREFIX.' SSO');
+        $secret = $client->apiKey();
 
-        if ($password === null) {
+        if ($secret === '') {
             return [
                 'success' => false,
-                'message' => 'Could not create a temporary webmail login. Ensure app passwords are enabled in Mailcow.',
+                'message' => 'Mailcow API token is missing on this node.',
             ];
         }
 
-        $token = Str::random(48);
-        Cache::put(self::SSO_CACHE_PREFIX.$token, [
-            'service_id' => $service->id,
-            'user_id' => $service->user_id,
+        $exp = now()->addSeconds(self::SSO_TTL_SECONDS)->timestamp;
+        $sig = hash_hmac('sha256', $mailbox.'|'.$exp, $secret);
+
+        $redirect = $client->baseUrl().'/talksasa-sogo-sso.php?'.http_build_query([
             'mailbox' => $mailbox,
-            'password' => $password,
-            'connect_url' => $client->sogoConnectUrl(),
-        ], now()->addSeconds(90));
+            'exp' => $exp,
+            'sig' => $sig,
+        ]);
 
         return [
             'success' => true,
             'message' => 'Opening webmail…',
-            'token' => $token,
-            'redirect' => route('customer.services.email.mailboxes.sso', [
-                'service' => $service,
-                'token' => $token,
-            ]),
-        ];
-    }
-
-    /**
-     * @return array{mailbox: string, password: string, connect_url: string}|null
-     */
-    public function consumeWebmailSso(Service $service, int $userId, string $token): ?array
-    {
-        $key = self::SSO_CACHE_PREFIX.$token;
-        $payload = Cache::pull($key);
-
-        if (! is_array($payload)) {
-            return null;
-        }
-
-        if ((int) ($payload['service_id'] ?? 0) !== (int) $service->id
-            || (int) ($payload['user_id'] ?? 0) !== $userId) {
-            return null;
-        }
-
-        $mailbox = (string) ($payload['mailbox'] ?? '');
-        $password = (string) ($payload['password'] ?? '');
-        $connectUrl = (string) ($payload['connect_url'] ?? '');
-
-        if ($mailbox === '' || $password === '' || $connectUrl === '') {
-            return null;
-        }
-
-        return [
-            'mailbox' => $mailbox,
-            'password' => $password,
-            'connect_url' => $connectUrl,
+            'redirect' => $redirect,
         ];
     }
 

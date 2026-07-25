@@ -224,31 +224,7 @@ class EmailHostingController extends Controller
             return back()->withErrors(['error' => $result['message']]);
         }
 
-        return redirect($result['redirect']);
-    }
-
-    public function webmailSso(
-        Request $request,
-        Service $service,
-        string $token,
-        MailcowMailboxAccessService $access
-    ): View|RedirectResponse {
-        $this->authorize('manageEmailHosting', $service);
-
-        $payload = $access->consumeWebmailSso($service, (int) $request->user()->id, $token);
-
-        if ($payload === null) {
-            return redirect()
-                ->route('customer.services.email.show', $service)
-                ->withErrors(['error' => 'Webmail login link expired. Click Open mailbox again.']);
-        }
-
-        return view('customer.services.email-sso', [
-            'service' => $service,
-            'mailbox' => $payload['mailbox'],
-            'password' => $payload['password'],
-            'connectUrl' => $payload['connect_url'],
-        ]);
+        return redirect()->away($result['redirect']);
     }
 
     public function testDelivery(
