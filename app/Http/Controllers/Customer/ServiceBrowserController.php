@@ -365,4 +365,22 @@ class ServiceBrowserController extends Controller
             'cartCount' => $cartCount,
         ]);
     }
+
+    /**
+     * Dedicated Email Hosting order page (Mailcow) — not part of tech stack.
+     */
+    public function emailHosting()
+    {
+        $products = Product::query()
+            ->where('is_active', true)
+            ->where('type', 'email_hosting')
+            ->orderBy('order')
+            ->orderBy('monthly_price')
+            ->get();
+
+        return view('customer.email-hosting', [
+            'products' => $products,
+            'cartCount' => count(session('cart', [])),
+        ]);
+    }
 }

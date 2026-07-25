@@ -86,7 +86,7 @@
                 @if (!empty($emailHostingItems))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Email domain (Mailcow)</h2>
-                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Choose the domain that will receive mail on Mailcow. Point MX to your mail hostname after provision.</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Choose the domain that will receive mail. Domains with Talksasa Cloudflare DNS get MX and related records applied automatically after payment.</p>
                         @include('customer.checkout.partials.email-hosting-domain', [
                             'emailHostingItems' => $emailHostingItems,
                             'customerDomains' => $customerDomains ?? collect(),

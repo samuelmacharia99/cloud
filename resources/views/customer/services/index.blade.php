@@ -6,6 +6,10 @@
 <div class="space-y-6">
     <x-page-header title="My Services" description="Manage your active subscriptions, hosting, and containers.">
         <x-slot:actions>
+            <a href="{{ route('customer.email-hosting') }}" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                Email Hosting
+            </a>
             <a href="{{ route('customer.select-techstack') }}" class="btn-primary">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 Deploy new service
@@ -135,10 +139,15 @@
     @else
         <x-empty-state
             title="No services yet"
-            description="Deploy hosting, containers, or other infrastructure in minutes."
+            description="Deploy application hosting, or order Email Hosting as its own plan and bundle them in the cart."
             action-label="Deploy your first app"
             action-href="{{ route('customer.select-techstack') }}"
         />
+        <div class="text-center -mt-2">
+            <a href="{{ route('customer.email-hosting') }}" class="text-sm font-medium text-teal-700 dark:text-teal-300 hover:underline">
+                Or order Email Hosting
+            </a>
+        </div>
     @endif
 </div>
 @endsection

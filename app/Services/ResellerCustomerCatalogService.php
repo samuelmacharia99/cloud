@@ -181,6 +181,7 @@ class ResellerCustomerCatalogService
         return in_array($routeName, [
             'customer.deploy-service',
             'customer.browse-services',
+            'customer.email-hosting',
             'api.products',
         ], true);
     }

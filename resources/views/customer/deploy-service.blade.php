@@ -23,11 +23,11 @@
     <!-- Category Filters -->
     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
         <div class="flex gap-2 flex-wrap">
-            <a href="{{ route('customer.deploy-service') }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ !$selectedType || $selectedType === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
+            <a href="{{ route('customer.browse-services') }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ !$selectedType || $selectedType === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
                 All Services
             </a>
             @foreach($allTypes as $type => $label)
-                <a href="{{ route('customer.deploy-service', ['type' => $type]) }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ $selectedType === $type ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
+                <a href="{{ route('customer.browse-services', ['type' => $type]) }}" class="px-4 py-2 rounded-lg font-medium text-sm transition-all {{ $selectedType === $type ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700' }}">
                     {{ $label }}
                 </a>
             @endforeach

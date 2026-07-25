@@ -71,13 +71,19 @@
                             <span class="text-sm font-medium">Services &amp; Plans</span>
                         </a>
                         @else
-                        <a href="{{ route('customer.deploy-service') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all {{ request()->routeIs('customer.deploy-service') ? 'nav-link-active' : 'nav-link-accent' }}">
+                        <a href="{{ route('customer.deploy-service') }}" class="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all {{ request()->routeIs('customer.deploy-service', 'customer.select-techstack', 'customer.confirm-techstack') ? 'nav-link-active' : 'nav-link-accent' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
                             <span class="text-sm font-medium">Deploy New Service</span>
                         </a>
                         @endif
+                        <a href="{{ route('customer.email-hosting') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.email-hosting') ? 'nav-link-active' : 'nav-link' }}">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                            <span class="text-sm font-medium">Email Hosting</span>
+                        </a>
                         <a href="{{ route('customer.orders.index') }}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all {{ request()->routeIs('customer.orders.*') ? 'nav-link-active' : 'nav-link' }}">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>

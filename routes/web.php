@@ -630,6 +630,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');
         Route::get('/deploy-service', [ServiceBrowserController::class, 'index'])->name('customer.deploy-service');
         Route::get('/browse-services', [ServiceBrowserController::class, 'browse'])->name('customer.browse-services');
+        Route::get('/email-hosting', [ServiceBrowserController::class, 'emailHosting'])->name('customer.email-hosting');
         Route::redirect('/my/reseller-catalog', '/my/catalog');
         Route::get('/my/catalog', [ResellerCatalogController::class, 'index'])->name('customer.catalog.index');
         Route::post('/my/catalog/{resellerProduct}/add', [ResellerCatalogController::class, 'addToCart'])->name('customer.catalog.add');

@@ -46,4 +46,19 @@ class ProductFactory extends Factory
             'provisioning_driver_key' => 'container',
         ]);
     }
+
+    public function emailHosting(): static
+    {
+        return $this->state(fn () => [
+            'type' => 'email_hosting',
+            'provisioning_driver_key' => 'mailcow',
+            'category' => 'Email',
+            'resource_limits' => [
+                'mailboxes' => 10,
+                'aliases' => 20,
+                'quota_mb' => 51200,
+                'mailbox_quota_mb' => 5120,
+            ],
+        ]);
+    }
 }
