@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Customer;
 
 use App\Http\Controllers\Controller;
 use App\Models\Service;
+use App\Services\Provisioning\MailcowMailboxAccessService;
 use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\Provisioning\MailDnsService;
 use Illuminate\Http\RedirectResponse;
@@ -204,5 +205,70 @@ class EmailHostingController extends Controller
         }
 
         return back()->with('info', $result['message']);
+    }
+
+    public function openMailbox(
+        Request $request,
+        Service $service,
+        MailcowMailboxAccessService $access
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        $result = $access->issueWebmailSso($service, $validated['email']);
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']]);
+        }
+
+        return redirect($result['redirect']);
+    }
+
+    public function webmailSso(
+        Request $request,
+        Service $service,
+        string $token,
+        MailcowMailboxAccessService $access
+    ): View|RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $payload = $access->consumeWebmailSso($service, (int) $request->user()->id, $token);
+
+        if ($payload === null) {
+            return redirect()
+                ->route('customer.services.email.show', $service)
+                ->withErrors(['error' => 'Webmail login link expired. Click Open mailbox again.']);
+        }
+
+        return view('customer.services.email-sso', [
+            'service' => $service,
+            'mailbox' => $payload['mailbox'],
+            'password' => $payload['password'],
+            'connectUrl' => $payload['connect_url'],
+        ]);
+    }
+
+    public function testDelivery(
+        Request $request,
+        Service $service,
+        MailcowMailboxAccessService $access
+    ): RedirectResponse {
+        $this->authorize('manageEmailHosting', $service);
+
+        $validated = $request->validate([
+            'from' => ['required', 'email'],
+            'to' => ['required', 'email'],
+        ]);
+
+        $result = $access->sendDeliveryTest($service, $validated['from'], $validated['to']);
+
+        if (! $result['success']) {
+            return back()->withErrors(['error' => $result['message']])->withInput();
+        }
+
+        return back()->with('success', $result['message']);
     }
 }

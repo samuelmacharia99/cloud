@@ -276,6 +276,79 @@ class MailcowService
     }
 
     /**
+     * @return array{success: bool, message: string, data?: mixed, password?: string}
+     */
+    public function addAppPassword(string $mailbox, string $appName, string $password): array
+    {
+        $response = $this->request('POST', '/api/v1/add/app-passwd', [
+            'active' => '1',
+            'username' => strtolower($mailbox),
+            'app_name' => $appName,
+            'app_passwd' => $password,
+            'app_passwd2' => $password,
+            'protocols' => [
+                'imap_access',
+                'smtp_access',
+                'dav_access',
+                'sieve_access',
+            ],
+        ]);
+
+        if ($response['success']) {
+            $response['password'] = $password;
+        }
+
+        return $response;
+    }
+
+    /**
+     * @return array{success: bool, message: string, data?: list<array<string, mixed>>}
+     */
+    public function listAppPasswords(string $mailbox): array
+    {
+        $response = $this->request('GET', '/api/v1/get/app-passwd/all/'.rawurlencode(strtolower($mailbox)));
+        if (! $response['success']) {
+            return $response;
+        }
+
+        $data = $response['data'] ?? [];
+        if (! is_array($data)) {
+            $data = [];
+        }
+        if ($data !== [] && ! array_is_list($data)) {
+            $data = array_values($data);
+        }
+
+        return [
+            'success' => true,
+            'message' => 'OK',
+            'data' => $data,
+        ];
+    }
+
+    /**
+     * @param  list<string|int>  $ids
+     * @return array{success: bool, message: string, data?: mixed}
+     */
+    public function deleteAppPasswords(array $ids): array
+    {
+        $ids = array_values(array_filter(array_map(static fn ($id) => (string) $id, $ids)));
+        if ($ids === []) {
+            return ['success' => true, 'message' => 'Nothing to delete.'];
+        }
+
+        return $this->request('POST', '/api/v1/delete/app-passwd', $ids);
+    }
+
+    /**
+     * Absolute SOGo login connect URL used for password form POSTs.
+     */
+    public function sogoConnectUrl(): string
+    {
+        return rtrim($this->baseUrl(), '/').'/SOGo/connect';
+    }
+
+    /**
      * @param  array<string, mixed>  $body
      * @return array{success: bool, message: string, data?: mixed}
      */

@@ -571,9 +571,12 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
             Route::get('/', [App\Http\Controllers\Customer\EmailHostingController::class, 'show'])->name('show');
             Route::post('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeMailbox'])->middleware('throttle:20,1')->name('mailboxes.store');
             Route::delete('mailboxes', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyMailbox'])->middleware('throttle:20,1')->name('mailboxes.destroy');
+            Route::post('mailboxes/open', [App\Http\Controllers\Customer\EmailHostingController::class, 'openMailbox'])->middleware('throttle:10,1')->name('mailboxes.open');
+            Route::get('mailboxes/sso/{token}', [App\Http\Controllers\Customer\EmailHostingController::class, 'webmailSso'])->middleware('throttle:20,1')->name('mailboxes.sso');
             Route::post('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'storeAlias'])->middleware('throttle:20,1')->name('aliases.store');
             Route::delete('aliases', [App\Http\Controllers\Customer\EmailHostingController::class, 'destroyAlias'])->middleware('throttle:20,1')->name('aliases.destroy');
             Route::post('dns/apply', [App\Http\Controllers\Customer\EmailHostingController::class, 'applyDns'])->middleware('throttle:10,1')->name('dns.apply');
+            Route::post('test-delivery', [App\Http\Controllers\Customer\EmailHostingController::class, 'testDelivery'])->middleware('throttle:5,1')->name('test-delivery');
         });
         Route::post('/my/services/{service}/cancel', [App\Http\Controllers\Customer\ServiceController::class, 'cancel'])->name('customer.services.cancel');
         Route::get('/my/services/{service}/renew', [App\Http\Controllers\Customer\ServiceController::class, 'renewForm'])->name('customer.services.renew');

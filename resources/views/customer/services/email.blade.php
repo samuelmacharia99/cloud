@@ -3,7 +3,7 @@
 @section('title', 'Email: ' . $service->product->name)
 
 @section('content')
-<div class="space-y-6" x-data="{ tab: 'mailboxes' }">
+<div class="space-y-6" x-data="{ tab: @js(request('tab', 'mailboxes')) }">
     <div class="flex items-start justify-between flex-wrap gap-4">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">{{ $service->product->name }}</h1>
@@ -20,11 +20,23 @@
                     Open webmail
                 </a>
             @endif
-            <a href="{{ route('customer.services.index') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-200">
-                All services
+            <a href="{{ route('customer.email.inboxes') }}" class="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm text-slate-700 dark:text-slate-200">
+                All inboxes
             </a>
         </div>
     </div>
+
+    @if (session('success'))
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 p-4 text-sm text-emerald-900 dark:text-emerald-100">
+            {{ session('success') }}
+        </div>
+    @endif
+
+    @if (session('info'))
+        <div class="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/40 p-4 text-sm text-blue-900 dark:text-blue-100">
+            {{ session('info') }}
+        </div>
+    @endif
 
     @if ($error)
         <div class="rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/40 p-4 text-sm text-amber-900 dark:text-amber-100">
@@ -41,6 +53,7 @@
     <div class="border-b border-slate-200 dark:border-slate-800 flex gap-6 overflow-x-auto">
         <button type="button" @click="tab='mailboxes'" :class="tab==='mailboxes' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Mailboxes</button>
         <button type="button" @click="tab='aliases'" :class="tab==='aliases' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Aliases</button>
+        <button type="button" @click="tab='delivery'" :class="tab==='delivery' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Test delivery</button>
         <button type="button" @click="tab='dns'" :class="tab==='dns' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">DNS</button>
         <button type="button" @click="tab='connect'" :class="tab==='connect' ? 'border-b-2 border-teal-600 text-slate-900 dark:text-white' : 'text-slate-500'" class="px-2 py-3 text-sm font-medium whitespace-nowrap">Connect</button>
     </div>
@@ -59,7 +72,7 @@
                             <th class="py-2 pr-4">Email</th>
                             <th class="py-2 pr-4">Name</th>
                             <th class="py-2 pr-4">Quota</th>
-                            <th class="py-2"></th>
+                            <th class="py-2 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -71,13 +84,20 @@
                                 <td class="py-3 pr-4 font-mono">{{ $email }}</td>
                                 <td class="py-3 pr-4">{{ $mailbox['name'] ?? '—' }}</td>
                                 <td class="py-3 pr-4">{{ $mailbox['quota'] ?? $mailbox['quota_used'] ?? '—' }}</td>
-                                <td class="py-3 text-right">
-                                    <form method="POST" action="{{ route('customer.services.email.mailboxes.destroy', $service) }}" onsubmit="return confirm('Delete this mailbox?')">
-                                        @csrf
-                                        @method('DELETE')
-                                        <input type="hidden" name="email" value="{{ $email }}">
-                                        <button class="text-red-600 hover:underline text-xs">Delete</button>
-                                    </form>
+                                <td class="py-3">
+                                    <div class="flex items-center justify-end gap-3">
+                                        <form method="POST" action="{{ route('customer.services.email.mailboxes.open', $service) }}" target="_blank">
+                                            @csrf
+                                            <input type="hidden" name="email" value="{{ $email }}">
+                                            <button class="text-teal-700 dark:text-teal-300 hover:underline text-xs font-medium">Open mailbox</button>
+                                        </form>
+                                        <form method="POST" action="{{ route('customer.services.email.mailboxes.destroy', $service) }}" onsubmit="return confirm('Delete this mailbox?')">
+                                            @csrf
+                                            @method('DELETE')
+                                            <input type="hidden" name="email" value="{{ $email }}">
+                                            <button class="text-red-600 hover:underline text-xs">Delete</button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -167,6 +187,40 @@
                     <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Create alias</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div x-show="tab==='delivery'" x-cloak class="space-y-6">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6">
+            <h2 class="font-semibold text-lg mb-1">Test delivery</h2>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
+                Send a real message from one of your mailboxes to verify outbound SMTP. Uses a temporary app password — your mailbox password is not required.
+            </p>
+            @if (count($mailboxes) === 0)
+                <p class="text-sm text-slate-500">Create a mailbox first, then run a delivery test.</p>
+            @else
+                <form method="POST" action="{{ route('customer.services.email.test-delivery', $service) }}" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @csrf
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Send from</label>
+                        <select name="from" required class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                            @foreach($mailboxes as $mailbox)
+                                @php
+                                    $email = $mailbox['username'] ?? $mailbox['email'] ?? ($mailbox['local_part'] ?? '').'@'.($mailDomain ?? '');
+                                @endphp
+                                <option value="{{ $email }}" @selected(old('from') === $email)>{{ $email }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Send to</label>
+                        <input type="email" name="to" value="{{ old('to', auth()->user()->email) }}" required placeholder="you@elsewhere.com" class="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm">
+                    </div>
+                    <div class="md:col-span-2">
+                        <button class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-sm font-medium">Send test message</button>
+                    </div>
+                </form>
+            @endif
         </div>
     </div>
 
