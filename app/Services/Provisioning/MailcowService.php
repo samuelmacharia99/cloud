@@ -340,6 +340,20 @@ class MailcowService
         return $this->request('POST', '/api/v1/delete/app-passwd', $ids);
     }
 
+    public function editDomainRatelimit(string $domain, int $rlValue, string $rlFrame = 'd'): array
+    {
+        $rlValue = max(1, $rlValue);
+        $rlFrame = in_array($rlFrame, ['s', 'm', 'h', 'd'], true) ? $rlFrame : 'd';
+
+        return $this->request('POST', '/api/v1/edit/rl-domain', [
+            'items' => [strtolower($domain)],
+            'attr' => [
+                'rl_value' => (string) $rlValue,
+                'rl_frame' => $rlFrame,
+            ],
+        ]);
+    }
+
     /**
      * @param  array<string, mixed>  $body
      * @return array{success: bool, message: string, data?: mixed}

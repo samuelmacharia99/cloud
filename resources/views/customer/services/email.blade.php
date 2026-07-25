@@ -267,6 +267,7 @@
             <p><span class="text-slate-500">IMAP:</span> <span class="font-mono">{{ $connection['imap_host'] ?? '—' }}:{{ $connection['imap_port'] ?? 993 }}</span> (SSL/TLS)</p>
             <p><span class="text-slate-500">SMTP:</span> <span class="font-mono">{{ $connection['smtp_host'] ?? '—' }}:{{ $connection['smtp_port'] ?? 587 }}</span> (STARTTLS) or <span class="font-mono">:{{ $connection['smtp_ssl_port'] ?? 465 }}</span> (SSL)</p>
             <p><span class="text-slate-500">Username:</span> full email address</p>
+            <p><span class="text-slate-500">Daily send limit:</span> {{ number_format($limits['msgs_per_day'] ?? 0) }} messages / day for this domain</p>
             <p><span class="text-slate-500">Webmail:</span>
                 @if (!empty($connection['webmail_url']))
                     <a class="text-teal-600 hover:underline font-mono" href="{{ $connection['webmail_url'] }}" target="_blank" rel="noopener">{{ $connection['webmail_url'] }}</a>

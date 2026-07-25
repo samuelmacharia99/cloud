@@ -32,7 +32,7 @@ class MailcowProvisioningService
     }
 
     /**
-     * @return array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int}
+     * @return array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}
      */
     public function limitsForProduct(?Product $product): array
     {
@@ -43,6 +43,7 @@ class MailcowProvisioningService
             'aliases' => max(0, (int) ($limits['aliases'] ?? config('mailcow.default_aliases', 20))),
             'quota_mb' => max(100, (int) ($limits['quota_mb'] ?? config('mailcow.default_quota_mb', 51200))),
             'mailbox_quota_mb' => max(100, (int) ($limits['mailbox_quota_mb'] ?? config('mailcow.default_mailbox_quota_mb', 5120))),
+            'msgs_per_day' => max(1, (int) ($limits['msgs_per_day'] ?? config('mailcow.default_msgs_per_day', 500))),
         ];
     }
 
@@ -98,8 +99,8 @@ class MailcowProvisioningService
                 'maxquota' => (string) $limits['mailbox_quota_mb'],
                 'quota' => (string) $limits['quota_mb'],
                 'active' => '1',
-                'rl_value' => '10',
-                'rl_frame' => 's',
+                'rl_value' => (string) $limits['msgs_per_day'],
+                'rl_frame' => 'd',
                 'restart_sogo' => '1',
             ]);
 
@@ -117,6 +118,16 @@ class MailcowProvisioningService
             ]);
         }
 
+        $rl = $mailcow->editDomainRatelimit($domain, $limits['msgs_per_day'], 'd');
+        if (! $rl['success']) {
+            Log::warning('Mailcow domain send limit (msgs/day) update failed', [
+                'service_id' => $service->id,
+                'domain' => $domain,
+                'msgs_per_day' => $limits['msgs_per_day'],
+                'message' => $rl['message'] ?? null,
+            ]);
+        }
+
         $meta = is_array($service->service_meta) ? $service->service_meta : [];
         $meta['mailcow_domain'] = $domain;
         $meta['mailcow_node_id'] = $node->id;
@@ -124,6 +135,7 @@ class MailcowProvisioningService
         $meta['alias_limit'] = $limits['aliases'];
         $meta['quota_mb'] = $limits['quota_mb'];
         $meta['mailbox_quota_mb'] = $limits['mailbox_quota_mb'];
+        $meta['msgs_per_day'] = $limits['msgs_per_day'];
         $meta['mailcow_provisioned_at'] = now()->toIso8601String();
 
         $service->update([
@@ -189,6 +201,59 @@ class MailcowProvisioningService
                 'message' => $result['message'],
             ]);
         }
+    }
+
+    /**
+     * Push the product's daily send limit to all active Mailcow domains on this plan.
+     *
+     * @return array{updated: int, failed: int}
+     */
+    public function syncSendLimitsForProduct(Product $product): array
+    {
+        $limits = $this->limitsForProduct($product);
+        $updated = 0;
+        $failed = 0;
+
+        $services = Service::query()
+            ->where('product_id', $product->id)
+            ->where('provisioning_driver_key', 'mailcow')
+            ->whereIn('status', [
+                ServiceStatus::Active->value,
+                ServiceStatus::Suspended->value,
+            ])
+            ->get();
+
+        foreach ($services as $service) {
+            try {
+                $domain = $this->domainForService($service);
+                $client = $this->clientForService($service);
+                $result = $client->editDomainRatelimit($domain, $limits['msgs_per_day'], 'd');
+
+                if (! $result['success']) {
+                    $failed++;
+                    Log::warning('Mailcow send-limit sync failed', [
+                        'service_id' => $service->id,
+                        'domain' => $domain,
+                        'message' => $result['message'] ?? null,
+                    ]);
+
+                    continue;
+                }
+
+                $meta = is_array($service->service_meta) ? $service->service_meta : [];
+                $meta['msgs_per_day'] = $limits['msgs_per_day'];
+                $service->update(['service_meta' => $meta]);
+                $updated++;
+            } catch (\Throwable $e) {
+                $failed++;
+                Log::warning('Mailcow send-limit sync exception', [
+                    'service_id' => $service->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return ['updated' => $updated, 'failed' => $failed];
     }
 
     private function setDomainActive(Service $service, bool $active): void

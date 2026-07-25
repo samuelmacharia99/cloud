@@ -114,7 +114,7 @@ class ProductSeeder extends Seeder
                 'monthly_price' => 4.99,
                 'yearly_price' => 49.99,
                 'billing_cycle' => 'monthly',
-                'features' => ['10 mailboxes', '50GB total quota', 'Aliases', 'SOGo webmail', 'Spam filter', 'DKIM/SPF helpers'],
+                'features' => ['10 mailboxes', '50GB total quota', '500 msgs/day', 'Aliases', 'SOGo webmail', 'Spam filter', 'DKIM/SPF helpers'],
                 'setup_fee' => 0,
                 'provisioning_driver_key' => 'mailcow',
                 'resource_limits' => [
@@ -122,6 +122,7 @@ class ProductSeeder extends Seeder
                     'aliases' => 20,
                     'quota_mb' => 51200,
                     'mailbox_quota_mb' => 5120,
+                    'msgs_per_day' => 500,
                 ],
                 'is_active' => true,
                 'visible_to_resellers' => true,

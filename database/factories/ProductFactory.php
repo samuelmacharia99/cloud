@@ -58,6 +58,7 @@ class ProductFactory extends Factory
                 'aliases' => 20,
                 'quota_mb' => 51200,
                 'mailbox_quota_mb' => 5120,
+                'msgs_per_day' => 500,
             ],
         ]);
     }

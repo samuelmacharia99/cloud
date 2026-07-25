@@ -2,6 +2,7 @@
     $limits = $limits ?? [];
     $defaultMailboxes = (int) config('mailcow.default_mailboxes', 10);
     $defaultAliases = (int) config('mailcow.default_aliases', 20);
+    $defaultMsgsPerDay = (int) config('mailcow.default_msgs_per_day', 500);
     $defaultQuotaMb = (int) config('mailcow.default_quota_mb', 51200);
     $defaultMailboxQuotaMb = (int) config('mailcow.default_mailbox_quota_mb', 5120);
 
@@ -18,7 +19,7 @@
 <div class="border-t border-slate-200 dark:border-slate-800 pt-6" x-show="productType === 'email_hosting'" x-cloak>
     <h3 class="text-lg font-semibold text-slate-900 dark:text-white mb-1">Email plan limits</h3>
     <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">
-        These limits are provisioned to Mailcow for each domain on this plan.
+        These limits are provisioned to Mailcow for each domain on this plan. The daily send cap is enforced server-side to discourage bulk / campaign use.
     </p>
 
     <input type="hidden" name="provisioning_driver_key" value="mailcow" :disabled="productType !== 'email_hosting'">
@@ -58,6 +59,25 @@
             >
             <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Max aliases / forwards per domain</p>
             @error('resource_limits.aliases')
+                <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+            @enderror
+        </div>
+
+        <div>
+            <label for="email_msgs_per_day" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Messages per day</label>
+            <input
+                type="number"
+                id="email_msgs_per_day"
+                name="resource_limits[msgs_per_day]"
+                value="{{ old('resource_limits.msgs_per_day', $limits['msgs_per_day'] ?? $defaultMsgsPerDay) }}"
+                min="1"
+                step="1"
+                placeholder="e.g. 500"
+                :disabled="productType !== 'email_hosting'"
+                class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-teal-500 dark:focus:ring-teal-400 text-slate-900 dark:text-white text-sm @error('resource_limits.msgs_per_day') border-red-500 @enderror"
+            >
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Outbound send cap for the whole domain (not for newsletters / bulk)</p>
+            @error('resource_limits.msgs_per_day')
                 <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
             @enderror
         </div>

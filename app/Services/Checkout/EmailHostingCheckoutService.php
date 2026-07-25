@@ -238,14 +238,16 @@ class EmailHostingCheckoutService
         $nameservers = app(\App\Services\ResellerNameserverService::class)->defaultsForCustomer($user);
         $domainNameservers = $this->nameserverService->toDomainColumns($nameservers);
 
+        $limits = app(MailcowProvisioningService::class)->limitsForProduct($product);
         $serviceMeta = [
             'mailcow_domain' => $fqdn,
             'domain' => $fqdn,
             'email_domain_mode' => $mode->value,
-            'mailbox_limit' => app(MailcowProvisioningService::class)->limitsForProduct($product)['mailboxes'],
-            'alias_limit' => app(MailcowProvisioningService::class)->limitsForProduct($product)['aliases'],
-            'mailbox_quota_mb' => app(MailcowProvisioningService::class)->limitsForProduct($product)['mailbox_quota_mb'],
-            'quota_mb' => app(MailcowProvisioningService::class)->limitsForProduct($product)['quota_mb'],
+            'mailbox_limit' => $limits['mailboxes'],
+            'alias_limit' => $limits['aliases'],
+            'mailbox_quota_mb' => $limits['mailbox_quota_mb'],
+            'quota_mb' => $limits['quota_mb'],
+            'msgs_per_day' => $limits['msgs_per_day'],
         ];
 
         if ($mode === SharedHostingDomainMode::FromCart) {

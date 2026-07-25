@@ -15,6 +15,8 @@ return [
     'default_aliases' => (int) env('MAILCOW_DEFAULT_ALIASES', 20),
     'default_quota_mb' => (int) env('MAILCOW_DEFAULT_QUOTA_MB', 51200),
     'default_mailbox_quota_mb' => (int) env('MAILCOW_DEFAULT_MAILBOX_QUOTA_MB', 5120),
+    // Domain-wide outbound messages per calendar day (Mailcow rl_frame=d). Keeps plans off bulk/campaign use.
+    'default_msgs_per_day' => (int) env('MAILCOW_DEFAULT_MSGS_PER_DAY', 500),
 
     /*
     |--------------------------------------------------------------------------

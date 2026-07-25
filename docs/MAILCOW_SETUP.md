@@ -241,10 +241,12 @@ Click **Test Mailcow API** on the node page. Status should go **online**.
   "mailboxes": 10,
   "aliases": 20,
   "quota_mb": 51200,
-  "mailbox_quota_mb": 5120
+  "mailbox_quota_mb": 5120,
+  "msgs_per_day": 500
 }
 ```
 
+`msgs_per_day` is enforced by Mailcow as a domain rate limit (messages per calendar day) — keep it modest so plans stay off bulk/campaign use.
 2. Provision a **test** domain you control (not a live customer):
    - Order Email Hosting or use admin provision path
    - Confirm domain + mailbox appear in Mailcow UI

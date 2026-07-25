@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\ServerProductConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -86,8 +87,20 @@ class ProductController extends Controller
 
         $product->update($validated);
 
+        $message = 'Product updated successfully.';
+        if ($type === 'email_hosting') {
+            $sync = app(MailcowProvisioningService::class)->syncSendLimitsForProduct($product->fresh());
+            if ($sync['updated'] > 0 || $sync['failed'] > 0) {
+                $message .= ' Daily send limit synced to '.$sync['updated'].' mailbox domain(s)';
+                if ($sync['failed'] > 0) {
+                    $message .= ' ('.$sync['failed'].' failed)';
+                }
+                $message .= '.';
+            }
+        }
+
         return redirect()->route('admin.products.show', $product)
-            ->with('success', 'Product updated successfully.');
+            ->with('success', $message);
     }
 
     public function destroy(Product $product)
@@ -169,6 +182,7 @@ class ProductController extends Controller
             $rules['resource_limits'] = 'nullable|array';
             $rules['resource_limits.mailboxes'] = 'nullable|integer|min:1|max:10000';
             $rules['resource_limits.aliases'] = 'nullable|integer|min:0|max:10000';
+            $rules['resource_limits.msgs_per_day'] = 'nullable|integer|min:1|max:1000000';
             $rules['resource_limits.quota_gb'] = 'nullable|numeric|min:0.1|max:10240';
             $rules['resource_limits.mailbox_quota_gb'] = 'nullable|numeric|min:0.1|max:10240';
             $rules['resource_limits.quota_mb'] = 'nullable|integer|min:100';
@@ -266,7 +280,7 @@ class ProductController extends Controller
 
     /**
      * @param  array<string, mixed>|null  $limits
-     * @return array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int}
+     * @return array{mailboxes: int, aliases: int, quota_mb: int, mailbox_quota_mb: int, msgs_per_day: int}
      */
     private function normalizeEmailHostingResourceLimits(?array $limits): array
     {
@@ -287,6 +301,7 @@ class ProductController extends Controller
             'aliases' => max(0, (int) ($limits['aliases'] ?? config('mailcow.default_aliases', 20))),
             'quota_mb' => max(100, (int) round((float) ($quotaMb ?? config('mailcow.default_quota_mb', 51200)))),
             'mailbox_quota_mb' => max(100, (int) round((float) ($mailboxQuotaMb ?? config('mailcow.default_mailbox_quota_mb', 5120)))),
+            'msgs_per_day' => max(1, (int) ($limits['msgs_per_day'] ?? config('mailcow.default_msgs_per_day', 500))),
         ];
     }
 

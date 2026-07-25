@@ -187,7 +187,7 @@
                         </div>
                     </dl>
                 @elseif ($product->type === 'email_hosting')
-                    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
                             <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Mailboxes</dt>
                             <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['mailboxes'] ?? '—' }}</dd>
@@ -195,6 +195,10 @@
                         <div>
                             <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Aliases</dt>
                             <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['aliases'] ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Messages / day</dt>
+                            <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['msgs_per_day'] ?? '—' }}</dd>
                         </div>
                         <div>
                             <dt class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">Total storage</dt>
