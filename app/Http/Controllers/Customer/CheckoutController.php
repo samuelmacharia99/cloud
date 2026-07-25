@@ -169,12 +169,22 @@ class CheckoutController extends Controller
 
         $emailHostingItems = [];
         foreach ($cartItems as $item) {
-            if (($item['type'] ?? null) !== 'product' || empty($item['product_id'])) {
+            if (empty($item['product_id'])) {
                 continue;
             }
-            $product = Product::find($item['product_id']);
-            if ($product && $product->type === 'email_hosting') {
+
+            // show() rewrites item type to the product type (e.g. email_hosting).
+            if (($item['type'] ?? null) === 'email_hosting') {
                 $emailHostingItems[] = $item;
+
+                continue;
+            }
+
+            if (($item['type'] ?? null) === 'product') {
+                $product = Product::find($item['product_id']);
+                if ($product && $product->type === 'email_hosting') {
+                    $emailHostingItems[] = $item;
+                }
             }
         }
 

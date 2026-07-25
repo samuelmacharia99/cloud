@@ -122,4 +122,30 @@ class EmailHostingDomainCheckoutTest extends TestCase
             ->assertOk()
             ->assertSee('Mailbox Basic');
     }
+
+    public function test_checkout_shows_email_domain_options_for_email_hosting_cart_item(): void
+    {
+        $customer = User::factory()->customer()->create();
+        $plan = Product::factory()->emailHosting()->create([
+            'name' => 'Mail Checkout Plan',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($customer)
+            ->withSession([
+                'cart' => [
+                    'email-item-1' => [
+                        'type' => 'product',
+                        'product_id' => $plan->id,
+                        'billing_cycle' => 'monthly',
+                    ],
+                ],
+            ])
+            ->get(route('customer.checkout.show'))
+            ->assertOk()
+            ->assertSee('Email domain (Mailcow)')
+            ->assertSee('Register new domain')
+            ->assertSee('Use existing domain')
+            ->assertSee('email_domain_mode');
+    }
 }

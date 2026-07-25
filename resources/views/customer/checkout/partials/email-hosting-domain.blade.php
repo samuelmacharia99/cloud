@@ -273,11 +273,22 @@ function emailHostingDomainConfig(cartKey, defaultNs, allowedExtensions, linkedD
 
         setAddedToCart(value) {
             this.addedToCart = value;
-            this.$dispatch('checkout-domain-added', {
-                cartKey: this.cartKey,
-                added: value,
-                amount: value ? this.price : 0,
-            });
+            if (value) {
+                const ext = (this.extension || '').startsWith('.') ? this.extension : '.' + (this.extension || '');
+                const years = parseInt(this.years, 10) || 1;
+                window.dispatchEvent(new CustomEvent('checkout-domain-added', {
+                    detail: {
+                        cartKey: this.cartKey,
+                        label: `${this.domain}${ext}`,
+                        description: `Domain registration (${years} year${years > 1 ? 's' : ''})`,
+                        amount: this.price,
+                    },
+                }));
+            } else {
+                window.dispatchEvent(new CustomEvent('checkout-domain-removed', {
+                    detail: { cartKey: this.cartKey },
+                }));
+            }
         },
 
         parseDomainInput() {
