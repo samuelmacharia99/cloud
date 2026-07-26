@@ -77,6 +77,8 @@ class PaymentController extends Controller
         $invoice->refresh();
 
         if ($invoice->status->value === 'paid' || $invoice->isFullyPaid()) {
+            app(InvoiceSettlementService::class)->settleFullyPaid($invoice->fresh());
+
             if (request()->wantsJson()) {
                 return response()->json([
                     'already_paid' => true,
@@ -84,8 +86,8 @@ class PaymentController extends Controller
                 ]);
             }
 
-            return redirect()->route('customer.invoices.show', $invoice)
-                ->with('info', 'This invoice has already been paid.');
+            return redirect()->route('customer.payment.success', $invoice)
+                ->with('info', 'This invoice is already paid. Activating any pending services.');
         }
 
         $availableGateways = PaymentGatewayFactory::getAvailableGatewaysForInvoice($invoice);

@@ -174,6 +174,22 @@ class ProductController extends Controller
             $rules['resource_limits.cpu'] = 'nullable|numeric|min:0';
             $rules['resource_limits.memory'] = 'nullable|integer|min:0';
             $rules['resource_limits.disk'] = 'nullable|numeric|min:0';
+            $rules['bundled_email_product_id'] = [
+                'nullable',
+                'exists:products,id',
+                function (string $attribute, mixed $value, \Closure $fail) {
+                    if (! $value) {
+                        return;
+                    }
+                    $email = Product::query()->find($value);
+                    if (! $email || $email->type !== 'email_hosting') {
+                        $fail('Select a valid Email Hosting product to bundle.');
+                    }
+                },
+            ];
+            $rules['bundle_email_include_in_invoice'] = 'sometimes|boolean';
+            $rules['bundle_email_billing_cycle'] = 'nullable|in:monthly,annual';
+            $rules['bundle_email_billing_delay_months'] = 'nullable|integer|min:0|max:36';
 
             return $rules;
         }
@@ -239,6 +255,10 @@ class ProductController extends Controller
             $validated['wholesale_monthly_price'] = null;
             $validated['wholesale_yearly_price'] = null;
             $validated['resource_limits'] = null;
+            $validated['bundled_email_product_id'] = null;
+            $validated['bundle_email_include_in_invoice'] = false;
+            $validated['bundle_email_billing_cycle'] = null;
+            $validated['bundle_email_billing_delay_months'] = 0;
 
             return $validated;
         }
@@ -250,9 +270,32 @@ class ProductController extends Controller
             $validated['wholesale_yearly_price'] = null;
             $validated['direct_admin_package_id'] = null;
             $validated['resource_limits'] = $this->normalizeContainerResourceLimits($validated['resource_limits'] ?? null);
+            $validated['bundled_email_product_id'] = filled($validated['bundled_email_product_id'] ?? null)
+                ? (int) $validated['bundled_email_product_id']
+                : null;
+            $validated['bundle_email_include_in_invoice'] = filter_var(
+                $validated['bundle_email_include_in_invoice'] ?? false,
+                FILTER_VALIDATE_BOOLEAN
+            );
+            $validated['bundle_email_billing_cycle'] = filled($validated['bundle_email_billing_cycle'] ?? null)
+                ? $validated['bundle_email_billing_cycle']
+                : null;
+            $validated['bundle_email_billing_delay_months'] = max(0, (int) ($validated['bundle_email_billing_delay_months'] ?? 0));
+
+            if ($validated['bundled_email_product_id'] === null) {
+                $validated['bundle_email_include_in_invoice'] = false;
+                $validated['bundle_email_billing_cycle'] = null;
+                $validated['bundle_email_billing_delay_months'] = 0;
+            }
 
             return $validated;
         }
+
+        // Non-container products clear bundle fields.
+        $validated['bundled_email_product_id'] = null;
+        $validated['bundle_email_include_in_invoice'] = false;
+        $validated['bundle_email_billing_cycle'] = null;
+        $validated['bundle_email_billing_delay_months'] = 0;
 
         if ($type === 'email_hosting') {
             $validated['provisioning_driver_key'] = $validated['provisioning_driver_key'] ?: 'mailcow';

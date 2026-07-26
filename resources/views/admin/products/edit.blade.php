@@ -233,6 +233,7 @@
             </div>
 
             @include('admin.products.partials.container-resource-limits', ['limits' => $product->resource_limits ?? []])
+            @include('admin.products.partials.container-email-bundle', ['product' => $product])
             @include('admin.products.partials.email-hosting-limits', ['limits' => $product->resource_limits ?? []])
 
             <!-- Application Overage Billing (conditional) -->

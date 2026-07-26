@@ -18,6 +18,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Rules\ValidCountryCode;
 use App\Services\Billing\InvoiceSettlementService;
+use App\Services\Checkout\ContainerEmailBundleService;
 use App\Services\Checkout\EmailHostingCheckoutService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\CreditService;
@@ -157,6 +158,9 @@ class CheckoutController extends Controller
             return redirect()->route('customer.cart.index')->with('error', 'No valid items in cart');
         }
 
+        $bundleCheckout = app(ContainerEmailBundleService::class);
+        $subtotal += $bundleCheckout->estimateInvoiceAddonTotal($cart);
+
         $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
         $currency = app(UserCurrencyService::class)->model($user);
@@ -194,6 +198,7 @@ class CheckoutController extends Controller
 
         $hostingCheckout = app(SharedHostingCheckoutService::class);
         $emailCheckout = app(EmailHostingCheckoutService::class);
+        $bundledContainerItems = $bundleCheckout->bundledContainerItems($cart);
         $linkedHostingDomains = [];
         foreach ($sharedHostingItems as $item) {
             if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
@@ -217,6 +222,7 @@ class CheckoutController extends Controller
             'cartItems' => $cartItems,
             'sharedHostingItems' => $sharedHostingItems,
             'emailHostingItems' => $emailHostingItems,
+            'bundledContainerItems' => $bundledContainerItems,
             'customerDomains' => $customerDomains,
             'linkedHostingDomains' => $linkedHostingDomains,
             'linkedEmailDomains' => $linkedEmailDomains,
@@ -267,6 +273,7 @@ class CheckoutController extends Controller
 
         app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
         app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
+        app(ContainerEmailBundleService::class)->validateCheckoutRequest($request, $cart);
 
         try {
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -331,7 +338,8 @@ class CheckoutController extends Controller
                 $domainsCreatedByCartKey = [];
 
                 $domainAddonTotal = $hostingCheckout->estimateDomainAddonTotal($request, $cart)
-                    + $emailCheckout->estimateDomainAddonTotal($request, $cart);
+                    + $emailCheckout->estimateDomainAddonTotal($request, $cart)
+                    + app(ContainerEmailBundleService::class)->estimateInvoiceAddonTotal($cart);
 
                 $subtotal += $domainAddonTotal;
                 $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
@@ -495,6 +503,19 @@ class CheckoutController extends Controller
                             'service_meta' => $serviceMeta,
                         ]);
 
+                        if ($product->type === 'container_hosting' && $request) {
+                            app(ContainerEmailBundleService::class)->attachToContainerService(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $service,
+                                $invoice,
+                                $order,
+                                $item,
+                            );
+                        }
+
                         // Create InvoiceItem
                         InvoiceItem::create([
                             'invoice_id' => $invoice->id,
@@ -615,7 +636,7 @@ class CheckoutController extends Controller
             }
 
             $paidWithCredits = $invoice
-                ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
+                ? $this->settleCheckoutInvoiceIfDue($invoice, $request)
                 : false;
 
             $this->notifyPlatformDomainOrdersPlaced(
@@ -626,7 +647,7 @@ class CheckoutController extends Controller
             if ($paidWithCredits) {
                 return redirect()
                     ->route('customer.payment.success', $invoice)
-                    ->with('success', 'Order placed and paid using your account credit.');
+                    ->with('success', 'Order placed successfully. Your services are being activated.');
             }
 
             return redirect()
@@ -1024,6 +1045,7 @@ class CheckoutController extends Controller
                 ]);
                 app(SharedHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
                 app(EmailHostingCheckoutService::class)->validateCheckoutRequest($request, $cart);
+                app(ContainerEmailBundleService::class)->validateCheckoutRequest($request, $cart);
             }
 
             $order = \DB::transaction(function () use ($cart, $user, $request) {
@@ -1089,7 +1111,8 @@ class CheckoutController extends Controller
 
                 $domainAddonTotal = $request
                     ? ($hostingCheckout->estimateDomainAddonTotal($request, $cart)
-                        + $emailCheckout->estimateDomainAddonTotal($request, $cart))
+                        + $emailCheckout->estimateDomainAddonTotal($request, $cart)
+                        + app(ContainerEmailBundleService::class)->estimateInvoiceAddonTotal($cart))
                     : 0.0;
 
                 $subtotal += $domainAddonTotal;
@@ -1246,6 +1269,19 @@ class CheckoutController extends Controller
                             'service_meta' => $serviceMeta,
                         ]);
 
+                        if ($product->type === 'container_hosting' && $request) {
+                            app(ContainerEmailBundleService::class)->attachToContainerService(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $product,
+                                $service,
+                                $invoice,
+                                $order,
+                                $item,
+                            );
+                        }
+
                         // Create InvoiceItem
                         InvoiceItem::create([
                             'invoice_id' => $invoice->id,
@@ -1366,7 +1402,7 @@ class CheckoutController extends Controller
             }
 
             $paidWithCredits = $invoice && $request
-                ? $this->applyCheckoutCreditsIfRequested($invoice, $request)
+                ? $this->settleCheckoutInvoiceIfDue($invoice, $request)
                 : false;
 
             $this->notifyPlatformDomainOrdersPlaced(
@@ -1377,7 +1413,7 @@ class CheckoutController extends Controller
             if ($paidWithCredits) {
                 return redirect()
                     ->route('customer.payment.success', $invoice)
-                    ->with('success', 'Account created and order paid using your account credit.');
+                    ->with('success', 'Account created and order completed. Your services are being activated.');
             }
 
             return redirect()
@@ -1388,6 +1424,21 @@ class CheckoutController extends Controller
 
             return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
+    }
+
+    private function settleCheckoutInvoiceIfDue(Invoice $invoice, Request $request): bool
+    {
+        if ($this->applyCheckoutCreditsIfRequested($invoice, $request)) {
+            return true;
+        }
+
+        $invoice->refresh();
+
+        if ($invoice->getAmountRemaining() > 0) {
+            return false;
+        }
+
+        return app(InvoiceSettlementService::class)->settleFullyPaid($invoice->fresh());
     }
 
     private function applyCheckoutCreditsIfRequested(Invoice $invoice, Request $request): bool

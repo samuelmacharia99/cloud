@@ -27,6 +27,10 @@ class Product extends Model
         'provisioning_driver_key',
         'resource_limits',
         'container_template_id',
+        'bundled_email_product_id',
+        'bundle_email_include_in_invoice',
+        'bundle_email_billing_cycle',
+        'bundle_email_billing_delay_months',
         'direct_admin_package_id',
         'cpu_overage_rate',
         'ram_overage_rate',
@@ -44,6 +48,8 @@ class Product extends Model
         'is_active' => 'boolean',
         'visible_to_resellers' => 'boolean',
         'featured' => 'boolean',
+        'bundle_email_include_in_invoice' => 'boolean',
+        'bundle_email_billing_delay_months' => 'integer',
         'price' => 'decimal:2',
         'monthly_price' => 'decimal:2',
         'yearly_price' => 'decimal:2',
@@ -85,6 +91,16 @@ class Product extends Model
     public function services()
     {
         return $this->hasMany(Service::class);
+    }
+
+    public function bundledEmailProduct()
+    {
+        return $this->belongsTo(self::class, 'bundled_email_product_id');
+    }
+
+    public function hasEmailBundle(): bool
+    {
+        return $this->type === 'container_hosting' && filled($this->bundled_email_product_id);
     }
 
     public function invoiceItems()

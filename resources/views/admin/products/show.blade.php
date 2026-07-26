@@ -186,6 +186,16 @@
                             <dd class="text-sm text-slate-900 dark:text-white mt-1">{{ $product->resource_limits['disk'] ?? '—' }}</dd>
                         </div>
                     </dl>
+                    @if ($product->bundled_email_product_id)
+                        @php $product->loadMissing('bundledEmailProduct'); @endphp
+                        <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-sm text-slate-700 dark:text-slate-300">
+                            <span class="font-medium">Bundled email:</span>
+                            {{ $product->bundledEmailProduct?->name ?? ('#'.$product->bundled_email_product_id) }}
+                            · {{ $product->bundle_email_include_in_invoice ? 'charged on invoice' : 'free offer' }}
+                            · {{ $product->bundle_email_billing_cycle ?: 'follows app cycle' }}
+                            · first bill after {{ (int) $product->bundle_email_billing_delay_months }} month(s) + cycle
+                        </div>
+                    @endif
                 @elseif ($product->type === 'email_hosting')
                     <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>

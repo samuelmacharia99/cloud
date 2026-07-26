@@ -86,6 +86,10 @@
                     </div>
                 @endif
 
+                @include('customer.checkout.partials.container-email-bundle-domain', [
+                    'bundledContainerItems' => $bundledContainerItems ?? [],
+                ])
+
                 @if (!empty($sharedHostingItems))
                     <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
                         <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Shared plan domain (DirectAdmin)</h2>

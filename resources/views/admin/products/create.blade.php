@@ -228,6 +228,7 @@
             </div>
 
             @include('admin.products.partials.container-resource-limits')
+            @include('admin.products.partials.container-email-bundle', ['product' => new \App\Models\Product])
             @include('admin.products.partials.email-hosting-limits')
 
             <!-- Application Overage Billing (conditional) -->

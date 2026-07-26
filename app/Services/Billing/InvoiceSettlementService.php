@@ -44,6 +44,49 @@ class InvoiceSettlementService
     }
 
     /**
+     * Complete an invoice that is already fully covered (credits, $0 total, or wallet).
+     */
+    public function settleFullyPaid(Invoice $invoice): bool
+    {
+        $invoice->refresh();
+
+        if ($invoice->status->value === 'paid') {
+            if ($this->invoiceNeedsFinalization($invoice)) {
+                $this->finalizePaidInvoice($invoice->fresh());
+            }
+            $this->syncOrderPaymentStatus($invoice->fresh(['order']));
+
+            return true;
+        }
+
+        if (! $invoice->isFullyPaid()) {
+            return false;
+        }
+
+        $wasAlreadyPaid = $invoice->isPaid();
+        $this->markInvoiceAsPaid($invoice);
+
+        if (! $wasAlreadyPaid) {
+            try {
+                app(NotificationService::class)->notifyPaymentReceived($invoice->fresh());
+            } catch (\Throwable $e) {
+                Log::error('Failed to send payment received notification after zero-total settlement', [
+                    'invoice_id' => $invoice->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if (! $wasAlreadyPaid || $this->invoiceNeedsFinalization($invoice)) {
+            $this->finalizePaidInvoice($invoice->fresh());
+        }
+
+        $this->recordResellerMarginsForInvoice($invoice->fresh());
+
+        return true;
+    }
+
+    /**
      * Complete an invoice paid entirely via account credits (no gateway payment).
      */
     public function settleFromCredits(Invoice $invoice): bool
@@ -63,27 +106,7 @@ class InvoiceSettlementService
             return false;
         }
 
-        $wasAlreadyPaid = $invoice->isPaid();
-        $this->markInvoiceAsPaid($invoice);
-
-        if (! $wasAlreadyPaid) {
-            try {
-                app(NotificationService::class)->notifyPaymentReceived($invoice->fresh());
-            } catch (\Throwable $e) {
-                Log::error('Failed to send payment received notification after credit settlement', [
-                    'invoice_id' => $invoice->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
-        if (! $wasAlreadyPaid || $this->invoiceNeedsFinalization($invoice)) {
-            $this->finalizePaidInvoice($invoice->fresh());
-        }
-
-        $this->recordResellerMarginsForInvoice($invoice->fresh());
-
-        return true;
+        return $this->settleFullyPaid($invoice);
     }
 
     /**
