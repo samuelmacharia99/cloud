@@ -134,6 +134,12 @@ For **VPS** and **dedicated server** products, each service includes a `configur
 - `ip_options[]` — additional IP pricing
 - `operating_systems[]` — allowed OS keys for cart/checkout
 
+For **email hosting** (`type: email_hosting`), each service includes a `configuration` object:
+
+- `mailboxes`, `aliases`, `quota_mb`, `mailbox_quota_mb`, `msgs_per_day` — plan limits
+- `requires_domain` — always `true` (pair with a domain registration or pass `domain` on the cart line)
+- `webmail`, `driver` — Mailcow / SOGo
+
 ```json
 {
   "success": true,
@@ -151,6 +157,27 @@ For **VPS** and **dedicated server** products, each service includes a `configur
       "currency": "KES",
       "billing_cycles": ["monthly", "quarterly", "semi-annual", "annual"],
       "features": ["5GB SSD", "Free SSL"]
+    },
+    {
+      "id": 42,
+      "name": "Business Email",
+      "type": "email_hosting",
+      "monthly_price": 999,
+      "yearly_price": 9990,
+      "setup_fee": 0,
+      "currency": "KES",
+      "billing_cycles": ["monthly", "quarterly", "semi-annual", "annual"],
+      "features": ["10 mailboxes", "SOGo webmail"],
+      "configuration": {
+        "mailboxes": 10,
+        "aliases": 20,
+        "quota_mb": 51200,
+        "mailbox_quota_mb": 5120,
+        "msgs_per_day": 500,
+        "requires_domain": true,
+        "webmail": true,
+        "driver": "mailcow"
+      }
     },
     {
       "id": 18,
@@ -192,6 +219,42 @@ For **VPS** and **dedicated server** products, each service includes a `configur
   ]
 }
 ```
+
+---
+
+### Email hosting cart
+
+Sell Mailcow email plans from your website:
+
+1. List plans via `GET /services` (`type: email_hosting`).
+2. `POST /cart` with either:
+   - a `domain` registration line **plus** the email service (DNS auto-applied after payment when registered with Talksasa), or
+   - the email service alone with `domain` / `full_domain` set to an existing FQDN (checkout locks that domain).
+3. Redirect to `checkout_url`.
+
+```json
+{
+  "items": [
+    { "type": "domain", "full_domain": "acme.com", "years": 1 },
+    { "type": "service", "product_id": 42, "billing_cycle": "monthly" }
+  ]
+}
+```
+
+```json
+{
+  "items": [
+    {
+      "type": "service",
+      "product_id": 42,
+      "billing_cycle": "monthly",
+      "domain": "existing.com"
+    }
+  ]
+}
+```
+
+Platform carts use `product_id`. Reseller carts use `reseller_product_id`.
 
 ---
 
@@ -270,6 +333,12 @@ Validate items, store them in a server session, and return a **checkout deep lin
       "location_key": "usa",
       "ip_count": 2,
       "operating_system": "ubuntu-24.04"
+    },
+    {
+      "type": "service",
+      "reseller_product_id": 42,
+      "billing_cycle": "monthly",
+      "domain": "existing.com"
     }
   ]
 }
@@ -281,6 +350,7 @@ Validate items, store them in a server session, and return a **checkout deep lin
 | `domain_transfer` | `full_domain`, `epp_code`, `old_registrar`, optional `old_registrar_url` |
 | `service` | `reseller_product_id` (or `id`), `billing_cycle` |
 | `service` (VPS / dedicated) | above plus `location_key`, `ip_count`, `operating_system` (from `GET /services` → `configuration`) |
+| `service` (email hosting) | above plus optional `domain` / `full_domain` for an existing mail FQDN; or include a `domain` cart line to register together |
 | `reseller_package` | `reseller_package_id` (platform host only; must be the only cart item) |
 
 Domains must be **available** and priced for registration. Transfers require a configured **transfer price** for the TLD. Services must be active in your catalog.

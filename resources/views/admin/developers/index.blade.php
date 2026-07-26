@@ -15,7 +15,7 @@
     <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Developers</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">Power your main marketing website with domain search, platform services, and guest checkout via JSON API.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1 max-w-2xl">Power your main marketing website with domain search, hosting, email plans, and guest checkout via JSON API.</p>
         </div>
         @if($apiEnabled)
             <span class="inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
@@ -163,7 +163,7 @@
     <div class="flex flex-col xl:flex-row gap-8">
         <nav class="xl:w-56 shrink-0">
             <div class="xl:sticky xl:top-24 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-1">
-                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'reseller-packages' => 'Reseller plans', 'cart' => 'Checkout', 'examples' => 'Examples', 'errors' => 'Errors'] as $id => $label)
+                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'email' => 'Email hosting', 'reseller-packages' => 'Reseller plans', 'cart' => 'Checkout', 'examples' => 'Examples', 'errors' => 'Errors'] as $id => $label)
                     <button type="button" @click="scrollTo('{{ $id }}')" :class="active === '{{ $id }}' ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition">{{ $label }}</button>
                 @endforeach
             </div>
@@ -172,7 +172,7 @@
         <div class="flex-1 min-w-0 space-y-10">
             <section id="overview" class="scroll-mt-24">
                 <h2 class="text-2xl font-bold text-slate-900 dark:text-white mb-3">Overview</h2>
-                <p class="text-slate-600 dark:text-slate-400">Sell platform domains and hosting from your main website. Prices returned are <strong class="text-slate-800 dark:text-slate-200">retail</strong> rates configured in admin.</p>
+                <p class="text-slate-600 dark:text-slate-400">Sell platform domains, hosting, and email from your main website. Prices returned are <strong class="text-slate-800 dark:text-slate-200">retail</strong> rates configured in admin.</p>
             </section>
 
             <section id="auth" class="scroll-mt-24">
@@ -206,8 +206,70 @@
                         <code class="ml-2 text-sm font-mono">/services</code>
                     </div>
                     <div class="p-5 space-y-2">
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Lists all active platform products with retail pricing. VPS and dedicated server products include a <code class="text-xs">configuration</code> object with specs, datacenter locations (regional pricing), IP options, and allowed operating systems.</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Lists all active platform products with retail pricing. VPS and dedicated server products include a <code class="text-xs">configuration</code> object with specs, datacenter locations (regional pricing), IP options, and allowed operating systems. Email hosting products include mailbox/alias limits under <code class="text-xs">configuration</code> (see Email hosting).</p>
                         @include('reseller.developers.partials.code-block', ['id' => 'sv', 'code' => "GET {$apiBase}/services"])
+                    </div>
+                </div>
+            </section>
+
+            <section id="email" class="scroll-mt-24 space-y-6">
+                <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Email hosting</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Sell Mailcow business email from your marketing site. Products with <code class="text-xs">type: email_hosting</code> appear in <code class="text-xs">GET /services</code> with plan limits. Pair with a domain registration in the same cart, or pass an existing domain on the email line.</p>
+
+                <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+                    <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
+                        <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Service payload</span>
+                        <code class="ml-2 text-sm font-mono">type: email_hosting</code>
+                    </div>
+                    <div class="p-5">
+                        @include('reseller.developers.partials.code-block', ['id' => 'email-svc', 'code' => json_encode([
+                            'id' => 42,
+                            'name' => 'Business Email',
+                            'type' => 'email_hosting',
+                            'monthly_price' => 999,
+                            'yearly_price' => 9990,
+                            'setup_fee' => 0,
+                            'currency' => 'KES',
+                            'billing_cycles' => ['monthly', 'quarterly', 'semi-annual', 'annual'],
+                            'features' => ['10 mailboxes', 'SOGo webmail', 'DKIM/SPF helpers'],
+                            'configuration' => [
+                                'mailboxes' => 10,
+                                'aliases' => 20,
+                                'quota_mb' => 51200,
+                                'mailbox_quota_mb' => 5120,
+                                'msgs_per_day' => 500,
+                                'requires_domain' => true,
+                                'webmail' => true,
+                                'driver' => 'mailcow',
+                            ],
+                        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+                    <div class="px-5 py-3 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
+                        <span class="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">POST</span>
+                        <code class="ml-2 text-sm font-mono">/cart — email + domain</code>
+                    </div>
+                    <div class="p-5 space-y-3">
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Recommended: register the domain in the same cart so MX/SPF/DKIM/DMARC can be applied automatically after payment.</p>
+                        @include('reseller.developers.partials.code-block', ['id' => 'email-cart-reg', 'code' => json_encode([
+                            'items' => [
+                                ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
+                                ['type' => 'service', 'product_id' => 42, 'billing_cycle' => 'monthly'],
+                            ],
+                        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Or pass an existing domain with <code class="text-xs">domain</code> (or <code class="text-xs">full_domain</code>) on the email service line. Checkout locks that FQDN; the customer still completes account + payment on <code class="text-xs">{{ $checkout }}</code>.</p>
+                        @include('reseller.developers.partials.code-block', ['id' => 'email-cart-exist', 'code' => json_encode([
+                            'items' => [
+                                [
+                                    'type' => 'service',
+                                    'product_id' => 42,
+                                    'billing_cycle' => 'monthly',
+                                    'domain' => 'mail.acme.com',
+                                ],
+                            ],
+                        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
                     </div>
                 </div>
             </section>
@@ -247,9 +309,15 @@
                             'ip_count' => 2,
                             'operating_system' => 'ubuntu-24.04',
                         ],
+                        [
+                            'type' => 'service',
+                            'product_id' => 42,
+                            'billing_cycle' => 'monthly',
+                            'domain' => 'existing.com',
+                        ],
                     ],
                 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
-                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code>. Domain transfers use <code class="text-xs">type: domain_transfer</code> with EPP code and current registrar. For VPS/dedicated servers, include <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code>. Reseller plans use <code class="text-xs">type: reseller_package</code> and must be checked out alone.</p>
+                <p class="text-sm text-slate-500 mt-2">POST to <code class="text-xs">{{ $apiBase }}/cart</code> → redirect to <code class="text-xs">{{ $checkout }}</code>. Domain transfers use <code class="text-xs">type: domain_transfer</code> with EPP code and current registrar. For VPS/dedicated servers, include <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code>. Email hosting may include <code class="text-xs">domain</code> (existing FQDN) or share a domain registration line in the same cart. Reseller plans use <code class="text-xs">type: reseller_package</code> and must be checked out alone.</p>
             </section>
 
             <section id="examples" class="scroll-mt-24">
@@ -275,7 +343,7 @@ function developerDocs() {
             try { await navigator.clipboard.writeText(text); this.copied = key; setTimeout(() => { if (this.copied === key) this.copied = null; }, 2000); } catch (e) { alert('Copy failed'); }
         },
         init() {
-            ['overview','auth','domains','services','reseller-packages','cart','examples','errors'].forEach(id => {
+            ['overview','auth','domains','services','email','reseller-packages','cart','examples','errors'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) new IntersectionObserver((entries) => { entries.forEach(e => { if (e.isIntersecting) this.active = e.target.id; }); }, { rootMargin: '-20% 0px -60% 0px' }).observe(el);
             });

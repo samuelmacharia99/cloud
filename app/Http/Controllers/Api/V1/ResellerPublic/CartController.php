@@ -32,6 +32,7 @@ class CartController extends Controller
             'items.*.location_key' => 'nullable|string|max:100',
             'items.*.ip_count' => 'nullable|integer|min:1|max:'.config('server_options.max_ip_count', 8),
             'items.*.operating_system' => 'nullable|string|max:100',
+            'items.*.domain' => 'nullable|string|max:253',
         ]);
 
         $cart = $this->api->buildCartItems($validated['items']);

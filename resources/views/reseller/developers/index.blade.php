@@ -176,7 +176,7 @@
         <nav class="xl:w-56 shrink-0">
             <div class="xl:sticky xl:top-24 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-1">
                 <p class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Documentation</p>
-                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'cart' => 'Checkout flow', 'examples' => 'Code examples', 'errors' => 'Errors'] as $id => $label)
+                @foreach(['overview' => 'Overview', 'auth' => 'Authentication', 'domains' => 'Domains', 'services' => 'Services', 'email' => 'Email hosting', 'cart' => 'Checkout flow', 'examples' => 'Code examples', 'errors' => 'Errors'] as $id => $label)
                     <button type="button" @click="scrollTo('{{ $id }}')"
                         :class="active === '{{ $id }}' ? 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'"
                         class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition">{{ $label }}</button>
@@ -277,10 +277,31 @@
                         <code class="ml-2 text-sm font-mono">/services</code>
                     </div>
                     <div class="p-5 space-y-3">
-                        <p class="text-sm text-slate-600 dark:text-slate-400">Returns active, orderable items from your catalog with monthly/yearly retail prices. VPS and dedicated server products include a <code class="text-xs">configuration</code> object (specs, datacenter locations, IP options, operating systems).</p>
+                        <p class="text-sm text-slate-600 dark:text-slate-400">Returns active, orderable items from your catalog with monthly/yearly retail prices. VPS and dedicated server products include a <code class="text-xs">configuration</code> object (specs, datacenter locations, IP options, operating systems). Email hosting products include mailbox limits under <code class="text-xs">configuration</code>.</p>
                         @include('reseller.developers.partials.code-block', ['id' => 'services-req', 'code' => "GET {$apiBase}/services"])
                     </div>
                 </div>
+            </section>
+
+            <section id="email" class="scroll-mt-24 space-y-6">
+                <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Email hosting</h2>
+                <p class="text-sm text-slate-600 dark:text-slate-400">Catalog items with <code class="text-xs">type: email_hosting</code> include plan limits. Sell them alone with an existing <code class="text-xs">domain</code>, or with a domain registration in the same cart.</p>
+                @include('reseller.developers.partials.code-block', ['id' => 'email-cart', 'code' => json_encode([
+                    'items' => [
+                        ['type' => 'domain', 'full_domain' => 'acme.com', 'years' => 1],
+                        ['type' => 'service', 'reseller_product_id' => 42, 'billing_cycle' => 'monthly'],
+                    ],
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
+                @include('reseller.developers.partials.code-block', ['id' => 'email-cart-domain', 'code' => json_encode([
+                    'items' => [
+                        [
+                            'type' => 'service',
+                            'reseller_product_id' => 42,
+                            'billing_cycle' => 'monthly',
+                            'domain' => 'existing.com',
+                        ],
+                    ],
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
             </section>
 
             <section id="cart" class="scroll-mt-24">
@@ -310,9 +331,15 @@
                                     'ip_count' => 2,
                                     'operating_system' => 'ubuntu-24.04',
                                 ],
+                                [
+                                    'type' => 'service',
+                                    'reseller_product_id' => 42,
+                                    'billing_cycle' => 'monthly',
+                                    'domain' => 'existing.com',
+                                ],
                             ],
                         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)])
-                        <p class="text-sm text-slate-500">Response includes <code class="text-xs">checkout_url</code> → <code class="text-xs">{{ $checkout }}</code>. For VPS/dedicated servers, pass <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code> from <code class="text-xs">GET /services</code>.</p>
+                        <p class="text-sm text-slate-500">Response includes <code class="text-xs">checkout_url</code> → <code class="text-xs">{{ $checkout }}</code>. For VPS/dedicated servers, pass <code class="text-xs">location_key</code>, <code class="text-xs">ip_count</code>, and <code class="text-xs">operating_system</code> from <code class="text-xs">GET /services</code>. Email hosting may include <code class="text-xs">domain</code> for an existing FQDN.</p>
                     </div>
                 </div>
             </section>
@@ -375,7 +402,7 @@ function developerDocs() {
             }
         },
         init() {
-            const sections = ['overview', 'auth', 'domains', 'services', 'cart', 'examples', 'errors'];
+            const sections = ['overview', 'auth', 'domains', 'services', 'email', 'cart', 'examples', 'errors'];
             const observer = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
                     if (entry.isIntersecting) {

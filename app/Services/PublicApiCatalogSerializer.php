@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
+use App\Services\Provisioning\MailcowProvisioningService;
 
 class PublicApiCatalogSerializer
 {
     public function __construct(
         private ServerProductConfigService $serverConfig,
+        private MailcowProvisioningService $mailcowProvisioning,
     ) {}
 
     /**
@@ -70,6 +72,10 @@ class PublicApiCatalogSerializer
             $row['configuration'] = $this->serverConfiguration($product);
         }
 
+        if ($product->type === 'email_hosting') {
+            $row['configuration'] = $this->emailConfiguration($product);
+        }
+
         return $row;
     }
 
@@ -96,6 +102,11 @@ class PublicApiCatalogSerializer
         if ($adminProduct && Product::isServerType($type)) {
             $row['admin_product_id'] = $adminProduct->id;
             $row['configuration'] = $this->serverConfiguration($adminProduct, $listing);
+        }
+
+        if ($adminProduct && $type === 'email_hosting') {
+            $row['admin_product_id'] = $adminProduct->id;
+            $row['configuration'] = $this->emailConfiguration($adminProduct);
         }
 
         return $row;
@@ -127,6 +138,59 @@ class PublicApiCatalogSerializer
                 'Up to '.$package->max_services.' active services',
                 number_format($package->disk_pool_gb).' GB disk pool',
             ],
+        ];
+    }
+
+    /**
+     * Plan limits for email hosting products (Mailcow).
+     *
+     * @return array<string, mixed>
+     */
+    public function emailConfiguration(Product $product): array
+    {
+        $limits = $this->mailcowProvisioning->limitsForProduct($product);
+
+        return [
+            'mailboxes' => $limits['mailboxes'],
+            'aliases' => $limits['aliases'],
+            'quota_mb' => $limits['quota_mb'],
+            'mailbox_quota_mb' => $limits['mailbox_quota_mb'],
+            'msgs_per_day' => $limits['msgs_per_day'],
+            'requires_domain' => true,
+            'webmail' => true,
+            'driver' => 'mailcow',
+        ];
+    }
+
+    /**
+     * Optional mail domain on an email_hosting cart line. Empty = choose at checkout.
+     * Returns null when a provided domain is invalid.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>|null
+     */
+    public function emailCartFields(Product $product, array $item): ?array
+    {
+        if ($product->type !== 'email_hosting') {
+            return [];
+        }
+
+        $domain = strtolower(trim((string) ($item['domain'] ?? $item['full_domain'] ?? '')));
+        $domain = preg_replace('#^https?://#', '', $domain) ?? $domain;
+        $domain = rtrim($domain, '/');
+        $domain = explode('/', $domain)[0] ?? $domain;
+        $domain = preg_replace('/^www\./', '', $domain) ?? $domain;
+
+        if ($domain === '') {
+            return [];
+        }
+
+        if (! preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $domain)) {
+            return null;
+        }
+
+        return [
+            'mail_domain' => $domain,
         ];
     }
 

@@ -133,6 +133,90 @@ class PlatformPublicApiTest extends TestCase
             ->assertJsonPath('services.0.configuration.locations.0.prices.monthly', 1300);
     }
 
+    public function test_platform_services_include_email_hosting_configuration(): void
+    {
+        Product::create([
+            'name' => 'Business Email',
+            'slug' => 'business-email',
+            'type' => 'email_hosting',
+            'monthly_price' => 999,
+            'yearly_price' => 9990,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+            'resource_limits' => [
+                'mailboxes' => 10,
+                'aliases' => 20,
+                'quota_mb' => 51200,
+                'mailbox_quota_mb' => 5120,
+                'msgs_per_day' => 500,
+            ],
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->getJson('https://platform.example.test/api/v1/public/services');
+
+        $response->assertOk()
+            ->assertJsonPath('services.0.type', 'email_hosting')
+            ->assertJsonPath('services.0.configuration.mailboxes', 10)
+            ->assertJsonPath('services.0.configuration.requires_domain', true)
+            ->assertJsonPath('services.0.configuration.driver', 'mailcow');
+    }
+
+    public function test_platform_cart_accepts_email_hosting_with_domain(): void
+    {
+        $product = Product::create([
+            'name' => 'Business Email',
+            'slug' => 'business-email-cart',
+            'type' => 'email_hosting',
+            'monthly_price' => 999,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'service',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'domain' => 'mail.acme.com',
+                ]],
+            ]);
+
+        $response->assertOk();
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        $this->assertCount(1, $cart);
+        $item = array_values($cart)[0];
+        $this->assertSame('product', $item['type']);
+        $this->assertSame($product->id, $item['product_id']);
+        $this->assertSame('mail.acme.com', $item['mail_domain']);
+    }
+
+    public function test_platform_cart_rejects_email_hosting_with_invalid_domain(): void
+    {
+        $product = Product::create([
+            'name' => 'Business Email',
+            'slug' => 'business-email-bad-domain',
+            'type' => 'email_hosting',
+            'monthly_price' => 999,
+            'is_active' => true,
+            'provisioning_driver_key' => 'mailcow',
+        ]);
+
+        $response = $this->withServerVariables(['HTTP_HOST' => 'platform.example.test'])
+            ->postJson('https://platform.example.test/api/v1/public/cart', [
+                'items' => [[
+                    'type' => 'service',
+                    'product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                    'domain' => 'not-a-domain',
+                ]],
+            ]);
+
+        $response->assertStatus(422);
+    }
+
     public function test_platform_cart_accepts_configured_vps_item(): void
     {
         $product = Product::create([

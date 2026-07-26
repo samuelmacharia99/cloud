@@ -119,4 +119,44 @@ class PublicApiCatalogSerializerTest extends TestCase
         $this->assertSame(10, $payload['admin_product_id']);
         $this->assertSame(1800.0, $payload['configuration']['locations'][0]['prices']['monthly']);
     }
+
+    public function test_email_hosting_product_includes_configuration(): void
+    {
+        $product = new Product([
+            'name' => 'Business Email',
+            'type' => 'email_hosting',
+            'monthly_price' => 999,
+            'yearly_price' => 9990,
+            'setup_fee' => 0,
+            'features' => ['10 mailboxes'],
+            'resource_limits' => [
+                'mailboxes' => 10,
+                'aliases' => 25,
+                'quota_mb' => 10240,
+                'mailbox_quota_mb' => 2048,
+                'msgs_per_day' => 300,
+            ],
+        ]);
+        $product->id = 42;
+
+        $payload = app(PublicApiCatalogSerializer::class)->formatPlatformProduct($product);
+
+        $this->assertSame('email_hosting', $payload['type']);
+        $this->assertSame(10, $payload['configuration']['mailboxes']);
+        $this->assertSame(25, $payload['configuration']['aliases']);
+        $this->assertTrue($payload['configuration']['requires_domain']);
+    }
+
+    public function test_email_cart_fields_normalize_domain(): void
+    {
+        $serializer = app(PublicApiCatalogSerializer::class);
+        $product = new Product(['type' => 'email_hosting']);
+
+        $this->assertSame([], $serializer->emailCartFields(new Product(['type' => 'shared_hosting']), []));
+        $this->assertSame([], $serializer->emailCartFields($product, []));
+        $this->assertSame(['mail_domain' => 'acme.com'], $serializer->emailCartFields($product, [
+            'domain' => 'https://www.acme.com/',
+        ]));
+        $this->assertNull($serializer->emailCartFields($product, ['domain' => 'bad']));
+    }
 }

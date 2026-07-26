@@ -400,12 +400,17 @@ class ResellerPublicApiService
             return null;
         }
 
+        $emailFields = $this->catalogSerializer->emailCartFields($adminProduct, $item);
+        if ($emailFields === null) {
+            return null;
+        }
+
         return array_merge([
             'type' => 'reseller_product',
             'reseller_product_id' => $listing->id,
             'reseller_id' => $reseller->id,
             'billing_cycle' => $billingCycle,
-        ], $serverFields);
+        ], $serverFields, $emailFields);
     }
 
     /**

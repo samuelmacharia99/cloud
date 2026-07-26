@@ -372,11 +372,16 @@ class PlatformPublicApiService
             return null;
         }
 
+        $emailFields = $this->catalogSerializer->emailCartFields($product, $item);
+        if ($emailFields === null) {
+            return null;
+        }
+
         return array_merge([
             'type' => 'product',
             'product_id' => $product->id,
             'billing_cycle' => $billingCycle,
-        ], $serverFields);
+        ], $serverFields, $emailFields);
     }
 
     /**

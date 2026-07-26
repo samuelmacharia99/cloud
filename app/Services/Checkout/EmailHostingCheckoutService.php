@@ -377,6 +377,14 @@ class EmailHostingCheckoutService
             $key = $item['key'];
             if ($this->sharedHostingCheckout->hasLinkedDomainInCart($cart, $key)) {
                 $merge["email_domain_mode.{$key}"] = SharedHostingDomainMode::FromCart->value;
+
+                continue;
+            }
+
+            $mailDomain = strtolower(trim((string) ($item['mail_domain'] ?? '')));
+            if ($mailDomain !== '') {
+                $merge["email_domain_mode.{$key}"] = SharedHostingDomainMode::Existing->value;
+                $merge["email_domain_fqdn.{$key}"] = $mailDomain;
             }
         }
 

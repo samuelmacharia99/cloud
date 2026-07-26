@@ -28,6 +28,14 @@
                 <p class="text-sm text-emerald-800 dark:text-emerald-200 mt-1 font-mono">{{ $linkedDomain['fqdn'] }} ({{ $linkedDomain['years'] }} year{{ $linkedDomain['years'] > 1 ? 's' : '' }})</p>
                 <p class="text-xs text-emerald-700 dark:text-emerald-300 mt-2">After payment we will provision Mailcow and apply MX/SPF/DKIM/DMARC on Talksasa DNS automatically.</p>
             </div>
+        @elseif(! empty($item['mail_domain']))
+            <input type="hidden" name="email_domain_mode[{{ $key }}]" value="existing">
+            <input type="hidden" name="email_domain_fqdn[{{ $key }}]" value="{{ $item['mail_domain'] }}">
+            <div class="rounded-lg bg-teal-50 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800 p-4 mb-4">
+                <p class="font-medium text-teal-900 dark:text-teal-100">Mail domain from your website</p>
+                <p class="text-sm text-teal-800 dark:text-teal-200 mt-1 font-mono">{{ $item['mail_domain'] }}</p>
+                <p class="text-xs text-teal-700 dark:text-teal-300 mt-2">Provided via the public API cart. Point MX/SPF/DKIM/DMARC to Talksasa after checkout (or use nameservers we show in the email console).</p>
+            </div>
         @else
             <p class="text-sm text-slate-600 dark:text-slate-400 mb-4">Choose the domain that will receive mail on this plan.</p>
 
