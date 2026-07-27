@@ -80,11 +80,14 @@ class ContainerCronService
     }
 
     /**
-     * @return array{processed: int, succeeded: int, failed: int, skipped: int}
+     * @return array{processed: int, succeeded: int, failed: int, skipped: int, deferred: int}
      */
-    public function runDueJobs(?int $limit = null): array
+    public function runDueJobs(?int $limit = null, ?int $maxBatchSeconds = null): array
     {
-        $limit ??= (int) config('containers.cron.batch_size', 50);
+        $limit ??= (int) config('containers.cron.batch_size', 15);
+        $maxBatchSeconds ??= (int) config('containers.cron.max_batch_seconds', 90);
+        $maxBatchSeconds = max(0, $maxBatchSeconds);
+        $startedAt = microtime(true);
         $now = now();
 
         $jobs = ContainerCronJob::query()
@@ -103,9 +106,17 @@ class ContainerCronService
             'succeeded' => 0,
             'failed' => 0,
             'skipped' => 0,
+            'deferred' => 0,
         ];
 
         foreach ($jobs as $job) {
+            // Budget 0 = defer everything (also used in tests). Production default is 90s.
+            if ($maxBatchSeconds === 0 || (microtime(true) - $startedAt) >= $maxBatchSeconds) {
+                $summary['deferred']++;
+
+                continue;
+            }
+
             $summary['processed']++;
 
             try {
@@ -115,11 +126,19 @@ class ContainerCronService
                     continue;
                 }
 
-                $this->execute($job);
+                // Claim the slot before SSH so a hung docker exec cannot be
+                // re-selected by the next minute's scheduler tick.
+                if (! $this->claimDueJob($job)) {
+                    $summary['skipped']++;
+
+                    continue;
+                }
+
+                $this->execute($job, alreadyClaimed: true);
                 $summary['succeeded']++;
             } catch (\Throwable $e) {
                 $summary['failed']++;
-                $this->markFailed($job, $e->getMessage());
+                $this->markFailed($job, $e->getMessage(), advanceSchedule: false);
                 \Log::warning('Container cron job failed', [
                     'job_id' => $job->id,
                     'service_id' => $job->service_id,
@@ -131,7 +150,7 @@ class ContainerCronService
         return $summary;
     }
 
-    public function execute(ContainerCronJob $job): void
+    public function execute(ContainerCronJob $job, bool $alreadyClaimed = false): void
     {
         $job->loadMissing('service.containerDeployment.node', 'service.product.containerTemplate');
         $service = $job->service;
@@ -161,15 +180,19 @@ class ContainerCronService
             throw new \RuntimeException('Long-running commands are not allowed in cron jobs.');
         }
 
+        if (! $alreadyClaimed && ! $this->claimDueJob($job)) {
+            throw new \RuntimeException('Cron job was already claimed by another runner.');
+        }
+
         $template = $service->product->containerTemplate;
         $workDir = $template ? $this->stackCommands->resolveWorkDir($template) : '/app';
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
-        $timeout = (int) config('containers.cron.command_timeout_seconds', 300);
+        $timeout = max(10, min(120, (int) config('containers.cron.command_timeout_seconds', 60)));
 
         $ssh = SSHService::forNode($deployment->node);
 
         try {
-            app(ContainerDeploymentService::class)->waitForContainerRunning($ssh, $deployment->container_name, 30);
+            app(ContainerDeploymentService::class)->waitForContainerRunning($ssh, $deployment->container_name, 15);
 
             $output = $this->stackCommands->execInContainer(
                 $ssh,
@@ -184,11 +207,45 @@ class ContainerCronService
                 'last_run_at' => now(),
                 'last_status' => 'success',
                 'last_output' => Str::limit($output, (int) config('containers.cron.output_max_chars', 2000)),
-                'next_run_at' => $this->calculateNextRun($job->schedule),
+                // next_run_at already advanced by claimDueJob
             ]);
         } finally {
             $ssh->disconnect();
         }
+    }
+
+    /**
+     * Atomically move next_run_at forward so overlapping platform cron ticks
+     * do not re-execute the same customer job while SSH is in flight.
+     */
+    public function claimDueJob(ContainerCronJob $job): bool
+    {
+        $job->refresh();
+        $now = now();
+
+        if (! $job->enabled) {
+            return false;
+        }
+
+        if ($job->next_run_at !== null && $job->next_run_at->gt($now)) {
+            return false;
+        }
+
+        $next = $this->calculateNextRun($job->schedule, $now);
+        $affected = ContainerCronJob::query()
+            ->where('id', $job->id)
+            ->where('enabled', true)
+            ->where(function ($query) use ($now) {
+                $query->whereNull('next_run_at')
+                    ->orWhere('next_run_at', '<=', $now);
+            })
+            ->update(['next_run_at' => $next]);
+
+        if ($affected === 1) {
+            $job->next_run_at = $next;
+        }
+
+        return $affected === 1;
     }
 
     public function isAllowedCommand(string $command): bool
@@ -300,13 +357,18 @@ class ContainerCronService
         return $job->next_run_at->lte(now());
     }
 
-    private function markFailed(ContainerCronJob $job, string $message): void
+    private function markFailed(ContainerCronJob $job, string $message, bool $advanceSchedule = true): void
     {
-        $job->update([
+        $payload = [
             'last_run_at' => now(),
             'last_status' => 'failed',
             'last_output' => Str::limit($message, (int) config('containers.cron.output_max_chars', 2000)),
-            'next_run_at' => $this->calculateNextRun($job->schedule),
-        ]);
+        ];
+
+        if ($advanceSchedule) {
+            $payload['next_run_at'] = $this->calculateNextRun($job->schedule);
+        }
+
+        $job->update($payload);
     }
 }

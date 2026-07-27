@@ -42,7 +42,7 @@ class ContainerStackCommandService
     public function isSafeCommand(string $command): bool
     {
         $cmd = trim($command);
-        if ($cmd === '' || strlen($cmd) > 500) {
+        if ($cmd === '' || strlen($cmd) > 2000) {
             return false;
         }
 
@@ -155,6 +155,7 @@ class ContainerStackCommandService
             ),
             'ruby' => $this->installRubyDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
             'python' => $this->installPythonDependencies($ssh, $containerPath, $containerName, $hostAppPath, $timeout),
+            'php' => $this->installPhpDependencies($ssh, $deployment, $hostAppPath, $service, $timeout),
             default => [],
         };
     }
@@ -177,14 +178,19 @@ class ContainerStackCommandService
         }
 
         $packageJson = $this->readHostFile($ssh, $packageJsonPath);
+        $this->assertCompatibleNodePackageManager($ssh, $hostAppPath);
         $requiresBuild = $this->runtimeService->packageJsonRequiresProductionBuild($packageJson)
             || ($forceRebuild && $this->runtimeService->packageJsonHasBuildScript($packageJson));
         $buildTimeout = (int) config('containers.node_build.command_timeout_seconds', 900);
         $dockerImage = $this->resolveNodeDockerImage($deployment);
+        $publicBuildEnv = $this->runtimeService->collectNodeBuildEnvFromDeployment($deployment);
 
         try {
             if ($requiresBuild) {
-                $buildEnv = $this->runtimeService->nodeBuildEnvironmentOverrides();
+                $buildEnv = array_merge(
+                    $this->runtimeService->nodeBuildEnvironmentOverrides(),
+                    $publicBuildEnv,
+                );
                 $this->prepareNodePostPullWorkspace(
                     $ssh,
                     $containerPath,
@@ -241,7 +247,7 @@ class ContainerStackCommandService
                     $ssh,
                     $dockerImage,
                     $hostAppPath,
-                    $this->runtimeService->npmBuildShellCommand(null, true),
+                    $this->runtimeService->npmBuildShellCommand(null, true, $packageJson, $publicBuildEnv),
                     '/app',
                     $buildTimeout
                 );
@@ -310,7 +316,7 @@ class ContainerStackCommandService
 
             return ['Ruby gems installed.'];
         } catch (\Throwable $e) {
-            return ['bundle install failed: '.$e->getMessage()];
+            throw new \RuntimeException('Ruby post-pull step failed: '.$e->getMessage(), 0, $e);
         }
     }
 
@@ -324,24 +330,83 @@ class ContainerStackCommandService
         string $hostAppPath,
         int $timeout
     ): array {
-        if (! $this->hostFileExists($ssh, $hostAppPath.'/requirements.txt')) {
-            return ['No requirements.txt found; skipped pip install.'];
+        $messages = [];
+
+        if ($this->hostFileExists($ssh, $hostAppPath.'/requirements.txt')) {
+            try {
+                $this->runOneOffInContainer(
+                    $ssh,
+                    $containerPath,
+                    $containerName,
+                    'pip install --no-cache-dir -r requirements.txt',
+                    '/app',
+                    $timeout
+                );
+
+                $messages[] = 'Python dependencies installed from requirements.txt.';
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Python post-pull step failed: '.$e->getMessage(), 0, $e);
+            }
+        } elseif ($this->hostFileExists($ssh, $hostAppPath.'/pyproject.toml')) {
+            throw new \RuntimeException(
+                'Found pyproject.toml but no requirements.txt. Export dependencies with '
+                .'`pip freeze > requirements.txt` (or `poetry export -f requirements.txt -o requirements.txt`) and commit that file so Git pulls can install packages.'
+            );
+        } elseif ($this->hostFileExists($ssh, $hostAppPath.'/Pipfile')) {
+            throw new \RuntimeException(
+                'Found Pipfile but no requirements.txt. Export with `pipenv requirements > requirements.txt` and commit that file so Git pulls can install packages.'
+            );
+        } else {
+            $messages[] = 'No requirements.txt found; skipped pip install.';
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function installPhpDependencies(
+        SSHService $ssh,
+        ContainerDeployment $deployment,
+        string $hostAppPath,
+        Service $service,
+        int $timeout
+    ): array {
+        if (! $this->hostFileExists($ssh, $hostAppPath.'/composer.json')) {
+            return ['No composer.json found; skipped Composer install.'];
         }
 
         try {
-            $this->runOneOffInContainer(
-                $ssh,
-                $containerPath,
-                $containerName,
-                'pip install --no-cache-dir -r requirements.txt',
-                '/app',
-                $timeout
-            );
+            app(LaravelAppInitializationService::class)->runComposerInstall($ssh, $deployment, $timeout, $service);
 
-            return ['Python dependencies installed.'];
+            return ['Composer dependencies updated.'];
         } catch (\Throwable $e) {
-            return ['pip install failed: '.$e->getMessage()];
+            throw new \RuntimeException('PHP post-pull step failed: '.$e->getMessage(), 0, $e);
         }
+    }
+
+    private function assertCompatibleNodePackageManager(SSHService $ssh, string $hostAppPath): void
+    {
+        $hasNpmLock = $this->hostFileExists($ssh, $hostAppPath.'/package-lock.json');
+        $hasYarnLock = $this->hostFileExists($ssh, $hostAppPath.'/yarn.lock');
+        $hasPnpmLock = $this->hostFileExists($ssh, $hostAppPath.'/pnpm-lock.yaml');
+
+        if ($hasNpmLock || (! $hasYarnLock && ! $hasPnpmLock)) {
+            return;
+        }
+
+        if ($hasYarnLock && ! $hasPnpmLock) {
+            throw new \RuntimeException(
+                'This repository uses Yarn (yarn.lock) without package-lock.json. '
+                .'Talksasa Git pulls install with npm. Run `npm install` locally, commit package-lock.json, and pull again.'
+            );
+        }
+
+        throw new \RuntimeException(
+            'This repository uses pnpm (pnpm-lock.yaml) without package-lock.json. '
+            .'Talksasa Git pulls install with npm. Run `npm install` locally, commit package-lock.json, and pull again.'
+        );
     }
 
     private function restoreNodeModuleBinPermissions(
@@ -351,7 +416,7 @@ class ContainerStackCommandService
         ?string $nodeDockerImage = null,
         ?string $hostAppPath = null,
     ): void {
-        $command = 'find node_modules/.bin -type f -exec chmod u+x {} +';
+        $command = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} +';
 
         if ($nodeDockerImage !== null && $hostAppPath !== null) {
             $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', 60);

@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Services\SSH\SSHService;
 
 class ContainerApplicationRuntimeService
@@ -718,8 +719,12 @@ class ContainerApplicationRuntimeService
         return $this->nodeCleanNpmCommand('install --production=false --save-dev --no-audit --no-fund '.$list, 'development');
     }
 
-    public function npmBuildShellCommand(?int $containerMemoryLimitMb = null, bool $withoutContainerMemoryLimit = false): string
-    {
+    public function npmBuildShellCommand(
+        ?int $containerMemoryLimitMb = null,
+        bool $withoutContainerMemoryLimit = false,
+        ?string $packageJson = null,
+        array $extraEnv = [],
+    ): string {
         $extra = [];
 
         if ($withoutContainerMemoryLimit) {
@@ -739,7 +744,105 @@ class ContainerApplicationRuntimeService
             $extra['NODE_OPTIONS'] = '--max-old-space-size='.$this->nodeBuildHeapLimitMb($containerMemoryLimitMb);
         }
 
+        foreach ($extraEnv as $key => $value) {
+            if (! is_string($key) || ! is_scalar($value)) {
+                continue;
+            }
+            $extra[$key] = (string) $value;
+        }
+
+        // Prefer the Next CLI via node so bind-mounted installs do not depend on fragile
+        // node_modules/.bin/next shims (common "sh: next: not found" on Alpine volumes).
+        if ($this->packageJsonUsesNext($packageJson)) {
+            return $this->nodeCleanCommand('node ./node_modules/next/dist/bin/next build', 'production', $extra);
+        }
+
         return $this->nodeCleanNpmCommand('run build', 'production', $extra);
+    }
+
+    /**
+     * Public / build-time env vars from the deployment (injected into env -i build commands).
+     *
+     * @return array<string, string>
+     */
+    public function collectNodeBuildEnvFromDeployment(ContainerDeployment $deployment): array
+    {
+        $values = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $allowed = [];
+
+        foreach ($values as $key => $value) {
+            if (! is_string($key) || ! is_scalar($value)) {
+                continue;
+            }
+
+            if (! $this->isAllowedNodeBuildEnvKey($key)) {
+                continue;
+            }
+
+            $stringValue = trim((string) $value);
+            if ($stringValue === '' || preg_match('/\s/', $stringValue) || strlen($stringValue) > 500) {
+                continue;
+            }
+
+            if (! preg_match('/^[A-Za-z0-9._:\/@%+=,-]+$/', $stringValue)) {
+                continue;
+            }
+
+            $allowed[$key] = $stringValue;
+        }
+
+        $allowed['NEXT_TELEMETRY_DISABLED'] = $allowed['NEXT_TELEMETRY_DISABLED'] ?? '1';
+
+        return $allowed;
+    }
+
+    public function isAllowedNodeBuildEnvKey(string $key): bool
+    {
+        if (! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
+            return false;
+        }
+
+        foreach (['NEXT_PUBLIC_', 'VITE_', 'NUXT_PUBLIC_', 'REACT_APP_', 'PUBLIC_'] as $prefix) {
+            if (str_starts_with($key, $prefix)) {
+                return true;
+            }
+        }
+
+        return in_array($key, [
+            'NEXT_TELEMETRY_DISABLED',
+            'NUXT_TELEMETRY_DISABLED',
+            'CI',
+            'DATABASE_URL',
+            'DIRECT_URL',
+        ], true);
+    }
+
+    /**
+     * Like nodeCleanNpmCommand but runs an arbitrary safe argv (not necessarily npm).
+     *
+     * @param  array<string, string>  $extraEnv
+     */
+    public function nodeCleanCommand(string $command, ?string $nodeEnv = null, array $extraEnv = []): string
+    {
+        $command = trim($command);
+        $env = 'env -i '.self::NODE_CLEAN_ENV;
+        foreach ($extraEnv as $key => $value) {
+            if (! is_string($key) || ! preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $key)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value === '' || preg_match('/\s/', $value)) {
+                continue;
+            }
+
+            $env .= ' '.$key.'='.$value;
+        }
+        if ($nodeEnv !== null && $nodeEnv !== '') {
+            $env .= ' NODE_ENV='.$nodeEnv;
+        }
+
+        return $env.' '.$command;
     }
 
     public function nodeBuildPrepareCommand(): string
@@ -821,8 +924,11 @@ class ContainerApplicationRuntimeService
 
         if (isset($dependencies['next'])) {
             // next can be present while peers were not extracted (common 502/build failure).
+            // Also require the CLI binary — package.json alone can exist with a broken/incomplete install
+            // which surfaces as `sh: next: not found` during npm run build.
             return [
                 'node_modules/next/package.json',
+                'node_modules/next/dist/bin/next',
                 'node_modules/react/package.json',
                 'node_modules/react/index.js',
                 'node_modules/react-dom/package.json',
@@ -831,6 +937,13 @@ class ContainerApplicationRuntimeService
 
         if (isset($dependencies['nuxt'])) {
             return ['node_modules/nuxt/package.json'];
+        }
+
+        if (isset($dependencies['vite'])) {
+            return [
+                'node_modules/vite/package.json',
+                'node_modules/vite/bin/vite.js',
+            ];
         }
 
         return [];
@@ -880,9 +993,9 @@ class ContainerApplicationRuntimeService
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
-        $binFix = 'find node_modules/.bin -type f -exec chmod u+x {} + 2>/dev/null';
+        $binFix = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} + 2>/dev/null';
         $installForBuild = $this->npmInstallShellCommand();
-        $buildCommand = $this->npmBuildShellCommand();
+        $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson);
         $pruneCommand = $this->npmPruneShellCommand();
         $prepareStep = $this->nodeBuildPrepareEnabled()
             ? '[ -f .talksasa/prepare-build.cjs ] && node .talksasa/prepare-build.cjs && '

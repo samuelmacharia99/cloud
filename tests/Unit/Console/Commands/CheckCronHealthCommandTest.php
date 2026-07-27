@@ -13,6 +13,14 @@ class CheckCronHealthCommandTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_run_container_jobs_uses_extended_hang_threshold(): void
+    {
+        $command = new CheckCronHealthCommand;
+        $job = new CronJob(['command' => 'cron:run-container-jobs']);
+
+        $this->assertSame(600, $command->maxRuntimeSeconds($job, 120));
+    }
+
     public function test_backup_containers_uses_extended_hang_threshold(): void
     {
         $command = new CheckCronHealthCommand;

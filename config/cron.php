@@ -18,6 +18,9 @@ return [
         'cron:backup-containers' => 14400, // 4 hours
         'cron:collect-reseller-disk-usage' => 1800,
         'cron:reconcile-directadmin-hosted-accounts' => 1800,
+        // Runs every minute; each customer job is capped, but a full batch can
+        // still take a few minutes when SSH is slow.
+        'cron:run-container-jobs' => 600,
     ],
 
 ];

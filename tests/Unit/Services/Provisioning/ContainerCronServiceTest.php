@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Services\Provisioning;
 
+use App\Enums\ServiceStatus;
 use App\Models\ContainerCronJob;
 use App\Models\ContainerDeployment;
 use App\Models\Product;
@@ -76,5 +77,59 @@ class ContainerCronServiceTest extends TestCase
         $this->service->delete($job);
 
         $this->assertDatabaseMissing('container_cron_jobs', ['id' => $job->id]);
+    }
+
+    public function test_claim_due_job_advances_next_run_once(): void
+    {
+        $service = Service::factory()->create([
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+        ]);
+        ContainerDeployment::factory()->create(['service_id' => $service->id]);
+
+        $job = ContainerCronJob::create([
+            'service_id' => $service->id,
+            'name' => 'Claim test',
+            'schedule' => '*/5 * * * *',
+            'command' => 'php artisan inspire',
+            'enabled' => true,
+            'next_run_at' => now()->subMinute(),
+        ]);
+
+        $this->assertTrue($this->service->claimDueJob($job));
+        $firstNext = $job->fresh()->next_run_at;
+        $this->assertNotNull($firstNext);
+        $this->assertTrue($firstNext->gt(now()));
+
+        $this->assertFalse($this->service->claimDueJob($job->fresh()));
+        $this->assertTrue($job->fresh()->next_run_at->equalTo($firstNext));
+    }
+
+    public function test_run_due_jobs_defers_when_batch_budget_exhausted(): void
+    {
+        $service = Service::factory()->create([
+            'product_id' => Product::factory()->containerHosting()->create()->id,
+            'status' => ServiceStatus::Active,
+        ]);
+        ContainerDeployment::factory()->create([
+            'service_id' => $service->id,
+            'status' => 'running',
+        ]);
+
+        ContainerCronJob::create([
+            'service_id' => $service->id,
+            'name' => 'Deferred',
+            'schedule' => '* * * * *',
+            'command' => 'php artisan inspire',
+            'enabled' => true,
+            'next_run_at' => now()->subMinute(),
+        ]);
+
+        $summary = $this->service->runDueJobs(limit: 5, maxBatchSeconds: 0);
+
+        $this->assertSame(0, $summary['processed']);
+        $this->assertSame(1, $summary['deferred']);
+        $this->assertTrue(
+            ContainerCronJob::where('service_id', $service->id)->first()->next_run_at->lte(now())
+        );
     }
 }

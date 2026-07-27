@@ -2,6 +2,7 @@
 
 namespace Tests\Unit\Provisioning;
 
+use App\Models\ContainerDeployment;
 use App\Services\Provisioning\ContainerApplicationRuntimeService;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -197,7 +198,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
 
         $this->assertStringContainsString('env -i HOME=/tmp', $bootstrap);
         $this->assertStringContainsString('/usr/local/bin/npm install --production=false --include=dev', $bootstrap);
-        $this->assertStringContainsString('/usr/local/bin/npm run build', $bootstrap);
+        $this->assertStringContainsString('node ./node_modules/next/dist/bin/next build', $bootstrap);
         $this->assertStringContainsString('.next/BUILD_ID', $bootstrap);
     }
 
@@ -244,9 +245,16 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
             'env -i HOME=/tmp NPM_CONFIG_CACHE=/tmp/.npm PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_production=false NPM_CONFIG_PRODUCTION=false npm_config_omit= NODE_OPTIONS=--max-old-space-size=650 NODE_ENV=production /usr/local/bin/npm run build',
             $runtime->npmBuildShellCommand(1000)
         );
+        $nextPackage = json_encode([
+            'dependencies' => ['next' => '14.2.35'],
+        ], JSON_THROW_ON_ERROR);
+        $this->assertStringContainsString(
+            'node ./node_modules/next/dist/bin/next build',
+            $runtime->npmBuildShellCommand(null, true, $nextPackage)
+        );
         $this->assertStringContainsString(
             'NODE_OPTIONS=--max-old-space-size=4096',
-            $runtime->npmBuildShellCommand(null, true)
+            $runtime->npmBuildShellCommand(null, true, $nextPackage)
         );
         $this->assertStringContainsString(
             '/usr/local/bin/npm ci --include=dev --no-audit --no-fund',
@@ -277,6 +285,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         $this->assertSame(
             [
                 'node_modules/next/package.json',
+                'node_modules/next/dist/bin/next',
                 'node_modules/react/package.json',
                 'node_modules/react/index.js',
                 'node_modules/react-dom/package.json',
@@ -289,10 +298,32 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
         $this->assertSame(['node_modules/nuxt/package.json'], $this->service->nodeIntegrityMarkerRelativePaths($nuxt));
         $this->assertSame('node_modules/nuxt/package.json', $this->service->nodeIntegrityMarkerRelativePath($nuxt));
+        $vite = json_encode([
+            'dependencies' => ['vite' => '5.0.0'],
+        ], JSON_THROW_ON_ERROR);
+        $this->assertSame(
+            [
+                'node_modules/vite/package.json',
+                'node_modules/vite/bin/vite.js',
+            ],
+            $this->service->nodeIntegrityMarkerRelativePaths($vite)
+        );
         $this->assertSame([], $this->service->nodeIntegrityMarkerRelativePaths('{"dependencies":{"express":"^4"}}'));
         $this->assertNull($this->service->nodeIntegrityMarkerRelativePath('{"dependencies":{"express":"^4"}}'));
         $this->assertTrue($this->service->packageJsonUsesNext($next));
         $this->assertStringContainsString('install react react-dom', $this->service->npmInstallNextPeersShellCommand());
+
+        $deployment = new ContainerDeployment([
+            'env_values' => [
+                'NEXT_PUBLIC_API_URL' => 'https://api.example.com',
+                'SECRET_KEY' => 'should-not-appear',
+                'VITE_APP_NAME' => 'Demo',
+            ],
+        ]);
+        $buildEnv = $this->service->collectNodeBuildEnvFromDeployment($deployment);
+        $this->assertSame('https://api.example.com', $buildEnv['NEXT_PUBLIC_API_URL']);
+        $this->assertSame('Demo', $buildEnv['VITE_APP_NAME']);
+        $this->assertArrayNotHasKey('SECRET_KEY', $buildEnv);
     }
 
     #[Test]
@@ -308,7 +339,7 @@ class ContainerApplicationRuntimeServiceTest extends TestCase
         );
 
         $this->assertSame('next', $runtime->source);
-        $this->assertStringContainsString('npm run build', $runtime->command[2]);
+        $this->assertStringContainsString('node ./node_modules/next/dist/bin/next build', $runtime->command[2]);
         $this->assertStringContainsString('npx next start -H 0.0.0.0 -p ${PORT:-3000}', $runtime->command[2]);
         $this->assertStringNotContainsString('exec npm start', $runtime->command[2]);
     }

@@ -119,9 +119,13 @@ return [
     'cron' => [
         'max_jobs_per_service' => (int) env('CONTAINER_CRON_MAX_JOBS', 20),
         'max_command_length' => (int) env('CONTAINER_CRON_MAX_COMMAND_LENGTH', 500),
-        'command_timeout_seconds' => (int) env('CONTAINER_CRON_COMMAND_TIMEOUT', 300),
+        // Per customer command inside docker (schedule:run etc. should be fast).
+        'command_timeout_seconds' => (int) env('CONTAINER_CRON_COMMAND_TIMEOUT', 60),
+        // Stop claiming new jobs after this many seconds so the platform cron
+        // finishes before the next minute and before health hang alerts.
+        'max_batch_seconds' => (int) env('CONTAINER_CRON_MAX_BATCH_SECONDS', 90),
         'output_max_chars' => (int) env('CONTAINER_CRON_OUTPUT_MAX_CHARS', 2000),
-        'batch_size' => (int) env('CONTAINER_CRON_BATCH_SIZE', 50),
+        'batch_size' => (int) env('CONTAINER_CRON_BATCH_SIZE', 15),
         'allowed_prefixes' => [
             'php ',
             'php artisan ',

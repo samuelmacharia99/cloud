@@ -207,8 +207,9 @@ class ContainerAppDirectoryService
     public function nodeModulesBinPermissionRestoreScript(string $appRoot = '/app'): string
     {
         $binDir = rtrim($appRoot, '/').'/node_modules/.bin';
+        $nextBin = rtrim($appRoot, '/').'/node_modules/next/dist/bin';
 
-        return 'find '.escapeshellarg($binDir).' -type f -exec chmod u+x {} + 2>/dev/null || true';
+        return 'find '.escapeshellarg($binDir).' '.escapeshellarg($nextBin).' -type f -exec chmod u+x {} + 2>/dev/null || true';
     }
 
     public function inContainerPermissionNormalizationScript(): string

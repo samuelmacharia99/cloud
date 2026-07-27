@@ -33,9 +33,10 @@
     <div class="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-950/20 p-6 space-y-3">
         <h4 class="font-semibold text-amber-900 dark:text-amber-100">Troubleshooting</h4>
         <ul class="text-sm text-amber-900/90 dark:text-amber-100/90 space-y-2">
-            <li><strong>Module not found</strong> — Package missing from <code class="font-mono text-xs">requirements.txt</code>. Pull again after fixing.</li>
+            <li><strong>Module not found</strong> — Package missing from <code class="font-mono text-xs">requirements.txt</code>. Pull again after fixing. Poetry/Pipenv projects must export a <code class="font-mono text-xs">requirements.txt</code>.</li>
             <li><strong>502 / connection refused</strong> — App must bind to <code class="font-mono text-xs">0.0.0.0:${PORT}</code>, not <code class="font-mono text-xs">127.0.0.1:8000</code>.</li>
             <li><strong>Static files</strong> — Configure whitenoise (Django) or serve static assets via nginx/CDN for production.</li>
+            <li><strong>Pull failed on pip install</strong> — Dependency install errors now fail the Git pull so the app is not left half-updated. Fix requirements and pull again.</li>
         </ul>
     </div>
 </section>

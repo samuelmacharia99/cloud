@@ -14,12 +14,18 @@ class RunContainerCronJobsCommand extends BaseCronCommand
     {
         $summary = app(ContainerCronService::class)->runDueJobs();
 
-        return sprintf(
+        $message = sprintf(
             'Processed %d container cron job(s): %d succeeded, %d failed, %d skipped.',
             $summary['processed'],
             $summary['succeeded'],
             $summary['failed'],
             $summary['skipped'],
         );
+
+        if (($summary['deferred'] ?? 0) > 0) {
+            $message .= sprintf(' Deferred %d job(s) to the next minute (batch time budget).', $summary['deferred']);
+        }
+
+        return $message;
     }
 }
