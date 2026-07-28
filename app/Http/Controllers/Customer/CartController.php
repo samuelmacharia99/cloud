@@ -6,9 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\DomainExtension;
 use App\Models\Product;
 use App\Models\ResellerProduct;
+use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainAvailabilityService;
 use App\Services\DomainInputParser;
-use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerNameserverService;
@@ -145,11 +146,15 @@ class CartController extends Controller
 
         $resolvedKey = $cartKey && isset($cart[$cartKey]) ? $cartKey : $domainItems->keys()->first();
 
-        app(\App\Services\Checkout\SharedHostingCheckoutService::class)
+        app(SharedHostingCheckoutService::class)
             ->rememberAttachDomain($domainItem, (string) $resolvedKey);
 
         return redirect()
-            ->route('customer.select-techstack')
+            ->route(
+                app(ResellerCustomerCatalogService::class)->isResellerCustomer(auth()->user())
+                    ? 'customer.catalog.index'
+                    : 'customer.select-techstack'
+            )
             ->with('success', 'Choose a hosting plan for '.strtolower($domainItem['domain'].$domainItem['extension']).'. Domain and hosting will be on one invoice.');
     }
 
@@ -309,7 +314,7 @@ class CartController extends Controller
         // Generate unique key
         $key = uniqid();
         $item['added_at'] = now()->toIso8601String();
-        $item = app(\App\Services\Checkout\SharedHostingCheckoutService::class)
+        $item = app(SharedHostingCheckoutService::class)
             ->applyAttachDomainToHostingItem($item);
 
         // Add to session cart
@@ -353,7 +358,7 @@ class CartController extends Controller
     public function clear()
     {
         session([self::CART_SESSION_KEY => []]);
-        app(\App\Services\Checkout\SharedHostingCheckoutService::class)->clearAttachDomainSession();
+        app(SharedHostingCheckoutService::class)->clearAttachDomainSession();
 
         return back()->with('success', 'Cart cleared');
     }

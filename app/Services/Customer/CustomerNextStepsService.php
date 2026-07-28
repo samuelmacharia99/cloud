@@ -106,7 +106,9 @@ class CustomerNextStepsService
                 'priority' => 40,
                 'title' => 'Get started',
                 'body' => 'Deploy an app or order Email Hosting to begin.',
-                'url' => route('customer.select-techstack'),
+                'url' => $user->reseller_id
+                    ? route('customer.catalog.index')
+                    : route('customer.select-techstack'),
                 'tone' => 'info',
             ];
         }

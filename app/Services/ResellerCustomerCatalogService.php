@@ -182,6 +182,9 @@ class ResellerCustomerCatalogService
             'customer.deploy-service',
             'customer.browse-services',
             'customer.email-hosting',
+            'customer.select-techstack',
+            'customer.confirm-techstack',
+            'customer.confirm-techstack.store',
             'api.products',
         ], true);
     }

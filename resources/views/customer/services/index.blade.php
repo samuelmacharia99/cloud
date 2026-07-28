@@ -10,7 +10,7 @@
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
                 Email Hosting
             </a>
-            <a href="{{ route('customer.select-techstack') }}" class="btn-primary">
+            <a href="{{ auth()->user()->reseller_id ? route('customer.catalog.index') : route('customer.select-techstack') }}" class="btn-primary">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                 Deploy new service
             </a>
@@ -141,7 +141,7 @@
             title="No services yet"
             description="Deploy application hosting, or order Email Hosting as its own plan and bundle them in the cart."
             action-label="Deploy your first app"
-            action-href="{{ route('customer.select-techstack') }}"
+            action-href="{{ auth()->user()->reseller_id ? route('customer.catalog.index') : route('customer.select-techstack') }}"
         />
         <div class="text-center -mt-2">
             <a href="{{ route('customer.email-hosting') }}" class="text-sm font-medium text-teal-700 dark:text-teal-300 hover:underline">

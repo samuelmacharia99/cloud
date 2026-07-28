@@ -131,7 +131,7 @@
 
     <!-- Quick actions -->
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <a href="{{ route('customer.select-techstack') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
+        <a href="{{ auth()->user()->reseller_id ? route('customer.catalog.index') : route('customer.select-techstack') }}" class="ui-card ui-card-interactive p-4 flex items-center gap-3 group">
             <span class="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             </span>
@@ -200,7 +200,7 @@
                 @else
                     <div class="px-6 py-10 text-center">
                         <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">No active services yet.</p>
-                        <a href="{{ route('customer.select-techstack') }}" class="btn-primary btn-sm">Deploy your first app</a>
+                        <a href="{{ auth()->user()->reseller_id ? route('customer.catalog.index') : route('customer.select-techstack') }}" class="btn-primary btn-sm">Deploy your first app</a>
                     </div>
                 @endif
             </x-dashboard-section>
