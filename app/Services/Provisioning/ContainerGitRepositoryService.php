@@ -505,12 +505,22 @@ class ContainerGitRepositoryService
 
     private function runPullStep(ContainerGitPull $pull, string $key, callable $callback): void
     {
+        $this->assertPullNotCancelled($pull);
+
         $pull->updateStep($key, 'running');
         $pull->appendLog('Step started: '.(self::STEP_DEFINITIONS[$key] ?? $key));
 
         try {
+            $this->assertPullNotCancelled($pull);
             $result = $callback();
+            $this->assertPullNotCancelled($pull);
         } catch (\Throwable $e) {
+            $pull->refresh();
+            if ($pull->status === ContainerGitPull::STATUS_CANCELLED) {
+                $pull->updateStep($key, 'failed', 'Cancelled by user.');
+                throw $e;
+            }
+
             $pull->updateStep($key, 'failed', $e->getMessage(), $e->getMessage());
             throw $e;
         }
@@ -526,6 +536,15 @@ class ContainerGitRepositoryService
         $pull->appendLog('Step completed: '.$message);
     }
 
+    private function assertPullNotCancelled(ContainerGitPull $pull): void
+    {
+        $pull->refresh();
+
+        if ($pull->status === ContainerGitPull::STATUS_CANCELLED) {
+            throw new \RuntimeException('Git pull was cancelled.');
+        }
+    }
+
     private function skipPullStep(ContainerGitPull $pull, string $key, string $message): void
     {
         $pull->updateStep($key, 'skipped', $message);
@@ -534,12 +553,102 @@ class ContainerGitRepositoryService
 
     private function failPull(ContainerGitPull $pull, string $message): void
     {
+        $pull->refresh();
+        if ($pull->status === ContainerGitPull::STATUS_CANCELLED) {
+            return;
+        }
+
         $pull->update([
             'status' => ContainerGitPull::STATUS_FAILED,
             'error_message' => $message,
             'completed_at' => now(),
         ]);
         $pull->appendLog('Git pull failed: '.$message);
+    }
+
+    /**
+     * Stop a pending/running pull so the customer can start again.
+     */
+    public function cancelPull(ContainerGitPull $pull, string $reason = 'Cancelled by user.'): ContainerGitPull
+    {
+        $pull->refresh();
+
+        if (! $pull->isActive()) {
+            return $pull;
+        }
+
+        $steps = is_array($pull->steps) ? $pull->steps : [];
+        foreach ($steps as &$step) {
+            $status = $step['status'] ?? 'pending';
+            if ($status === 'running') {
+                $step['status'] = 'failed';
+                $step['message'] = $reason;
+                $step['completed_at'] = now()->toIso8601String();
+            } elseif ($status === 'pending') {
+                $step['status'] = 'skipped';
+                $step['message'] = 'Skipped because the pull was cancelled.';
+                $step['completed_at'] = now()->toIso8601String();
+            }
+        }
+        unset($step);
+
+        $pull->update([
+            'status' => ContainerGitPull::STATUS_CANCELLED,
+            'steps' => $steps,
+            'error_message' => $reason,
+            'completed_at' => now(),
+        ]);
+        $pull->appendLog('Git pull cancelled: '.$reason);
+
+        return $pull->fresh();
+    }
+
+    /**
+     * @return list<ContainerGitPull>
+     */
+    public function cancelActivePulls(Service $service, string $reason = 'Cancelled by user.'): array
+    {
+        $active = ContainerGitPull::query()
+            ->where('service_id', $service->id)
+            ->whereIn('status', [
+                ContainerGitPull::STATUS_PENDING,
+                ContainerGitPull::STATUS_RUNNING,
+            ])
+            ->orderBy('id')
+            ->get();
+
+        $cancelled = [];
+        foreach ($active as $pull) {
+            $cancelled[] = $this->cancelPull($pull, $reason);
+        }
+
+        return $cancelled;
+    }
+
+    /**
+     * Cancel any in-flight pull, then queue a new one (optionally reusing the last options).
+     */
+    public function restartPull(
+        Service $service,
+        User $user,
+        ?bool $replaceExisting = null,
+        ?bool $runComposer = null,
+        ?bool $runMigrations = null,
+        ?bool $forceRebuild = null,
+    ): ContainerGitPull {
+        $latest = $this->latestPull($service);
+        $options = is_array($latest?->options) ? $latest->options : [];
+
+        $this->cancelActivePulls($service, 'Cancelled so a new Git pull can start.');
+
+        return $this->requestPull(
+            $service,
+            $user,
+            $replaceExisting ?? (bool) ($options['replace_existing'] ?? false),
+            $runComposer ?? (bool) ($options['run_composer'] ?? true),
+            $runMigrations ?? (bool) ($options['run_migrations'] ?? true),
+            $forceRebuild ?? (bool) ($options['force_rebuild'] ?? false),
+        );
     }
 
     private function maskRepositoryUrl(string $url): string

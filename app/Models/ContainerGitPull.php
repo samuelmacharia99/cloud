@@ -15,6 +15,8 @@ class ContainerGitPull extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    public const STATUS_CANCELLED = 'cancelled';
+
     protected $fillable = [
         'service_id',
         'container_deployment_id',
@@ -55,6 +57,16 @@ class ContainerGitPull extends Model
     public function isActive(): bool
     {
         return in_array($this->status, [self::STATUS_PENDING, self::STATUS_RUNNING], true);
+    }
+
+    public function isRestartable(): bool
+    {
+        return in_array($this->status, [
+            self::STATUS_FAILED,
+            self::STATUS_CANCELLED,
+            self::STATUS_PENDING,
+            self::STATUS_RUNNING,
+        ], true);
     }
 
     public function appendLog(string $message): void

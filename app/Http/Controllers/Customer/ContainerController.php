@@ -531,6 +531,109 @@ class ContainerController extends Controller
         }
     }
 
+    public function cancelGitPull(
+        Service $service,
+        ContainerGitRepositoryService $gitRepositoryService
+    ): RedirectResponse|JsonResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            if (request()->expectsJson()) {
+                return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
+            }
+
+            return back()->withErrors(['error' => 'Git repository pulls are not supported for this container type.']);
+        }
+
+        $cancelled = $gitRepositoryService->cancelActivePulls($service, 'Cancelled by user.');
+
+        if ($cancelled === []) {
+            if (request()->expectsJson()) {
+                return response()->json(['error' => 'No Git pull is in progress to cancel.'], 422);
+            }
+
+            return back()->withErrors(['error' => 'No Git pull is in progress to cancel.']);
+        }
+
+        $pull = $cancelled[array_key_last($cancelled)];
+
+        if (request()->expectsJson()) {
+            return response()->json([
+                'message' => 'Git pull cancelled. You can start a new pull when ready.',
+                'pull' => $this->formatGitPull($pull),
+            ]);
+        }
+
+        return redirect()
+            ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+            ->with('success', 'Git pull cancelled. You can start a new pull when ready.');
+    }
+
+    public function restartGitPull(
+        Service $service,
+        PullContainerGitRepositoryRequest $request,
+        ContainerGitRepositoryService $gitRepositoryService
+    ): RedirectResponse|JsonResponse {
+        abort_if($service->user_id !== auth()->id(), 403);
+        $this->authorize('manageContainer', $service);
+
+        if (! $gitRepositoryService->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Git repository pulls are not supported for this container type.'], 400);
+            }
+
+            return back()->withErrors(['error' => 'Git repository pulls are not supported for this container type.']);
+        }
+
+        $deployment = $service->containerDeployment;
+        if (! $deployment || $deployment->status !== 'running') {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Start the app before pulling code from Git.'], 400);
+            }
+
+            return back()->withErrors(['error' => 'Start the app before pulling code from Git.']);
+        }
+
+        try {
+            $pull = $gitRepositoryService->restartPull(
+                $service,
+                auth()->user(),
+                $request->boolean('replace_existing'),
+                $request->boolean('run_composer', true),
+                $request->boolean('run_migrations', true),
+                $request->boolean('force_rebuild', false),
+            );
+
+            PullContainerGitRepositoryJob::dispatch($pull->id)->afterResponse();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Git pull restarted. Progress updates appear below.',
+                    'pull' => $this->formatGitPull($pull),
+                ]);
+            }
+
+            return redirect()
+                ->route('customer.services.container.show', ['service' => $service, 'tab' => 'github'])
+                ->with('success', 'Git pull restarted. Progress updates appear below.');
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => $e->getMessage()], 422);
+            }
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Exception $e) {
+            \Log::error("Failed to restart Git pull for service {$service->id}: ".$e->getMessage());
+
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Failed to restart Git pull: '.$e->getMessage()], 500);
+            }
+
+            return back()->withErrors(['error' => 'Failed to restart Git pull: '.$e->getMessage()]);
+        }
+    }
+
     public function gitPullStatus(Service $service, ContainerGitRepositoryService $gitRepositoryService): JsonResponse
     {
         abort_if($service->user_id !== auth()->id(), 403);
@@ -619,6 +722,8 @@ class ContainerController extends Controller
             'commit' => $pull->commit,
             'started_at' => $pull->started_at?->toIso8601String(),
             'completed_at' => $pull->completed_at?->toIso8601String(),
+            'can_restart' => $pull->isRestartable(),
+            'is_active' => $pull->isActive(),
         ];
     }
 

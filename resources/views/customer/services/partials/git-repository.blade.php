@@ -318,9 +318,9 @@
                     <button
                         type="button"
                         @click="startPull()"
-                        :disabled="!canPull || pulling || isActive"
+                        :disabled="!canPull || pulling || isActive || restarting || cancelling"
                         class="relative overflow-hidden px-6 py-3 rounded-xl font-semibold text-sm text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
-                        :class="canPull && !pulling && !isActive ? 'git-pull-btn-glow shadow-[0_0_24px_-4px_rgba(34,211,238,0.5)] hover:shadow-[0_0_32px_-2px_rgba(168,85,247,0.55)] hover:scale-[1.02] active:scale-[0.98]' : 'bg-slate-400 dark:bg-slate-700'"
+                        :class="canPull && !pulling && !isActive && !restarting && !cancelling ? 'git-pull-btn-glow shadow-[0_0_24px_-4px_rgba(34,211,238,0.5)] hover:shadow-[0_0_32px_-2px_rgba(168,85,247,0.55)] hover:scale-[1.02] active:scale-[0.98]' : 'bg-slate-400 dark:bg-slate-700'"
                     >
                         <span class="relative z-10 flex items-center gap-2">
                             <svg x-show="isActive || pulling" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -329,6 +329,26 @@
                             </svg>
                             <span x-text="pulling ? 'Initializing…' : (isActive ? 'Syncing…' : 'Pull latest from Git')"></span>
                         </span>
+                    </button>
+                    <button
+                        type="button"
+                        x-show="canRestart"
+                        x-cloak
+                        @click="restartPull()"
+                        :disabled="!canPull || pulling || restarting || cancelling"
+                        class="px-4 py-3 rounded-xl text-sm font-semibold border border-amber-400/50 bg-amber-500/10 text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span x-text="restarting ? 'Restarting…' : (isActive ? 'Cancel &amp; restart' : 'Restart pull')"></span>
+                    </button>
+                    <button
+                        type="button"
+                        x-show="isActive"
+                        x-cloak
+                        @click="cancelPull()"
+                        :disabled="cancelling || restarting || pulling"
+                        class="px-4 py-3 rounded-xl text-sm font-semibold border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span x-text="cancelling ? 'Cancelling…' : 'Cancel pull'"></span>
                     </button>
                     <p x-show="!canPull && !isActive" class="text-xs text-slate-500">Start the app to pull.</p>
                     <p x-show="errorMessage" x-transition class="text-sm text-red-500 dark:text-red-400 font-medium" x-text="errorMessage"></p>
@@ -355,8 +375,8 @@
                                         <path stroke-linecap="round" d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1M5.6 18.4l2.1-2.1m8.6-8.6 2.1-2.1"/>
                                     </svg>
                                     <svg x-show="!isActive && pull?.status === 'completed'" class="h-5 w-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                    <svg x-show="!isActive && pull?.status === 'failed'" class="h-5 w-5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
-                                    <svg x-show="!isActive && pull?.status !== 'completed' && pull?.status !== 'failed'" class="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h10"/></svg>
+                                    <svg x-show="!isActive && (pull?.status === 'failed' || pull?.status === 'cancelled')" class="h-5 w-5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    <svg x-show="!isActive && pull?.status !== 'completed' && pull?.status !== 'failed' && pull?.status !== 'cancelled'" class="h-5 w-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h10"/></svg>
                                 </div>
                             </div>
                             <div>
@@ -473,12 +493,19 @@ function gitPullPanel() {
         runMigrations: true,
         forceRebuild: false,
         pulling: false,
+        restarting: false,
+        cancelling: false,
         errorMessage: '',
         pollTimer: null,
         canPull: {{ $deployment->isRunning() ? 'true' : 'false' }},
 
         get isActive() {
             return this.pull && ['pending', 'running'].includes(this.pull.status);
+        },
+
+        get canRestart() {
+            if (!this.canPull || !this.pull) return false;
+            return this.isActive || ['failed', 'cancelled'].includes(this.pull.status);
         },
 
         init() {
@@ -498,7 +525,7 @@ function gitPullPanel() {
             const score = steps.reduce((sum, s) => sum + (weights[s.status] ?? 0), 0);
             const pct = Math.round((score / steps.length) * 100);
             if (this.pull?.status === 'completed') return 100;
-            if (this.pull?.status === 'failed') return Math.max(pct, 8);
+            if (this.pull?.status === 'failed' || this.pull?.status === 'cancelled') return Math.max(pct, 8);
             return Math.min(Math.max(pct, this.isActive ? 8 : 0), 99);
         },
 
@@ -507,7 +534,8 @@ function gitPullPanel() {
             const running = this.pull.steps.find(s => s.status === 'running');
             if (running) return `Running: ${running.label}`;
             if (this.pull.status === 'completed') return 'All stages complete';
-            if (this.pull.status === 'failed') return 'Pipeline halted';
+            if (this.pull.status === 'failed') return 'Pipeline halted — restart to try again';
+            if (this.pull.status === 'cancelled') return 'Pipeline cancelled — restart when ready';
             return 'Queued stages';
         },
 
@@ -515,7 +543,7 @@ function gitPullPanel() {
             const s = this.pull?.status;
             if (s === 'running' || s === 'pending') return 'border-cyan-400/40 bg-cyan-500/10 text-cyan-300';
             if (s === 'completed') return 'border-emerald-400/40 bg-emerald-500/10 text-emerald-300';
-            if (s === 'failed') return 'border-red-400/40 bg-red-500/10 text-red-300';
+            if (s === 'failed' || s === 'cancelled') return 'border-red-400/40 bg-red-500/10 text-red-300';
             return 'border-slate-600 bg-slate-800 text-slate-400';
         },
 
@@ -577,7 +605,7 @@ function gitPullPanel() {
         },
 
         async startPull() {
-            if (!this.canPull || this.pulling || this.isActive) return;
+            if (!this.canPull || this.pulling || this.isActive || this.restarting || this.cancelling) return;
 
             if (!await window.appConfirm('Pull the latest code from Git into /app?', 'Pull from Git', 'Pull')) return;
 
@@ -617,6 +645,91 @@ function gitPullPanel() {
                 this.errorMessage = 'Failed to start Git pull.';
             } finally {
                 this.pulling = false;
+            }
+        },
+
+        async cancelPull() {
+            if (!this.isActive || this.cancelling || this.restarting) return;
+
+            if (!await window.appConfirm('Cancel the in-progress Git pull? You can restart it afterwards.', 'Cancel Git pull', 'Cancel pull')) return;
+
+            this.cancelling = true;
+            this.errorMessage = '';
+
+            try {
+                const response = await fetch(`{{ route('customer.services.container.git-repository.cancel', $service) }}`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({}),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    this.errorMessage = data.error || 'Failed to cancel Git pull.';
+                    return;
+                }
+
+                this.pull = data.pull || this.pull;
+                this.logOutput = this.pull?.log || this.logOutput;
+                this.schedulePoll();
+                await this.refresh();
+            } catch (error) {
+                this.errorMessage = 'Failed to cancel Git pull.';
+            } finally {
+                this.cancelling = false;
+            }
+        },
+
+        async restartPull() {
+            if (!this.canPull || !this.canRestart || this.restarting || this.pulling || this.cancelling) return;
+
+            const message = this.isActive
+                ? 'Cancel the current Git pull and start a fresh sync?'
+                : 'Restart the Git pull pipeline with the options selected above?';
+
+            if (!await window.appConfirm(message, 'Restart Git pull', 'Restart')) return;
+
+            this.restarting = true;
+            this.errorMessage = '';
+            this.logOutput = '[init] Restarting Git sync pipeline…';
+
+            try {
+                const response = await fetch(`{{ route('customer.services.container.git-repository.restart', $service) }}`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: JSON.stringify({
+                        replace_existing: this.replaceExisting,
+                        run_composer: this.runComposer,
+                        run_migrations: this.runMigrations,
+                        force_rebuild: this.forceRebuild,
+                    }),
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    this.errorMessage = data.error || 'Failed to restart Git pull.';
+                    return;
+                }
+
+                this.pull = data.pull || this.pull;
+                this.logOutput = this.pull?.log || '[init] Pipeline restarted…';
+                this.schedulePoll();
+                this.scrollLogToBottom();
+                await this.refresh();
+            } catch (error) {
+                this.errorMessage = 'Failed to restart Git pull.';
+            } finally {
+                this.restarting = false;
             }
         },
 
