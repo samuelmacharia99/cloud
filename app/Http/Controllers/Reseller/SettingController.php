@@ -12,9 +12,11 @@ use App\Http\Requests\UpdateResellerNameserverSettingsRequest;
 use App\Http\Requests\UpdateSmsSettingsRequest;
 use App\Http\Requests\UpdateSmtpSettingsRequest;
 use App\Http\Requests\UploadBrandingFileRequest;
+use App\Services\ResellerAnalyticsService;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerBrandingService;
 use App\Services\ResellerDirectAdminService;
+use App\Services\ResellerLandingService;
 use App\Services\ResellerMailService;
 use App\Services\ResellerNameserverService;
 use App\Services\ResellerPublicApiService;
@@ -24,7 +26,6 @@ use App\Services\TalksasaSmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
@@ -41,6 +42,7 @@ class SettingController extends Controller
         private ResellerMailService $resellerMail,
         private ResellerNameserverService $nameserverService,
         private ResellerPublicApiService $publicApi,
+        private ResellerLandingService $landingService,
     ) {}
 
     public function index(Request $request): View
@@ -49,10 +51,9 @@ class SettingController extends Controller
 
         $daService = app(ResellerDirectAdminService::class);
         $hasDa = $daService->hasDirectAdminBinding($user);
-        $unlinkedDa = 0;
-        if ($hasDa) {
-            $unlinkedDa = (int) Cache::get('reseller_da_unlinked_count:'.$user->id, 0);
-        }
+        $unlinkedDa = $hasDa
+            ? app(ResellerAnalyticsService::class)->cachedUnlinkedDirectAdminCount($user)
+            : 0;
 
         return view('reseller.settings.index', [
             'user' => $user,
@@ -60,6 +61,7 @@ class SettingController extends Controller
             'smsSettings' => $this->settingsService->getSmsSettings($user),
             'smtpSettings' => $this->settingsService->getSmtpSettingsForDisplay($user),
             'brandingSettings' => $this->settingsService->getBrandingSettings($user),
+            'landingTemplates' => $this->landingService->templates(),
             'nameserverSettings' => $this->nameserverService->getSettings($user),
             'platformNameservers' => $this->nameserverService->platformDefaults(),
             'brandingStatus' => $this->brandingResolver->status($user),

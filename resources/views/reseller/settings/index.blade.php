@@ -607,6 +607,100 @@
                             </div>
 
                             @php
+                                $landingEnabled = old('landing_enabled', $brandingSettings['landing_enabled'] ?? false);
+                                $landingTemplate = old('landing_template', $brandingSettings['landing_template'] ?? 'legacy');
+                                $landingShowDomains = old('landing_show_domains', $brandingSettings['landing_show_domains'] ?? true);
+                                $landingShowHosting = old('landing_show_hosting', $brandingSettings['landing_show_hosting'] ?? true);
+                                $landingTemplates = $landingTemplates ?? [];
+                                $portalPreviewUrl = filled($brandingSettings['custom_domain'] ?? null)
+                                    ? 'https://'.$brandingSettings['custom_domain']
+                                    : null;
+                            @endphp
+                            <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-5 space-y-5 bg-slate-50/80 dark:bg-slate-800/20">
+                                <div>
+                                    <h4 class="text-sm font-semibold text-slate-900 dark:text-white">Customer landing page</h4>
+                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        Show a ready-made storefront on your custom domain with domain search, TLD prices, and hosting plans.
+                                        No coding or API setup required. Requires a saved custom domain.
+                                    </p>
+                                </div>
+
+                                <label class="flex items-start gap-3 cursor-pointer">
+                                    <input type="hidden" name="landing_enabled" value="0">
+                                    <input type="checkbox" name="landing_enabled" value="1"
+                                        @checked(filter_var($landingEnabled, FILTER_VALIDATE_BOOLEAN))
+                                        class="mt-1 rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                    <span>
+                                        <span class="block text-sm font-medium text-slate-800 dark:text-slate-200">Enable landing page on custom domain</span>
+                                        <span class="block text-xs text-slate-500 dark:text-slate-400 mt-0.5">When off, visitors to your domain go straight to login.</span>
+                                    </span>
+                                </label>
+
+                                <div>
+                                    <p class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Template</p>
+                                    <div class="grid sm:grid-cols-3 gap-3">
+                                        @foreach ($landingTemplates as $key => $meta)
+                                            @php $available = (bool) ($meta['available'] ?? false); @endphp
+                                            <label class="relative rounded-xl border p-4 transition {{ $available ? 'cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 has-[:checked]:border-amber-500 has-[:checked]:ring-2 has-[:checked]:ring-amber-500/30' : 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700' }}">
+                                                <input type="radio" name="landing_template" value="{{ $key }}"
+                                                    class="sr-only"
+                                                    @checked($landingTemplate === $key)
+                                                    @disabled(! $available)>
+                                                <span class="block text-sm font-semibold text-slate-900 dark:text-white">{{ $meta['label'] }}</span>
+                                                <span class="block text-xs text-slate-500 dark:text-slate-400 mt-1">{{ $meta['description'] }}</span>
+                                                @unless ($available)
+                                                    <span class="inline-block mt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Coming soon</span>
+                                                @endunless
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                </div>
+
+                                <div class="grid sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label for="landing_hero_headline" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hero headline (optional)</label>
+                                        <input type="text" id="landing_hero_headline" name="landing_hero_headline"
+                                            value="{{ old('landing_hero_headline', $brandingSettings['landing_hero_headline'] ?? '') }}"
+                                            placeholder="Defaults to your company name"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm">
+                                    </div>
+                                    <div>
+                                        <label for="landing_hero_subtext" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Hero subtext (optional)</label>
+                                        <input type="text" id="landing_hero_subtext" name="landing_hero_subtext"
+                                            value="{{ old('landing_hero_subtext', $brandingSettings['landing_hero_subtext'] ?? '') }}"
+                                            placeholder="Defaults to your tagline"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm">
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap gap-6">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="hidden" name="landing_show_domains" value="0">
+                                        <input type="checkbox" name="landing_show_domains" value="1"
+                                            @checked(filter_var($landingShowDomains, FILTER_VALIDATE_BOOLEAN))
+                                            class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                        <span class="text-sm text-slate-700 dark:text-slate-300">Show domain search &amp; prices</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="hidden" name="landing_show_hosting" value="0">
+                                        <input type="checkbox" name="landing_show_hosting" value="1"
+                                            @checked(filter_var($landingShowHosting, FILTER_VALIDATE_BOOLEAN))
+                                            class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                        <span class="text-sm text-slate-700 dark:text-slate-300">Show hosting plans</span>
+                                    </label>
+                                </div>
+
+                                @if ($portalPreviewUrl)
+                                    <p class="text-xs text-slate-600 dark:text-slate-400">
+                                        Preview after saving:
+                                        <a href="{{ $portalPreviewUrl }}" target="_blank" rel="noopener" class="text-amber-700 dark:text-amber-300 font-medium hover:underline">{{ $portalPreviewUrl }}</a>
+                                    </p>
+                                @else
+                                    <p class="text-xs text-amber-700 dark:text-amber-300">Save a custom domain above before enabling the landing page.</p>
+                                @endif
+                            </div>
+
+                            @php
                                 $publicApiEnabled = old('public_api_enabled', $publicApiSettings['enabled'] ?? false);
                                 $publicApiOrigins = old(
                                     'public_api_allowed_origins',

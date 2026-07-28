@@ -62,7 +62,7 @@
                 @endif
                 @if ($service->isSharedHosting() && $service->status->value === 'active' && $service->getDirectAdminPanelUrl())
                     <a href="{{ route('customer.services.hosting.panel-login', $service) }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
-                        Open Panel
+                        Open Hosting Panel
                     </a>
                 @endif
                 <a href="{{ route('customer.tickets.create') }}" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-sm">
@@ -270,7 +270,7 @@
 
                 @if ($service->status->value === 'active' && $service->isSharedHosting() && $hostingCredentials)
                     <div class="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
-                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">DirectAdmin Login</h3>
+                        <h3 class="text-sm font-semibold text-slate-900 dark:text-white mb-4">Hosting Login</h3>
                         <div class="space-y-3">
                             @if (!empty($hostingCredentials['domain']))
                                 <div>

@@ -53,6 +53,7 @@ use App\Http\Controllers\EmailWebhookController;
 use App\Http\Controllers\NotificationPreferenceController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicHomeController;
 use App\Http\Controllers\Reseller\CartController;
 use App\Http\Controllers\Reseller\CatalogController;
 use App\Http\Controllers\Reseller\CustomerInvoiceController;
@@ -67,6 +68,7 @@ use App\Http\Controllers\Reseller\ManagedServiceController;
 use App\Http\Controllers\Reseller\PackageController;
 use App\Http\Controllers\Reseller\ReportsController;
 use App\Http\Controllers\Reseller\ServerController;
+use App\Http\Controllers\Reseller\StorefrontController;
 use App\Http\Controllers\Reseller\WalletController;
 use App\Http\Controllers\TicketAttachmentController;
 use App\Models\DomainExtension;
@@ -76,9 +78,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/currency', [CurrencyPreferenceController::class, 'update'])->name('currency.update');
 
-Route::get('/', function () {
-    return redirect()->route('login');
-});
+Route::get('/', [PublicHomeController::class, 'index'])->name('home');
 
 Route::middleware(['auth'])->group(function () {
     // Exit impersonation (GET allowed so bookmarks / address-bar opens don't 405)
@@ -131,12 +131,14 @@ Route::middleware(['throttle:60,1'])->group(function () {
         ->name('checkout.process.public');
 });
 
-// Reseller branding domain: public website API + guest checkout
+// Reseller branding domain: storefront helpers (checkout registered last — see bottom of file)
 Route::middleware(['reseller.host'])->group(function () {
-    Route::get('/checkout', [CheckoutController::class, 'showPublic'])->name('reseller.public.checkout.show');
-    Route::post('/checkout', [CheckoutController::class, 'processPublic'])
-        ->middleware(['throttle:5,1', 'registration.throttle'])
-        ->name('reseller.public.checkout.process');
+    Route::get('/store/domains/search', [StorefrontController::class, 'searchDomains'])
+        ->middleware('throttle:30,1')
+        ->name('reseller.public.store.domains.search');
+    Route::post('/store/cart', [StorefrontController::class, 'addToCart'])
+        ->middleware('throttle:20,1')
+        ->name('reseller.public.store.cart');
 });
 
 Route::prefix('api/v1/public')
@@ -692,9 +694,7 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('/cart/{key}/cloudflare-dns', [App\Http\Controllers\Customer\CartController::class, 'updateCloudflareDns'])->name('customer.cart.cloudflare-dns');
         Route::get('/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
 
-        // Checkout
-        Route::get('/checkout', [CheckoutController::class, 'show'])->name('customer.checkout.show');
-        Route::post('/checkout', [CheckoutController::class, 'process'])->name('customer.checkout.process');
+        // Checkout (canonical /checkout registration is at the bottom of this file)
 
         // Payment methods (resource routes already defined above, these are additional payment workflows)
         Route::get('/invoices/{invoice}/pay', [PaymentController::class, 'selectMethod'])->name('customer.payment.select-method');
@@ -798,3 +798,14 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 });
 
 require __DIR__.'/auth.php';
+
+/*
+ * Single /checkout entry (Laravel allows one route per METHOD+URI).
+ * showPublic / processPublic handle guests and logged-in customers.
+ * Registered last so guests are not blocked by the auth middleware group.
+ */
+Route::get('/checkout', [CheckoutController::class, 'showPublic'])
+    ->name('customer.checkout.show');
+Route::post('/checkout', [CheckoutController::class, 'processPublic'])
+    ->middleware(['throttle:5,1', 'registration.throttle'])
+    ->name('customer.checkout.process');

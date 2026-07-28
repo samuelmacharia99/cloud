@@ -402,7 +402,7 @@ class ResellerAnalyticsService
         return $this->paginatedActivityFeed($reseller, $customerIds)['items'];
     }
 
-    private function cachedUnlinkedDirectAdminCount(User $reseller): int
+    public function cachedUnlinkedDirectAdminCount(User $reseller): int
     {
         return (int) Cache::remember(
             'reseller_da_unlinked_count:'.$reseller->id,

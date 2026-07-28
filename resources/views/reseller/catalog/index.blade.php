@@ -34,7 +34,7 @@
                         <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800">
                             <th class="px-6 py-4 text-left text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Name</th>
                             <th class="px-6 py-4 text-left text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Type</th>
-                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Tech stack</th>
+                            <th class="px-6 py-4 text-left text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Stack / package</th>
                             <th class="px-6 py-4 text-left text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Based On</th>
                             <th class="px-6 py-4 text-right text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">Wholesale Cost</th>
                             <th class="px-6 py-4 text-right text-xs font-semibold text-slate-900 dark:text-white uppercase tracking-wide">My Price</th>
@@ -56,7 +56,11 @@
                                     @if ($item->type === 'container_hosting' && $item->adminProduct?->containerTemplate)
                                         {{ $item->adminProduct->containerTemplate->name }}
                                     @elseif ($item->type === 'shared_hosting')
-                                        <span class="text-slate-400">Shared / DA</span>
+                                        @if (filled($item->direct_admin_package_name))
+                                            <span class="font-mono text-xs text-slate-700 dark:text-slate-300">{{ $item->direct_admin_package_name }}</span>
+                                        @else
+                                            <span class="text-amber-600 dark:text-amber-400 text-xs font-medium">DA package not mapped</span>
+                                        @endif
                                     @else
                                         <span class="text-slate-400">—</span>
                                     @endif

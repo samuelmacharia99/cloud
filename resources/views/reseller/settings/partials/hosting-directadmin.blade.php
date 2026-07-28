@@ -28,7 +28,7 @@
                     <a href="{{ route('reseller.customers.index', ['link' => 'unlinked']) }}" class="inline-block mt-2 text-sm font-medium text-purple-600">Link accounts from customer list →</a>
                 </div>
             @else
-                <p class="text-sm text-slate-600 dark:text-slate-400">All known DirectAdmin users are linked to platform customers.</p>
+                <p class="text-sm text-slate-600 dark:text-slate-400">No unlinked DirectAdmin accounts detected right now. Use “Refresh from DirectAdmin” after creating users in the panel.</p>
             @endif
 
             <div class="flex flex-wrap gap-3">

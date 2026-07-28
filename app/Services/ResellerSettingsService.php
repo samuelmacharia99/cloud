@@ -169,6 +169,12 @@ class ResellerSettingsService
             'footer_text' => '',
             'support_email' => '',
             'support_phone' => '',
+            'landing_enabled' => false,
+            'landing_template' => ResellerLandingService::TEMPLATE_LEGACY,
+            'landing_hero_headline' => '',
+            'landing_hero_subtext' => '',
+            'landing_show_domains' => true,
+            'landing_show_hosting' => true,
             'ssl' => [],
             'updated_at' => null,
         ]);
@@ -203,6 +209,15 @@ class ResellerSettingsService
         $previousDomain = $currentBranding['custom_domain'] ?? null;
         $newDomain = $data['custom_domain'] ?? null;
 
+        $landingTemplate = (string) ($data['landing_template'] ?? ResellerLandingService::TEMPLATE_LEGACY);
+        $availableTemplates = array_keys(array_filter(
+            app(ResellerLandingService::class)->templates(),
+            static fn (array $meta) => ($meta['available'] ?? false) === true,
+        ));
+        if (! in_array($landingTemplate, $availableTemplates, true)) {
+            $landingTemplate = ResellerLandingService::TEMPLATE_LEGACY;
+        }
+
         $settings['branding'] = array_merge($currentBranding, [
             'company_name' => $data['company_name'],
             'tagline' => $data['tagline'] ?? '',
@@ -211,6 +226,12 @@ class ResellerSettingsService
             'footer_text' => $data['footer_text'] ?? '',
             'support_email' => $data['support_email'] ?? '',
             'support_phone' => $data['support_phone'] ?? '',
+            'landing_enabled' => filter_var($data['landing_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            'landing_template' => $landingTemplate,
+            'landing_hero_headline' => trim((string) ($data['landing_hero_headline'] ?? '')),
+            'landing_hero_subtext' => trim((string) ($data['landing_hero_subtext'] ?? '')),
+            'landing_show_domains' => filter_var($data['landing_show_domains'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'landing_show_hosting' => filter_var($data['landing_show_hosting'] ?? true, FILTER_VALIDATE_BOOLEAN),
             'updated_at' => now(),
         ]);
 

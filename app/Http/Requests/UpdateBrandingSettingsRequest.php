@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Services\ResellerLandingService;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class UpdateBrandingSettingsRequest extends FormRequest
 {
@@ -13,6 +15,11 @@ class UpdateBrandingSettingsRequest extends FormRequest
 
     public function rules(): array
     {
+        $availableTemplates = array_keys(array_filter(
+            app(ResellerLandingService::class)->templates(),
+            static fn (array $meta) => ($meta['available'] ?? false) === true,
+        ));
+
         return [
             'company_name' => 'required|string|max:100|min:2',
             'tagline' => 'nullable|string|max:120',
@@ -23,6 +30,12 @@ class UpdateBrandingSettingsRequest extends FormRequest
             'support_phone' => 'nullable|string|max:30',
             'public_api_enabled' => 'nullable|boolean',
             'public_api_allowed_origins' => 'nullable|string|max:2000',
+            'landing_enabled' => 'nullable|boolean',
+            'landing_template' => ['nullable', 'string', Rule::in($availableTemplates)],
+            'landing_hero_headline' => 'nullable|string|max:160',
+            'landing_hero_subtext' => 'nullable|string|max:280',
+            'landing_show_domains' => 'nullable|boolean',
+            'landing_show_hosting' => 'nullable|boolean',
         ];
     }
 
@@ -34,6 +47,7 @@ class UpdateBrandingSettingsRequest extends FormRequest
             'company_name.min' => 'Company name must be at least 2 characters.',
             'custom_domain.regex' => 'Custom domain must be a valid domain (e.g., billing.acme.com).',
             'custom_domain.max' => 'Custom domain must not exceed 253 characters.',
+            'landing_template.in' => 'Choose an available landing page template.',
         ];
     }
 }

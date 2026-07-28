@@ -192,6 +192,12 @@ class ResellerBrandingResolver
                 'ready' => ($reseller->settings['branding']['ssl']['status'] ?? 'none') === 'active',
                 'hint' => 'Use Provision SSL on branding settings once DNS points to this server.',
             ],
+            'landing' => [
+                'label' => 'Customer landing page',
+                'ready' => ! empty($branding['custom_domain'])
+                    && filter_var($reseller->settings['branding']['landing_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                'hint' => 'Enable a WHMCS-style storefront on your custom domain from Branding settings.',
+            ],
             'documents' => [
                 'label' => 'Invoice PDFs',
                 'ready' => ! empty($branding['company_name']),

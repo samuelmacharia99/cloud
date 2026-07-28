@@ -136,16 +136,41 @@
                 Link
             </button>
         @elseif ($context === 'reseller' && $isLinked && $billingStatus !== 'ready' && $service)
-            <form method="POST" action="{{ route('reseller.directadmin-accounts.connect-billing', $service) }}" class="flex flex-col items-end gap-2 min-w-[12rem]">
-                @csrf
-                <select name="reseller_product_id" required class="w-full text-xs px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
-                    <option value="">Select package</option>
-                    @foreach ($catalogListings as $listing)
-                        <option value="{{ $listing->id }}" @selected($matchedListing && (int) $matchedListing->id === (int) $listing->id)>{{ $listing->name }}</option>
-                    @endforeach
-                </select>
-                <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Connect billing</button>
-            </form>
+            <div class="flex flex-col items-end gap-2">
+                <form method="POST" action="{{ route('reseller.directadmin-accounts.connect-billing', $service) }}" class="flex flex-col items-end gap-2 min-w-[12rem]">
+                    @csrf
+                    <select name="reseller_product_id" required class="w-full text-xs px-2 py-1.5 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800">
+                        <option value="">Select package</option>
+                        @foreach ($catalogListings as $listing)
+                            <option value="{{ $listing->id }}" @selected($matchedListing && (int) $matchedListing->id === (int) $listing->id)>{{ $listing->name }}</option>
+                        @endforeach
+                    </select>
+                    <button type="submit" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Connect billing</button>
+                </form>
+                @if ($user)
+                    <div class="flex items-center justify-end gap-1">
+                        <form method="POST" action="{{ route('reseller.customers.impersonate', $user) }}" class="inline">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition" title="Login as this customer">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.658 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                                </svg>
+                            </button>
+                        </form>
+                        <a href="{{ route('reseller.customers.show', $user) }}" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition" title="View customer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                            </svg>
+                        </a>
+                        <a href="{{ route('reseller.customers.edit', $user) }}" class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition" title="Edit customer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                        </a>
+                    </div>
+                @endif
+            </div>
         @elseif ($context === 'admin' && $isLinked && $billingStatus !== 'ready' && $service && ! empty($row['reseller']))
             <form method="POST" action="{{ route('admin.directadmin-accounts.connect-billing', $service) }}" class="flex flex-col items-end gap-2 min-w-[12rem]">
                 @csrf

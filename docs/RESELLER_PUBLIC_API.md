@@ -1,6 +1,8 @@
 # Reseller public website API
 
-Resellers with a **custom branding domain** can opt in to a JSON API on that domain so their own marketing site can:
+Prefer the built-in **customer landing page** (Settings → Branding) if you do not want to build a custom site. That WHMCS-style storefront uses the same retail catalog and checkout without enabling this API.
+
+Resellers with a **custom branding domain** can also opt in to a JSON API on that domain so their own marketing site can:
 
 - Search domain availability (bare name or FQDN) with **retail** prices for TLDs they have enabled
 - List **active catalog services** and prices

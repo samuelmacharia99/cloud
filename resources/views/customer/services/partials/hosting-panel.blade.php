@@ -38,7 +38,7 @@
             </p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <a :href="routes.panelLogin" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">Open Panel (SSO)</a>
+            <a :href="routes.panelLogin" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition">Open Hosting Panel</a>
             <button type="button" @click="loadDashboard(true)" class="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium rounded-lg transition">Refresh</button>
             <button type="button" @click="resetPassword()" :disabled="loading" class="px-4 py-2 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900 text-sm font-medium rounded-lg transition disabled:opacity-50">Reset Panel Password</button>
         </div>
