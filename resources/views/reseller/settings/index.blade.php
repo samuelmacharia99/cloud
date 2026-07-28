@@ -638,7 +638,7 @@
 
                                 <div>
                                     <p class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Template</p>
-                                    <div class="grid sm:grid-cols-3 gap-3">
+                                    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                         @foreach ($landingTemplates as $key => $meta)
                                             @php $available = (bool) ($meta['available'] ?? false); @endphp
                                             <label class="relative rounded-xl border p-4 transition {{ $available ? 'cursor-pointer bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 has-[:checked]:border-amber-500 has-[:checked]:ring-2 has-[:checked]:ring-amber-500/30' : 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700' }}">

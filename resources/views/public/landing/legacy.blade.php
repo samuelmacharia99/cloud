@@ -30,7 +30,7 @@
         }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 antialiased" x-data="legacyStorefront()">
+<body class="bg-slate-100 text-slate-800 antialiased" x-data="storefrontPanel()">
     {{-- Top utility bar --}}
     <div class="brand-bg-dark text-white text-xs sm:text-sm">
         <div class="max-w-6xl mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-2">
@@ -126,44 +126,7 @@
     @endif
 
     {{-- Search results --}}
-    <section x-show="results.length || searched" x-cloak class="bg-slate-50 border-b border-slate-200">
-        <div class="max-w-6xl mx-auto px-4 py-8" id="domains">
-            <h2 class="text-xl font-bold text-slate-900 mb-4">Domain search results</h2>
-            <div class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-                <template x-if="results.length === 0 && searched && !searching">
-                    <p class="p-6 text-sm text-slate-600">No results. Try another name.</p>
-                </template>
-                <ul class="divide-y divide-slate-100">
-                    <template x-for="row in results" :key="row.full_domain">
-                        <li class="px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                            <div>
-                                <p class="font-semibold text-slate-900" x-text="row.full_domain"></p>
-                                <p class="text-xs mt-1"
-                                   :class="row.available ? 'text-emerald-600' : 'text-rose-600'"
-                                   x-text="row.available ? 'Available' : 'Unavailable'"></p>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span class="font-semibold text-slate-800" x-show="row.available && row.price != null">
-                                    KES <span x-text="Number(row.price).toLocaleString()"></span>
-                                    <span class="text-xs text-slate-500 font-normal">/yr</span>
-                                </span>
-                                <button
-                                    type="button"
-                                    x-show="row.available"
-                                    @click="orderDomain(row)"
-                                    :disabled="ordering"
-                                    class="brand-btn text-white text-sm font-semibold px-4 py-2 rounded-md disabled:opacity-60"
-                                >
-                                    Order now
-                                </button>
-                            </div>
-                        </li>
-                    </template>
-                </ul>
-            </div>
-            <p x-show="orderError" x-text="orderError" class="mt-3 text-sm text-rose-600"></p>
-        </div>
-    </section>
+    @include('public.landing.partials.domain-results')
 
     @if ($landing['show_domains'] && count($extensions) > 0)
         <section id="domains-pricing" class="py-12 bg-white">
@@ -321,93 +284,6 @@
         </div>
     </footer>
 
-    <script>
-        function legacyStorefront() {
-            return {
-                query: '',
-                searching: false,
-                searched: false,
-                results: [],
-                searchError: '',
-                ordering: false,
-                orderError: '',
-                searchUrl: @js($searchUrl),
-                cartUrl: @js($cartUrl),
-
-                async searchDomains() {
-                    if (this.query.trim().length < 2 || this.searching) return;
-                    this.searching = true;
-                    this.searchError = '';
-                    this.orderError = '';
-                    try {
-                        const url = new URL(this.searchUrl, window.location.origin);
-                        url.searchParams.set('q', this.query.trim());
-                        const response = await fetch(url.toString(), {
-                            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                        });
-                        const data = await response.json();
-                        if (!response.ok) {
-                            this.searchError = data.message || 'Domain search failed.';
-                            this.results = [];
-                        } else {
-                            this.results = data.results || [];
-                        }
-                        this.searched = true;
-                        document.getElementById('domains')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    } catch (e) {
-                        this.searchError = 'Domain search failed. Please try again.';
-                    } finally {
-                        this.searching = false;
-                    }
-                },
-
-                async orderDomain(row) {
-                    if (!row?.available || this.ordering) return;
-                    await this.addToCart([{
-                        type: 'domain',
-                        full_domain: row.full_domain,
-                        years: row.period_years || 1,
-                    }]);
-                },
-
-                async orderHosting(productId) {
-                    if (this.ordering) return;
-                    await this.addToCart([{
-                        type: 'reseller_product',
-                        id: productId,
-                        reseller_product_id: productId,
-                        billing_cycle: 'monthly',
-                    }]);
-                },
-
-                async addToCart(items) {
-                    this.ordering = true;
-                    this.orderError = '';
-                    try {
-                        const response = await fetch(this.cartUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Accept': 'application/json',
-                                'Content-Type': 'application/json',
-                                'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                                'X-Requested-With': 'XMLHttpRequest',
-                            },
-                            body: JSON.stringify({ items }),
-                        });
-                        const data = await response.json();
-                        if (!response.ok || !data.success) {
-                            this.orderError = data.message || 'Could not add item to cart.';
-                            return;
-                        }
-                        window.location.href = data.checkout_url;
-                    } catch (e) {
-                        this.orderError = 'Could not start checkout. Please try again.';
-                    } finally {
-                        this.ordering = false;
-                    }
-                },
-            };
-        }
-    </script>
+    @include('public.landing.partials.storefront-script')
 </body>
 </html>

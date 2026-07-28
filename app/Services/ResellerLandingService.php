@@ -9,6 +9,12 @@ class ResellerLandingService
 {
     public const TEMPLATE_LEGACY = 'legacy';
 
+    public const TEMPLATE_MODERN = 'modern';
+
+    public const TEMPLATE_MINIMAL = 'minimal';
+
+    public const TEMPLATE_SHOWCASE = 'showcase';
+
     /**
      * Built-in storefront templates. Only available ones can be selected;
      * others are shown as "Coming soon" in branding settings.
@@ -20,18 +26,23 @@ class ResellerLandingService
         return [
             self::TEMPLATE_LEGACY => [
                 'label' => 'Legacy (WHMCS-style)',
-                'description' => 'Classic hosting storefront with domain search, TLD prices, and hosting plans by category.',
+                'description' => 'Classic hosting storefront with utility bar, domain search, and plan boxes.',
                 'available' => true,
             ],
-            'modern' => [
+            self::TEMPLATE_MODERN => [
                 'label' => 'Modern',
-                'description' => 'Clean marketing layout with larger plan cards. Coming soon.',
-                'available' => false,
+                'description' => 'Airy marketing layout with large headline, soft hero wash, and rounded plan cards.',
+                'available' => true,
             ],
-            'minimal' => [
+            self::TEMPLATE_MINIMAL => [
                 'label' => 'Minimal',
-                'description' => 'Lightweight one-page focus on domains and login. Coming soon.',
-                'available' => false,
+                'description' => 'Focused one-column page — domain search first, compact pricing and hosting rows.',
+                'available' => true,
+            ],
+            self::TEMPLATE_SHOWCASE => [
+                'label' => 'Showcase',
+                'description' => 'Dark editorial storefront with bold type, TLD table, and highlighted plan cards.',
+                'available' => true,
             ],
         ];
     }

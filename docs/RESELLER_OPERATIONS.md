@@ -59,9 +59,9 @@ Run `php artisan db:seed --class=CronJobSeeder` on new installs to register all 
 - Delete removes local record only (not registry cancellation)
 
 ### Branding storefront
-- Settings → Branding → **Customer landing page** enables a WHMCS-style home page on the reseller custom domain (`/`).
+- Settings → Branding → **Customer landing page** enables a storefront on the reseller custom domain (`/`).
 - Shows domain search, TLD retail prices, and catalog hosting plans by category. Checkout uses `/checkout` (no public API required).
-- More templates can be selected later from the same settings panel (Modern / Minimal coming soon).
+- Templates: **Legacy**, **Modern**, **Minimal**, and **Showcase** (selectable from Branding settings).
 
 ### Hosting
 - Order shared hosting (DirectAdmin) or containers via catalog

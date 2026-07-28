@@ -179,4 +179,46 @@ class ResellerLandingPageTest extends TestCase
         $this->assertSame('legacy', $reseller->settings['branding']['landing_template'] ?? null);
         $this->assertSame('Find your domain', $reseller->settings['branding']['landing_hero_headline'] ?? null);
     }
+
+    public function test_each_available_template_renders_on_reseller_host(): void
+    {
+        $reseller = $this->createReseller();
+        $this->seedRetailExtension($reseller);
+
+        ResellerProduct::create([
+            'reseller_id' => $reseller->id,
+            'name' => 'Starter Web',
+            'description' => 'Shared hosting starter',
+            'type' => 'shared_hosting',
+            'direct_admin_package_name' => 'starter',
+            'monthly_price' => 999,
+            'yearly_price' => 9990,
+            'setup_fee' => 0,
+            'is_active' => true,
+            'features' => ['10 GB SSD'],
+        ]);
+
+        $cases = [
+            'legacy' => 'Client Area',
+            'modern' => 'Get started',
+            'minimal' => 'example.com',
+            'showcase' => 'Hosting showcase',
+        ];
+
+        foreach ($cases as $template => $marker) {
+            $settings = $reseller->settings;
+            $settings['branding']['landing_template'] = $template;
+            $reseller->update(['settings' => $settings]);
+            $reseller->refresh();
+            app(\App\Services\ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
+
+            $response = $this->withServerVariables(['HTTP_HOST' => self::HOST])
+                ->get('https://'.self::HOST.'/');
+
+            $response->assertOk()
+                ->assertSee('Acme Hosting')
+                ->assertSee($marker)
+                ->assertSee('Starter Web');
+        }
+    }
 }
