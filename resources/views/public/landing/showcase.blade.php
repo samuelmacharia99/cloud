@@ -56,6 +56,9 @@
                         <a href="#hosting" class="hover:text-white">Plans</a>
                     @endif
                     <a href="{{ $loginUrl }}" class="hover:text-white">Client login</a>
+                    <a href="{{ $cartPageUrl ?? route('reseller.public.store.cart.show') }}" class="hover:text-white">
+                        Cart{{ ($cartCount ?? 0) > 0 ? " (".$cartCount.")" : "" }}
+                    </a>
                     <a href="{{ $registerUrl }}" class="brand-btn font-semibold px-4 py-2 rounded-md">Register</a>
                 </nav>
                 <a href="{{ $loginUrl }}" class="md:hidden text-sm brand-text font-semibold">Login</a>

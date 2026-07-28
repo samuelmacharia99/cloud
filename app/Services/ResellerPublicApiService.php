@@ -390,7 +390,7 @@ class ResellerPublicApiService
             return null;
         }
 
-        $adminProduct = $listing->adminProduct;
+        $adminProduct = $listing->adminProduct ?? $listing->provisionProduct();
         if (! $adminProduct) {
             return null;
         }

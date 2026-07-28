@@ -4,11 +4,22 @@ namespace App\Http\Controllers\Reseller;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Customer\CheckoutController;
+use App\Http\Requests\Auth\LoginRequest;
+use App\Models\DomainExtension;
+use App\Models\Product;
+use App\Models\ResellerProduct;
 use App\Models\User;
+use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerLandingService;
 use App\Services\ResellerPublicApiService;
+use App\Services\TaxService;
+use App\Services\TwoFactorService;
+use App\Services\UserCurrencyService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\View\View;
 
 /**
  * Same-origin storefront helpers for the reseller branding domain landing page.
@@ -40,12 +51,47 @@ class StorefrontController extends Controller
         );
     }
 
-    public function addToCart(Request $request): JsonResponse
+    public function showCart(): View|RedirectResponse
     {
         $reseller = $this->currentReseller();
 
         if (! $this->landing->isEnabled($reseller)) {
-            return response()->json(['success' => false, 'message' => 'Storefront is not enabled.'], 404);
+            return redirect()->route('login');
+        }
+
+        $formatted = $this->formatCartForDisplay(auth()->user());
+        $branding = app(ResellerBrandingResolver::class)->forReseller($reseller);
+
+        return view('public.cart', [
+            'reseller' => $reseller,
+            'branding' => $branding,
+            'landing' => $this->landing->config($reseller),
+            'cartItems' => $formatted['items'],
+            'itemCount' => count($formatted['items']),
+            'subtotal' => $formatted['subtotal'],
+            'tax' => $formatted['tax'],
+            'taxEnabled' => $formatted['tax_enabled'],
+            'taxRate' => $formatted['tax_rate'],
+            'total' => $formatted['total'],
+            'currency' => $formatted['currency'],
+            'currencyCode' => $formatted['currency_code'],
+            'continueUrl' => route('home'),
+            'checkoutUrl' => route('customer.checkout.show'),
+            'loginUrl' => route('login'),
+            'registerUrl' => route('register'),
+        ]);
+    }
+
+    public function addToCart(Request $request): JsonResponse|RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+
+        if (! $this->landing->isEnabled($reseller)) {
+            if ($request->expectsJson()) {
+                return response()->json(['success' => false, 'message' => 'Storefront is not enabled.'], 404);
+            }
+
+            return redirect()->route('login');
         }
 
         $validated = $request->validate([
@@ -59,13 +105,26 @@ class StorefrontController extends Controller
             'items.*.domain' => 'nullable|string|max:253',
         ]);
 
-        $cart = $this->api->buildCartItems($reseller, $validated['items']);
+        $newItems = $this->api->buildCartItems($reseller, $validated['items']);
 
-        if ($cart === []) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No valid items could be added to the cart. Check availability and pricing.',
-            ], 422);
+        if ($newItems === []) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No valid items could be added to the cart. Check availability and pricing.',
+                ], 422);
+            }
+
+            return back()->with('error', 'No valid items could be added to the cart.');
+        }
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        if (! is_array($cart)) {
+            $cart = [];
+        }
+
+        foreach ($newItems as $item) {
+            $cart[uniqid('sf_', true)] = $item;
         }
 
         session([
@@ -73,11 +132,212 @@ class StorefrontController extends Controller
             'registration_reseller_id' => $reseller->id,
         ]);
 
-        return response()->json([
+        $payload = [
             'success' => true,
             'item_count' => count($cart),
+            'message' => count($newItems) === 1 ? 'Item added to cart.' : 'Items added to cart.',
+            'cart_url' => route('reseller.public.store.cart.show'),
             'checkout_url' => route('customer.checkout.show'),
-        ]);
+        ];
+
+        if ($request->expectsJson()) {
+            return response()->json($payload);
+        }
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', $payload['message']);
+    }
+
+    public function removeFromCart(Request $request, string $key): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        if (is_array($cart) && array_key_exists($key, $cart)) {
+            unset($cart[$key]);
+            session([CheckoutController::CART_SESSION_KEY => $cart]);
+        }
+
+        $redirectToCheckout = $request->input('redirect_to') === 'checkout';
+
+        if ($cart === []) {
+            return redirect()
+                ->route('reseller.public.store.cart.show')
+                ->with('success', 'Your cart is empty.');
+        }
+
+        if ($redirectToCheckout) {
+            return redirect()
+                ->route('customer.checkout.show')
+                ->with('success', 'Item removed from cart.');
+        }
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', 'Item removed from cart.');
+    }
+
+    public function clearCart(): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        session([CheckoutController::CART_SESSION_KEY => []]);
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', 'Cart cleared.');
+    }
+
+    /**
+     * Log in an existing customer at checkout, then continue to pay.
+     */
+    public function loginAtCheckout(LoginRequest $request, TwoFactorService $twoFactorService): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        $request->authenticate();
+        $user = Auth::user();
+
+        if ($user->is_admin || $user->is_reseller) {
+            Auth::logout();
+
+            return back()
+                ->withInput($request->only('email'))
+                ->withErrors(['email' => 'Use the staff portal to sign in with this account.']);
+        }
+
+        if ((int) ($user->reseller_id ?? 0) !== (int) $reseller->id) {
+            Auth::logout();
+
+            $company = $reseller->settings['branding']['company_name'] ?? 'this provider';
+
+            return back()
+                ->withInput($request->only('email'))
+                ->withErrors(['email' => 'This account is not registered with '.$company.'.']);
+        }
+
+        if ($user->two_factor_enabled && $user->phone) {
+            $codeSent = $twoFactorService->sendCode($user);
+            if (! $codeSent) {
+                Auth::logout();
+
+                return back()->withErrors(['email' => 'Failed to send 2FA code. Please try again.']);
+            }
+
+            $request->session()->put('two_factor_user_id', $user->id);
+            $request->session()->put('url.intended', route('customer.checkout.show'));
+            Auth::logout();
+
+            return redirect()->route('auth.two-factor.verify');
+        }
+
+        $request->session()->regenerate();
+        session(['registration_reseller_id' => $reseller->id]);
+
+        return redirect()
+            ->route('customer.checkout.show')
+            ->with('success', 'Welcome back. Review your order and complete payment.');
+    }
+
+    /**
+     * @return array{
+     *     items: list<array<string, mixed>>,
+     *     subtotal: float,
+     *     tax: float,
+     *     tax_enabled: bool,
+     *     tax_rate: float|int|string|null,
+     *     total: float,
+     *     currency: mixed,
+     *     currency_code: string
+     * }
+     */
+    private function formatCartForDisplay(?User $user): array
+    {
+        $reseller = $this->currentReseller();
+        $sessionCart = session(CheckoutController::CART_SESSION_KEY, []);
+        $cartItems = [];
+        $subtotal = 0.0;
+
+        if (! is_array($sessionCart)) {
+            $sessionCart = [];
+        }
+
+        foreach ($sessionCart as $key => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $type = $item['type'] ?? '';
+            $row = ['key' => $key, 'type' => $type];
+
+            if ($type === 'domain') {
+                $extension = DomainExtension::where('extension', $item['extension'] ?? '')->first();
+                if (! $extension) {
+                    continue;
+                }
+
+                $years = (int) ($item['years'] ?? 1);
+                $price = isset($item['price'])
+                    ? (float) $item['price']
+                    : $this->api->retailPrice($reseller, $extension, $years);
+
+                if ($price === null) {
+                    continue;
+                }
+
+                $row['name'] = ($item['domain'] ?? '').($item['extension'] ?? '');
+                $row['description'] = $years.' year'.($years === 1 ? '' : 's').' registration';
+                $row['years'] = $years;
+                $row['full_domain'] = $item['full_domain'] ?? $row['name'];
+                $row['amount'] = $price;
+            } elseif ($type === 'reseller_product' || $type === 'service') {
+                $listing = ResellerProduct::query()
+                    ->where('id', $item['reseller_product_id'] ?? $item['id'] ?? null)
+                    ->where('reseller_id', $reseller->id)
+                    ->first();
+
+                if (! $listing) {
+                    continue;
+                }
+
+                $cycle = (string) ($item['billing_cycle'] ?? 'monthly');
+                $amount = match ($cycle) {
+                    'annual' => (float) ($listing->yearly_price ?? ($listing->monthly_price * 12)),
+                    'quarterly' => (float) ($listing->monthly_price * 3),
+                    'semi-annual' => (float) ($listing->monthly_price * 6),
+                    default => (float) $listing->monthly_price,
+                };
+                $amount += (float) ($listing->setup_fee ?? 0);
+
+                $row['name'] = $listing->name;
+                $row['description'] = $listing->description ?? Product::typeLabel((string) $listing->type);
+                $row['billing_cycle'] = $cycle;
+                $row['amount'] = $amount;
+            } else {
+                continue;
+            }
+
+            $subtotal += $row['amount'];
+            $cartItems[] = $row;
+        }
+
+        $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
+        $currency = app(UserCurrencyService::class)->model($user);
+
+        return [
+            'items' => $cartItems,
+            'subtotal' => (float) $taxBreakdown['subtotal'],
+            'tax' => (float) $taxBreakdown['tax'],
+            'tax_enabled' => (bool) $taxBreakdown['enabled'],
+            'tax_rate' => $taxBreakdown['rate'],
+            'total' => (float) $taxBreakdown['total'],
+            'currency' => $currency,
+            'currency_code' => $currency->code,
+        ];
     }
 
     private function currentReseller(): User

@@ -76,9 +76,9 @@ function storefrontPanel() {
                     this.orderError = data.message || 'Could not add item to cart.';
                     return;
                 }
-                window.location.href = data.checkout_url;
+                window.location.href = data.cart_url || data.checkout_url;
             } catch (e) {
-                this.orderError = 'Could not start checkout. Please try again.';
+                this.orderError = 'Could not add item to cart. Please try again.';
             } finally {
                 this.ordering = false;
             }

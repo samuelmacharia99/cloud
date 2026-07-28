@@ -45,6 +45,10 @@
             <div class="flex items-center gap-3">
                 <a href="{{ $loginUrl }}" class="hover:underline">Client Login</a>
                 <span class="opacity-40">|</span>
+                <a href="{{ $cartPageUrl ?? route('reseller.public.store.cart.show') }}" class="hover:underline">
+                    Cart{{ ($cartCount ?? 0) > 0 ? " (".$cartCount.")" : "" }}
+                </a>
+                <span class="opacity-40">|</span>
                 <a href="{{ $registerUrl }}" class="hover:underline">Register</a>
             </div>
         </div>
@@ -69,6 +73,9 @@
                     <a href="#hosting" class="hover:text-slate-900">Hosting</a>
                 @endif
                 <a href="{{ $loginUrl }}" class="brand-btn text-white px-4 py-2 rounded-md shadow-sm">Client Area</a>
+                <a href="{{ $cartPageUrl ?? route('reseller.public.store.cart.show') }}" class="text-slate-700 hover:text-slate-900">
+                    Cart{{ ($cartCount ?? 0) > 0 ? " (".$cartCount.")" : "" }}
+                </a>
             </nav>
             <a href="{{ $loginUrl }}" class="md:hidden brand-btn text-white px-3 py-2 rounded-md text-sm font-semibold">Login</a>
         </div>

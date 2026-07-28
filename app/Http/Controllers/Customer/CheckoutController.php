@@ -28,10 +28,12 @@ use App\Services\EmailVerificationService;
 use App\Services\NotificationService;
 use App\Services\PaymentGateway\PaymentGatewayFactory;
 use App\Services\RegistrationGuardService;
+use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerCheckoutGuardService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\ResellerHostingSetupService;
+use App\Services\ResellerLandingService;
 use App\Services\ResellerNameserverService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerPublicApiService;
@@ -853,8 +855,12 @@ class CheckoutController extends Controller
      */
     public function showPublic(Request $request)
     {
-        // If user is authenticated, use regular checkout
-        if (auth()->check()) {
+        $hostReseller = $this->checkoutReseller();
+        $useBrandedCheckout = $hostReseller
+            && app(ResellerLandingService::class)->isEnabled($hostReseller);
+
+        // Authenticated customers on the platform (non-storefront) use the customer checkout UI.
+        if (auth()->check() && ! $useBrandedCheckout) {
             return $this->show();
         }
 
@@ -922,13 +928,23 @@ class CheckoutController extends Controller
         }
 
         if (empty($cartItems)) {
+            if ($useBrandedCheckout) {
+                return redirect()
+                    ->route('reseller.public.store.cart.show')
+                    ->with('error', 'Your cart is empty');
+            }
+
             return redirect('/')->with('error', 'Your cart is empty');
         }
 
         $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
 
-        $currency = app(UserCurrencyService::class)->model(null);
+        $currency = app(UserCurrencyService::class)->model($user);
         $currencyCode = $currency->code;
+
+        $branding = $hostReseller
+            ? app(ResellerBrandingResolver::class)->forReseller($hostReseller)
+            : app(ResellerBrandingResolver::class)->defaults();
 
         return view('public.checkout', [
             'cartItems' => $cartItems,
@@ -941,6 +957,10 @@ class CheckoutController extends Controller
             'total' => $taxBreakdown['total'],
             'currency' => $currency,
             'currencyCode' => $currencyCode,
+            'branding' => $branding,
+            'isResellerStorefront' => (bool) $hostReseller,
+            'cartUrl' => $hostReseller ? route('reseller.public.store.cart.show') : '/',
+            'loginAtCheckoutUrl' => $hostReseller ? route('reseller.public.store.checkout.login') : null,
         ]);
     }
 

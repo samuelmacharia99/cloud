@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Customer\CheckoutController;
 use App\Services\ResellerLandingService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,6 +28,7 @@ class PublicHomeController extends Controller
 
         $payload = $this->landing->storefrontPayload($reseller);
         $template = $payload['config']['template'];
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
 
         return view($this->landing->viewName($template), [
             'reseller' => $reseller,
@@ -36,6 +38,8 @@ class PublicHomeController extends Controller
             'serviceGroups' => $payload['service_groups'],
             'searchUrl' => route('reseller.public.store.domains.search'),
             'cartUrl' => route('reseller.public.store.cart'),
+            'cartPageUrl' => route('reseller.public.store.cart.show'),
+            'cartCount' => is_array($cart) ? count($cart) : 0,
             'checkoutUrl' => route('customer.checkout.show'),
             'loginUrl' => route('login'),
             'registerUrl' => route('register'),

@@ -131,7 +131,7 @@ Route::middleware(['throttle:60,1'])->group(function () {
         ->name('checkout.process.public');
 });
 
-// Reseller branding domain: storefront helpers (checkout registered last — see bottom of file)
+// Reseller branding domain: storefront helpers (cart page + checkout registered last — see bottom of file)
 Route::middleware(['reseller.host'])->group(function () {
     Route::get('/store/domains/search', [StorefrontController::class, 'searchDomains'])
         ->middleware('throttle:30,1')
@@ -139,6 +139,9 @@ Route::middleware(['reseller.host'])->group(function () {
     Route::post('/store/cart', [StorefrontController::class, 'addToCart'])
         ->middleware('throttle:20,1')
         ->name('reseller.public.store.cart');
+    Route::post('/store/checkout/login', [StorefrontController::class, 'loginAtCheckout'])
+        ->middleware('throttle:10,1')
+        ->name('reseller.public.store.checkout.login');
 });
 
 Route::prefix('api/v1/public')
@@ -800,10 +803,15 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 require __DIR__.'/auth.php';
 
 /*
- * Single /checkout entry (Laravel allows one route per METHOD+URI).
- * showPublic / processPublic handle guests and logged-in customers.
- * Registered last so guests are not blocked by the auth middleware group.
+ * Public storefront cart + checkout (Laravel allows one route per METHOD+URI).
+ * Registered last so guests on branding hosts are not blocked by auth middleware.
  */
+Route::middleware(['reseller.host'])->group(function () {
+    Route::get('/cart', [StorefrontController::class, 'showCart'])->name('reseller.public.store.cart.show');
+    Route::delete('/cart/{key}', [StorefrontController::class, 'removeFromCart'])->name('reseller.public.store.cart.remove');
+    Route::post('/cart/clear', [StorefrontController::class, 'clearCart'])->name('reseller.public.store.cart.clear');
+});
+
 Route::get('/checkout', [CheckoutController::class, 'showPublic'])
     ->name('customer.checkout.show');
 Route::post('/checkout', [CheckoutController::class, 'processPublic'])

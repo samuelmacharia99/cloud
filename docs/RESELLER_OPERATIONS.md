@@ -60,7 +60,8 @@ Run `php artisan db:seed --class=CronJobSeeder` on new installs to register all 
 
 ### Branding storefront
 - Settings → Branding → **Customer landing page** enables a storefront on the reseller custom domain (`/`).
-- Shows domain search, TLD retail prices, and catalog hosting plans by category. Checkout uses `/checkout` (no public API required).
+- Shows domain search, TLD retail prices, and catalog hosting plans by category.
+- WHMCS-style cart: visitors add domains/hosting to `/cart`, then checkout to **create an account** or **log in** and pay.
 - Templates: **Legacy**, **Modern**, **Minimal**, and **Showcase** (selectable from Branding settings).
 
 ### Hosting

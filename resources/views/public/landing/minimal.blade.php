@@ -35,6 +35,9 @@
                 @endif
             </a>
             <div class="flex items-center gap-4 text-sm">
+                <a href="{{ $cartPageUrl ?? route('reseller.public.store.cart.show') }}" class="text-slate-600 hover:text-slate-900">
+                    Cart{{ ($cartCount ?? 0) > 0 ? " (".$cartCount.")" : "" }}
+                </a>
                 <a href="{{ $loginUrl }}" class="text-slate-600 hover:text-slate-900">Login</a>
                 <a href="{{ $registerUrl }}" class="font-medium brand-text">Register</a>
             </div>

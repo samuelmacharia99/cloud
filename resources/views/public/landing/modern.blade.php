@@ -49,6 +49,9 @@
                     <a href="#hosting" class="hover:text-slate-900">Hosting</a>
                 @endif
                 <a href="{{ $loginUrl }}" class="hover:text-slate-900">Log in</a>
+                <a href="{{ $cartPageUrl ?? route('reseller.public.store.cart.show') }}" class="hover:text-slate-900">
+                    Cart{{ ($cartCount ?? 0) > 0 ? " (".$cartCount.")" : "" }}
+                </a>
                 <a href="{{ $registerUrl }}" class="brand-btn text-white px-4 py-2 rounded-full shadow-sm">Get started</a>
             </nav>
             <a href="{{ $loginUrl }}" class="md:hidden text-sm font-semibold brand-text">Log in</a>
