@@ -165,7 +165,37 @@ class ResellerStorefrontCartTest extends TestCase
             ->assertSee('Existing Customer')
             ->assertSee('New Customer')
             ->assertSee('Create Your Account')
-            ->assertSee('Log in to pay');
+            ->assertSee('Log in to pay')
+            ->assertSee('999');
+    }
+
+    public function test_checkout_keeps_reseller_retail_price_not_zero(): void
+    {
+        $reseller = $this->createReseller();
+        $product = $this->seedProduct($reseller);
+        app(ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->postJson('https://'.self::HOST.'/store/cart', [
+                'items' => [[
+                    'type' => 'reseller_product',
+                    'id' => $product->id,
+                    'reseller_product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/cart')
+            ->assertOk()
+            ->assertSee('999');
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/checkout')
+            ->assertOk()
+            ->assertSee('Starter Web')
+            ->assertSee('999');
     }
 
     public function test_existing_customer_can_login_at_checkout(): void

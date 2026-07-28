@@ -672,9 +672,17 @@ class CheckoutController extends Controller
             return app(ServerProductConfigService::class)->priceForCartItem($product, $item, $listing);
         }
 
+        // Reseller storefront / catalog retail must win over the platform shell product (often 0).
+        if ($listing) {
+            return [
+                'unit_price' => $listing->priceForBillingCycle((string) ($item['billing_cycle'] ?? 'monthly')),
+                'setup_fee' => (float) ($listing->setup_fee ?? 0),
+            ];
+        }
+
         return [
-            'unit_price' => $this->getProductPrice($product, $item['billing_cycle']),
-            'setup_fee' => (float) ($listing?->setup_fee ?? $product->setup_fee ?? 0),
+            'unit_price' => $this->getProductPrice($product, $item['billing_cycle'] ?? 'monthly'),
+            'setup_fee' => (float) ($product->setup_fee ?? 0),
         ];
     }
 
@@ -719,7 +727,6 @@ class CheckoutController extends Controller
             return null;
         }
 
-        $unitPrice = $resellerProduct->priceForBillingCycle($item['billing_cycle']);
         $item['type'] = $product->type === 'shared_hosting' ? 'shared_hosting' : 'product';
         $item['product_id'] = $product->id;
         $item['reseller_id'] = $resellerProduct->reseller_id;
