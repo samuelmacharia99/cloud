@@ -8,8 +8,9 @@
         <div class="max-w-3xl">
             <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Laravel application setup</h3>
             <p class="text-sm text-slate-600 dark:text-slate-300 mt-2">
-                <strong>Recommended:</strong> connect a Git repository (Git tab) and pull — Talksasa installs Composer dependencies, syncs platform <code class="font-mono text-xs">.env</code> keys, and runs migrations automatically. Manage other secrets under <strong>Environment</strong>.
-                Use <strong>Initialize Laravel app</strong> only for a blank Laravel skeleton (no existing code).
+                Fresh orders automatically install the latest Laravel skeleton into <code class="font-mono text-xs">/app</code> (Composer create-project) after the container is running — progress appears below.
+                Prefer connecting a Git repository (Git tab) when you already have an app: Talksasa installs Composer dependencies, syncs platform <code class="font-mono text-xs">.env</code> keys, and runs migrations.
+                Use <strong>Initialize Laravel app</strong> only to retry a blank skeleton if auto-setup did not finish.
                 <strong>Redeploy stack</strong> refreshes the runtime and re-syncs Git; composer runs again when Laravel is detected.
                 Use <strong>Reset database</strong> on redeploy to wipe MySQL and re-run migrations.
             </p>

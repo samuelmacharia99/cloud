@@ -401,6 +401,29 @@ class ContainerDeploymentService
                     $this->reattachAndRebindDomains($service, $deployment);
                 }
 
+                if ($options->shouldInstallLaravelApplication((string) ($template->slug ?? ''))) {
+                    try {
+                        $installResult = app(LaravelAppInitializationService::class)->queueFreshInstallationIfNeeded(
+                            $service->fresh(['product.containerTemplate', 'user', 'containerDeployment.node']),
+                            $deployment->fresh(['node']),
+                            $ssh,
+                        );
+                        $this->recordDeploymentEvent($service, $deployment, 'laravel_application_initialization_queued', [
+                            'skipped' => $installResult['skipped'],
+                            'message' => $installResult['message'],
+                            'initialization_id' => $installResult['initialization_id'] ?? null,
+                        ]);
+                    } catch (\Throwable $installError) {
+                        \Log::warning('Laravel auto-initialization queue failed', [
+                            'service_id' => $service->id,
+                            'error' => $installError->getMessage(),
+                        ]);
+                        $this->recordDeploymentEvent($service, $deployment, 'laravel_application_initialization_queue_failed', [
+                            'error' => $installError->getMessage(),
+                        ]);
+                    }
+                }
+
                 if ($options->shouldPrepareLaravelApplication((string) ($template->slug ?? ''))) {
                     try {
                         $laravelDatabaseSyncMessage = app(LaravelDatabaseSyncService::class)

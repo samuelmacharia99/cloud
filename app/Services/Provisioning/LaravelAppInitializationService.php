@@ -2,6 +2,7 @@
 
 namespace App\Services\Provisioning;
 
+use App\Jobs\InitializeContainerAppJob;
 use App\Models\ContainerAppInitialization;
 use App\Models\ContainerDeployment;
 use App\Models\Service;
@@ -71,6 +72,67 @@ class LaravelAppInitializationService
                 'steps' => $this->buildInitialSteps(),
             ]);
         });
+    }
+
+    /**
+     * Queue a fresh Laravel scaffold after provision when /app is empty and no Git source is set.
+     *
+     * @return array{success: bool, skipped: bool, message: string, initialization_id?: int}
+     */
+    public function queueFreshInstallationIfNeeded(
+        Service $service,
+        ContainerDeployment $deployment,
+        SSHService $ssh,
+    ): array {
+        $service->loadMissing(['product.containerTemplate', 'user']);
+
+        if (! $this->supportsTemplate($service->product?->containerTemplate?->slug)) {
+            return ['success' => true, 'skipped' => true, 'message' => 'Not a Laravel template.'];
+        }
+
+        $meta = is_array($service->service_meta) ? $service->service_meta : [];
+        $repoUrl = trim((string) ($meta['source_repo_url'] ?? ''));
+        if ($repoUrl !== '') {
+            return [
+                'success' => true,
+                'skipped' => true,
+                'message' => 'Git repository configured; skipping automatic Laravel scaffold.',
+            ];
+        }
+
+        if ($this->hasActiveInitialization($service)) {
+            return [
+                'success' => true,
+                'skipped' => true,
+                'message' => 'Laravel initialization is already in progress.',
+            ];
+        }
+
+        if ($this->appDirectory->hasLaravelProject($ssh, $deployment)) {
+            return [
+                'success' => true,
+                'skipped' => true,
+                'message' => 'Laravel application already present in /app.',
+            ];
+        }
+
+        $owner = $service->user;
+        if (! $owner) {
+            throw new \RuntimeException('Service owner is required to queue Laravel initialization.');
+        }
+
+        $initialization = $this->requestInitialization($service, $owner);
+        InitializeContainerAppJob::dispatch($initialization->id);
+
+        $meta['laravel_auto_init_queued_at'] = now()->toIso8601String();
+        $service->update(['service_meta' => $meta]);
+
+        return [
+            'success' => true,
+            'skipped' => false,
+            'message' => 'Laravel application initialization queued.',
+            'initialization_id' => $initialization->id,
+        ];
     }
 
     public function run(ContainerAppInitialization $initialization): void

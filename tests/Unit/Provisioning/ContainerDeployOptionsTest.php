@@ -58,4 +58,21 @@ class ContainerDeployOptionsTest extends TestCase
         $quiet = ContainerDeployOptions::quietConvert();
         $this->assertFalse($quiet->shouldInstallWordPressApplication('wordpress'));
     }
+
+    #[Test]
+    public function it_queues_laravel_install_on_fresh_deploy_only(): void
+    {
+        $fresh = new ContainerDeployOptions;
+        $this->assertTrue($fresh->shouldInstallLaravelApplication('laravel'));
+        $this->assertFalse($fresh->shouldInstallLaravelApplication('wordpress'));
+
+        $redeployKeepDb = ContainerDeployOptions::redeploy(resetDatabase: false);
+        $this->assertFalse($redeployKeepDb->shouldInstallLaravelApplication('laravel'));
+
+        $redeployResetDb = ContainerDeployOptions::redeploy(resetDatabase: true);
+        $this->assertTrue($redeployResetDb->shouldInstallLaravelApplication('laravel'));
+
+        $quiet = ContainerDeployOptions::quietConvert();
+        $this->assertFalse($quiet->shouldInstallLaravelApplication('laravel'));
+    }
 }

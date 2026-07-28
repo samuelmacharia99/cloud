@@ -382,7 +382,7 @@ class ContainerTemplateSeeder extends Seeder
             ['slug' => 'laravel'],
             [
                 'name' => 'Laravel Application',
-                'description' => 'Laravel-ready runtime with flexible PHP version selection.',
+                'description' => 'Laravel-ready runtime with flexible PHP versions. Latest Laravel is scaffolded automatically on new orders.',
                 'category' => 'web',
                 'docker_image' => 'talksasa/laravel-runtime:8.3',
                 'default_port' => 8000,

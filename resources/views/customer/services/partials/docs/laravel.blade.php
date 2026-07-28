@@ -3,7 +3,7 @@
         <h4 class="text-lg font-semibold text-slate-900 dark:text-white">Quick start</h4>
         <ol class="mt-4 space-y-3 text-sm text-slate-700 dark:text-slate-300 list-decimal list-inside">
             <li>Order a <strong>Laravel</strong> application hosting plan — MySQL is included as a sidecar.</li>
-            <li>On the <strong>Overview</strong> tab, click <strong>Initialize Laravel app</strong> for a fresh skeleton, <em>or</em> connect Git and pull your existing repo.</li>
+            <li>On provision, Talksasa automatically scaffolds the latest Laravel into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">/app</code> (or connect Git at checkout / on the Git tab for an existing repo).</li>
             <li>Talksasa auto-writes database credentials into <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code> on first setup.</li>
             <li>Git pulls preserve your existing <code class="text-xs font-mono bg-white/70 dark:bg-slate-900 px-1.5 py-0.5 rounded">.env</code>; only database and platform URL settings are refreshed. Add other secrets under <strong>Environment</strong>.</li>
             <li>Bind your domain under <strong>Domains</strong>, then visit the site.</li>
@@ -25,8 +25,9 @@
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 p-6 space-y-3">
             <h4 class="font-semibold text-slate-900 dark:text-white">Fresh install (no Git)</h4>
             <ul class="text-sm text-slate-600 dark:text-slate-300 space-y-2">
-                <li>Use <strong>Clear /app</strong> if leftover files block initialization.</li>
-                <li><strong>Initialize Laravel app</strong> scaffolds Laravel into <code class="font-mono text-xs">/app</code> and runs migrations.</li>
+                <li>New orders auto-scaffold Laravel after the container is running — watch progress on <strong>Overview</strong>.</li>
+                <li>Use <strong>Initialize Laravel app</strong> only to retry if auto-setup did not finish.</li>
+                <li>Use <strong>Clear /app</strong> if leftover files block a retry.</li>
                 <li>Upload custom code via the <strong>Files</strong> tab or connect Git later.</li>
             </ul>
         </div>

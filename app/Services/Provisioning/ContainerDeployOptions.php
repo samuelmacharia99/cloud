@@ -47,6 +47,27 @@ final class ContainerDeployOptions
     }
 
     /**
+     * Fresh Laravel Application Hosting orders get a queued composer create-project scaffold.
+     * Quiet converts / redeploys without DB reset keep (or import) an existing app.
+     */
+    public function shouldInstallLaravelApplication(string $templateSlug): bool
+    {
+        if ($templateSlug !== 'laravel') {
+            return false;
+        }
+
+        if ($this->quiet) {
+            return false;
+        }
+
+        if ($this->isRedeploy && ! $this->resetDatabase) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Fresh WordPress Application Hosting orders get latest core + admin via WP-CLI.
      * Quiet converts / redeploys without DB reset keep (or import) an existing site.
      */
