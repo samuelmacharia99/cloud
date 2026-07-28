@@ -174,7 +174,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 120,
                 'is_active' => true,
-                'order' => 2,
+                'order' => 8,
             ]
         );
 
@@ -228,7 +228,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 120,
                 'is_active' => true,
-                'order' => 3,
+                'order' => 9,
             ]
         );
 
@@ -288,7 +288,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
                 'is_active' => true,
-                'order' => 4,
+                'order' => 2,
             ]
         );
 
@@ -327,7 +327,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
                 'is_active' => true,
-                'order' => 5,
+                'order' => 3,
             ]
         );
 
@@ -426,7 +426,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => false,
                 'health_check_timeout_seconds' => 240,
                 'is_active' => true,
-                'order' => 7,
+                'order' => 5,
             ]
         );
 
@@ -474,7 +474,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 180,
                 'is_active' => true,
-                'order' => 8,
+                'order' => 7,
             ]
         );
 
@@ -499,7 +499,7 @@ class ContainerTemplateSeeder extends Seeder
                 'strict_health_check' => true,
                 'health_check_timeout_seconds' => 90,
                 'is_active' => true,
-                'order' => 9,
+                'order' => 4,
             ]
         );
     }

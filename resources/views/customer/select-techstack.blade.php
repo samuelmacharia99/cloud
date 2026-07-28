@@ -38,16 +38,21 @@
                     ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-slate-800 shadow-md'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-600'"
             >
-                <div class="flex items-start justify-between mb-2">
-                    <div class="flex-1">
-                        <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
+                <div class="flex items-start gap-3 mb-2">
+                    <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700">
+                        <x-tech-stack-icon :slug="$language->slug" class="w-8 h-8" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
+                            <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
                         <div class="flex gap-2 mt-1">
                             <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Application hosting</span>
                         </div>
                     </div>
-                    <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                    </svg>
                 </div>
                 <p class="text-sm text-slate-600 dark:text-slate-400 mb-3">{{ $language->description }}</p>
                 @if($language->versions && count($language->versions) > 0)

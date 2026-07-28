@@ -27,7 +27,18 @@ class ServiceBrowserController extends Controller
      */
     public function selectTechstack()
     {
-        $languages = ContainerTemplate::active()->get();
+        $languages = ContainerTemplate::active()
+            ->reorder()
+            ->orderByRaw("CASE slug
+                WHEN 'wordpress' THEN 1
+                WHEN 'nodejs' THEN 2
+                WHEN 'python' THEN 3
+                WHEN 'static-site' THEN 4
+                ELSE 100
+            END")
+            ->orderBy('order')
+            ->orderBy('name')
+            ->get();
         $databases = DatabaseTemplate::active()->get();
         $cartCount = count(session('cart', []));
 
