@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Deploy Your Application</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose a stack. Prefer <strong>application hosting</strong> for modern sites — shared plans are for email and classic DirectAdmin hosting.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose a stack and plan. All new deployments use <strong>application hosting</strong>.</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -42,13 +42,7 @@
                     <div class="flex-1">
                         <span class="font-semibold text-slate-900 dark:text-white">{{ $language->name }}</span>
                         <div class="flex gap-2 mt-1">
-                            @if(in_array($language->slug, ['laravel', 'wordpress']))
-                                <span class="inline-block text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-200 px-2 py-0.5 rounded-full">Application hosting recommended</span>
-                            @elseif($language->hosting_type === 'directadmin')
-                                <span class="inline-block text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200 px-2 py-0.5 rounded-full">Shared (email &amp; legacy)</span>
-                            @else
-                                <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Application hosting</span>
-                            @endif
+                            <span class="inline-block text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200 px-2 py-0.5 rounded-full">Application hosting</span>
                         </div>
                     </div>
                     <svg x-show="selectedLanguage.id === {{ $language->id }}" class="w-5 h-5 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -93,16 +87,9 @@
             <!-- Modal Header -->
             <div class="sticky top-0 flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                 <div>
-                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white"
-                        x-text="modalStep === 'hosting' ? 'Choose Hosting Platform' : 'Select Database'"></h2>
+                    <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Select Database</h2>
                     <p class="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                        <span x-show="modalStep === 'hosting'">
-                            How should <span class="font-semibold" x-text="selectedLanguage.name"></span> be deployed?
-                        </span>
-                        <span x-show="modalStep === 'database'">
-                            Choose a database for <span class="font-semibold" x-text="selectedLanguage.name"></span>
-                            on <span class="font-semibold" x-text="deploymentPlatformLabel"></span>
-                        </span>
+                        Choose a database for <span class="font-semibold" x-text="selectedLanguage.name"></span>
                     </p>
                 </div>
                 <button
@@ -115,46 +102,8 @@
                 </button>
             </div>
 
-            <!-- Hosting platform step (Laravel, WordPress, etc.) -->
-            <div class="p-6 space-y-4" x-show="modalStep === 'hosting'">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <button type="button" @click="selectDeploymentPlatform('container')"
-                        class="relative p-5 border-2 rounded-xl text-left transition-all"
-                        :class="deploymentPlatform === 'container'
-                            ? 'border-purple-600 dark:border-purple-500 bg-purple-50 dark:bg-purple-950/30 shadow-md'
-                            : 'border-slate-200 dark:border-slate-700 hover:border-purple-400 dark:hover:border-purple-600'">
-                        <span class="absolute top-3 right-3 text-xs font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200 px-2 py-1 rounded-full">Recommended</span>
-                        <div class="text-2xl mb-2">🚀</div>
-                        <p class="font-semibold text-slate-900 dark:text-white">Application hosting</p>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="containerHostingDescription"></p>
-                    </button>
-
-                    <button type="button" @click="selectDeploymentPlatform('shared')"
-                        @if(!($sharedHostingSalesEnabled ?? true)) x-show="false" @endif
-                        class="p-5 border-2 rounded-xl text-left transition-all"
-                        :class="deploymentPlatform === 'shared'
-                            ? 'border-blue-600 dark:border-blue-500 bg-blue-50 dark:bg-blue-950/30 shadow-md'
-                            : 'border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-600'">
-                        <div class="text-2xl mb-2">🌐</div>
-                        <p class="font-semibold text-slate-900 dark:text-white">Shared (email &amp; legacy)</p>
-                        <p class="text-sm text-slate-600 dark:text-slate-400 mt-2" x-text="sharedHostingDescription"></p>
-                    </button>
-                </div>
-
-                <div class="flex gap-3 pt-2">
-                    <button type="button" @click="continueToDatabaseStep()"
-                        class="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition">
-                        Continue
-                    </button>
-                    <button type="button" @click="closeModal()"
-                        class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                        Back
-                    </button>
-                </div>
-            </div>
-
             <!-- Database Options -->
-            <div class="p-6 space-y-3" x-show="modalStep === 'database'">
+            <div class="p-6 space-y-3">
                 <template x-if="availableDatabases.length > 0">
                     <div class="space-y-3">
                         <template x-for="db in availableDatabases" :key="db.id">
@@ -196,15 +145,16 @@
             </div>
 
             <!-- Hosting Info -->
-            <template x-if="selectedDatabase.id && modalStep === 'database'">
+            <template x-if="selectedDatabase.id">
                 <div class="border-t border-slate-200 dark:border-slate-800 p-6 space-y-4">
                     <!-- Hosting Type Info -->
-                    <div class="p-4 rounded-lg" :class="hostingTypeInfo.bgClass">
+                    <div class="p-4 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700">
                         <div class="flex items-start gap-3">
-                            <span class="text-2xl" x-text="hostingTypeInfo.emoji"></span>
+                            <span class="text-2xl">🚀</span>
                             <div>
-                                <p class="font-semibold" :class="hostingTypeInfo.textClass" x-text="hostingTypeInfo.label"></p>
-                                <p class="text-sm mt-1" :class="hostingTypeInfo.descClass" x-text="hostingTypeInfo.description"></p>
+                                <p class="font-semibold text-purple-900 dark:text-purple-200">Application hosting</p>
+                                <p class="text-sm mt-1 text-purple-700 dark:text-purple-300"
+                                    x-text="(selectedLanguage.name || 'Your application') + ' will run on isolated application hosting with Git deploy and a modern console.'"></p>
                             </div>
                         </div>
                     </div>
@@ -215,9 +165,7 @@
                             @csrf
                             <input type="hidden" name="language_id" :value="selectedLanguage.id">
                             <input type="hidden" name="database_id" :value="selectedDatabase.id">
-                            <template x-if="requiresHostingChoice">
-                                <input type="hidden" name="deployment_platform" :value="deploymentPlatform">
-                            </template>
+                            <input type="hidden" name="deployment_platform" value="container">
                             <button
                                 type="submit"
                                 class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
@@ -226,7 +174,7 @@
                             </button>
                         </form>
                         <button
-                            @click="goBackFromDatabaseStep()"
+                            @click="closeModal()"
                             type="button"
                             class="px-6 py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                         >
@@ -246,41 +194,14 @@ function techstackSelector() {
         selectedDatabase: {},
         availableDatabases: [],
         showDatabaseModal: false,
-        modalStep: 'database',
-        deploymentPlatform: 'container',
         loading: false,
         confirmTechstackUrl: '{{ route("customer.confirm-techstack.store") }}',
-
-        get requiresHostingChoice() {
-            return ['laravel', 'wordpress'].includes(this.selectedLanguage.slug);
-        },
-
-        get containerHostingDescription() {
-            if (this.selectedLanguage.slug === 'wordpress') {
-                return 'Isolated application hosting for WordPress with bundled MySQL — recommended for new sites.';
-            }
-
-            if (this.selectedLanguage.slug === 'laravel') {
-                return 'Isolated Laravel application hosting with Git deploy, Environment secrets, and flexible PHP versions.';
-            }
-
-            return 'Isolated application hosting with Git deploy, metrics, and modern runtimes.';
-        },
-
-        get sharedHostingDescription() {
-            return 'Classic DirectAdmin hosting for email and legacy sites. Prefer application hosting for new applications.';
-        },
-
-        get deploymentPlatformLabel() {
-            return this.deploymentPlatform === 'shared' ? 'Shared (email & legacy)' : 'Application hosting';
-        },
 
         selectLanguageAndShowModal(languageId) {
             const language = @json($languages).find(l => l.id == languageId);
             this.selectedLanguage = language;
             this.selectedDatabase = {};
             this.availableDatabases = [];
-            this.deploymentPlatform = 'container';
 
             // Skip database modal for static sites
             if (language.slug === 'static-site') {
@@ -291,38 +212,12 @@ function techstackSelector() {
                 return;
             }
 
-            this.modalStep = this.requiresHostingChoice ? 'hosting' : 'database';
             this.showDatabaseModal = true;
-
-            if (this.modalStep === 'database') {
-                this.loadDatabases(languageId);
-            }
-        },
-
-        selectDeploymentPlatform(platform) {
-            this.deploymentPlatform = platform;
-        },
-
-        continueToDatabaseStep() {
-            this.modalStep = 'database';
-            this.selectedDatabase = {};
-            this.loadDatabases(this.selectedLanguage.id);
-        },
-
-        goBackFromDatabaseStep() {
-            if (this.requiresHostingChoice) {
-                this.modalStep = 'hosting';
-                this.selectedDatabase = {};
-                this.availableDatabases = [];
-                return;
-            }
-
-            this.closeModal();
+            this.loadDatabases(languageId);
         },
 
         closeModal() {
             this.showDatabaseModal = false;
-            this.modalStep = 'database';
         },
 
         selectDatabase(db) {
@@ -332,12 +227,7 @@ function techstackSelector() {
         async loadDatabases(languageId) {
             this.loading = true;
             try {
-                let url = `/api/languages/${languageId}/databases`;
-                if (this.requiresHostingChoice) {
-                    url += `?deployment_platform=${this.deploymentPlatform}`;
-                }
-
-                const response = await fetch(url);
+                const response = await fetch(`/api/languages/${languageId}/databases`);
                 if (!response.ok) {
                     throw new Error('Failed to load databases');
                 }
@@ -350,32 +240,6 @@ function techstackSelector() {
                 this.loading = false;
             }
         },
-
-        get hostingTypeInfo() {
-            const isShared = this.requiresHostingChoice
-                ? this.deploymentPlatform === 'shared'
-                : this.selectedLanguage.hosting_type === 'directadmin';
-
-            const appLabel = this.selectedLanguage.name || 'Your application';
-
-            return {
-                emoji: isShared ? '🌐' : '🚀',
-                label: isShared ? 'Shared (email & legacy)' : 'Application hosting',
-                description: isShared
-                    ? `${appLabel} will use DirectAdmin shared hosting — best for email and classic sites.`
-                    : `${appLabel} will run on isolated application hosting with Git deploy and a modern console.`,
-                bgClass: isShared
-                    ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700'
-                    : 'bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-700',
-                textClass: isShared
-                    ? 'text-blue-900 dark:text-blue-200'
-                    : 'text-purple-900 dark:text-purple-200',
-                descClass: isShared
-                    ? 'text-blue-700 dark:text-blue-300'
-                    : 'text-purple-700 dark:text-purple-300',
-            };
-        },
-
     };
 }
 </script>

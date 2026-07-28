@@ -45,14 +45,11 @@ return [
     | Shared hosting sales
     |--------------------------------------------------------------------------
     |
-    | When false (or Setting shared_hosting_sales_enabled=0), hide DirectAdmin
-    | shared hosting from customer browse / techstack. Admin convert still works.
+    | Platform DirectAdmin shared hosting sales are permanently off
+    | (see App\Support\SharedHostingSales). Resellers keep their own catalogs.
     |
     */
 
-    'shared_hosting_sales_enabled_default' => filter_var(
-        env('SHARED_HOSTING_SALES_ENABLED', true),
-        FILTER_VALIDATE_BOOLEAN
-    ),
+    'shared_hosting_sales_enabled_default' => false,
 
 ];

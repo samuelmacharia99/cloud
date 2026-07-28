@@ -19,38 +19,31 @@ class TechStackRoutingService
         return strtolower($language->slug) === 'wordpress';
     }
 
+    /**
+     * Platform tech-stack is application hosting only — no shared/DirectAdmin choice.
+     */
     public static function supportsDeploymentPlatformChoice(ContainerTemplate $language): bool
     {
-        return in_array(strtolower($language->slug), ['laravel', 'wordpress'], true);
+        return false;
     }
 
     /**
-     * Determine hosting type and product based on language + database selection
+     * Determine hosting type and product based on language + database selection.
      *
-     * Database Restrictions:
-     * - PHP: MySQL and MariaDB only (DirectAdmin shared hosting)
-     * - WordPress & Laravel: customer chooses shared (DirectAdmin) or application hosting
-     * - Static Site: no database (Application hosting)
-     * - Node.js, Python, Ruby, Go, etc: PostgreSQL, MongoDB, Redis, MySQL container (Application hosting)
+     * Platform customers always get application (container) hosting.
+     * DirectAdmin shared hosting is sold only via reseller catalogs.
      */
     public static function determineHostingType(
         ContainerTemplate $language,
         ?DatabaseTemplate $database,
         ?string $deploymentPlatform = null
     ): array {
-        $hosting_type = 'container';
         $database_name = $database?->name ?? 'None';
         $database_slug = $database?->slug ?? 'none';
 
-        if (self::supportsDeploymentPlatformChoice($language) && $deploymentPlatform) {
-            $hosting_type = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
-        } elseif ($language->hosting_type === 'directadmin' && $database && in_array($database->type, ['mysql', 'mariadb'])) {
-            $hosting_type = 'directadmin';
-        }
-
         return [
-            'hosting_type' => $hosting_type,
-            'deployment_platform' => $deploymentPlatform,
+            'hosting_type' => 'container',
+            'deployment_platform' => $deploymentPlatform === 'container' ? 'container' : null,
             'language' => $language->name,
             'database' => $database_name,
             'language_slug' => $language->slug,
@@ -65,20 +58,10 @@ class TechStackRoutingService
         ContainerTemplate $language,
         DatabaseTemplate $database
     ): ?Product {
-        $routing = self::determineHostingType($language, $database);
-
-        if ($routing['hosting_type'] === 'directadmin') {
-            // Get shared hosting/PHP product
-            return Product::where('type', 'shared_hosting')
-                ->where('is_active', true)
-                ->first();
-        } else {
-            // Get application hosting product that matches the language
-            return Product::where('type', 'container_hosting')
-                ->where('container_template_id', $language->id)
-                ->where('is_active', true)
-                ->first();
-        }
+        return Product::where('type', 'container_hosting')
+            ->where('container_template_id', $language->id)
+            ->where('is_active', true)
+            ->first();
     }
 
     /**
@@ -93,39 +76,31 @@ class TechStackRoutingService
         }
 
         if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
-            return in_array($database->type, ['mysql', 'mariadb']);
+            return in_array($database->type, ['mysql', 'mariadb'])
+                && $database->hosting_type === 'container';
         }
 
-        if ($language->hosting_type === 'container') {
-            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql']);
+        if ($language->hosting_type === 'container' || $language->hosting_type === 'directadmin') {
+            // Legacy templates may still be tagged directadmin; platform sales use container DBs.
+            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql'])
+                && $database->hosting_type === 'container';
         }
 
         return false;
     }
 
     /**
-     * Get available databases for a given language
+     * Get available databases for a given language (container-hosted only).
      */
     public static function getAvailableDatabasesForLanguage(
         ContainerTemplate $language,
         ?string $deploymentPlatform = null
     ): Collection {
-        if (self::supportsDeploymentPlatformChoice($language) && $deploymentPlatform) {
-            $hostingType = $deploymentPlatform === 'shared' ? 'directadmin' : 'container';
-
-            return DatabaseTemplate::active()
-                ->whereIn('type', ['mysql', 'mariadb'])
-                ->where('hosting_type', $hostingType)
-                ->get();
-        }
-
-        // PHP uses MySQL/MariaDB; hosting type depends on template routing.
+        // PHP / WordPress / Laravel → container MySQL / MariaDB only
         if (in_array(strtolower($language->slug), ['php', 'laravel', 'wordpress'])) {
-            $hostingType = $language->hosting_type ?? 'container';
-
             return DatabaseTemplate::active()
                 ->whereIn('type', ['mysql', 'mariadb'])
-                ->where('hosting_type', $hostingType)
+                ->where('hosting_type', 'container')
                 ->get();
         }
 
@@ -134,7 +109,7 @@ class TechStackRoutingService
             return collect();
         }
 
-        // Container languages show all container-hosted databases
+        // All other stacks → container databases
         return DatabaseTemplate::active()
             ->forHostingType('container')
             ->get();
@@ -145,21 +120,18 @@ class TechStackRoutingService
      */
     public static function getAvailableLanguagesForDatabase(DatabaseTemplate $database): Collection
     {
-        // MySQL and MariaDB support PHP, WordPress, and Laravel (DirectAdmin)
+        if ($database->hosting_type !== 'container') {
+            return new Collection;
+        }
+
+        // MySQL and MariaDB support PHP, WordPress, and Laravel
         if (in_array($database->type, ['mysql', 'mariadb'])) {
             return ContainerTemplate::whereIn('slug', ['php', 'wordpress', 'laravel'])
                 ->active()
                 ->get();
         }
 
-        // Other databases (PostgreSQL, MongoDB, Redis) only for application hosting
-        if ($database->hosting_type === 'container') {
-            return ContainerTemplate::where('hosting_type', 'container')
-                ->active()
-                ->get();
-        }
-
-        return ContainerTemplate::where('hosting_type', $database->hosting_type)
+        return ContainerTemplate::where('hosting_type', 'container')
             ->active()
             ->get();
     }

@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Enums\ServiceStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
 use App\Services\Checkout\SharedHostingCheckoutService;
+use App\Services\Customer\CustomerNextStepsService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\TechStackRoutingService;
 use App\Services\UserCurrencyService;
+use App\Support\SharedHostingSales;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
@@ -33,7 +36,6 @@ class ServiceBrowserController extends Controller
             'databases' => $databases,
             'cartCount' => $cartCount,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
-            'sharedHostingSalesEnabled' => \App\Support\SharedHostingSales::enabled(),
         ]);
     }
 
@@ -99,15 +101,12 @@ class ServiceBrowserController extends Controller
             ? DatabaseTemplate::findOrFail($validated['database_id'])
             : null;
 
-        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && empty($validated['deployment_platform'])) {
-            return back()->with('error', 'Please choose shared or application hosting.');
+        if (($validated['deployment_platform'] ?? null) === 'shared') {
+            return back()->with('error', 'Shared DirectAdmin hosting is no longer available. Please choose application hosting.');
         }
 
-        if (TechStackRoutingService::supportsDeploymentPlatformChoice($language) && $database) {
-            $expectedHosting = $validated['deployment_platform'] === 'shared' ? 'directadmin' : 'container';
-            if ($database->hosting_type !== $expectedHosting) {
-                return back()->with('error', 'Selected database does not match the chosen hosting platform.');
-            }
+        if ($database && $database->hosting_type !== 'container') {
+            return back()->with('error', 'Selected database is not available for application hosting.');
         }
 
         if (! TechStackRoutingService::isValidCombination($language, $database)) {
@@ -117,7 +116,7 @@ class ServiceBrowserController extends Controller
         $routing = TechStackRoutingService::determineHostingType(
             $language,
             $database,
-            $validated['deployment_platform'] ?? null
+            'container'
         );
 
         $user = $request->user();
@@ -131,7 +130,7 @@ class ServiceBrowserController extends Controller
         if ($products->isEmpty()) {
             $message = $this->catalogService->isResellerCustomer($user)
                 ? $this->catalogService->techstackEmptyMessage($user, $language, $routing)
-                : 'No hosting plans are available for this tech stack.';
+                : 'No application hosting plans are available for this tech stack.';
 
             return back()->with('error', $message);
         }
@@ -139,12 +138,9 @@ class ServiceBrowserController extends Controller
         $techstackData = [
             'language_id' => $language->id,
             'language_name' => $language->name,
-            'hosting_type' => $routing['hosting_type'],
+            'hosting_type' => 'container',
+            'deployment_platform' => 'container',
         ];
-
-        if (! empty($validated['deployment_platform'])) {
-            $techstackData['deployment_platform'] = $validated['deployment_platform'];
-        }
 
         if ($database) {
             $techstackData['database_id'] = $database->id;
@@ -184,7 +180,7 @@ class ServiceBrowserController extends Controller
         $routing = TechStackRoutingService::determineHostingType(
             $language,
             $database,
-            $techstack['deployment_platform'] ?? null
+            'container'
         );
 
         $user = $request->user();
@@ -201,7 +197,7 @@ class ServiceBrowserController extends Controller
             return redirect()->route('customer.select-techstack')
                 ->with('error', $this->catalogService->isResellerCustomer($user)
                     ? $this->catalogService->techstackEmptyMessage($user, $language, $routing)
-                    : 'No hosting plans are available for this tech stack.');
+                    : 'No application hosting plans are available for this tech stack.');
         }
 
         $currency = app(UserCurrencyService::class)->model($user);
@@ -237,21 +233,17 @@ class ServiceBrowserController extends Controller
             );
         }
 
-        $productsQuery = Product::where('is_active', true);
-
-        if ($routing['hosting_type'] === 'directadmin') {
-            if (! \App\Support\SharedHostingSales::enabled()) {
-                return collect();
-            }
-            $productsQuery->where('type', 'shared_hosting');
-        } else {
-            $productsQuery->where('type', 'container_hosting')
-                ->where('container_template_id', $language->id);
-        }
+        // Platform customers only order application hosting (never DirectAdmin shared).
+        $products = Product::query()
+            ->where('is_active', true)
+            ->where('type', 'container_hosting')
+            ->where('container_template_id', $language->id)
+            ->orderBy('order')
+            ->get();
 
         return $this->catalogService->mapProductsForTechstackDisplay(
             $user,
-            $productsQuery->orderBy('order')->get(),
+            $products,
             $database?->id,
         );
     }
@@ -292,6 +284,13 @@ class ServiceBrowserController extends Controller
                 $routing,
             );
         } else {
+            if ($request->type === 'shared_hosting') {
+                return response()->json([
+                    'products' => [],
+                    'message' => 'Shared DirectAdmin hosting is no longer available for platform customers.',
+                ]);
+            }
+
             $query = Product::where('type', $request->type)
                 ->where('is_active', true);
 
@@ -335,7 +334,7 @@ class ServiceBrowserController extends Controller
             $query->where('type', $selectedType);
         }
 
-        if (! \App\Support\SharedHostingSales::enabled()) {
+        if (! SharedHostingSales::enabled()) {
             $query->where('type', '!=', 'shared_hosting');
         }
 
@@ -346,7 +345,7 @@ class ServiceBrowserController extends Controller
 
         // Get all available types for filtering
         $allTypes = Product::where('is_active', true)
-            ->when(! \App\Support\SharedHostingSales::enabled(), fn ($q) => $q->where('type', '!=', 'shared_hosting'))
+            ->when(! SharedHostingSales::enabled(), fn ($q) => $q->where('type', '!=', 'shared_hosting'))
             ->distinct()
             ->pluck('type')
             ->mapWithKeys(function ($type) {
@@ -396,14 +395,14 @@ class ServiceBrowserController extends Controller
             ->latest()
             ->get();
 
-        $nextSteps = app(\App\Services\Customer\CustomerNextStepsService::class);
+        $nextSteps = app(CustomerNextStepsService::class);
         $healthById = [];
         foreach ($services as $service) {
-            $status = $service->status instanceof \App\Enums\ServiceStatus
+            $status = $service->status instanceof ServiceStatus
                 ? $service->status
-                : \App\Enums\ServiceStatus::tryFrom((string) $service->status);
+                : ServiceStatus::tryFrom((string) $service->status);
 
-            if ($status === \App\Enums\ServiceStatus::Active) {
+            if ($status === ServiceStatus::Active) {
                 $healthById[$service->id] = $nextSteps->emailHealth($service);
             }
         }

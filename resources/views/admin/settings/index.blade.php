@@ -1297,12 +1297,8 @@
                             </div>
 
                             <div>
-                                <input type="hidden" name="settings[shared_hosting_sales_enabled]" value="0">
-                                <label class="flex items-center gap-2">
-                                    <input type="checkbox" name="settings[shared_hosting_sales_enabled]" value="1" @checked(\App\Support\SharedHostingSales::enabled()) class="rounded" />
-                                    <span class="text-slate-700 dark:text-slate-300">Sell DirectAdmin shared hosting to customers</span>
-                                </label>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 ml-6">Turn off to hide shared hosting from browse/techstack while converting the fleet to Application Hosting + Mailcow. Admin convert and existing services are unaffected.</p>
+                                <p class="text-sm font-medium text-slate-700 dark:text-slate-300">Platform DirectAdmin shared hosting sales</p>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">Disabled permanently. Platform customers order application hosting only. Resellers still sell DirectAdmin packages from their own catalog. Existing DirectAdmin services and admin convert tools are unaffected.</p>
                             </div>
 
                             <div>

@@ -2,17 +2,20 @@
 
 namespace App\Support;
 
-use App\Models\Setting;
-
+/**
+ * Platform (super-admin) DirectAdmin / shared hosting sales.
+ *
+ * Platform customers order application hosting only. Resellers still sell
+ * DirectAdmin packages through their own catalog (/my/catalog).
+ */
 class SharedHostingSales
 {
+    /**
+     * Whether platform customers can browse/order DirectAdmin shared hosting.
+     * Permanently disabled — use application hosting + Mailcow instead.
+     */
     public static function enabled(): bool
     {
-        $raw = Setting::getValue('shared_hosting_sales_enabled');
-        if ($raw === null || $raw === '') {
-            return (bool) config('mailcow.shared_hosting_sales_enabled_default', true);
-        }
-
-        return in_array($raw, ['1', 'true', true, 1], true);
+        return false;
     }
 }

@@ -186,6 +186,17 @@ class CartController extends Controller
                 'billing_cycle' => 'required|in:monthly,quarterly,semi-annual,annual',
             ]);
 
+            $product = Product::findOrFail($request->product_id);
+            if ($product->type === 'shared_hosting') {
+                $message = 'Shared DirectAdmin hosting is no longer available. Please deploy with application hosting.';
+
+                if ($request->expectsJson()) {
+                    return response()->json(['success' => false, 'message' => $message], 422);
+                }
+
+                return back()->with('error', $message);
+            }
+
             $item = [
                 'type' => 'product',
                 'product_id' => $request->product_id,
