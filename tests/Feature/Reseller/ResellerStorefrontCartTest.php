@@ -99,6 +99,34 @@ class ResellerStorefrontCartTest extends TestCase
         return $ext;
     }
 
+    public function test_product_slug_cart_link_adds_item_and_redirects(): void
+    {
+        $reseller = $this->createReseller();
+        $product = $this->seedProduct($reseller);
+        app(ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
+
+        $this->assertSame('starter-web', $product->fresh()->slug);
+        $this->assertSame('https://billing.acme.test/starter-web/cart', $product->fresh()->orderCartUrl());
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/starter-web/cart')
+            ->assertRedirect('https://'.self::HOST.'/cart');
+
+        $this->assertCount(1, session(CheckoutController::CART_SESSION_KEY));
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/cart')
+            ->assertOk()
+            ->assertSee('Starter Web')
+            ->assertSee('999');
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/starter-web/cart?billing_cycle=annual')
+            ->assertRedirect('https://'.self::HOST.'/cart');
+
+        $this->assertCount(2, session(CheckoutController::CART_SESSION_KEY));
+    }
+
     public function test_add_to_cart_appends_items_and_opens_cart_page(): void
     {
         $reseller = $this->createReseller();

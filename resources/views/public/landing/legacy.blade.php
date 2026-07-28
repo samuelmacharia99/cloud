@@ -232,14 +232,14 @@
                                         @else
                                             <div class="flex-1"></div>
                                         @endif
-                                        <button
-                                            type="button"
-                                            @click="orderHosting({{ (int) $product['id'] }})"
-                                            :disabled="ordering"
-                                            class="w-full brand-btn text-white font-semibold py-2.5 rounded-md disabled:opacity-60"
+                                        <a
+                                            href="{{ $product['order_path'] ?? '#' }}"
+                                            @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                            :class="{ 'pointer-events-none opacity-60': ordering }"
+                                            class="w-full brand-btn text-white font-semibold py-2.5 rounded-md text-center block"
                                         >
                                             Order now
-                                        </button>
+                                        </a>
                                     </div>
                                 </div>
                             @endforeach

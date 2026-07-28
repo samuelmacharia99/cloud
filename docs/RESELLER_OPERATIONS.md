@@ -62,6 +62,8 @@ Run `php artisan db:seed --class=CronJobSeeder` on new installs to register all 
 - Settings → Branding → **Customer landing page** enables a storefront on the reseller custom domain (`/`).
 - Shows domain search, TLD retail prices, and catalog hosting plans by category.
 - WHMCS-style cart: visitors add domains/hosting to `/cart`, then checkout to **create an account** or **log in** and pay.
+- Each catalog product has a WordPress-friendly order link: `https://your-domain/{product-slug}/cart` (copy from My Catalog → product). Visiting it adds that plan to the cart.
+- Optional billing: `?billing_cycle=annual` (or `monthly`, `quarterly`, `semi-annual`).
 - Templates: **Legacy**, **Modern**, **Minimal**, and **Showcase** (selectable from Branding settings).
 
 ### Hosting

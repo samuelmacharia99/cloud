@@ -129,6 +129,8 @@ Each extension includes:
 
 List active, orderable catalog items.
 
+Each service includes `slug`, `order_path`, and `order_url` for WordPress (or other CMS) “Order now” buttons. Visiting `order_url` on the branding domain adds that plan to the cart.
+
 For **VPS** and **dedicated server** products, each service includes a `configuration` object:
 
 - `specs` / `spec_lines` — hardware summary
@@ -151,6 +153,9 @@ For **email hosting** (`type: email_hosting`), each service includes a `configur
     {
       "id": 12,
       "name": "Starter Hosting",
+      "slug": "starter-hosting",
+      "order_path": "/starter-hosting/cart",
+      "order_url": "https://billing.acmehosting.com/starter-hosting/cart",
       "description": "5GB SSD, 1 site",
       "type": "shared_hosting",
       "monthly_price": 499,

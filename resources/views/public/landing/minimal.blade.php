@@ -121,10 +121,12 @@
                                             @endif
                                         </p>
                                     </div>
-                                    <button type="button" @click="orderHosting({{ (int) $product['id'] }})" :disabled="ordering"
-                                        class="brand-btn text-sm font-semibold px-4 py-2 rounded disabled:opacity-60 shrink-0">
+                                    <a href="{{ $product['order_path'] ?? '#' }}"
+                                        @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                        :class="{ 'pointer-events-none opacity-60': ordering }"
+                                        class="brand-btn text-sm font-semibold px-4 py-2 rounded shrink-0">
                                         Order
-                                    </button>
+                                    </a>
                                 </div>
                             @endforeach
                         </div>

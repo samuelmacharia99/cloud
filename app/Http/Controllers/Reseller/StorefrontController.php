@@ -82,6 +82,54 @@ class StorefrontController extends Controller
         ]);
     }
 
+    /**
+     * WordPress-friendly deep link: GET /{slug}/cart adds the product and opens the cart.
+     */
+    public function addProductBySlug(Request $request, string $productSlug): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+
+        if (! $this->landing->isEnabled($reseller)) {
+            return redirect()->route('login');
+        }
+
+        $billingCycle = (string) $request->query('billing_cycle', $request->query('billing', 'monthly'));
+        if (! in_array($billingCycle, ['monthly', 'quarterly', 'semi-annual', 'annual'], true)) {
+            $billingCycle = 'monthly';
+        }
+
+        $listing = ResellerProduct::query()
+            ->where('reseller_id', $reseller->id)
+            ->where('slug', $productSlug)
+            ->where('is_active', true)
+            ->first();
+
+        if (! $listing || ! $listing->isOrderable()) {
+            return redirect()
+                ->route('home')
+                ->with('error', 'That product is not available to order.');
+        }
+
+        $newItems = $this->api->buildCartItems($reseller, [[
+            'type' => 'reseller_product',
+            'id' => $listing->id,
+            'reseller_product_id' => $listing->id,
+            'billing_cycle' => $billingCycle,
+        ]]);
+
+        if ($newItems === []) {
+            return redirect()
+                ->route('home')
+                ->with('error', 'That product could not be added to the cart.');
+        }
+
+        $this->appendCartItems($reseller, $newItems);
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', $listing->name.' added to cart.');
+    }
+
     public function addToCart(Request $request): JsonResponse|RedirectResponse
     {
         $reseller = $this->currentReseller();
@@ -118,19 +166,7 @@ class StorefrontController extends Controller
             return back()->with('error', 'No valid items could be added to the cart.');
         }
 
-        $cart = session(CheckoutController::CART_SESSION_KEY, []);
-        if (! is_array($cart)) {
-            $cart = [];
-        }
-
-        foreach ($newItems as $item) {
-            $cart[uniqid('sf_', true)] = $item;
-        }
-
-        session([
-            CheckoutController::CART_SESSION_KEY => $cart,
-            'registration_reseller_id' => $reseller->id,
-        ]);
+        $cart = $this->appendCartItems($reseller, $newItems);
 
         $payload = [
             'success' => true,
@@ -147,6 +183,29 @@ class StorefrontController extends Controller
         return redirect()
             ->route('reseller.public.store.cart.show')
             ->with('success', $payload['message']);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $newItems
+     * @return array<string, mixed>
+     */
+    private function appendCartItems(User $reseller, array $newItems): array
+    {
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        if (! is_array($cart)) {
+            $cart = [];
+        }
+
+        foreach ($newItems as $item) {
+            $cart[uniqid('sf_', true)] = $item;
+        }
+
+        session([
+            CheckoutController::CART_SESSION_KEY => $cart,
+            'registration_reseller_id' => $reseller->id,
+        ]);
+
+        return $cart;
     }
 
     public function removeFromCart(Request $request, string $key): RedirectResponse

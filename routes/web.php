@@ -810,6 +810,11 @@ Route::middleware(['reseller.host'])->group(function () {
     Route::get('/cart', [StorefrontController::class, 'showCart'])->name('reseller.public.store.cart.show');
     Route::delete('/cart/{key}', [StorefrontController::class, 'removeFromCart'])->name('reseller.public.store.cart.remove');
     Route::post('/cart/clear', [StorefrontController::class, 'clearCart'])->name('reseller.public.store.cart.clear');
+    // WordPress / marketing "Order now" deep links: https://branding-domain/{product-slug}/cart
+    Route::get('/{productSlug}/cart', [StorefrontController::class, 'addProductBySlug'])
+        ->where('productSlug', '[a-z0-9]+(?:-[a-z0-9]+)*')
+        ->middleware('throttle:30,1')
+        ->name('reseller.public.store.product.cart');
 });
 
 Route::get('/checkout', [CheckoutController::class, 'showPublic'])

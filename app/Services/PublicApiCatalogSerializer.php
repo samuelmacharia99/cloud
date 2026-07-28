@@ -99,6 +99,10 @@ class PublicApiCatalogSerializer
             features: $listing->features ?? [],
         );
 
+        $row['slug'] = $listing->slug;
+        $row['order_path'] = $listing->orderCartPath();
+        $row['order_url'] = $listing->orderCartUrl();
+
         if ($adminProduct && Product::isServerType($type)) {
             $row['admin_product_id'] = $adminProduct->id;
             $row['configuration'] = $this->serverConfiguration($adminProduct, $listing);

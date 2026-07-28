@@ -39,6 +39,16 @@
                         @enderror
                     </div>
 
+                    <!-- Slug / WordPress order link -->
+                    <div>
+                        <label for="slug" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Order link slug</label>
+                        <input type="text" id="slug" name="slug" value="{{ old('slug', $catalogItem->slug) }}" placeholder="starter-web" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 text-slate-900 dark:text-white text-sm font-mono @error('slug') border-red-500 @enderror">
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Used for WordPress “Order now” buttons: <span class="font-mono">/{slug}/cart</span>. Changing this breaks existing buttons.</p>
+                        @error('slug')
+                            <p class="mt-1 text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     <!-- Description -->
                     <div>
                         <label for="description" class="block text-sm font-medium text-slate-900 dark:text-white mb-2">Description <span class="text-xs font-normal text-slate-500 dark:text-slate-400">(optional)</span></label>

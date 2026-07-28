@@ -170,6 +170,15 @@ class CatalogController extends Controller
         $validated = $request->validate([
             'product_id' => 'nullable|exists:products,id',
             'name' => 'required|string|max:255',
+            'slug' => [
+                'nullable',
+                'string',
+                'max:255',
+                'regex:/^[a-z0-9]+(?:-[a-z0-9]+)*$/',
+                Rule::unique('reseller_products', 'slug')
+                    ->where(fn ($query) => $query->where('reseller_id', $reseller->id))
+                    ->ignore($existing?->id),
+            ],
             'description' => 'nullable|string',
             'type' => 'required|in:'.implode(',', $allowedTypes),
             'direct_admin_package_name' => [
@@ -185,6 +194,10 @@ class CatalogController extends Controller
         ]);
 
         $validated['is_active'] = $request->boolean('is_active');
+
+        if (! filled($validated['slug'] ?? null)) {
+            unset($validated['slug']);
+        }
 
         if (($validated['type'] ?? '') === 'container_hosting') {
             if ($existing && ! filled($validated['product_id'] ?? null)) {

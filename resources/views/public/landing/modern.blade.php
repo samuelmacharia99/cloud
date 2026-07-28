@@ -167,10 +167,12 @@
                                     @else
                                         <div class="flex-1"></div>
                                     @endif
-                                    <button type="button" @click="orderHosting({{ (int) $product['id'] }})" :disabled="ordering"
-                                        class="mt-6 w-full brand-btn text-white font-semibold py-3 rounded-xl disabled:opacity-60">
+                                    <a href="{{ $product['order_path'] ?? '#' }}"
+                                        @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                        :class="{ 'pointer-events-none opacity-60': ordering }"
+                                        class="mt-6 w-full brand-btn text-white font-semibold py-3 rounded-xl text-center block">
                                         Order plan
-                                    </button>
+                                    </a>
                                 </article>
                             @endforeach
                         </div>

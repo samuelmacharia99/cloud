@@ -57,6 +57,32 @@
                         <p class="text-slate-900 dark:text-white">{{ Product::typeLabel($catalogItem->type) }}</p>
                     </div>
 
+                    @php
+                        $orderUrl = $catalogItem->orderCartUrl();
+                        $orderPath = $catalogItem->orderCartPath();
+                    @endphp
+                    <div>
+                        <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">WordPress / Order now link</p>
+                        @if ($orderUrl)
+                            <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+                                <code class="block flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white break-all" id="order-cart-url">{{ $orderUrl }}</code>
+                                <button
+                                    type="button"
+                                    onclick="navigator.clipboard.writeText(document.getElementById('order-cart-url').textContent)"
+                                    class="px-4 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Paste this URL into a WordPress button or menu. Visiting it adds this product to the cart on your branding domain.</p>
+                        @elseif ($orderPath)
+                            <code class="block px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">{{ $orderPath }}</code>
+                            <p class="mt-2 text-xs text-amber-700 dark:text-amber-400">Set a custom domain under Settings → Branding to get a full https:// link for WordPress.</p>
+                        @else
+                            <p class="text-sm text-slate-500 dark:text-slate-400">Save this product once to generate an order link.</p>
+                        @endif
+                    </div>
+
                     @if ($catalogItem->type === 'container_hosting' && $catalogItem->adminProduct?->containerTemplate)
                     <div>
                         <p class="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">Tech stack</p>

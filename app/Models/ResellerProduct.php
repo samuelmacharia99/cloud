@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\ResellerProvisionProductResolver;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class ResellerProduct extends Model
 {
@@ -16,6 +17,7 @@ class ResellerProduct extends Model
         'container_template_id',
         'database_template_id',
         'name',
+        'slug',
         'description',
         'type',
         'direct_admin_package_name',
@@ -37,6 +39,92 @@ class ResellerProduct extends Model
             'resource_limits' => 'array',
             'features' => 'array',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (ResellerProduct $product): void {
+            if (filled($product->slug)) {
+                $product->slug = static::normalizeSlug((string) $product->slug) ?: 'product';
+            } elseif (filled($product->name)) {
+                $product->slug = static::normalizeSlug((string) $product->name) ?: 'product';
+            }
+
+            if (! filled($product->slug) || ! $product->reseller_id) {
+                return;
+            }
+
+            $product->slug = static::uniqueSlugForReseller(
+                (int) $product->reseller_id,
+                (string) $product->slug,
+                $product->exists ? (int) $product->id : null,
+            );
+        });
+    }
+
+    public static function normalizeSlug(string $value): string
+    {
+        return Str::slug(trim($value));
+    }
+
+    public static function uniqueSlugForReseller(int $resellerId, string $nameOrSlug, ?int $ignoreId = null): string
+    {
+        $base = static::normalizeSlug($nameOrSlug) ?: 'product';
+        $slug = $base;
+        $suffix = 2;
+
+        while (
+            static::query()
+                ->where('reseller_id', $resellerId)
+                ->where('slug', $slug)
+                ->when($ignoreId, fn ($query) => $query->where('id', '!=', $ignoreId))
+                ->exists()
+        ) {
+            $slug = $base.'-'.$suffix;
+            $suffix++;
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Relative WordPress-friendly order link: /{slug}/cart
+     */
+    public function orderCartPath(?string $billingCycle = null): ?string
+    {
+        if (! filled($this->slug)) {
+            return null;
+        }
+
+        $path = '/'.$this->slug.'/cart';
+        if ($billingCycle && $billingCycle !== 'monthly') {
+            $path .= '?billing_cycle='.urlencode($billingCycle);
+        }
+
+        return $path;
+    }
+
+    /**
+     * Absolute order URL on the reseller branding domain (when configured).
+     */
+    public function orderCartUrl(?string $billingCycle = null): ?string
+    {
+        $path = $this->orderCartPath($billingCycle);
+        if ($path === null) {
+            return null;
+        }
+
+        $this->loadMissing('reseller');
+        $host = data_get($this->reseller?->settings, 'branding.custom_domain');
+        $host = is_string($host) ? strtolower(trim($host)) : '';
+        $host = preg_replace('#^https?://#', '', $host) ?? '';
+        $host = rtrim($host, '/');
+
+        if ($host === '') {
+            return null;
+        }
+
+        return 'https://'.$host.$path;
     }
 
     public function reseller()
