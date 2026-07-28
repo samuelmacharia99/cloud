@@ -16,6 +16,7 @@ use App\Services\NodeNameserverService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\MailcowProvisioningService;
 use App\Services\ResellerCustomerCatalogService;
+use App\Services\ResellerNameserverService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -234,8 +235,8 @@ class EmailHostingCheckoutService
         }
 
         $mailNode = app(MailcowProvisioningService::class)->resolveNode();
-        $cloudflareAvailable = app(DomainCloudflareDnsService::class)->isAvailable();
-        $nameservers = app(\App\Services\ResellerNameserverService::class)->defaultsForCustomer($user);
+        $cloudflareAvailable = app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
+        $nameservers = app(ResellerNameserverService::class)->defaultsForCustomer($user);
         $domainNameservers = $this->nameserverService->toDomainColumns($nameservers);
 
         $limits = app(MailcowProvisioningService::class)->limitsForProduct($product);

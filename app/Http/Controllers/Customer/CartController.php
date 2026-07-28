@@ -101,7 +101,7 @@ class CartController extends Controller
         $nameserverService = app(ResellerNameserverService::class);
         $defaultNameservers = $nameserverService->defaultsForCustomer($user);
         $defaultNameserverLabel = app(ResellerBrandingResolver::class)->forCustomer($user)['company_name'];
-        $cloudflareDnsAvailable = app(DomainCloudflareDnsService::class)->isAvailable();
+        $cloudflareDnsAvailable = app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
         $cloudflareNameservers = $cloudflareDnsAvailable
             ? app(DomainCloudflareDnsService::class)->nameserversForRegistration()
             : null;
@@ -279,7 +279,7 @@ class CartController extends Controller
                 return back()->with('error', $message);
             }
 
-            $cloudflareDns = app(DomainCloudflareDnsService::class)->isAvailable()
+            $cloudflareDns = app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user)
                 && $request->boolean('cloudflare_dns', true);
 
             $nameservers = app(ResellerNameserverService::class)->cartDefaultPayloadForCustomer($user);
@@ -499,8 +499,8 @@ class CartController extends Controller
             return response()->json(['success' => false, 'message' => 'Domain not found in cart'], 404);
         }
 
-        if (! app(DomainCloudflareDnsService::class)->isAvailable()) {
-            return response()->json(['success' => false, 'message' => 'Managed DNS is not available right now.'], 422);
+        if (! app(DomainCloudflareDnsService::class)->isAvailableForCustomer(auth()->user())) {
+            return response()->json(['success' => false, 'message' => 'Managed DNS is not available for your account.'], 422);
         }
 
         $enabled = $request->boolean('enabled');

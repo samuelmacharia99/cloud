@@ -102,4 +102,63 @@ class CustomerAddDnsDomainTest extends TestCase
             ->post(route('customer.domains.dns.store'), ['domain' => 'weird.invalidtld'])
             ->assertSessionHasErrors('domain');
     }
+
+    public function test_reseller_customer_cannot_add_cloudflare_dns_domain(): void
+    {
+        $this->enableCloudflare();
+
+        DomainExtension::create([
+            'extension' => '.com',
+            'description' => 'COM',
+            'enabled' => true,
+        ]);
+
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($customer)
+            ->post(route('customer.domains.dns.store'), ['domain' => 'mybiz.com'])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertSame(0, Domain::query()->where('name', 'mybiz')->count());
+    }
+
+    public function test_reseller_customer_does_not_see_cloudflare_on_domains_index(): void
+    {
+        $this->enableCloudflare();
+
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.domains.index'))
+            ->assertOk()
+            ->assertViewHas('cloudflareDnsAvailable', false);
+    }
+
+    public function test_reseller_customer_cannot_toggle_cloudflare_dns_in_cart(): void
+    {
+        $this->enableCloudflare();
+
+        $reseller = User::factory()->reseller()->create();
+        $customer = User::factory()->customer()->create(['reseller_id' => $reseller->id]);
+
+        session(['cart' => [
+            'domain_example_com' => [
+                'key' => 'domain_example_com',
+                'type' => 'domain',
+                'domain' => 'example',
+                'extension' => '.com',
+                'cloudflare_dns' => false,
+            ],
+        ]]);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.cart.cloudflare-dns', ['key' => 'domain_example_com']), [
+                'enabled' => true,
+            ])
+            ->assertStatus(422)
+            ->assertJson(['success' => false]);
+    }
 }

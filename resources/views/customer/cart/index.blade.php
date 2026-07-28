@@ -273,7 +273,7 @@ function cloudflareDnsOption(cartKey, initialEnabled, nameservers) {
             this.message = '';
             this.error = false;
             try {
-                const res = await fetch(`/cart/${this.cartKey}/cloudflare-dns`, {
+                const res = await fetch(`/my/cart/${this.cartKey}/cloudflare-dns`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

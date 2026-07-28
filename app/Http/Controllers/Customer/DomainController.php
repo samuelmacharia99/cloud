@@ -9,9 +9,9 @@ use App\Models\DomainRenewalOrder;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Service;
+use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\DomainRenewalService;
 use App\Services\DomainTransferService;
-use App\Services\Dns\DomainCloudflareDnsService;
 use App\Services\ResellerCustomerCatalogService;
 use App\Services\ResellerDomainOrderService;
 use App\Services\TaxService;
@@ -45,7 +45,7 @@ class DomainController extends Controller
         return view('customer.domains.index', [
             'domains' => $domains,
             'domainServices' => $domainServices,
-            'cloudflareDnsAvailable' => app(DomainCloudflareDnsService::class)->isAvailable(),
+            'cloudflareDnsAvailable' => app(DomainCloudflareDnsService::class)->isAvailableForCustomer(auth()->user()),
         ]);
     }
 
@@ -58,8 +58,8 @@ class DomainController extends Controller
 
         $dns = app(DomainCloudflareDnsService::class);
 
-        if (! $dns->isAvailable()) {
-            return back()->with('error', 'Managed DNS is not available right now. Contact support.')->withInput();
+        if (! $dns->isAvailableForCustomer($request->user())) {
+            return back()->with('error', 'Managed DNS is not available for your account. DNS is handled through your hosting control panel.')->withInput();
         }
 
         $validated = $request->validate([

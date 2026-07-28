@@ -35,14 +35,16 @@ class DnsController extends Controller
             $records = collect($this->dns->listRecords($domain));
         }
 
+        $user = auth()->user();
+
         return view('customer.domains.dns.index', [
             'domain' => $domain,
             'zone' => $zone,
             'records' => $records,
             'usesDirectAdmin' => false,
-            'cloudflareAvailable' => $this->dns->isAvailable(),
-            'canProvision' => $this->dns->shouldOfferCloudflareDns($domain)
-                && ($domain->cloudflare_dns_enabled || $this->dns->isAvailable()),
+            'cloudflareAvailable' => $this->dns->isAvailableForCustomer($user),
+            'canProvision' => $this->dns->shouldOfferCloudflareDns($domain, $user)
+                && ($domain->cloudflare_dns_enabled || $this->dns->isAvailableForCustomer($user)),
         ]);
     }
 

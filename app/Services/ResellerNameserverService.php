@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Services\Dns\DomainCloudflareDnsService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 
@@ -104,8 +105,8 @@ class ResellerNameserverService
      */
     public function resolveForCustomerItem(User $customer, array $item): array
     {
-        if (! empty($item['cloudflare_dns']) && app(\App\Services\Dns\DomainCloudflareDnsService::class)->isAvailable()) {
-            return app(\App\Services\Dns\DomainCloudflareDnsService::class)->nameserversForRegistration();
+        if (! empty($item['cloudflare_dns']) && app(DomainCloudflareDnsService::class)->isAvailableForCustomer($customer)) {
+            return app(DomainCloudflareDnsService::class)->nameserversForRegistration();
         }
 
         $reseller = $this->resellerForCustomer($customer);

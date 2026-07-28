@@ -5,8 +5,10 @@ namespace App\Services\Dns;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\Service;
-use App\Models\Setting;
+use App\Models\User;
 use App\Services\NodeNameserverService;
+use App\Services\Provisioning\MailDnsService;
+use App\Services\ResellerCustomerCatalogService;
 use Illuminate\Support\Facades\Log;
 
 class DomainCloudflareDnsService
@@ -21,14 +23,31 @@ class DomainCloudflareDnsService
         return $this->cloudflare->isConfigured();
     }
 
+    /**
+     * Platform Cloudflare DNS is for direct platform customers only.
+     * Reseller customers use DirectAdmin / reseller nameservers.
+     */
+    public function isAvailableForCustomer(?User $user): bool
+    {
+        if ($user && app(ResellerCustomerCatalogService::class)->isResellerCustomer($user)) {
+            return false;
+        }
+
+        return $this->isAvailable();
+    }
+
     public function usesCloudflareDns(Domain $domain): bool
     {
         return (bool) $domain->cloudflare_dns_enabled && filled($domain->cloudflare_zone_id);
     }
 
-    public function shouldOfferCloudflareDns(?Domain $domain = null): bool
+    public function shouldOfferCloudflareDns(?Domain $domain = null, ?User $user = null): bool
     {
-        if (! $this->isAvailable()) {
+        $user ??= $domain?->relationLoaded('user')
+            ? $domain->user
+            : $domain?->user()->first();
+
+        if (! $this->isAvailableForCustomer($user)) {
             return false;
         }
 
@@ -82,8 +101,15 @@ class DomainCloudflareDnsService
      */
     public function provisionZone(Domain $domain): array
     {
-        if (! $this->isAvailable()) {
-            return ['success' => false, 'message' => 'Cloudflare DNS is not configured. Contact support.'];
+        $domain->loadMissing('user');
+
+        if (! $this->isAvailableForCustomer($domain->user)) {
+            return [
+                'success' => false,
+                'message' => app(ResellerCustomerCatalogService::class)->isResellerCustomer($domain->user)
+                    ? 'DNS for your domains is managed through hosting (DirectAdmin), not Cloudflare.'
+                    : 'Cloudflare DNS is not configured. Contact support.',
+            ];
         }
 
         if ($this->hasDirectAdminDns($domain)) {
@@ -96,7 +122,7 @@ class DomainCloudflareDnsService
             $zone = $this->ensureLocalZone($domain, $domain->cloudflare_zone_id);
 
             try {
-                app(\App\Services\Provisioning\MailDnsService::class)->applyForDomain($domain->fresh());
+                app(MailDnsService::class)->applyForDomain($domain->fresh());
             } catch (\Throwable $e) {
                 Log::info('Mail DNS apply for existing Cloudflare zone skipped', [
                     'domain_id' => $domain->id,
@@ -138,7 +164,7 @@ class DomainCloudflareDnsService
         ]);
 
         try {
-            app(\App\Services\Provisioning\MailDnsService::class)->applyForDomain($domain->fresh());
+            app(MailDnsService::class)->applyForDomain($domain->fresh());
         } catch (\Throwable $e) {
             Log::info('Mail DNS apply after Cloudflare zone skipped', [
                 'domain_id' => $domain->id,
@@ -152,6 +178,11 @@ class DomainCloudflareDnsService
     public function provisionFromServiceMeta(Domain $domain, array $serviceMeta): void
     {
         if (empty($serviceMeta['cloudflare_dns'])) {
+            return;
+        }
+
+        $domain->loadMissing('user');
+        if (! $this->isAvailableForCustomer($domain->user)) {
             return;
         }
 

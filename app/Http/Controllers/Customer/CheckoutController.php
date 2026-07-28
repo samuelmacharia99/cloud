@@ -533,7 +533,8 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
-                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(DomainCloudflareDnsService::class)->isAvailable();
+                        $cloudflareDns = ! empty($item['cloudflare_dns'])
+                            && app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
 
                         // Create Domain
                         $domain = Domain::create([
@@ -1332,7 +1333,8 @@ class CheckoutController extends Controller
                     } elseif ($item['type'] === 'domain') {
                         $extension = DomainExtension::where('extension', $item['extension'])->first();
                         $resolvedNs = app(ResellerNameserverService::class)->resolveForCustomerItem($user, $item);
-                        $cloudflareDns = ! empty($item['cloudflare_dns']) && app(DomainCloudflareDnsService::class)->isAvailable();
+                        $cloudflareDns = ! empty($item['cloudflare_dns'])
+                            && app(DomainCloudflareDnsService::class)->isAvailableForCustomer($user);
 
                         // Create Domain
                         $domain = Domain::create([
