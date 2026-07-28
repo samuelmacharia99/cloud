@@ -9,6 +9,7 @@ use App\Models\ResellerPackage;
 use App\Models\ResellerProduct;
 use App\Models\User;
 use App\Services\DomainAvailabilityService;
+use App\Services\ResellerBrandingResolver;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -124,7 +125,11 @@ class ResellerLandingPageTest extends TestCase
             ->assertSee('.ke')
             ->assertSee('Starter Web')
             ->assertSee('Web Hosting')
-            ->assertSee('Client Area');
+            ->assertSee('Client Area')
+            ->assertSee('Secure checkout')
+            ->assertSee('Transfer')
+            ->assertSee('Monthly')
+            ->assertSee('Yearly');
     }
 
     public function test_storefront_domain_search_works_without_public_api(): void
@@ -173,6 +178,8 @@ class ResellerLandingPageTest extends TestCase
         ]);
 
         $response->assertRedirect();
+        $response->assertSessionHasNoErrors();
+        $response->assertSessionMissing('error');
 
         $reseller->refresh();
         $this->assertTrue((bool) ($reseller->settings['branding']['landing_enabled'] ?? false));
@@ -210,7 +217,7 @@ class ResellerLandingPageTest extends TestCase
             $settings['branding']['landing_template'] = $template;
             $reseller->update(['settings' => $settings]);
             $reseller->refresh();
-            app(\App\Services\ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
+            app(ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
 
             $response = $this->withServerVariables(['HTTP_HOST' => self::HOST])
                 ->get('https://'.self::HOST.'/');

@@ -24,6 +24,7 @@ class ResellerBrandingResolver
             'footer_text' => Setting::getValue('footer_text', ''),
             'support_email' => Setting::getValue('site_email', Setting::getValue('company_email')),
             'support_phone' => Setting::getValue('company_phone'),
+            'website_url' => null,
             'portal_url' => Setting::getValue('site_url', config('app.url')),
             'reseller_id' => null,
             'is_white_label' => false,
@@ -49,6 +50,7 @@ class ResellerBrandingResolver
             'footer_text' => $stored['footer_text'] ?? '',
             'support_email' => $stored['support_email'] ?? $reseller->email,
             'support_phone' => $stored['support_phone'] ?? $reseller->phone,
+            'website_url' => $stored['website_url'] ?? null,
             'reseller_id' => $reseller->id,
             'is_white_label' => ! empty($stored['company_name']),
         ]);

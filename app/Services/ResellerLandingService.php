@@ -54,7 +54,12 @@ class ResellerLandingService
      *     hero_headline: string,
      *     hero_subtext: string,
      *     show_domains: bool,
-     *     show_hosting: bool
+     *     show_hosting: bool,
+     *     show_trust: bool,
+     *     meta_title: string,
+     *     meta_description: string,
+     *     ga_id: string,
+     *     gtm_id: string
      * }
      */
     public function config(User $reseller): array
@@ -67,6 +72,16 @@ class ResellerLandingService
             $template = self::TEMPLATE_LEGACY;
         }
 
+        $gaId = strtoupper(trim((string) ($stored['landing_ga_id'] ?? '')));
+        $gtmId = strtoupper(trim((string) ($stored['landing_gtm_id'] ?? '')));
+
+        if ($gaId !== '' && ! preg_match('/^(G|UA)-[A-Z0-9-]+$/', $gaId)) {
+            $gaId = '';
+        }
+        if ($gtmId !== '' && ! preg_match('/^GTM-[A-Z0-9]+$/', $gtmId)) {
+            $gtmId = '';
+        }
+
         return [
             'enabled' => filter_var($stored['landing_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
             'template' => $template,
@@ -74,6 +89,11 @@ class ResellerLandingService
             'hero_subtext' => trim((string) ($stored['landing_hero_subtext'] ?? '')),
             'show_domains' => filter_var($stored['landing_show_domains'] ?? true, FILTER_VALIDATE_BOOLEAN),
             'show_hosting' => filter_var($stored['landing_show_hosting'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'show_trust' => filter_var($stored['landing_show_trust'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'meta_title' => trim((string) ($stored['landing_meta_title'] ?? '')),
+            'meta_description' => trim((string) ($stored['landing_meta_description'] ?? '')),
+            'ga_id' => $gaId,
+            'gtm_id' => $gtmId,
         ];
     }
 

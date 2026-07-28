@@ -64,6 +64,7 @@ Run `php artisan db:seed --class=CronJobSeeder` on new installs to register all 
 - WHMCS-style cart: visitors add domains/hosting to `/cart`, then checkout to **create an account** or **log in** and pay.
 - Each catalog product has a WordPress-friendly order link: `https://your-domain/{product-slug}/cart` (copy from My Catalog → product). Visiting it adds that plan to the cart.
 - Optional billing: `?billing_cycle=annual` (or `monthly`, `quarterly`, `semi-annual`).
+- Landing polish: register/transfer toggle, multi-year domain search, monthly/yearly hosting toggle, domain→hosting upsell, trust strip, SEO/GA/GTM, optional promo code, cart line editors.
 - Templates: **Legacy**, **Modern**, **Minimal**, and **Showcase** (selectable from Branding settings).
 
 ### Hosting

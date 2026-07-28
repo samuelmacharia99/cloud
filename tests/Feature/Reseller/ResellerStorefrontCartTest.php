@@ -226,6 +226,48 @@ class ResellerStorefrontCartTest extends TestCase
             ->assertSee('999');
     }
 
+    public function test_cart_can_change_billing_cycle_and_apply_promo(): void
+    {
+        $reseller = $this->createReseller();
+        $settings = $reseller->settings;
+        $settings['branding']['promo_code'] = 'SAVE10';
+        $settings['branding']['promo_type'] = 'percent';
+        $settings['branding']['promo_value'] = 10;
+        $reseller->update(['settings' => $settings]);
+
+        $product = $this->seedProduct($reseller);
+        app(ResellerBrandingResolver::class)->forgetDomainCache(self::HOST);
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->postJson('https://'.self::HOST.'/store/cart', [
+                'items' => [[
+                    'type' => 'reseller_product',
+                    'id' => $product->id,
+                    'reseller_product_id' => $product->id,
+                    'billing_cycle' => 'monthly',
+                ]],
+            ])
+            ->assertOk();
+
+        $key = array_key_first(session(CheckoutController::CART_SESSION_KEY));
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->patch('https://'.self::HOST.'/cart/'.$key, ['billing_cycle' => 'annual'])
+            ->assertRedirect(route('reseller.public.store.cart.show'));
+
+        $this->assertSame('annual', session(CheckoutController::CART_SESSION_KEY)[$key]['billing_cycle']);
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->post('https://'.self::HOST.'/cart/promo', ['promo_code' => 'SAVE10'])
+            ->assertRedirect(route('reseller.public.store.cart.show'));
+
+        $this->withServerVariables(['HTTP_HOST' => self::HOST])
+            ->get('https://'.self::HOST.'/cart')
+            ->assertOk()
+            ->assertSee('SAVE10')
+            ->assertSee('9,990');
+    }
+
     public function test_existing_customer_can_login_at_checkout(): void
     {
         $reseller = $this->createReseller();

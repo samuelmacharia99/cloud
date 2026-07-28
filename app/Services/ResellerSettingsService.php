@@ -175,6 +175,15 @@ class ResellerSettingsService
             'landing_hero_subtext' => '',
             'landing_show_domains' => true,
             'landing_show_hosting' => true,
+            'landing_show_trust' => true,
+            'landing_meta_title' => '',
+            'landing_meta_description' => '',
+            'landing_ga_id' => '',
+            'landing_gtm_id' => '',
+            'website_url' => '',
+            'promo_code' => '',
+            'promo_type' => 'percent',
+            'promo_value' => null,
             'ssl' => [],
             'updated_at' => null,
         ]);
@@ -232,6 +241,17 @@ class ResellerSettingsService
             'landing_hero_subtext' => trim((string) ($data['landing_hero_subtext'] ?? '')),
             'landing_show_domains' => filter_var($data['landing_show_domains'] ?? true, FILTER_VALIDATE_BOOLEAN),
             'landing_show_hosting' => filter_var($data['landing_show_hosting'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'landing_show_trust' => filter_var($data['landing_show_trust'] ?? true, FILTER_VALIDATE_BOOLEAN),
+            'landing_meta_title' => trim((string) ($data['landing_meta_title'] ?? '')),
+            'landing_meta_description' => trim((string) ($data['landing_meta_description'] ?? '')),
+            'landing_ga_id' => strtoupper(trim((string) ($data['landing_ga_id'] ?? ''))),
+            'landing_gtm_id' => strtoupper(trim((string) ($data['landing_gtm_id'] ?? ''))),
+            'website_url' => $this->normalizeWebsiteUrl($data['website_url'] ?? null),
+            'promo_code' => strtoupper(trim((string) ($data['promo_code'] ?? ''))),
+            'promo_type' => in_array(($data['promo_type'] ?? 'percent'), ['percent', 'fixed'], true)
+                ? (string) ($data['promo_type'] ?? 'percent')
+                : 'percent',
+            'promo_value' => filled($data['promo_value'] ?? null) ? (float) $data['promo_value'] : null,
             'updated_at' => now(),
         ]);
 
@@ -266,6 +286,25 @@ class ResellerSettingsService
             'company_name' => $data['company_name'],
             'custom_domain' => $newDomain,
         ]);
+    }
+
+    private function normalizeWebsiteUrl(mixed $url): ?string
+    {
+        $url = trim((string) ($url ?? ''));
+        if ($url === '') {
+            return null;
+        }
+
+        if (! preg_match('#^https?://#i', $url)) {
+            $url = 'https://'.$url;
+        }
+
+        $parsed = parse_url($url);
+        if (! is_array($parsed) || empty($parsed['host'])) {
+            return null;
+        }
+
+        return rtrim($url, '/');
     }
 
     private function getSettings(User $user, string $key, array $defaults): array

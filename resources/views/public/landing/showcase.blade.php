@@ -4,10 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $branding['company_name'] ?? config('app.name') }}</title>
-    @if (! empty($branding['favicon_url']))
-        <link rel="icon" href="{{ $branding['favicon_url'] }}">
-    @endif
+    @include('public.landing.partials.head-meta')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,8 +74,8 @@
             </div>
 
             @if ($landing['show_domains'])
-                <form @submit.prevent="searchDomains()" class="mt-10 max-w-2xl">
-                    <div class="panel flex flex-col sm:flex-row gap-2 p-2 rounded-xl border border-white/10">
+                <form @submit.prevent="domainMode === 'transfer' ? null : searchDomains()" class="mt-10 max-w-2xl">
+                    <div class="panel flex flex-col sm:flex-row gap-2 p-2 rounded-xl border border-white/10" x-show="domainMode === 'register'">
                         <input
                             type="text"
                             x-model="query"
@@ -93,8 +90,21 @@
                     </div>
                     <p x-show="searchError" x-text="searchError" class="mt-3 text-sm text-rose-300"></p>
                 </form>
+                @include('public.landing.partials.domain-search-controls', [
+                    'controlsClass' => 'mt-4 flex flex-wrap items-center gap-3 text-sm',
+                    'toggleBorderClass' => 'border-white/20 bg-white/5',
+                    'toggleActiveClass' => 'bg-white text-slate-900',
+                    'toggleIdleClass' => 'text-slate-300 hover:bg-white/10',
+                    'yearsLabelClass' => 'text-slate-300',
+                    'yearsSelectClass' => 'rounded-md border-0 text-slate-900 text-sm font-semibold py-1.5 pl-2 pr-8',
+                ])
             @endif
         </section>
+
+        @include('public.landing.partials.trust-strip', [
+            'trustClass' => 'border-y border-white/10 bg-black/20',
+            'trustTextClass' => 'text-slate-400',
+        ])
 
         @include('public.landing.partials.domain-results', [
             'resultsClass' => 'border-y border-white/10 bg-black/20',
@@ -151,19 +161,36 @@
                     <h2 class="serif text-3xl text-white">Hosting showcase</h2>
                     <p class="mt-2 text-slate-400">Plans from your reseller catalog.</p>
                 </div>
+
+                @include('public.landing.partials.billing-cycle-toggle', [
+                    'cycleLabelClass' => 'text-slate-400',
+                ])
+
                 @forelse ($serviceGroups as $group)
                     <div>
                         <h3 class="text-xs font-semibold uppercase tracking-[0.2em] brand-text mb-4">{{ $group['label'] }}</h3>
                         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
                             @foreach ($group['products'] as $product)
+                                @php
+                                    $monthly = (float) ($product['monthly_price'] ?? 0);
+                                    $yearly = $product['yearly_price'] !== null ? (float) $product['yearly_price'] : null;
+                                    $savePct = ($monthly > 0 && $yearly !== null && $yearly < $monthly * 12)
+                                        ? (int) round((($monthly * 12 - $yearly) / ($monthly * 12)) * 100)
+                                        : null;
+                                @endphp
                                 <article class="panel rounded-xl border border-white/10 p-6 flex flex-col">
                                     <h4 class="text-xl font-semibold text-white">{{ $product['name'] }}</h4>
                                     @if (! empty($product['description']))
                                         <p class="mt-2 text-sm text-slate-400">{{ \Illuminate\Support\Str::limit($product['description'], 110) }}</p>
                                     @endif
                                     <div class="mt-5">
-                                        <span class="text-3xl font-bold text-white">KES {{ number_format((float) ($product['monthly_price'] ?? 0), 0) }}</span>
-                                        <span class="text-sm text-slate-500">/mo</span>
+                                        <span class="text-3xl font-bold text-white">
+                                            KES <span x-text="Number(billingCycle === 'annual' ? {{ $yearly ?? ($monthly * 12) }} : {{ $monthly }}).toLocaleString()"></span>
+                                        </span>
+                                        <span class="text-sm text-slate-500" x-text="billingCycle === 'annual' ? '/yr' : '/mo'"></span>
+                                        @if ($savePct)
+                                            <p class="text-xs text-emerald-400 mt-1 font-medium" x-show="billingCycle === 'annual'">Save {{ $savePct }}% vs monthly</p>
+                                        @endif
                                     </div>
                                     @if (! empty($product['features']) && is_array($product['features']))
                                         <ul class="mt-5 space-y-2 text-sm text-slate-300 flex-1">
@@ -178,7 +205,7 @@
                                         <div class="flex-1"></div>
                                     @endif
                                     <a href="{{ $product['order_path'] ?? '#' }}"
-                                        @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                        @click.prevent="orderHosting({{ (int) $product['id'] }}, billingCycle)"
                                         :class="{ 'pointer-events-none opacity-60': ordering }"
                                         class="mt-6 w-full brand-btn font-semibold py-3 rounded-lg text-center block">
                                         Order now
@@ -212,6 +239,9 @@
                 <div class="flex flex-wrap gap-4 text-slate-400">
                     <a href="{{ $loginUrl }}" class="hover:text-white">Login</a>
                     <a href="{{ $registerUrl }}" class="hover:text-white">Register</a>
+                    @if (! empty($branding['website_url']))
+                        <a href="{{ $branding['website_url'] }}" class="hover:text-white" target="_blank" rel="noopener">Our website</a>
+                    @endif
                     <a href="{{ route('terms') }}" class="hover:text-white">Terms</a>
                     <a href="{{ route('privacy') }}" class="hover:text-white">Privacy</a>
                 </div>

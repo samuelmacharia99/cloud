@@ -4,10 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $branding['company_name'] ?? config('app.name') }}</title>
-    @if (! empty($branding['favicon_url']))
-        <link rel="icon" href="{{ $branding['favicon_url'] }}">
-    @endif
+    @include('public.landing.partials.head-meta')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <style>
         :root {
@@ -92,8 +89,8 @@
             </p>
 
             @if ($landing['show_domains'])
-                <form @submit.prevent="searchDomains()" class="mt-8 max-w-3xl mx-auto">
-                    <div class="bg-white rounded-lg shadow-xl p-2 sm:p-3 flex flex-col sm:flex-row gap-2">
+                <form @submit.prevent="domainMode === 'transfer' ? null : searchDomains()" class="mt-8 max-w-3xl mx-auto">
+                    <div class="bg-white rounded-lg shadow-xl p-2 sm:p-3 flex flex-col sm:flex-row gap-2" x-show="domainMode === 'register'">
                         <input
                             type="text"
                             x-model="query"
@@ -111,9 +108,12 @@
                     </div>
                     <p x-show="searchError" x-text="searchError" class="mt-3 text-sm text-amber-100"></p>
                 </form>
+                @include('public.landing.partials.domain-search-controls')
             @endif
         </div>
     </section>
+
+    @include('public.landing.partials.trust-strip')
 
     @if ($landing['show_domains'] && count($extensions) > 0)
         <section class="bg-white border-b border-slate-200">
@@ -188,12 +188,23 @@
                     <p class="text-slate-600 mt-2">Choose a plan and check out in a few clicks.</p>
                 </div>
 
+                @include('public.landing.partials.billing-cycle-toggle')
+
                 @forelse ($serviceGroups as $group)
                     <div>
                         <h3 class="text-lg font-bold text-slate-800 mb-4 border-l-4 brand-border pl-3">{{ $group['label'] }}</h3>
                         <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
                             @foreach ($group['products'] as $product)
-                                <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                                @php
+                                    $monthly = (float) ($product['monthly_price'] ?? 0);
+                                    $yearly = $product['yearly_price'] !== null ? (float) $product['yearly_price'] : null;
+                                    $savePct = ($monthly > 0 && $yearly !== null && $yearly < $monthly * 12)
+                                        ? (int) round((($monthly * 12 - $yearly) / ($monthly * 12)) * 100)
+                                        : null;
+                                @endphp
+                                <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col"
+                                     data-monthly="{{ $monthly }}"
+                                     data-yearly="{{ $yearly ?? ($monthly * 12) }}">
                                     <div class="brand-bg text-white px-5 py-4">
                                         <h4 class="font-bold text-lg">{{ $product['name'] }}</h4>
                                         @if (! empty($product['category']))
@@ -203,13 +214,11 @@
                                     <div class="p-5 flex-1 flex flex-col">
                                         <div class="mb-4">
                                             <div class="text-3xl font-bold text-slate-900">
-                                                KES {{ number_format((float) ($product['monthly_price'] ?? 0), 0) }}
-                                                <span class="text-sm font-normal text-slate-500">/mo</span>
+                                                KES <span x-text="Number(billingCycle === 'annual' ? {{ $yearly ?? ($monthly * 12) }} : {{ $monthly }}).toLocaleString()"></span>
+                                                <span class="text-sm font-normal text-slate-500" x-text="billingCycle === 'annual' ? '/yr' : '/mo'"></span>
                                             </div>
-                                            @if (! empty($product['yearly_price']))
-                                                <p class="text-xs text-slate-500 mt-1">
-                                                    or KES {{ number_format((float) $product['yearly_price'], 0) }}/yr
-                                                </p>
+                                            @if ($savePct)
+                                                <p class="text-xs text-emerald-600 mt-1 font-medium" x-show="billingCycle === 'annual'">Save {{ $savePct }}% vs monthly</p>
                                             @endif
                                             @if (! empty($product['setup_fee']) && (float) $product['setup_fee'] > 0)
                                                 <p class="text-xs text-slate-500 mt-1">
@@ -234,7 +243,7 @@
                                         @endif
                                         <a
                                             href="{{ $product['order_path'] ?? '#' }}"
-                                            @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                            @click.prevent="orderHosting({{ (int) $product['id'] }}, billingCycle)"
                                             :class="{ 'pointer-events-none opacity-60': ordering }"
                                             class="w-full brand-btn text-white font-semibold py-2.5 rounded-md text-center block"
                                         >
@@ -278,6 +287,9 @@
                 <p class="font-semibold mb-2">Client area</p>
                 <a href="{{ $loginUrl }}" class="block text-white/80 hover:text-white">Login</a>
                 <a href="{{ $registerUrl }}" class="block text-white/80 hover:text-white mt-1">Create account</a>
+                @if (! empty($branding['website_url']))
+                    <a href="{{ $branding['website_url'] }}" class="block text-white/80 hover:text-white mt-1" target="_blank" rel="noopener">Our website</a>
+                @endif
             </div>
         </div>
         <div class="border-t border-white/10">

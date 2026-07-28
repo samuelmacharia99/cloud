@@ -37,6 +37,7 @@ use App\Services\ResellerLandingService;
 use App\Services\ResellerNameserverService;
 use App\Services\ResellerPackageSubscriptionService;
 use App\Services\ResellerPublicApiService;
+use App\Services\ResellerStorefrontPromoService;
 use App\Services\ServerProductConfigService;
 use App\Services\TaxService;
 use App\Services\TechStackRoutingService;
@@ -344,7 +345,8 @@ class CheckoutController extends Controller
                     + app(ContainerEmailBundleService::class)->estimateInvoiceAddonTotal($cart);
 
                 $subtotal += $domainAddonTotal;
-                $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
+                $promo = $this->storefrontPromoForCheckout($subtotal);
+                $taxBreakdown = TaxService::calculateForUser($promo['taxable'], $user);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
@@ -617,11 +619,14 @@ class CheckoutController extends Controller
                     }
                 }
 
+                $this->addStorefrontPromoInvoiceItem($invoice, $promo);
+
                 return $order;
             });
 
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
+            app(ResellerStorefrontPromoService::class)->forget();
 
             $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
 
@@ -944,7 +949,8 @@ class CheckoutController extends Controller
             return redirect('/')->with('error', 'Your cart is empty');
         }
 
-        $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
+        $promo = $this->storefrontPromoForCheckout($subtotal);
+        $taxBreakdown = TaxService::calculateForUser($promo['taxable'], $user);
 
         $currency = app(UserCurrencyService::class)->model($user);
         $currencyCode = $currency->code;
@@ -955,7 +961,10 @@ class CheckoutController extends Controller
 
         return view('public.checkout', [
             'cartItems' => $cartItems,
-            'subtotal' => $taxBreakdown['subtotal'],
+            'subtotal' => $subtotal,
+            'discount' => $promo['discount'],
+            'discountLabel' => $promo['label'],
+            'promoCode' => $promo['code'],
             'tax' => $taxBreakdown['tax'],
             'taxEnabled' => $taxBreakdown['enabled'],
             'taxRate' => $taxBreakdown['rate'],
@@ -1143,7 +1152,8 @@ class CheckoutController extends Controller
                     : 0.0;
 
                 $subtotal += $domainAddonTotal;
-                $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
+                $promo = $this->storefrontPromoForCheckout($subtotal);
+                $taxBreakdown = TaxService::calculateForUser($promo['taxable'], $user);
 
                 // Create Invoice first (so we have the ID for the order)
                 $invoice = Invoice::create([
@@ -1408,11 +1418,14 @@ class CheckoutController extends Controller
                     }
                 }
 
+                $this->addStorefrontPromoInvoiceItem($invoice, $promo);
+
                 return $order;
             });
 
             // Clear cart
             session([self::CART_SESSION_KEY => []]);
+            app(ResellerStorefrontPromoService::class)->forget();
 
             $invoice = $order->invoice ?? Invoice::find($order->invoice_id);
 
@@ -1763,5 +1776,51 @@ class CheckoutController extends Controller
         );
 
         return array_merge($serviceMeta, $hostingContext['service_meta']);
+    }
+
+    /**
+     * @return array{discount: float, code: string|null, label: string|null, taxable: float}
+     */
+    private function storefrontPromoForCheckout(float $subtotal): array
+    {
+        $hostReseller = $this->checkoutReseller();
+        if (! $hostReseller || ! app(ResellerLandingService::class)->isEnabled($hostReseller)) {
+            return [
+                'discount' => 0.0,
+                'code' => null,
+                'label' => null,
+                'taxable' => $subtotal,
+            ];
+        }
+
+        $promo = app(ResellerStorefrontPromoService::class)->resolve($hostReseller, $subtotal);
+
+        return [
+            'discount' => $promo['discount'],
+            'code' => $promo['code'],
+            'label' => $promo['label'],
+            'taxable' => max(0.0, $subtotal - $promo['discount']),
+        ];
+    }
+
+    /**
+     * @param  array{discount: float, code: string|null, label: string|null, taxable?: float}  $promo
+     */
+    private function addStorefrontPromoInvoiceItem(Invoice $invoice, array $promo): void
+    {
+        if (($promo['discount'] ?? 0) <= 0) {
+            return;
+        }
+
+        InvoiceItem::create([
+            'invoice_id' => $invoice->id,
+            'description' => 'Promo'.(! empty($promo['code']) ? ': '.$promo['code'] : ''),
+            'quantity' => 1,
+            'unit_price' => -1 * (float) $promo['discount'],
+            'amount' => -1 * (float) $promo['discount'],
+            'custom_options' => [
+                'promo_code' => $promo['code'] ?? null,
+            ],
+        ]);
     }
 }

@@ -688,6 +688,86 @@
                                             class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
                                         <span class="text-sm text-slate-700 dark:text-slate-300">Show hosting plans</span>
                                     </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="hidden" name="landing_show_trust" value="0">
+                                        <input type="checkbox" name="landing_show_trust" value="1"
+                                            @checked(filter_var(old('landing_show_trust', $brandingSettings['landing_show_trust'] ?? true), FILTER_VALIDATE_BOOLEAN))
+                                            class="rounded border-slate-300 text-amber-600 focus:ring-amber-500">
+                                        <span class="text-sm text-slate-700 dark:text-slate-300">Show trust strip</span>
+                                    </label>
+                                </div>
+
+                                <div class="grid sm:grid-cols-2 gap-4 pt-2 border-t border-slate-200 dark:border-slate-700">
+                                    <div>
+                                        <label for="landing_meta_title" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SEO title (optional)</label>
+                                        <input type="text" id="landing_meta_title" name="landing_meta_title"
+                                            value="{{ old('landing_meta_title', $brandingSettings['landing_meta_title'] ?? '') }}"
+                                            maxlength="70"
+                                            placeholder="Defaults to company name"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm">
+                                    </div>
+                                    <div>
+                                        <label for="website_url" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Marketing website URL</label>
+                                        <input type="text" id="website_url" name="website_url"
+                                            value="{{ old('website_url', $brandingSettings['website_url'] ?? '') }}"
+                                            placeholder="https://www.example.com"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm">
+                                        <p class="mt-1 text-xs text-slate-500">Shown as “Our website” in the landing footer (e.g. your WordPress site).</p>
+                                    </div>
+                                    <div class="sm:col-span-2">
+                                        <label for="landing_meta_description" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">SEO description (optional)</label>
+                                        <input type="text" id="landing_meta_description" name="landing_meta_description"
+                                            value="{{ old('landing_meta_description', $brandingSettings['landing_meta_description'] ?? '') }}"
+                                            maxlength="160"
+                                            placeholder="Defaults to tagline"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm">
+                                    </div>
+                                    <div>
+                                        <label for="landing_ga_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Google Analytics ID</label>
+                                        <input type="text" id="landing_ga_id" name="landing_ga_id"
+                                            value="{{ old('landing_ga_id', $brandingSettings['landing_ga_id'] ?? '') }}"
+                                            placeholder="G-XXXXXXXX"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm font-mono">
+                                    </div>
+                                    <div>
+                                        <label for="landing_gtm_id" class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Google Tag Manager ID</label>
+                                        <input type="text" id="landing_gtm_id" name="landing_gtm_id"
+                                            value="{{ old('landing_gtm_id', $brandingSettings['landing_gtm_id'] ?? '') }}"
+                                            placeholder="GTM-XXXXXXX"
+                                            class="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white text-sm font-mono">
+                                        <p class="mt-1 text-xs text-slate-500">If set, GTM is used instead of the GA snippet.</p>
+                                    </div>
+                                </div>
+
+                                <div class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 space-y-3">
+                                    <div>
+                                        <p class="text-sm font-semibold text-slate-900 dark:text-white">Promo code (optional)</p>
+                                        <p class="text-xs text-slate-500 mt-0.5">One simple code customers can enter on the cart. Not a full coupon system.</p>
+                                    </div>
+                                    <div class="grid sm:grid-cols-3 gap-3">
+                                        <div>
+                                            <label for="promo_code" class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Code</label>
+                                            <input type="text" id="promo_code" name="promo_code"
+                                                value="{{ old('promo_code', $brandingSettings['promo_code'] ?? '') }}"
+                                                placeholder="SAVE10"
+                                                class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm font-mono uppercase text-slate-900 dark:text-white">
+                                        </div>
+                                        <div>
+                                            <label for="promo_type" class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Type</label>
+                                            <select id="promo_type" name="promo_type"
+                                                class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                                <option value="percent" @selected(old('promo_type', $brandingSettings['promo_type'] ?? 'percent') === 'percent')>Percent %</option>
+                                                <option value="fixed" @selected(old('promo_type', $brandingSettings['promo_type'] ?? '') === 'fixed')>Fixed KES</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label for="promo_value" class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Value</label>
+                                            <input type="number" step="0.01" min="0" id="promo_value" name="promo_value"
+                                                value="{{ old('promo_value', $brandingSettings['promo_value'] ?? '') }}"
+                                                placeholder="10"
+                                                class="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-sm text-slate-900 dark:text-white">
+                                        </div>
+                                    </div>
                                 </div>
 
                                 @if ($portalPreviewUrl)

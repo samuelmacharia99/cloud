@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\ResellerBrandingResolver;
 use App\Services\ResellerLandingService;
 use App\Services\ResellerPublicApiService;
+use App\Services\ResellerStorefrontPromoService;
 use App\Services\TaxService;
 use App\Services\TwoFactorService;
 use App\Services\UserCurrencyService;
@@ -30,6 +31,7 @@ class StorefrontController extends Controller
     public function __construct(
         private ResellerPublicApiService $api,
         private ResellerLandingService $landing,
+        private ResellerStorefrontPromoService $promo,
     ) {}
 
     public function searchDomains(Request $request): JsonResponse
@@ -69,6 +71,10 @@ class StorefrontController extends Controller
             'cartItems' => $formatted['items'],
             'itemCount' => count($formatted['items']),
             'subtotal' => $formatted['subtotal'],
+            'discount' => $formatted['discount'],
+            'discountLabel' => $formatted['discount_label'],
+            'promoCode' => $formatted['promo_code'],
+            'promoConfigured' => $formatted['promo_configured'],
             'tax' => $formatted['tax'],
             'taxEnabled' => $formatted['tax_enabled'],
             'taxRate' => $formatted['tax_rate'],
@@ -151,6 +157,9 @@ class StorefrontController extends Controller
             'items.*.reseller_product_id' => 'nullable|integer',
             'items.*.billing_cycle' => 'nullable|string|in:monthly,quarterly,semi-annual,annual',
             'items.*.domain' => 'nullable|string|max:253',
+            'items.*.epp_code' => 'nullable|string|min:5|max:64',
+            'items.*.old_registrar' => 'nullable|string|min:2|max:100',
+            'items.*.old_registrar_url' => 'nullable|string|max:255',
         ]);
 
         $newItems = $this->api->buildCartItems($reseller, $validated['items']);
@@ -244,10 +253,92 @@ class StorefrontController extends Controller
         abort_unless($this->landing->isEnabled($reseller), 404);
 
         session([CheckoutController::CART_SESSION_KEY => []]);
+        $this->promo->forget();
 
         return redirect()
             ->route('reseller.public.store.cart.show')
             ->with('success', 'Cart cleared.');
+    }
+
+    public function updateCartItem(Request $request, string $key): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        $validated = $request->validate([
+            'years' => 'nullable|integer|min:1|max:10',
+            'billing_cycle' => 'nullable|string|in:monthly,quarterly,semi-annual,annual',
+        ]);
+
+        $cart = session(CheckoutController::CART_SESSION_KEY, []);
+        if (! is_array($cart) || ! isset($cart[$key]) || ! is_array($cart[$key])) {
+            return redirect()
+                ->route('reseller.public.store.cart.show')
+                ->with('error', 'Cart item not found.');
+        }
+
+        $item = $cart[$key];
+        $type = $item['type'] ?? '';
+
+        if ($type === 'domain' && isset($validated['years'])) {
+            $years = (int) $validated['years'];
+            $extension = DomainExtension::where('extension', $item['extension'] ?? '')->first();
+            if (! $extension) {
+                return back()->with('error', 'Domain extension not found.');
+            }
+
+            $price = $this->api->retailPrice($reseller, $extension, $years);
+            if ($price === null) {
+                return back()->with('error', 'No retail price for that registration period.');
+            }
+
+            $item['years'] = $years;
+            $item['price'] = $price;
+            $cart[$key] = $item;
+        } elseif (in_array($type, ['reseller_product', 'service'], true) && isset($validated['billing_cycle'])) {
+            $item['billing_cycle'] = $validated['billing_cycle'];
+            $cart[$key] = $item;
+        } else {
+            return back()->with('error', 'That cart line cannot be updated.');
+        }
+
+        session([CheckoutController::CART_SESSION_KEY => $cart]);
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', 'Cart updated.');
+    }
+
+    public function applyPromo(Request $request): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        $validated = $request->validate([
+            'promo_code' => 'required|string|max:32',
+        ]);
+
+        if (! $this->promo->matches($reseller, $validated['promo_code'])) {
+            return back()->with('error', 'That promo code is not valid.');
+        }
+
+        $this->promo->remember($validated['promo_code']);
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', 'Promo code applied.');
+    }
+
+    public function removePromo(): RedirectResponse
+    {
+        $reseller = $this->currentReseller();
+        abort_unless($this->landing->isEnabled($reseller), 404);
+
+        $this->promo->forget();
+
+        return redirect()
+            ->route('reseller.public.store.cart.show')
+            ->with('success', 'Promo code removed.');
     }
 
     /**
@@ -306,6 +397,10 @@ class StorefrontController extends Controller
      * @return array{
      *     items: list<array<string, mixed>>,
      *     subtotal: float,
+     *     discount: float,
+     *     discount_label: string|null,
+     *     promo_code: string|null,
+     *     promo_configured: bool,
      *     tax: float,
      *     tax_enabled: bool,
      *     tax_rate: float|int|string|null,
@@ -351,7 +446,23 @@ class StorefrontController extends Controller
                 $row['name'] = ($item['domain'] ?? '').($item['extension'] ?? '');
                 $row['description'] = $years.' year'.($years === 1 ? '' : 's').' registration';
                 $row['years'] = $years;
+                $row['editable_years'] = true;
                 $row['full_domain'] = $item['full_domain'] ?? $row['name'];
+                $row['amount'] = $price;
+            } elseif ($type === 'domain_transfer') {
+                $extension = DomainExtension::where('extension', $item['extension'] ?? '')->first();
+                $years = (int) ($item['years'] ?? 1);
+                $price = isset($item['price'])
+                    ? (float) $item['price']
+                    : ($extension ? $this->api->transferRetailPrice($reseller, $extension) : null);
+
+                if ($price === null) {
+                    continue;
+                }
+
+                $row['name'] = $item['full_domain'] ?? (($item['domain'] ?? '').($item['extension'] ?? ''));
+                $row['description'] = 'Domain transfer'.(filled($item['old_registrar'] ?? null) ? ' from '.$item['old_registrar'] : '');
+                $row['years'] = $years;
                 $row['amount'] = $price;
             } elseif ($type === 'reseller_product' || $type === 'service') {
                 $listing = ResellerProduct::query()
@@ -375,6 +486,7 @@ class StorefrontController extends Controller
                 $row['name'] = $listing->name;
                 $row['description'] = $listing->description ?? Product::typeLabel((string) $listing->type);
                 $row['billing_cycle'] = $cycle;
+                $row['editable_cycle'] = true;
                 $row['amount'] = $amount;
             } else {
                 continue;
@@ -384,12 +496,18 @@ class StorefrontController extends Controller
             $cartItems[] = $row;
         }
 
-        $taxBreakdown = TaxService::calculateForUser($subtotal, $user);
+        $promo = $this->promo->resolve($reseller, $subtotal);
+        $taxable = max(0.0, $subtotal - $promo['discount']);
+        $taxBreakdown = TaxService::calculateForUser($taxable, $user);
         $currency = app(UserCurrencyService::class)->model($user);
 
         return [
             'items' => $cartItems,
-            'subtotal' => (float) $taxBreakdown['subtotal'],
+            'subtotal' => $subtotal,
+            'discount' => $promo['discount'],
+            'discount_label' => $promo['label'],
+            'promo_code' => $promo['code'],
+            'promo_configured' => $this->promo->configuredPromo($reseller) !== null,
             'tax' => (float) $taxBreakdown['tax'],
             'tax_enabled' => (bool) $taxBreakdown['enabled'],
             'tax_rate' => $taxBreakdown['rate'],

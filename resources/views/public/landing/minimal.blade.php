@@ -4,10 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $branding['company_name'] ?? config('app.name') }}</title>
-    @if (! empty($branding['favicon_url']))
-        <link rel="icon" href="{{ $branding['favicon_url'] }}">
-    @endif
+    @include('public.landing.partials.head-meta')
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -54,8 +51,8 @@
             </p>
 
             @if ($landing['show_domains'])
-                <form @submit.prevent="searchDomains()" class="mt-10">
-                    <div class="flex flex-col sm:flex-row border-2 brand-border rounded-lg overflow-hidden">
+                <form @submit.prevent="domainMode === 'transfer' ? null : searchDomains()" class="mt-10">
+                    <div class="flex flex-col sm:flex-row border-2 brand-border rounded-lg overflow-hidden" x-show="domainMode === 'register'">
                         <input
                             type="text"
                             x-model="query"
@@ -70,6 +67,13 @@
                     </div>
                     <p x-show="searchError" x-text="searchError" class="mt-3 text-sm text-rose-600"></p>
                 </form>
+                @include('public.landing.partials.domain-search-controls', [
+                    'toggleBorderClass' => 'border-slate-200 bg-slate-100',
+                    'toggleActiveClass' => 'bg-white text-slate-900 shadow-sm',
+                    'toggleIdleClass' => 'text-slate-600 hover:bg-slate-50',
+                    'yearsLabelClass' => 'text-slate-600',
+                    'yearsSelectClass' => 'rounded-md border border-slate-200 text-slate-900 text-sm font-semibold py-1.5 pl-2 pr-8 bg-white',
+                ])
 
                 @if (count($extensions) > 0)
                     <div class="mt-6 flex flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-slate-600">
@@ -80,6 +84,11 @@
                 @endif
             @endif
         </section>
+
+        @include('public.landing.partials.trust-strip', [
+            'trustClass' => 'mt-12 border-y border-slate-200',
+            'trustContainerClass' => 'py-4',
+        ])
 
         @include('public.landing.partials.domain-results', [
             'resultsClass' => 'mt-12',
@@ -106,23 +115,35 @@
         @if ($landing['show_hosting'])
             <section id="hosting" class="mt-16 text-left">
                 <h2 class="text-lg font-semibold">Hosting</h2>
+
+                @include('public.landing.partials.billing-cycle-toggle', [
+                    'cycleClass' => 'flex flex-wrap items-center gap-3 mt-4 mb-6',
+                ])
+
                 @forelse ($serviceGroups as $group)
                     <div class="mt-6">
                         <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">{{ $group['label'] }}</p>
                         <div class="space-y-3">
                             @foreach ($group['products'] as $product)
+                                @php
+                                    $monthly = (float) ($product['monthly_price'] ?? 0);
+                                    $yearly = $product['yearly_price'] !== null ? (float) $product['yearly_price'] : null;
+                                    $savePct = ($monthly > 0 && $yearly !== null && $yearly < $monthly * 12)
+                                        ? (int) round((($monthly * 12 - $yearly) / ($monthly * 12)) * 100)
+                                        : null;
+                                @endphp
                                 <div class="border border-slate-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                     <div>
                                         <p class="font-semibold">{{ $product['name'] }}</p>
                                         <p class="text-sm text-slate-600 mt-0.5">
-                                            KES {{ number_format((float) ($product['monthly_price'] ?? 0), 0) }}/mo
-                                            @if (! empty($product['yearly_price']))
-                                                · KES {{ number_format((float) $product['yearly_price'], 0) }}/yr
+                                            KES <span x-text="Number(billingCycle === 'annual' ? {{ $yearly ?? ($monthly * 12) }} : {{ $monthly }}).toLocaleString()"></span><span x-text="billingCycle === 'annual' ? '/yr' : '/mo'"></span>
+                                            @if ($savePct)
+                                                <span class="text-emerald-600 font-medium" x-show="billingCycle === 'annual'"> · Save {{ $savePct }}%</span>
                                             @endif
                                         </p>
                                     </div>
                                     <a href="{{ $product['order_path'] ?? '#' }}"
-                                        @click.prevent="orderHosting({{ (int) $product['id'] }})"
+                                        @click.prevent="orderHosting({{ (int) $product['id'] }}, billingCycle)"
                                         :class="{ 'pointer-events-none opacity-60': ordering }"
                                         class="brand-btn text-sm font-semibold px-4 py-2 rounded shrink-0">
                                         Order
@@ -146,6 +167,9 @@
                     <a href="mailto:{{ $branding['support_email'] }}" class="hover:text-slate-900">Support</a>
                 @endif
                 <a href="{{ $loginUrl }}" class="hover:text-slate-900">Client area</a>
+                @if (! empty($branding['website_url']))
+                    <a href="{{ $branding['website_url'] }}" class="hover:text-slate-900" target="_blank" rel="noopener">Our website</a>
+                @endif
                 <a href="{{ route('terms') }}" class="hover:text-slate-900">Terms</a>
             </div>
         </div>

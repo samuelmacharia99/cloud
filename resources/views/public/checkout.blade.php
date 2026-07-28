@@ -317,6 +317,12 @@
                                 <span>Subtotal</span>
                                 <span class="font-semibold">{{ $currency?->symbol ?? 'KES' }} {{ number_format($subtotal * ($currency?->exchange_rate ?? 1), 0) }}</span>
                             </div>
+                            @if (($discount ?? 0) > 0)
+                                <div class="flex justify-between text-emerald-400">
+                                    <span>Promo{{ ! empty($promoCode) ? ' ('.$promoCode.')' : '' }}</span>
+                                    <span class="font-semibold">−{{ $currency?->symbol ?? 'KES' }} {{ number_format($discount * ($currency?->exchange_rate ?? 1), 0) }}</span>
+                                </div>
+                            @endif
                             @if ($taxEnabled && $tax > 0)
                                 <div class="flex justify-between text-slate-300">
                                     <span>Tax ({{ $taxRate }}%)</span>
@@ -333,8 +339,9 @@
                         <div class="pt-6 border-t border-[rgba(0,217,255,0.1)]">
                             <div class="space-y-2 text-sm text-slate-400">
                                 <p>✓ Secure checkout</p>
+                                <p>✓ SSL encrypted payments</p>
+                                <p>✓ M-Pesa, cards &amp; PayPal</p>
                                 <p>✓ Invoice generated after order</p>
-                                <p>✓ Pay with available methods next</p>
                             </div>
                         </div>
 

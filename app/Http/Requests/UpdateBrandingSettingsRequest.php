@@ -36,6 +36,15 @@ class UpdateBrandingSettingsRequest extends FormRequest
             'landing_hero_subtext' => 'nullable|string|max:280',
             'landing_show_domains' => 'nullable|boolean',
             'landing_show_hosting' => 'nullable|boolean',
+            'landing_show_trust' => 'nullable|boolean',
+            'landing_meta_title' => 'nullable|string|max:70',
+            'landing_meta_description' => 'nullable|string|max:160',
+            'landing_ga_id' => ['nullable', 'string', 'max:32', 'regex:/^(G|UA)-[A-Za-z0-9-]+$/'],
+            'landing_gtm_id' => ['nullable', 'string', 'max:20', 'regex:/^GTM-[A-Za-z0-9]+$/'],
+            'website_url' => 'nullable|string|max:255',
+            'promo_code' => 'nullable|string|max:32',
+            'promo_type' => 'nullable|in:percent,fixed',
+            'promo_value' => 'nullable|numeric|min:0|max:999999',
         ];
     }
 
@@ -48,6 +57,8 @@ class UpdateBrandingSettingsRequest extends FormRequest
             'custom_domain.regex' => 'Custom domain must be a valid domain (e.g., billing.acme.com).',
             'custom_domain.max' => 'Custom domain must not exceed 253 characters.',
             'landing_template.in' => 'Choose an available landing page template.',
+            'landing_ga_id.regex' => 'GA ID must look like G-XXXXXXXX or UA-XXXXXXXX.',
+            'landing_gtm_id.regex' => 'GTM ID must look like GTM-XXXXXXX.',
         ];
     }
 }

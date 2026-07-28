@@ -61,6 +61,10 @@
                 <a href="{{ $continueUrl }}" class="inline-flex mt-6 brand-btn text-white font-semibold px-5 py-2.5 rounded-lg">Continue shopping</a>
             </div>
         @else
+            @php
+                $rate = $currency?->exchange_rate ?? 1;
+                $sym = $currency?->symbol ?? 'KES';
+            @endphp
             <div class="grid lg:grid-cols-3 gap-6">
                 <div class="lg:col-span-2 space-y-4">
                     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -81,14 +85,40 @@
                                             <p class="text-slate-500 mt-0.5">{{ $item['description'] ?? '' }}</p>
                                         </td>
                                         <td class="px-4 py-4 text-slate-600">
-                                            @if (! empty($item['billing_cycle']))
+                                            @if (! empty($item['editable_cycle']))
+                                                <form method="POST" action="{{ route('reseller.public.store.cart.update', $item['key']) }}" class="inline">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <select name="billing_cycle" onchange="this.form.submit()"
+                                                        class="rounded-md border-slate-200 text-sm py-1.5">
+                                                        @foreach (['monthly', 'quarterly', 'semi-annual', 'annual'] as $cycle)
+                                                            <option value="{{ $cycle }}" @selected(($item['billing_cycle'] ?? '') === $cycle)>
+                                                                {{ ucfirst(str_replace('-', ' ', $cycle)) }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                </form>
+                                            @elseif (! empty($item['editable_years']))
+                                                <form method="POST" action="{{ route('reseller.public.store.cart.update', $item['key']) }}" class="inline">
+                                                    @csrf
+                                                    @method('PATCH')
+                                                    <select name="years" onchange="this.form.submit()"
+                                                        class="rounded-md border-slate-200 text-sm py-1.5">
+                                                        @foreach ([1, 2, 3, 5, 10] as $y)
+                                                            <option value="{{ $y }}" @selected((int) ($item['years'] ?? 1) === $y)>
+                                                                {{ $y }} {{ $y === 1 ? 'Year' : 'Years' }}
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                </form>
+                                            @elseif (! empty($item['billing_cycle']))
                                                 {{ ucfirst(str_replace('-', ' ', $item['billing_cycle'])) }}
                                             @else
                                                 {{ $item['years'] ?? 1 }} Year(s)
                                             @endif
                                         </td>
                                         <td class="px-4 py-4 text-right font-semibold text-slate-900">
-                                            {{ $currency?->symbol ?? 'KES' }} {{ number_format($item['amount'] * ($currency?->exchange_rate ?? 1), 0) }}
+                                            {{ $sym }} {{ number_format($item['amount'] * $rate, 0) }}
                                         </td>
                                         <td class="px-4 py-4 text-right">
                                             <form method="POST" action="{{ route('reseller.public.store.cart.remove', $item['key']) }}">
@@ -112,29 +142,65 @@
                     </div>
                 </div>
 
-                <aside class="bg-white rounded-xl border border-slate-200 p-6 h-fit sticky top-6">
-                    <h2 class="font-bold text-slate-900 text-lg">Order Summary</h2>
-                    <div class="mt-4 space-y-2 text-sm">
-                        <div class="flex justify-between text-slate-600">
-                            <span>Subtotal</span>
-                            <span>{{ $currency?->symbol ?? 'KES' }} {{ number_format($subtotal * ($currency?->exchange_rate ?? 1), 0) }}</span>
-                        </div>
-                        @if ($taxEnabled && $tax > 0)
+                <aside class="bg-white rounded-xl border border-slate-200 p-6 h-fit sticky top-6 space-y-5">
+                    <div>
+                        <h2 class="font-bold text-slate-900 text-lg">Order Summary</h2>
+                        <div class="mt-4 space-y-2 text-sm">
                             <div class="flex justify-between text-slate-600">
-                                <span>Tax ({{ $taxRate }}%)</span>
-                                <span>{{ $currency?->symbol ?? 'KES' }} {{ number_format($tax * ($currency?->exchange_rate ?? 1), 0) }}</span>
+                                <span>Subtotal</span>
+                                <span>{{ $sym }} {{ number_format($subtotal * $rate, 0) }}</span>
                             </div>
-                        @endif
-                        <div class="flex justify-between text-base font-bold text-slate-900 pt-3 border-t border-slate-100">
-                            <span>Total</span>
-                            <span class="brand-text">{{ $currency?->symbol ?? 'KES' }} {{ number_format($total * ($currency?->exchange_rate ?? 1), 0) }}</span>
+                            @if (($discount ?? 0) > 0)
+                                <div class="flex justify-between text-emerald-700">
+                                    <span>Promo{{ $discountLabel ? ' ('.$promoCode.')' : '' }}</span>
+                                    <span>−{{ $sym }} {{ number_format($discount * $rate, 0) }}</span>
+                                </div>
+                            @endif
+                            @if ($taxEnabled && $tax > 0)
+                                <div class="flex justify-between text-slate-600">
+                                    <span>Tax ({{ $taxRate }}%)</span>
+                                    <span>{{ $sym }} {{ number_format($tax * $rate, 0) }}</span>
+                                </div>
+                            @endif
+                            <div class="flex justify-between text-base font-bold text-slate-900 pt-3 border-t border-slate-100">
+                                <span>Total</span>
+                                <span class="brand-text">{{ $sym }} {{ number_format($total * $rate, 0) }}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <a href="{{ $checkoutUrl }}" class="mt-6 block w-full text-center brand-btn text-white font-semibold py-3 rounded-lg">
+                    @if ($promoConfigured ?? false)
+                        <div class="pt-2 border-t border-slate-100">
+                            @if ($promoCode)
+                                <div class="flex items-center justify-between gap-2 text-sm">
+                                    <span class="text-emerald-700 font-medium">Code {{ $promoCode }} applied</span>
+                                    <form method="POST" action="{{ route('reseller.public.store.cart.promo.remove') }}">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="text-xs text-slate-500 hover:text-rose-600">Remove</button>
+                                    </form>
+                                </div>
+                            @else
+                                <form method="POST" action="{{ route('reseller.public.store.cart.promo') }}" class="flex gap-2">
+                                    @csrf
+                                    <input type="text" name="promo_code" placeholder="Promo code"
+                                        class="flex-1 rounded-md border-slate-200 text-sm uppercase">
+                                    <button type="submit" class="px-3 py-2 text-sm font-semibold rounded-md border border-slate-200 hover:bg-slate-50">Apply</button>
+                                </form>
+                            @endif
+                        </div>
+                    @endif
+
+                    <div class="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
+                        <span>🔒 Secure checkout</span>
+                        <span>SSL encrypted</span>
+                        <span>M-Pesa · Cards · PayPal</span>
+                    </div>
+
+                    <a href="{{ $checkoutUrl }}" class="block w-full text-center brand-btn text-white font-semibold py-3 rounded-lg">
                         Checkout
                     </a>
-                    <p class="mt-3 text-xs text-slate-500 text-center">
+                    <p class="text-xs text-slate-500 text-center">
                         @guest
                             Create an account or log in on the next step to pay.
                         @else
