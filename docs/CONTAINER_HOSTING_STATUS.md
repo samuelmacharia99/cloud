@@ -374,8 +374,9 @@ Before going live, verify:
 - [ ] Container-02 node shows "online" in admin panel
 - [ ] Test Connection passes for Container-02
 - [ ] Container metrics are being collected
-- [ ] Deploy a test WordPress container
-- [ ] Access WordPress admin panel
+- [x] Deploy a test WordPress container
+- [x] Access WordPress admin panel (auto-install latest core + admin credentials on provision)
+
 - [ ] Bind a custom domain to container
 - [ ] Container stops and restarts correctly
 - [ ] Check container logs in admin panel

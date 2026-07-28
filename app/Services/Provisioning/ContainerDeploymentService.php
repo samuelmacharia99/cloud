@@ -289,7 +289,8 @@ class ContainerDeploymentService
                 );
 
                 // Host mount is the source of truth for /app; ensure placeholders after compose is up.
-                if ($hostAppPath) {
+                // WordPress must stay empty so the official image can copy the latest core files.
+                if ($hostAppPath && ($template->slug ?? '') !== 'wordpress') {
                     $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
                 }
 
@@ -362,17 +363,43 @@ class ContainerDeploymentService
                 ]);
 
                 if (($template->slug ?? '') === 'wordpress') {
+                    // Domains first so wp core install gets the real public URL when available.
+                    $this->reattachAndRebindDomains($service, $deployment);
+
+                    if ($options->shouldInstallWordPressApplication((string) ($template->slug ?? ''))) {
+                        try {
+                            $installResult = app(WordPressAppInstallationService::class)->installIfNeeded(
+                                $service->fresh(['product.containerTemplate', 'user', 'containerDeployment.node', 'containerDeployment.domains']),
+                                $deployment->fresh(['node', 'domains']),
+                                $ssh,
+                                $envVars,
+                            );
+                            $this->recordDeploymentEvent($service, $deployment, 'wordpress_application_installed', [
+                                'skipped' => $installResult['skipped'],
+                                'message' => $installResult['message'],
+                            ]);
+                        } catch (\Throwable $installError) {
+                            \Log::warning('WordPress auto-install failed', [
+                                'service_id' => $service->id,
+                                'error' => $installError->getMessage(),
+                            ]);
+                            $this->recordDeploymentEvent($service, $deployment, 'wordpress_application_install_failed', [
+                                'error' => $installError->getMessage(),
+                            ]);
+                        }
+                    }
+
                     $this->wordpressHardening->hardenDeployedStack(
                         $ssh,
                         $service->fresh(['product.containerTemplate', 'containerDeployment']),
                         $containerName,
                         $containerPath
                     );
+                } else {
+                    // Ensure existing bound domains always follow the latest deployment
+                    // row/port after redeploys, otherwise nginx may point to stale ports.
+                    $this->reattachAndRebindDomains($service, $deployment);
                 }
-
-                // Ensure existing bound domains always follow the latest deployment
-                // row/port after redeploys, otherwise nginx may point to stale ports.
-                $this->reattachAndRebindDomains($service, $deployment);
 
                 if ($options->shouldPrepareLaravelApplication((string) ($template->slug ?? ''))) {
                     try {

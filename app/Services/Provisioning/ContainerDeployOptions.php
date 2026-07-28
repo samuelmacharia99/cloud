@@ -46,6 +46,27 @@ final class ContainerDeployOptions
         return $templateSlug === 'laravel';
     }
 
+    /**
+     * Fresh WordPress Application Hosting orders get latest core + admin via WP-CLI.
+     * Quiet converts / redeploys without DB reset keep (or import) an existing site.
+     */
+    public function shouldInstallWordPressApplication(string $templateSlug): bool
+    {
+        if ($templateSlug !== 'wordpress') {
+            return false;
+        }
+
+        if ($this->quiet) {
+            return false;
+        }
+
+        if ($this->isRedeploy && ! $this->resetDatabase) {
+            return false;
+        }
+
+        return true;
+    }
+
     public function shouldSyncLaravelDatabase(string $templateSlug): bool
     {
         return $this->shouldRunLaravelMigrations($templateSlug);

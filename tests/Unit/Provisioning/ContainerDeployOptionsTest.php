@@ -41,4 +41,21 @@ class ContainerDeployOptionsTest extends TestCase
         $this->assertTrue($options->shouldResetDatabase(true));
         $this->assertFalse($options->shouldResetDatabase(false));
     }
+
+    #[Test]
+    public function it_installs_wordpress_on_fresh_deploy_only(): void
+    {
+        $fresh = new ContainerDeployOptions;
+        $this->assertTrue($fresh->shouldInstallWordPressApplication('wordpress'));
+        $this->assertFalse($fresh->shouldInstallWordPressApplication('laravel'));
+
+        $redeployKeepDb = ContainerDeployOptions::redeploy(resetDatabase: false);
+        $this->assertFalse($redeployKeepDb->shouldInstallWordPressApplication('wordpress'));
+
+        $redeployResetDb = ContainerDeployOptions::redeploy(resetDatabase: true);
+        $this->assertTrue($redeployResetDb->shouldInstallWordPressApplication('wordpress'));
+
+        $quiet = ContainerDeployOptions::quietConvert();
+        $this->assertFalse($quiet->shouldInstallWordPressApplication('wordpress'));
+    }
 }

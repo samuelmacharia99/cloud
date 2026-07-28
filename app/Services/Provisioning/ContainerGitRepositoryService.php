@@ -399,7 +399,11 @@ class ContainerGitRepositoryService
         $ssh->mkdirp($hostAppPath);
 
         if ($settings['url'] === '') {
-            $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
+            $service->loadMissing('product.containerTemplate');
+            // Official wordpress image copies core into an empty volume; placeholders block that.
+            if (($service->product?->containerTemplate?->slug ?? '') !== 'wordpress') {
+                $this->appDirectory->ensurePlaceholderState($ssh, $hostAppPath);
+            }
 
             return;
         }

@@ -55,6 +55,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | WordPress auto-install (Application Hosting)
+    |--------------------------------------------------------------------------
+    */
+    'wordpress_install' => [
+        'command_timeout_seconds' => (int) env('WORDPRESS_INSTALL_COMMAND_TIMEOUT', 300),
+        'mysql_wait_seconds' => (int) env('WORDPRESS_INSTALL_MYSQL_WAIT', 180),
+        'core_wait_seconds' => (int) env('WORDPRESS_INSTALL_CORE_WAIT', 180),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Redeploy behaviour
     |--------------------------------------------------------------------------
     */

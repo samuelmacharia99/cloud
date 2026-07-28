@@ -14,7 +14,7 @@ class ContainerTemplateSeeder extends Seeder
             ['slug' => 'wordpress'],
             [
                 'name' => 'WordPress with MySQL',
-                'description' => 'Full WordPress CMS with dedicated MySQL 8.0 database. Includes auto-generated admin credentials.',
+                'description' => 'Full WordPress CMS with dedicated MySQL 8.0. Latest WordPress is installed automatically with generated admin credentials.',
                 'category' => 'web',
                 'docker_image' => 'wordpress:latest',
                 'default_port' => 80,
