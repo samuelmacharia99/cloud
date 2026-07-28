@@ -687,15 +687,15 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
 
         Route::get('/domains/search', [DomainSearchController::class, 'search'])->name('domains.search');
 
-        // Shopping cart
-        Route::get('/cart', [App\Http\Controllers\Customer\CartController::class, 'index'])->name('customer.cart.index');
-        Route::post('/cart/add', [App\Http\Controllers\Customer\CartController::class, 'add'])->name('customer.cart.add');
-        Route::delete('/cart/{key}', [App\Http\Controllers\Customer\CartController::class, 'remove'])->name('customer.cart.remove');
-        Route::post('/cart/clear', [App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
-        Route::post('/cart/check-domain', [App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
-        Route::post('/cart/{key}/nameservers', [App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
-        Route::post('/cart/{key}/cloudflare-dns', [App\Http\Controllers\Customer\CartController::class, 'updateCloudflareDns'])->name('customer.cart.cloudflare-dns');
-        Route::get('/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
+        // Shopping cart (under /my/cart — /cart is reserved for the public storefront on branding hosts)
+        Route::get('/my/cart', [App\Http\Controllers\Customer\CartController::class, 'index'])->name('customer.cart.index');
+        Route::post('/my/cart/add', [App\Http\Controllers\Customer\CartController::class, 'add'])->name('customer.cart.add');
+        Route::delete('/my/cart/{key}', [App\Http\Controllers\Customer\CartController::class, 'remove'])->name('customer.cart.remove');
+        Route::post('/my/cart/clear', [App\Http\Controllers\Customer\CartController::class, 'clear'])->name('customer.cart.clear');
+        Route::post('/my/cart/check-domain', [App\Http\Controllers\Customer\CartController::class, 'checkDomainAvailability'])->name('customer.cart.check-domain');
+        Route::post('/my/cart/{key}/nameservers', [App\Http\Controllers\Customer\CartController::class, 'updateNameservers'])->name('customer.cart.nameservers');
+        Route::post('/my/cart/{key}/cloudflare-dns', [App\Http\Controllers\Customer\CartController::class, 'updateCloudflareDns'])->name('customer.cart.cloudflare-dns');
+        Route::get('/my/cart/attach-hosting', [App\Http\Controllers\Customer\CartController::class, 'attachHosting'])->name('customer.cart.attach-hosting');
 
         // Checkout (canonical /checkout registration is at the bottom of this file)
 
