@@ -91,45 +91,54 @@
                                     </tr>
                                     @if($item['type'] === 'domain')
                                     <tr class="bg-slate-50/50 dark:bg-slate-800/50">
-                                        <td colspan="4" class="px-6 pb-5 pt-0 space-y-3">
-                                            @if($cloudflareDnsAvailable ?? false)
-                                                <div x-data="cloudflareDnsOption('{{ $item['key'] }}', {{ Js::from($item['cloudflare_dns'] ?? true) }}, {{ Js::from($cloudflareNameservers) }})" class="border border-indigo-200 dark:border-indigo-800 rounded-lg p-4 bg-indigo-50/50 dark:bg-indigo-950/20 mt-1">
-                                                    <label class="flex items-start gap-3 cursor-pointer">
-                                                        <input type="checkbox" class="mt-1 rounded text-indigo-600" :checked="enabled" @change="toggle($event.target.checked)">
-                                                        <div>
-                                                            <p class="text-sm font-semibold text-slate-900 dark:text-white">Include managed DNS (Cloudflare)</p>
-                                                            <p class="text-xs text-slate-600 dark:text-slate-400 mt-1">Manage A, CNAME, MX, and TXT records from your account — ideal for application hosting and domain-only setups.</p>
-                                                            <p x-show="enabled" class="text-xs font-mono text-indigo-700 dark:text-indigo-300 mt-2">
-                                                                <template x-if="nameservers.ns1"><span x-text="nameservers.ns1"></span></template>
-                                                                <template x-if="nameservers.ns2"><span class="ml-2" x-text="nameservers.ns2"></span></template>
-                                                            </p>
-                                                            <p x-show="message" class="text-xs mt-2" :class="error ? 'text-red-600' : 'text-emerald-600'" x-text="message"></p>
-                                                        </div>
-                                                    </label>
-                                                </div>
-                                            @endif
-                                            <div x-data="nameserverConfig(
-                                                '{{ $item['key'] }}',
-                                                {{ Js::from($item['nameservers'] ?? []) }},
-                                                {{ Js::from($defaultNs) }}
-                                            )" class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-900 mt-1">
-                                                <!-- header -->
+                                        <td colspan="4" class="px-6 pb-5 pt-0">
+                                            <div
+                                                x-data="domainDnsConfig(
+                                                    '{{ $item['key'] }}',
+                                                    {{ Js::from($item['nameservers'] ?? []) }},
+                                                    {{ Js::from($defaultNs) }},
+                                                    {{ Js::from($cloudflareDnsAvailable ?? false) }},
+                                                    {{ Js::from($item['cloudflare_dns'] ?? false) }},
+                                                    {{ Js::from($cloudflareNameservers ?? []) }}
+                                                )"
+                                                class="border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-white dark:bg-slate-900 mt-1"
+                                            >
                                                 <div class="flex items-center gap-2 mb-3">
                                                     <svg class="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 10-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
                                                     </svg>
-                                                    <h4 class="text-sm font-semibold text-slate-700 dark:text-slate-300">Name Servers</h4>
-                                                    <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">Sets DNS authority for this domain</span>
+                                                    <h4 class="text-sm font-semibold text-slate-700 dark:text-slate-300">DNS / Name Servers</h4>
+                                                    <span class="ml-auto text-xs text-slate-400 dark:text-slate-500">Choose how this domain’s DNS is managed</span>
                                                 </div>
 
-                                                <!-- radio toggle -->
                                                 <div class="space-y-2">
-                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                                        <input type="radio" name="ns_mode_{{ $item['key'] }}" @change="useDefault = true" :checked="useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                    <template x-if="cloudflareAvailable">
+                                                        <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                                            :class="mode === 'cloudflare' ? 'bg-indigo-50/70 dark:bg-indigo-950/30 ring-1 ring-indigo-200 dark:ring-indigo-800' : ''">
+                                                            <input type="radio" name="dns_mode_{{ $item['key'] }}" class="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                                                                :checked="mode === 'cloudflare'" @change="setMode('cloudflare')">
+                                                            <div>
+                                                                <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                                                    Managed DNS (Cloudflare)
+                                                                    <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300">Recommended for apps</span>
+                                                                </p>
+                                                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Manage A, CNAME, MX, and TXT records in your account.</p>
+                                                                <p class="text-xs font-mono text-indigo-700 dark:text-indigo-300 mt-1">
+                                                                    <template x-if="cloudflareNs.ns1"><span x-text="cloudflareNs.ns1"></span></template>
+                                                                    <template x-if="cloudflareNs.ns2"><span class="ml-2" x-text="cloudflareNs.ns2"></span></template>
+                                                                </p>
+                                                            </div>
+                                                        </label>
+                                                    </template>
+
+                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                                        :class="mode === 'platform' ? 'bg-emerald-50/70 dark:bg-emerald-950/20 ring-1 ring-emerald-200 dark:ring-emerald-800' : ''">
+                                                        <input type="radio" name="dns_mode_{{ $item['key'] }}" class="mt-0.5 text-blue-600 focus:ring-blue-500"
+                                                            :checked="mode === 'platform'" @change="setMode('platform')">
                                                         <div>
                                                             <p class="text-sm font-medium text-slate-800 dark:text-slate-200">
                                                                 Use {{ $defaultNameserverLabel }} Nameservers
-                                                                <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Recommended</span>
+                                                                <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300">Platform default</span>
                                                             </p>
                                                             <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">
                                                                 <span x-text="defaults.ns1"></span><template x-if="defaults.ns2"><span class="ml-2" x-text="defaults.ns2"></span></template>
@@ -137,14 +146,15 @@
                                                         </div>
                                                     </label>
 
-                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                                        <input type="radio" name="ns_mode_{{ $item['key'] }}" @change="useDefault = false" :checked="!useDefault" class="mt-0.5 text-blue-600 focus:ring-blue-500">
+                                                    <label class="flex items-start gap-3 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+                                                        :class="mode === 'custom' ? 'bg-slate-50 dark:bg-slate-800/80 ring-1 ring-slate-200 dark:ring-slate-600' : ''">
+                                                        <input type="radio" name="dns_mode_{{ $item['key'] }}" class="mt-0.5 text-blue-600 focus:ring-blue-500"
+                                                            :checked="mode === 'custom'" @change="setMode('custom')">
                                                         <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Use Custom Nameservers</p>
                                                     </label>
                                                 </div>
 
-                                                <!-- custom ns fields -->
-                                                <div x-show="!useDefault" x-transition class="mt-4">
+                                                <div x-show="mode === 'custom'" x-transition class="mt-4">
                                                     <div class="flex gap-2">
                                                         <input
                                                             type="text"
@@ -172,9 +182,6 @@
                                                     <div x-show="customNs.length > 0" class="flex flex-wrap gap-2 mt-3">
                                                         <template x-for="(ns, idx) in customNs" :key="idx">
                                                             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-full text-xs font-mono text-slate-700 dark:text-slate-300">
-                                                                <svg class="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 10-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-                                                                </svg>
                                                                 <span x-text="ns"></span>
                                                                 <button type="button" @click="removeNs(idx)" class="ml-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 p-0.5 transition">
                                                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,15 +193,18 @@
                                                     </div>
                                                 </div>
 
-                                                <!-- save bar -->
                                                 <div class="flex items-center justify-between mt-4 pt-3 border-t border-slate-100 dark:border-slate-700">
                                                     <div>
                                                         <p x-show="error" class="text-xs text-red-600 dark:text-red-400" x-text="error"></p>
-                                                        <p x-show="saved && !error" class="text-xs text-emerald-600 dark:text-emerald-400">✓ Nameservers saved</p>
+                                                        <p x-show="message && !error" class="text-xs text-emerald-600 dark:text-emerald-400" x-text="message"></p>
                                                     </div>
-                                                    <button @click="save()" :disabled="saving || (!useDefault && customNs.length === 0)"
-                                                        class="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition">
-                                                        <span x-show="!saving">Save Nameservers</span>
+                                                    <button
+                                                        x-show="mode === 'custom'"
+                                                        @click="saveCustom()"
+                                                        :disabled="saving || customNs.length === 0"
+                                                        class="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg font-medium transition"
+                                                    >
+                                                        <span x-show="!saving">Save Custom Nameservers</span>
                                                         <span x-show="saving">Saving...</span>
                                                     </button>
                                                 </div>
@@ -262,57 +272,46 @@
 </div>
 
 <script>
-function cloudflareDnsOption(cartKey, initialEnabled, nameservers) {
-    return {
-        cartKey,
-        enabled: initialEnabled,
-        nameservers: nameservers || {},
-        message: '',
-        error: false,
-        async toggle(checked) {
-            this.message = '';
-            this.error = false;
-            try {
-                const res = await fetch(`/my/cart/${this.cartKey}/cloudflare-dns`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
-                        'Accept': 'application/json',
-                    },
-                    body: JSON.stringify({ enabled: checked }),
-                });
-                const data = await res.json();
-                if (!res.ok || !data.success) throw new Error(data.message || 'Failed to update DNS option');
-                this.enabled = checked;
-                this.message = data.message;
-            } catch (e) {
-                this.error = true;
-                this.message = e.message;
-                this.enabled = !checked;
-            }
-        },
-    };
-}
-
-function nameserverConfig(cartKey, stored, defaults) {
+function domainDnsConfig(cartKey, stored, defaults, cloudflareAvailable, cloudflareEnabled, cloudflareNs) {
     const usingDefault = stored.use_default !== false;
+    let initialMode = 'platform';
+    if (cloudflareAvailable && cloudflareEnabled) {
+        initialMode = 'cloudflare';
+    } else if (!usingDefault) {
+        initialMode = 'custom';
+    }
+
     return {
         cartKey,
-        defaults,
-        useDefault: usingDefault,
+        defaults: defaults || {},
+        cloudflareAvailable: !!cloudflareAvailable,
+        cloudflareNs: cloudflareNs || {},
+        mode: initialMode,
         nsInput: '',
         nsInputError: null,
         customNs: [],
         saving: false,
-        saved: false,
+        message: '',
         error: null,
 
         init() {
-            if (!usingDefault) {
+            if (initialMode === 'custom') {
                 [stored.ns1, stored.ns2, stored.ns3, stored.ns4]
                     .filter(Boolean)
                     .forEach(ns => this.customNs.push(ns));
+            }
+        },
+
+        csrf() {
+            return document.head.querySelector('meta[name="csrf-token"]').content;
+        },
+
+        async parseJson(res) {
+            const text = await res.text();
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                throw new Error('Could not save DNS settings. Please refresh and try again.');
             }
         },
 
@@ -334,37 +333,91 @@ function nameserverConfig(cartKey, stored, defaults) {
             this.customNs.splice(idx, 1);
         },
 
-        async save() {
-            this.error = null;
-            this.saved = false;
+        async setMode(mode) {
+            if (this.mode === mode && mode !== 'custom') {
+                return;
+            }
 
-            if (!this.useDefault && this.customNs.length === 0) {
+            this.error = null;
+            this.message = '';
+            this.mode = mode;
+
+            if (mode === 'custom') {
+                return;
+            }
+
+            this.saving = true;
+            try {
+                if (mode === 'cloudflare') {
+                    const res = await fetch(`/my/cart/${this.cartKey}/cloudflare-dns`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': this.csrf(),
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({ enabled: true }),
+                    });
+                    const data = await this.parseJson(res);
+                    if (!res.ok || !data.success) throw new Error(data.message || 'Failed to enable managed DNS');
+                    this.message = data.message || 'Managed DNS enabled.';
+                } else {
+                    const res = await fetch(`/my/cart/${this.cartKey}/nameservers`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': this.csrf(),
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            use_default: true,
+                            ns1: this.defaults.ns1,
+                            ns2: this.defaults.ns2 || null,
+                            ns3: this.defaults.ns3 || null,
+                            ns4: this.defaults.ns4 || null,
+                        }),
+                    });
+                    const data = await this.parseJson(res);
+                    if (!res.ok || !data.success) throw new Error(data.message || 'Failed to save nameservers');
+                    this.message = data.message || 'Platform nameservers selected.';
+                }
+            } catch (err) {
+                this.error = err.message;
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async saveCustom() {
+            this.error = null;
+            this.message = '';
+
+            if (this.customNs.length === 0) {
                 this.error = 'Please add at least one nameserver';
                 return;
             }
 
-            const payload = {
-                use_default: this.useDefault,
-                ns1: this.useDefault ? this.defaults.ns1 : (this.customNs[0] || null),
-                ns2: this.useDefault ? (this.defaults.ns2 || null) : (this.customNs[1] || null),
-                ns3: this.useDefault ? (this.defaults.ns3 || null) : (this.customNs[2] || null),
-                ns4: this.useDefault ? (this.defaults.ns4 || null) : (this.customNs[3] || null),
-            };
-
             this.saving = true;
             try {
-                const res = await fetch(`/cart/${this.cartKey}/nameservers`, {
+                const res = await fetch(`/my/cart/${this.cartKey}/nameservers`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.head.querySelector('meta[name="csrf-token"]').content,
+                        'X-CSRF-TOKEN': this.csrf(),
+                        'Accept': 'application/json',
                     },
-                    body: JSON.stringify(payload),
+                    body: JSON.stringify({
+                        use_default: false,
+                        ns1: this.customNs[0] || null,
+                        ns2: this.customNs[1] || null,
+                        ns3: this.customNs[2] || null,
+                        ns4: this.customNs[3] || null,
+                    }),
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.message || 'Failed to save nameservers');
-                this.saved = true;
-                setTimeout(() => { this.saved = false; }, 4000);
+                const data = await this.parseJson(res);
+                if (!res.ok || !data.success) throw new Error(data.message || 'Failed to save nameservers');
+                this.mode = 'custom';
+                this.message = data.message || 'Custom nameservers saved.';
             } catch (err) {
                 this.error = err.message;
             } finally {

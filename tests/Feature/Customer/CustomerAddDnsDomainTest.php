@@ -161,4 +161,131 @@ class CustomerAddDnsDomainTest extends TestCase
             ->assertStatus(422)
             ->assertJson(['success' => false]);
     }
+
+    public function test_saving_platform_nameservers_clears_cloudflare_dns_in_cart(): void
+    {
+        $this->enableCloudflare();
+        Setting::setValue('domain_ns1', 'riv1.talksasa.com');
+        Setting::setValue('domain_ns2', 'riv2.talksasa.com');
+
+        $customer = User::factory()->customer()->create();
+
+        session(['cart' => [
+            'domain_example_com' => [
+                'type' => 'domain',
+                'domain' => 'example',
+                'extension' => '.com',
+                'years' => 1,
+                'cloudflare_dns' => true,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'albert.ns.cloudflare.com',
+                    'ns2' => 'aliza.ns.cloudflare.com',
+                ],
+            ],
+        ]]);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.cart.nameservers', ['key' => 'domain_example_com']), [
+                'use_default' => true,
+                'ns1' => 'riv1.talksasa.com',
+                'ns2' => 'riv2.talksasa.com',
+            ])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $item = session('cart.domain_example_com');
+        $this->assertFalse($item['cloudflare_dns']);
+        $this->assertTrue($item['nameservers']['use_default']);
+        $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
+    }
+
+    public function test_disabling_cloudflare_dns_restores_platform_nameservers_in_cart(): void
+    {
+        $this->enableCloudflare();
+        Setting::setValue('domain_ns1', 'riv1.talksasa.com');
+        Setting::setValue('domain_ns2', 'riv2.talksasa.com');
+
+        $customer = User::factory()->customer()->create();
+
+        session(['cart' => [
+            'domain_example_com' => [
+                'type' => 'domain',
+                'domain' => 'example',
+                'extension' => '.com',
+                'years' => 1,
+                'cloudflare_dns' => true,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'albert.ns.cloudflare.com',
+                    'ns2' => 'aliza.ns.cloudflare.com',
+                ],
+            ],
+        ]]);
+
+        $this->actingAs($customer)
+            ->postJson(route('customer.cart.cloudflare-dns', ['key' => 'domain_example_com']), [
+                'enabled' => false,
+            ])
+            ->assertOk()
+            ->assertJson(['success' => true]);
+
+        $item = session('cart.domain_example_com');
+        $this->assertFalse($item['cloudflare_dns']);
+        $this->assertSame('riv1.talksasa.com', $item['nameservers']['ns1']);
+        $this->assertSame('riv2.talksasa.com', $item['nameservers']['ns2']);
+    }
+
+    public function test_cart_page_uses_my_cart_dns_endpoints(): void
+    {
+        $this->enableCloudflare();
+
+        $extension = DomainExtension::query()->firstOrCreate(
+            ['extension' => '.com'],
+            [
+                'description' => 'COM',
+                'enabled' => true,
+            ]
+        );
+        $extension->update(['enabled' => true]);
+
+        \App\Models\DomainPricing::query()->updateOrCreate(
+            [
+                'domain_extension_id' => $extension->id,
+                'period_years' => 1,
+                'tier' => 'retail',
+            ],
+            [
+                'price' => 1650,
+                'renewal_price' => 1650,
+                'setup_fee' => 0,
+                'enabled' => true,
+            ]
+        );
+
+        $customer = User::factory()->customer()->create();
+
+        session(['cart' => [
+            'domain_example_com' => [
+                'type' => 'domain',
+                'domain' => 'example',
+                'extension' => '.com',
+                'years' => 1,
+                'cloudflare_dns' => true,
+                'nameservers' => [
+                    'use_default' => true,
+                    'ns1' => 'albert.ns.cloudflare.com',
+                    'ns2' => 'aliza.ns.cloudflare.com',
+                ],
+            ],
+        ]]);
+
+        $this->actingAs($customer)
+            ->get(route('customer.cart.index'))
+            ->assertOk()
+            ->assertSee('DNS / Name Servers', false)
+            ->assertSee('/my/cart/', false)
+            ->assertDontSee("fetch(`/cart/", false)
+            ->assertDontSee('Include managed DNS (Cloudflare)', false);
+    }
 }

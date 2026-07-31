@@ -874,7 +874,7 @@ class CheckoutController extends Controller
 
         // Authenticated customers on the platform (non-storefront) use the customer checkout UI.
         if (auth()->check() && ! $useBrandedCheckout) {
-            return $this->show();
+            return $this->show($request);
         }
 
         // Build cart from session

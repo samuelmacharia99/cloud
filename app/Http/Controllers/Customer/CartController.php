@@ -497,6 +497,9 @@ class CartController extends Controller
             ];
         }
 
+        // Platform/custom nameservers replace managed Cloudflare DNS for this cart line.
+        $cart[$key]['cloudflare_dns'] = false;
+
         session([self::CART_SESSION_KEY => $cart]);
 
         return response()->json(['success' => true, 'message' => 'Nameservers updated']);
@@ -522,6 +525,9 @@ class CartController extends Controller
                 'use_default' => true,
                 ...app(DomainCloudflareDnsService::class)->nameserversForRegistration(),
             ];
+        } else {
+            $cart[$key]['nameservers'] = app(ResellerNameserverService::class)
+                ->cartDefaultPayloadForCustomer(auth()->user());
         }
 
         session([self::CART_SESSION_KEY => $cart]);
