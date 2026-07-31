@@ -416,24 +416,29 @@ class ContainerStackCommandService
         ?string $nodeDockerImage = null,
         ?string $hostAppPath = null,
     ): void {
-        // Tolerate missing Next.js paths — non-Next apps only have node_modules/.bin.
-        $command = app(ContainerAppDirectoryService::class)
-            ->nodeModulesBinPermissionRestoreScript('/app');
+        // chmod each path separately — Alpine find fails if any path is missing,
+        // and isSafeCommand rejects "||" / redirects used to ignore that.
+        $directories = [
+            '/app/node_modules/.bin',
+            '/app/node_modules/next/dist/bin',
+        ];
 
-        if ($nodeDockerImage !== null && $hostAppPath !== null) {
-            $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', 60);
+        foreach ($directories as $directory) {
+            $testCommand = 'test -d '.escapeshellarg($directory);
+            $chmodCommand = 'find '.escapeshellarg($directory).' -type f -exec chmod u+x {} +';
 
-            return;
+            try {
+                if ($nodeDockerImage !== null && $hostAppPath !== null) {
+                    $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $testCommand, '/app', 30);
+                    $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $chmodCommand, '/app', 60);
+                } else {
+                    $this->runOneOffInContainer($ssh, $containerPath, $containerName, $testCommand, '/app', 30);
+                    $this->runOneOffInContainer($ssh, $containerPath, $containerName, $chmodCommand, '/app', 60);
+                }
+            } catch (\Throwable) {
+                // Directory missing (e.g. non-Next apps) — skip.
+            }
         }
-
-        $this->runOneOffInContainer(
-            $ssh,
-            $containerPath,
-            $containerName,
-            $command,
-            '/app',
-            60
-        );
     }
 
     /**

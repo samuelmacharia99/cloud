@@ -21,6 +21,19 @@ class ContainerStackCommandServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_allows_node_bin_chmod_commands_without_shell_metacharacters(): void
+    {
+        $service = new ContainerStackCommandService;
+
+        $this->assertTrue($service->isSafeCommand("test -d '/app/node_modules/.bin'"));
+        $this->assertTrue($service->isSafeCommand("find '/app/node_modules/.bin' -type f -exec chmod u+x {} +"));
+        $this->assertTrue($service->isSafeCommand("find '/app/node_modules/next/dist/bin' -type f -exec chmod u+x {} +"));
+        $this->assertFalse($service->isSafeCommand(
+            "find '/app/node_modules/.bin' '/app/node_modules/next/dist/bin' -type f -exec chmod u+x {} + 2>/dev/null || true"
+        ));
+    }
+
+    #[Test]
     public function it_resolves_workdirs_for_application_templates(): void
     {
         $service = new ContainerStackCommandService;
