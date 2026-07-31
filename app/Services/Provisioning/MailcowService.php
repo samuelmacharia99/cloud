@@ -410,6 +410,11 @@ class MailcowService
 
         $url = $this->baseUrl().$path;
         $verify = $this->node->verify_ssl !== false;
+        $options = ['verify' => $verify];
+        if (config('mailcow.force_ipv4', true)) {
+            // Prefer the IPv4 APP_IP that is typically on the Mailcow API allowlist.
+            $options['force_ip_resolve'] = 'v4';
+        }
 
         try {
             $client = Http::withHeaders([
@@ -417,7 +422,7 @@ class MailcowService
                 'Accept' => 'application/json',
             ])
                 ->timeout(45)
-                ->withOptions(['verify' => $verify]);
+                ->withOptions($options);
 
             $response = match (strtoupper($method)) {
                 'GET' => $client->get($url),
@@ -430,7 +435,9 @@ class MailcowService
             $raw = $response->body();
 
             if ($response->failed()) {
-                $message = $this->extractErrorMessage($json, $raw) ?: 'Mailcow API request failed (HTTP '.$response->status().').';
+                $message = $this->clarifyApiError(
+                    $this->extractErrorMessage($json, $raw) ?: 'Mailcow API request failed (HTTP '.$response->status().').'
+                );
                 Log::warning('Mailcow API error', [
                     'node_id' => $this->node->id,
                     'path' => $path,
@@ -445,7 +452,9 @@ class MailcowService
             if (is_array($json) && $this->looksLikeFailure($json)) {
                 return [
                     'success' => false,
-                    'message' => $this->extractErrorMessage($json, $raw) ?: 'Mailcow rejected the request.',
+                    'message' => $this->clarifyApiError(
+                        $this->extractErrorMessage($json, $raw) ?: 'Mailcow rejected the request.'
+                    ),
                     'data' => $json,
                 ];
             }
@@ -515,5 +524,14 @@ class MailcowService
         $trimmed = trim($raw);
 
         return $trimmed !== '' ? mb_substr($trimmed, 0, 300) : '';
+    }
+
+    private function clarifyApiError(string $message): string
+    {
+        if (! str_contains(strtolower($message), 'api access denied')) {
+            return $message;
+        }
+
+        return $message.' Add this app server IP (IPv4 and IPv6 if both are used) to Mailcow → Configuration → Access → API allowlist. Talksasa forces IPv4 for API calls when MAILCOW_FORCE_IPV4=true.';
     }
 }

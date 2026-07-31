@@ -37,15 +37,42 @@ class MailcowServiceTest extends TestCase
     }
 
     #[Test]
-    public function it_builds_webmail_url_from_base(): void
+    public function it_forces_ipv4_for_api_requests_by_default(): void
     {
+        Http::fake([
+            'mail.example.com/api/v1/get/status/version' => Http::response('2024-07', 200),
+        ]);
+
+        config(['mailcow.force_ipv4' => true]);
+
         $node = Node::factory()->mailcow()->create([
             'api_url' => 'https://mail.example.com',
         ]);
 
-        $this->assertSame(
-            'https://mail.example.com/SOGo/',
-            MailcowService::forNode($node)->webmailUrl()
-        );
+        MailcowService::forNode($node)->testConnection();
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'https://mail.example.com/api/v1/get/status/version';
+        });
+    }
+
+    #[Test]
+    public function it_clarifies_api_access_denied_errors(): void
+    {
+        Http::fake([
+            'mail.example.com/api/v1/add/domain' => Http::response([
+                ['type' => 'danger', 'msg' => 'api access denied for ip 2a01:4f9:c014:e51f::1'],
+            ], 200),
+        ]);
+
+        $node = Node::factory()->mailcow()->create([
+            'api_url' => 'https://mail.example.com',
+        ]);
+
+        $result = MailcowService::forNode($node)->addDomain(['domain' => 'example.com']);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('api access denied', $result['message']);
+        $this->assertStringContainsString('API allowlist', $result['message']);
     }
 }

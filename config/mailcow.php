@@ -42,6 +42,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | API client networking
+    |--------------------------------------------------------------------------
+    |
+    | Mailcow API keys are IP-allowlisted. App servers often prefer IPv6 when
+    | connecting to https://MAIL_HOST, while the allowlist only has the IPv4
+    | APP_IP — resulting in "api access denied for ip 2a01:...".
+    | Force IPv4 by default so the allowlisted address is used.
+    |
+    */
+
+    'force_ipv4' => filter_var(env('MAILCOW_FORCE_IPV4', true), FILTER_VALIDATE_BOOLEAN),
+
+    /*
+    |--------------------------------------------------------------------------
     | Shared hosting sales
     |--------------------------------------------------------------------------
     |

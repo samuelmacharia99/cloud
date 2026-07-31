@@ -10,7 +10,7 @@ Replace placeholders:
 |-------------|---------|
 | `MAIL_HOST` | `mail.talksasa.com` |
 | `MAIL_IP` | public IPv4 of the VPS |
-| `APP_IP` | Talksasa app server outbound IP (used for API allowlist) |
+| `APP_IP` | Talksasa app server outbound **IPv4** (API allowlist; also add IPv6 if Mailcow is dual-stack) |
 
 ---
 
@@ -177,13 +177,16 @@ In the Mailcow UI:
 
 1. Mailcow UI → **Configuration** → **Access** → edit administrator → **API**.
 2. Enable API; create a **Read-Write** API key.
-3. **API allowlist:** add `APP_IP` (Talksasa app server outbound IP).  
-   - If the app uses IPv6 egress, allow that too.  
+3. **API allowlist:** add the Talksasa **app server** outbound address(es):
+   - Always add IPv4 `APP_IP` (from the app host: `curl -4 -fsS https://ifconfig.me`).
+   - If Mailcow’s hostname has an **AAAA** record, PHP may dial over IPv6 — either add the app’s IPv6 (`curl -6 -fsS https://ifconfig.me`, e.g. `2a01:4f9:…`) **or** rely on Talksasa’s default `MAILCOW_FORCE_IPV4=true` so API calls use IPv4 only.
+   - Symptom of a missing allowlist entry: `api access denied for ip …`. Domain create fails and MX/SPF are **not** pushed to Cloudflare until provision succeeds.
    - Empty allowlist = open to the world (bad). Wrong IP = Talksasa “Test connection” fails.
 4. Smoke test from the **app server** (not only from your laptop):
 
 ```bash
-curl -sS -H "X-API-Key: YOUR_KEY" \
+# Prefer IPv4 to match MAILCOW_FORCE_IPV4 / typical allowlist
+curl -4 -sS -H "X-API-Key: YOUR_KEY" \
   "https://MAIL_HOST/api/v1/get/status/version"
 ```
 
