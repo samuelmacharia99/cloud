@@ -46,6 +46,17 @@ class ContainerAppDirectoryServiceTest extends TestCase
     }
 
     #[Test]
+    public function it_tolerates_missing_next_bin_directory_when_restoring_permissions(): void
+    {
+        $service = new ContainerAppDirectoryService;
+        $script = $service->nodeModulesBinPermissionRestoreScript('/app');
+
+        $this->assertStringContainsString('/app/node_modules/.bin', $script);
+        $this->assertStringContainsString('/app/node_modules/next/dist/bin', $script);
+        $this->assertStringContainsString('2>/dev/null || true', $script);
+    }
+
+    #[Test]
     public function it_prepares_nested_project_roots_for_composer_install(): void
     {
         $service = new ContainerAppDirectoryService;

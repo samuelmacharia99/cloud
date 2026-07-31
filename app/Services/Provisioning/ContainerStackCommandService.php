@@ -416,7 +416,9 @@ class ContainerStackCommandService
         ?string $nodeDockerImage = null,
         ?string $hostAppPath = null,
     ): void {
-        $command = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} +';
+        // Tolerate missing Next.js paths — non-Next apps only have node_modules/.bin.
+        $command = app(ContainerAppDirectoryService::class)
+            ->nodeModulesBinPermissionRestoreScript('/app');
 
         if ($nodeDockerImage !== null && $hostAppPath !== null) {
             $this->runUnlimitedMemoryNodeCommand($ssh, $nodeDockerImage, $hostAppPath, $command, '/app', 60);

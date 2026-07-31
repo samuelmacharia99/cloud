@@ -993,7 +993,7 @@ class ContainerApplicationRuntimeService
 
     public function nodeBootstrap(?string $packageJson = null): string
     {
-        $binFix = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} + 2>/dev/null';
+        $binFix = 'find node_modules/.bin node_modules/next/dist/bin -type f -exec chmod u+x {} + 2>/dev/null || true';
         $installForBuild = $this->npmInstallShellCommand();
         $buildCommand = $this->npmBuildShellCommand(null, false, $packageJson);
         $pruneCommand = $this->npmPruneShellCommand();
