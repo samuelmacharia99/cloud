@@ -66,7 +66,7 @@ class CustomerNextStepsService
                 'priority' => 70,
                 'title' => 'Domain expiring soon',
                 'body' => $domain->fqdn().' · '.optional($domain->expires_at)->diffForHumans(),
-                'url' => route('customer.domains.show', $domain),
+                'url' => route('customer.domains.index'),
                 'tone' => 'warning',
             ];
         }
