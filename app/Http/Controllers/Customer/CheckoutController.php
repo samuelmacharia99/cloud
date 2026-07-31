@@ -491,7 +491,7 @@ class CheckoutController extends Controller
                         }
 
                         // Create Service
-                        $service = Service::create([
+                        $serviceAttrs = [
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
@@ -505,7 +505,21 @@ class CheckoutController extends Controller
                             'provisioning_driver_key' => $provisioningDriver,
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
-                        ]);
+                        ];
+
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
+                            $usageAttrs = app(\App\Services\Billing\UsageBillingProfileService::class)
+                                ->newUsageServiceAttributes($product);
+                            $serviceAttrs = array_merge($serviceAttrs, $usageAttrs);
+                            if (! empty($item['primary_domain'])) {
+                                $serviceAttrs['service_meta'] = array_merge(
+                                    $serviceAttrs['service_meta'] ?? [],
+                                    ['primary_domain' => $item['primary_domain']]
+                                );
+                            }
+                        }
+
+                        $service = Service::create($serviceAttrs);
 
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(
@@ -683,6 +697,16 @@ class CheckoutController extends Controller
             return [
                 'unit_price' => $listing->priceForBillingCycle((string) ($item['billing_cycle'] ?? 'monthly')),
                 'setup_fee' => (float) ($listing->setup_fee ?? 0),
+            ];
+        }
+
+        if (! empty($item['usage_billing']) && $product->type === 'container_hosting') {
+            $attrs = app(\App\Services\Billing\UsageBillingProfileService::class)
+                ->newUsageServiceAttributes($product);
+
+            return [
+                'unit_price' => $attrs['custom_price'],
+                'setup_fee' => (float) ($product->setup_fee ?? 0),
             ];
         }
 
@@ -1291,7 +1315,7 @@ class CheckoutController extends Controller
                         }
 
                         // Create Service
-                        $service = Service::create([
+                        $serviceAttrs = [
                             'user_id' => $user->id,
                             'product_id' => $product->id,
                             'order_item_id' => $orderItem->id,
@@ -1305,7 +1329,21 @@ class CheckoutController extends Controller
                             'provisioning_driver_key' => $product->provisioning_driver_key,
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
-                        ]);
+                        ];
+
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
+                            $usageAttrs = app(\App\Services\Billing\UsageBillingProfileService::class)
+                                ->newUsageServiceAttributes($product);
+                            $serviceAttrs = array_merge($serviceAttrs, $usageAttrs);
+                            if (! empty($item['primary_domain'])) {
+                                $serviceAttrs['service_meta'] = array_merge(
+                                    $serviceAttrs['service_meta'] ?? [],
+                                    ['primary_domain' => $item['primary_domain']]
+                                );
+                            }
+                        }
+
+                        $service = Service::create($serviceAttrs);
 
                         if ($product->type === 'container_hosting' && $request) {
                             app(ContainerEmailBundleService::class)->attachToContainerService(

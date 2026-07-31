@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
+use App\Services\Billing\UsageBillingProfileService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\Customer\CustomerNextStepsService;
 use App\Services\ResellerCustomerCatalogService;
@@ -212,6 +213,37 @@ class ServiceBrowserController extends Controller
         }
 
         $currency = app(UserCurrencyService::class)->model($user);
+        $usageProfile = app(UsageBillingProfileService::class);
+        $useSimplifiedDeploy = $usageProfile->shouldUseUsageBillingForCustomer($user);
+
+        if ($useSimplifiedDeploy) {
+            $usageProduct = $usageProfile->resolveAppProductForTemplate($language);
+            if (! $usageProduct) {
+                session()->forget('selected_techstack');
+
+                return redirect()->route('customer.select-techstack')
+                    ->with('error', 'No application hosting product is available yet. Please contact support.');
+            }
+
+            $attrs = $usageProfile->newUsageServiceAttributes($usageProduct);
+            $included = $usageProfile->includedLimits();
+
+            return view('customer.confirm-techstack-usage', [
+                'language' => $language,
+                'database' => $database,
+                'routing' => $routing,
+                'product' => $usageProduct,
+                'floorPrice' => $attrs['custom_price'],
+                'included' => $included,
+                'autoEmail' => $usageProfile->autoIncludeEmail(),
+                'emailProduct' => $usageProfile->resolveEmailProduct(),
+                'hardCaps' => $usageProfile->hardCaps(),
+                'cartCount' => count(session('cart', [])),
+                'currency' => $currency,
+                'currencyCode' => $currency->code,
+                'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
+            ]);
+        }
 
         return view('customer.confirm-techstack', [
             'language' => $language,
@@ -224,6 +256,74 @@ class ServiceBrowserController extends Controller
             'currencyCode' => $currency->code,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
+    }
+
+    /**
+     * Simplified deploy: auto-select usage product, capture domain, add to cart, go to checkout.
+     */
+    public function continueUsageDeploy(Request $request)
+    {
+        $user = $request->user();
+        $usageProfile = app(UsageBillingProfileService::class);
+
+        if (! $usageProfile->shouldUseUsageBillingForCustomer($user)) {
+            return redirect()->route('customer.confirm-techstack');
+        }
+
+        $techstack = session('selected_techstack');
+        if (! is_array($techstack) || empty($techstack['language_id'])) {
+            return redirect()->route('customer.select-techstack')
+                ->with('error', 'Please select your tech stack first.');
+        }
+
+        $language = ContainerTemplate::find($techstack['language_id']);
+        if (! $language) {
+            session()->forget('selected_techstack');
+
+            return redirect()->route('customer.select-techstack')
+                ->with('error', 'Your tech stack selection expired. Please choose again.');
+        }
+
+        $product = $usageProfile->resolveAppProductForTemplate($language);
+        if (! $product) {
+            return back()->with('error', 'No application hosting product is available.');
+        }
+
+        $validated = $request->validate([
+            'primary_domain' => 'required|string|max:253',
+            'selected_version' => 'nullable|string|max:50',
+        ]);
+
+        try {
+            $fqdn = app(\App\Services\Provisioning\DirectAdminDomainValidator::class)
+                ->assertValid($validated['primary_domain']);
+        } catch (\Throwable $e) {
+            return back()->withInput()->withErrors(['primary_domain' => $e->getMessage()]);
+        }
+
+        $cart = session(CartController::CART_SESSION_KEY, []);
+        $key = uniqid('usage_', true);
+        $item = [
+            'type' => 'product',
+            'product_id' => $product->id,
+            'billing_cycle' => 'monthly',
+            'usage_billing' => true,
+            'primary_domain' => $fqdn,
+            'include_email' => $usageProfile->autoIncludeEmail(),
+            'added_at' => now()->toIso8601String(),
+        ];
+
+        if (! empty($validated['selected_version'])) {
+            $item['selected_version'] = $validated['selected_version'];
+        }
+
+        $item = app(SharedHostingCheckoutService::class)->applyAttachDomainToHostingItem($item);
+        $cart[$key] = $item;
+        session([CartController::CART_SESSION_KEY => $cart]);
+
+        // Pre-fill checkout domain field via session cart primary_domain.
+        return redirect()->route('customer.checkout.show')
+            ->with('success', 'Application hosting added. Confirm and pay your monthly starter amount.');
     }
 
     /**

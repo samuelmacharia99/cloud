@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\InvoiceStatus;
+use App\Enums\BillingMode;
 use App\Enums\ServiceStatus;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -29,7 +30,10 @@ class Service extends Model
         'live_status_detail',
         'live_status_mismatch',
         'billing_cycle',
+        'billing_mode',
         'custom_price',
+        'included_limits',
+        'usage_rates',
         'next_due_date',
         'commenced_at',
         'suspend_date',
@@ -42,12 +46,15 @@ class Service extends Model
 
     protected $casts = [
         'service_meta' => 'array',
+        'included_limits' => 'array',
+        'usage_rates' => 'array',
         'next_due_date' => 'datetime',
         'commenced_at' => 'datetime',
         'suspend_date' => 'datetime',
         'terminate_date' => 'datetime',
         'custom_price' => 'decimal:2',
         'status' => ServiceStatus::class,
+        'billing_mode' => BillingMode::class,
         'live_status_checked_at' => 'datetime',
         'live_status_detail' => 'array',
         'live_status_mismatch' => 'boolean',

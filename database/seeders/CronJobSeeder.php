@@ -130,6 +130,13 @@ class CronJobSeeder extends Seeder
                 'enabled' => true,
             ],
             [
+                'name' => 'Collect Mail Usage Snapshots',
+                'description' => 'Snapshots Mailcow mailbox/alias counts for usage billing and customer usage reports.',
+                'command' => 'cron:collect-mail-usage-snapshots',
+                'schedule' => '15 * * * *',
+                'enabled' => true,
+            ],
+            [
                 'name' => 'Run Container Cron Jobs',
                 'description' => 'Executes customer-defined scheduled commands inside running container services via docker exec.',
                 'command' => 'cron:run-container-jobs',

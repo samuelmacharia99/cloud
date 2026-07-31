@@ -2,12 +2,14 @@
 
 namespace App\Services\Checkout;
 
+use App\Enums\BillingMode;
 use App\Models\Invoice;
 use App\Models\InvoiceItem;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\Billing\UsageBillingProfileService;
 use App\Services\Provisioning\DirectAdminDomainValidator;
 use App\Services\Provisioning\MailcowProvisioningService;
 use Illuminate\Http\Request;
@@ -21,11 +23,12 @@ class ContainerEmailBundleService
     public function __construct(
         private DirectAdminDomainValidator $domainValidator,
         private MailcowProvisioningService $mailcow,
+        private UsageBillingProfileService $usageProfile,
     ) {}
 
     /**
      * @param  array<string, mixed>  $cart
-     * @return list<array{key: string, product: Product, email_product: Product}>
+     * @return list<array{key: string, product: Product, email_product: Product, usage_billing: bool, billing_cycle: string}>
      */
     public function bundledContainerItems(array $cart): array
     {
@@ -37,11 +40,19 @@ class ContainerEmailBundleService
             }
 
             $product = Product::query()->with('bundledEmailProduct')->find($item['product_id'] ?? null);
-            if (! $product || ! $product->hasEmailBundle()) {
+            if (! $product || $product->type !== 'container_hosting') {
                 continue;
             }
 
-            $emailProduct = $product->bundledEmailProduct;
+            $usageBilling = ! empty($item['usage_billing']);
+            $emailProduct = null;
+
+            if ($usageBilling && $this->usageProfile->autoIncludeEmail()) {
+                $emailProduct = $this->usageProfile->resolveEmailProduct();
+            } elseif ($product->hasEmailBundle()) {
+                $emailProduct = $product->bundledEmailProduct;
+            }
+
             if (! $emailProduct || $emailProduct->type !== 'email_hosting' || ! $emailProduct->is_active) {
                 continue;
             }
@@ -51,6 +62,7 @@ class ContainerEmailBundleService
                 'product' => $product,
                 'email_product' => $emailProduct,
                 'billing_cycle' => (string) ($item['billing_cycle'] ?? 'monthly'),
+                'usage_billing' => $usageBilling,
             ];
         }
 
@@ -72,8 +84,19 @@ class ContainerEmailBundleService
 
         foreach ($bundled as $entry) {
             $key = $entry['key'];
+            // Domain may already be on the cart item from simplified deploy.
+            $cartDomain = (string) (session('cart.'.$key.'.primary_domain') ?? '');
+            if ($cartDomain !== '' && ! $request->filled("bundle_primary_domain.{$key}")) {
+                $request->merge([
+                    "bundle_primary_domain" => array_merge(
+                        (array) $request->input('bundle_primary_domain', []),
+                        [$key => $cartDomain]
+                    ),
+                ]);
+            }
+
             $rules["bundle_primary_domain.{$key}"] = ['required', 'string', 'max:253'];
-            $messages["bundle_primary_domain.{$key}.required"] = 'Enter the domain for your application and bundled email.';
+            $messages["bundle_primary_domain.{$key}.required"] = 'Enter the domain for your application and email.';
         }
 
         $validated = $request->validate($rules, $messages);
@@ -94,13 +117,14 @@ class ContainerEmailBundleService
     public function primaryDomainForCartKey(Request $request, string $cartKey): string
     {
         $raw = (string) $request->input("bundle_primary_domain.{$cartKey}", '');
+        if ($raw === '') {
+            $raw = (string) (session("cart.{$cartKey}.primary_domain") ?? '');
+        }
 
         return $this->domainValidator->assertValid($raw);
     }
 
     /**
-     * Amount to add to checkout subtotal for bundled email lines included on the invoice.
-     *
      * @param  array<string, mixed>  $cart
      */
     public function estimateInvoiceAddonTotal(array $cart): float
@@ -110,6 +134,12 @@ class ContainerEmailBundleService
         foreach ($this->bundledContainerItems($cart) as $entry) {
             /** @var Product $containerProduct */
             $containerProduct = $entry['product'];
+
+            // Usage-mode email is included in the app floor — do not add a separate line at estimate.
+            if (! empty($entry['usage_billing'])) {
+                continue;
+            }
+
             if (! $containerProduct->bundle_email_include_in_invoice) {
                 continue;
             }
@@ -122,8 +152,6 @@ class ContainerEmailBundleService
     }
 
     /**
-     * Create the bundled email service (and optional invoice line) for a container service.
-     *
      * @param  array<string, mixed>  $containerCartItem
      */
     public function attachToContainerService(
@@ -138,35 +166,46 @@ class ContainerEmailBundleService
     ): ?Service {
         $containerProduct->loadMissing('bundledEmailProduct');
 
-        if (! $containerProduct->hasEmailBundle()) {
-            return null;
+        $usageBilling = ! empty($containerCartItem['usage_billing'])
+            || $this->usageProfile->serviceUsesUsageBilling($containerService);
+
+        $emailProduct = null;
+        if ($usageBilling && $this->usageProfile->autoIncludeEmail()) {
+            $emailProduct = $this->usageProfile->resolveEmailProduct();
+        } elseif ($containerProduct->hasEmailBundle()) {
+            $emailProduct = $containerProduct->bundledEmailProduct;
         }
 
-        $emailProduct = $containerProduct->bundledEmailProduct;
         if (! $emailProduct || $emailProduct->type !== 'email_hosting') {
             return null;
         }
 
         $fqdn = $this->primaryDomainForCartKey($request, $cartKey);
-        $billingCycle = $this->resolveBillingCycle($containerProduct, (string) ($containerCartItem['billing_cycle'] ?? 'monthly'));
-        $unitPrice = $this->priceForCycle($emailProduct, $billingCycle);
-        $delayMonths = max(0, (int) ($containerProduct->bundle_email_billing_delay_months ?? 0));
+        $billingCycle = $usageBilling
+            ? 'monthly'
+            : $this->resolveBillingCycle($containerProduct, (string) ($containerCartItem['billing_cycle'] ?? 'monthly'));
+
+        $included = $usageBilling
+            ? $this->usageProfile->includedLimits()
+            : $this->mailcow->limitsForProduct($emailProduct);
+
+        $unitPrice = $usageBilling ? 0.0 : $this->priceForCycle($emailProduct, $billingCycle);
+        $delayMonths = $usageBilling ? 0 : max(0, (int) ($containerProduct->bundle_email_billing_delay_months ?? 0));
         $cycleMonths = $this->billingCycleMonths($billingCycle);
-        $limits = $this->mailcow->limitsForProduct($emailProduct);
         $mailNode = $this->mailcow->resolveNode();
 
         $serviceMeta = [
             'mailcow_domain' => $fqdn,
             'domain' => $fqdn,
-            'email_domain_mode' => 'bundled_with_container',
-            'mailbox_limit' => $limits['mailboxes'],
-            'alias_limit' => $limits['aliases'],
-            'mailbox_quota_mb' => $limits['mailbox_quota_mb'],
-            'quota_mb' => $limits['quota_mb'],
-            'msgs_per_day' => $limits['msgs_per_day'],
+            'email_domain_mode' => $usageBilling ? 'bundled_with_usage_hosting' : 'bundled_with_container',
+            'mailbox_limit' => (int) ($included['mailboxes'] ?? 5),
+            'alias_limit' => (int) ($included['aliases'] ?? 10),
+            'mailbox_quota_mb' => (int) ($included['mailbox_quota_mb'] ?? 5120),
+            'quota_mb' => (int) ($included['quota_mb'] ?? 25600),
+            'msgs_per_day' => (int) ($included['msgs_per_day'] ?? 500),
             'bundled_from_service_id' => $containerService->id,
             'bundled_from_product_id' => $containerProduct->id,
-            'bundle_include_in_invoice' => (bool) $containerProduct->bundle_email_include_in_invoice,
+            'bundle_include_in_invoice' => $usageBilling ? false : (bool) $containerProduct->bundle_email_include_in_invoice,
         ];
 
         $emailService = Service::create([
@@ -178,7 +217,10 @@ class ContainerEmailBundleService
             'name' => $emailProduct->name.' ('.$fqdn.')',
             'status' => 'pending',
             'billing_cycle' => $billingCycle,
+            'billing_mode' => $usageBilling ? BillingMode::Usage : BillingMode::Package,
             'custom_price' => $unitPrice,
+            'included_limits' => $usageBilling ? $this->usageProfile->includedLimits() : null,
+            'usage_rates' => $usageBilling ? $this->usageProfile->usageRates() : null,
             'next_due_date' => now()->addMonths($delayMonths + $cycleMonths),
             'provisioning_driver_key' => $emailProduct->provisioning_driver_key ?: 'mailcow',
             'node_id' => $mailNode?->id,
@@ -190,7 +232,7 @@ class ContainerEmailBundleService
         $meta['bundled_email_service_id'] = $emailService->id;
         $containerService->update(['service_meta' => $meta]);
 
-        if ($containerProduct->bundle_email_include_in_invoice) {
+        if (! $usageBilling && $containerProduct->bundle_email_include_in_invoice) {
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
                 'service_id' => $emailService->id,
