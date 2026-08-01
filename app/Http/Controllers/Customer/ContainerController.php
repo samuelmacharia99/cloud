@@ -796,8 +796,21 @@ class ContainerController extends Controller
         $query = trim($validated['query']);
         $format = $validated['format'] ?? 'text';
 
+        // MySQL-style helpers → Postgres equivalents (table browser / console shortcuts).
+        if (($databaseContext['type'] ?? null) === 'postgresql') {
+            if (preg_match('/^SHOW\s+TABLES\b/i', $query)) {
+                $query = "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename";
+            } elseif (preg_match('/^DESCRIBE\s+([a-zA-Z0-9_]+)\s*$/i', $query, $m)
+                || preg_match('/^DESC\s+([a-zA-Z0-9_]+)\s*$/i', $query, $m)) {
+                $table = $m[1];
+                $query = "SELECT column_name, data_type, is_nullable, column_default "
+                    ."FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{$table}' "
+                    .'ORDER BY ordinal_position';
+            }
+        }
+
         // Tight security: read-only statements only.
-        if (! preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN)\b/i', $query)) {
+        if (! preg_match('/^(SELECT|SHOW|DESCRIBE|EXPLAIN|DESC)\b/i', $query)) {
             return response()->json(['error' => 'Only read-only queries are allowed (SELECT, SHOW, DESCRIBE, EXPLAIN)'], 422);
         }
         if (preg_match('/\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE|GRANT|REVOKE)\b/i', $query)) {

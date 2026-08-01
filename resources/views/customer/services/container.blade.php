@@ -578,7 +578,7 @@
                                     <pre id="db-import-output" class="mt-3 hidden bg-slate-900 text-slate-200 p-3 rounded-lg overflow-auto max-h-48 text-xs"></pre>
                                 </div>
 
-                                <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40" x-data="dbTableBrowser()">
+                                <div class="p-4 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/40" x-data="dbTableBrowser(@js($databaseContext['type'] ?? 'mysql'))">
                                     <div class="flex items-center justify-between gap-3 mb-3">
                                         <div>
                                             <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Table browser</h3>
@@ -1061,8 +1061,9 @@ async function loadDatabaseHistory() {
     }
 }
 
-function dbTableBrowser() {
+function dbTableBrowser(dbType) {
     return {
+        dbType: (dbType || 'mysql').toLowerCase(),
         tables: [],
         selected: null,
         preview: '',
@@ -1070,6 +1071,40 @@ function dbTableBrowser() {
         error: '',
         init() {
             this.loadTables();
+        },
+        isPostgres() {
+            return this.dbType === 'postgresql' || this.dbType === 'postgres';
+        },
+        listTablesSql() {
+            if (this.isPostgres()) {
+                return "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename";
+            }
+
+            return 'SHOW TABLES';
+        },
+        previewSql(table) {
+            if (this.isPostgres()) {
+                return `SELECT * FROM "${table}" LIMIT 25`;
+            }
+
+            return `SELECT * FROM \`${table}\` LIMIT 25`;
+        },
+        parseTableNames(output) {
+            const lines = String(output || '')
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+
+            return lines.filter((line) => {
+                if (/^Tables_in_/i.test(line)) return false;
+                if (/^tablename$/i.test(line)) return false;
+                if (/^table_name$/i.test(line)) return false;
+                if (/^-{3,}$/.test(line)) return false;
+                if (/^\(\d+\s+rows?\)$/i.test(line)) return false;
+                if (line.toLowerCase() === 'null') return false;
+
+                return true;
+            }).map((line) => line.split(/\s+/)[0]).filter(Boolean);
         },
         async runQuery(sql) {
             const response = await fetch('{{ route("customer.services.container.database.query", $service) }}', {
@@ -1092,19 +1127,8 @@ function dbTableBrowser() {
             this.loading = true;
             this.error = '';
             try {
-                const output = await this.runQuery('SHOW TABLES');
-                this.tables = String(output)
-                    .split('\n')
-                    .map((line) => line.trim())
-                    .filter((line) => line && !/^Tables_in_/i.test(line) && line.toLowerCase() !== 'null');
-                if (!this.tables.length && output) {
-                    // Fallback: tab/space separated first column from mysql CLI style
-                    this.tables = String(output)
-                        .split(/\r?\n/)
-                        .slice(1)
-                        .map((l) => l.trim().split(/\s+/)[0])
-                        .filter(Boolean);
-                }
+                const output = await this.runQuery(this.listTablesSql());
+                this.tables = this.parseTableNames(output);
             } catch (e) {
                 this.error = e.message || 'Failed to list tables';
                 this.tables = [];
@@ -1121,7 +1145,7 @@ function dbTableBrowser() {
                     this.preview = 'Invalid table name';
                     return;
                 }
-                this.preview = await this.runQuery(`SELECT * FROM \`${safe}\` LIMIT 25`);
+                this.preview = await this.runQuery(this.previewSql(safe));
             } catch (e) {
                 this.preview = e.message || 'Preview failed';
             }
