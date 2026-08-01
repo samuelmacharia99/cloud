@@ -8,7 +8,7 @@
     <div class="flex items-center justify-between">
         <div>
             <h1 class="text-3xl font-bold text-slate-900 dark:text-white">Deploy Your Application</h1>
-            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose a stack and plan. All new deployments use <strong>application hosting</strong>.</p>
+            <p class="text-slate-600 dark:text-slate-400 mt-1">Choose a stack, then a database. You’ll pick your domain at checkout.</p>
         </div>
         <a href="{{ route('customer.cart.index') }}" class="relative">
             <svg class="w-6 h-6 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -175,7 +175,7 @@
                                 type="submit"
                                 class="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition"
                             >
-                                Continue to Packages
+                                Continue to checkout
                             </button>
                         </form>
                         <button

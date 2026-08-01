@@ -1,6 +1,8 @@
 # Usage billing (application hosting)
 
-Platform customers deploy without picking RAM/CPU packages. Flow: tech stack → database → primary domain → checkout.
+**Platform (admin) customers only** — users with no `reseller_id`. Reseller storefront customers keep fixed package catalogs and never enter this flow.
+
+Platform customers deploy without picking RAM/CPU packages. Flow: tech stack → database → checkout (register / transfer / own domain).
 
 ## Commercial model
 

@@ -201,7 +201,11 @@ class CheckoutController extends Controller
 
         $hostingCheckout = app(SharedHostingCheckoutService::class);
         $emailCheckout = app(EmailHostingCheckoutService::class);
-        $bundledContainerItems = $bundleCheckout->bundledContainerItems($cart);
+        $usageAppItems = $bundleCheckout->usageAppCartItems($cart);
+        $legacyBundledContainerItems = array_values(array_filter(
+            $bundleCheckout->bundledContainerItems($cart),
+            fn ($entry) => empty($entry['usage_billing'])
+        ));
         $linkedHostingDomains = [];
         foreach ($sharedHostingItems as $item) {
             if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
@@ -216,6 +220,13 @@ class CheckoutController extends Controller
             }
         }
 
+        $linkedAppDomains = [];
+        foreach ($usageAppItems as $item) {
+            if ($details = $hostingCheckout->linkedDomainDetails($cart, $item['key'])) {
+                $linkedAppDomains[$item['key']] = $details;
+            }
+        }
+
         $customerDomains = Domain::query()
             ->where('user_id', $user->id)
             ->orderBy('name')
@@ -225,10 +236,12 @@ class CheckoutController extends Controller
             'cartItems' => $cartItems,
             'sharedHostingItems' => $sharedHostingItems,
             'emailHostingItems' => $emailHostingItems,
-            'bundledContainerItems' => $bundledContainerItems,
+            'usageAppItems' => $usageAppItems,
+            'legacyBundledContainerItems' => $legacyBundledContainerItems,
             'customerDomains' => $customerDomains,
             'linkedHostingDomains' => $linkedHostingDomains,
             'linkedEmailDomains' => $linkedEmailDomains,
+            'linkedAppDomains' => $linkedAppDomains,
             'domainExtensions' => $domainExtensions,
             'defaultNameservers' => $defaultNameservers,
             'subtotal' => $taxBreakdown['subtotal'],
@@ -342,6 +355,7 @@ class CheckoutController extends Controller
 
                 $domainAddonTotal = $hostingCheckout->estimateDomainAddonTotal($request, $cart)
                     + $emailCheckout->estimateDomainAddonTotal($request, $cart)
+                    + app(ContainerEmailBundleService::class)->estimateDomainAddonTotal($request, $cart)
                     + app(ContainerEmailBundleService::class)->estimateInvoiceAddonTotal($cart);
 
                 $subtotal += $domainAddonTotal;
@@ -506,6 +520,21 @@ class CheckoutController extends Controller
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
                         ];
+
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing']) && $request) {
+                            $appDomainContext = app(ContainerEmailBundleService::class)->buildAppDomainContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $invoice,
+                                $order,
+                                $cart,
+                                $domainsCreatedByCartKey,
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $appDomainContext['service_meta']);
+                            $serviceAttrs['service_meta'] = $serviceMeta;
+                            $item['primary_domain'] = $appDomainContext['fqdn'];
+                        }
 
                         if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
                             $usageAttrs = app(\App\Services\Billing\UsageBillingProfileService::class)
@@ -683,8 +712,21 @@ class CheckoutController extends Controller
             return redirect()
                 ->route('customer.payment.select-method', $invoice)
                 ->with('success', 'Order placed successfully! Choose a payment method to activate your services.');
-        } catch (\Exception $e) {
-            \Log::error("Checkout failed: {$e->getMessage()}");
+        } catch (\Throwable $e) {
+            if ($e instanceof \Illuminate\Validation\ValidationException) {
+                return back()->withErrors($e->errors())->withInput();
+            }
+
+            // ValidationException messages sometimes surface via previous when wrapped.
+            $previous = $e->getPrevious();
+            if ($previous instanceof \Illuminate\Validation\ValidationException) {
+                return back()->withErrors($previous->errors())->withInput();
+            }
+
+            \Log::error('Checkout failed: '.$e->getMessage(), [
+                'exception' => $e::class,
+                'previous' => $previous ? $previous::class : null,
+            ]);
 
             return back()->with('error', 'Checkout failed: '.$e->getMessage());
         }
@@ -1081,6 +1123,8 @@ class CheckoutController extends Controller
 
             // Now process the order using the authenticated user
             return $this->processCheckout($user, $cart, $request);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             \Log::error("Public checkout failed: {$e->getMessage()}");
 
@@ -1181,6 +1225,7 @@ class CheckoutController extends Controller
                 $domainAddonTotal = $request
                     ? ($hostingCheckout->estimateDomainAddonTotal($request, $cart)
                         + $emailCheckout->estimateDomainAddonTotal($request, $cart)
+                        + app(ContainerEmailBundleService::class)->estimateDomainAddonTotal($request, $cart)
                         + app(ContainerEmailBundleService::class)->estimateInvoiceAddonTotal($cart))
                     : 0.0;
 
@@ -1338,6 +1383,21 @@ class CheckoutController extends Controller
                             'node_id' => $nodeId,
                             'service_meta' => $serviceMeta,
                         ];
+
+                        if ($product->type === 'container_hosting' && ! empty($item['usage_billing']) && $request) {
+                            $appDomainContext = app(ContainerEmailBundleService::class)->buildAppDomainContext(
+                                $request,
+                                $item['key'],
+                                $user,
+                                $invoice,
+                                $order,
+                                $cart,
+                                $domainsCreatedByCartKey,
+                            );
+                            $serviceMeta = array_merge($serviceMeta, $appDomainContext['service_meta']);
+                            $serviceAttrs['service_meta'] = $serviceMeta;
+                            $item['primary_domain'] = $appDomainContext['fqdn'];
+                        }
 
                         if ($product->type === 'container_hosting' && ! empty($item['usage_billing'])) {
                             $usageAttrs = app(\App\Services\Billing\UsageBillingProfileService::class)
@@ -1515,6 +1575,8 @@ class CheckoutController extends Controller
             return redirect()
                 ->route('customer.payment.select-method', $invoice)
                 ->with('success', 'Account created and order placed! Choose a payment method to activate your services.');
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
             \Log::error("Checkout processing failed: {$e->getMessage()}");
 

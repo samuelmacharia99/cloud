@@ -24,6 +24,22 @@ class UsageDeployGuardService
     }
 
     /**
+     * Account-level limits before a domain is chosen (cart / after DB select).
+     *
+     * @throws ValidationException
+     */
+    public function assertCanStartDeploy(User $user): void
+    {
+        if (! $this->profile->shouldUseUsageBillingForCustomer($user)) {
+            return;
+        }
+
+        $this->assertWithinConcurrentLimit($user);
+        $this->assertWithinDeployRateLimit($user);
+        $this->assertNotInAccountCoolDown($user);
+    }
+
+    /**
      * @throws ValidationException
      */
     public function assertCanDeploy(User $user, string $fqdn): void
@@ -33,10 +49,8 @@ class UsageDeployGuardService
         }
 
         $fqdn = $this->normalizeFqdn($fqdn);
+        $this->assertCanStartDeploy($user);
         $this->assertDomainAvailable($user, $fqdn);
-        $this->assertWithinConcurrentLimit($user);
-        $this->assertWithinDeployRateLimit($user);
-        $this->assertNotInAccountCoolDown($user);
     }
 
     /**

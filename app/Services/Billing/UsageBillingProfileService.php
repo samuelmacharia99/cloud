@@ -19,13 +19,16 @@ class UsageBillingProfileService
         return (bool) config('usage_billing.enabled', true);
     }
 
+    /**
+     * Platform (admin) customers only — not reseller storefront customers.
+     * Reseller customers keep fixed package catalogs.
+     */
     public function shouldUseUsageBillingForCustomer(?User $user): bool
     {
         if (! $this->isEnabled() || ! $user) {
             return false;
         }
 
-        // Platform customers only — reseller catalogs stay fixed packages.
         return ! app(ResellerCustomerCatalogService::class)->isResellerCustomer($user);
     }
 
