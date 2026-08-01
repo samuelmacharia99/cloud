@@ -89,6 +89,65 @@ class TechStackRoutingServiceTest extends TestCase
         $this->assertSame('container', $databases->first()->hosting_type);
     }
 
+    public function test_laravel_offers_all_container_database_types(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $language = $this->createLanguage('laravel');
+        foreach (['mysql', 'mariadb', 'postgresql', 'mongodb', 'redis'] as $type) {
+            DatabaseTemplate::create([
+                'name' => strtoupper($type),
+                'slug' => $type.'-laravel-test',
+                'description' => $type,
+                'type' => $type,
+                'docker_image' => $type.':latest',
+                'default_port' => 5432,
+                'required_ram_mb' => 256,
+                'hosting_type' => 'container',
+                'is_active' => true,
+                'order' => 1,
+            ]);
+        }
+
+        $databases = TechStackRoutingService::getAvailableDatabasesForLanguage($language);
+        $types = $databases->pluck('type')->sort()->values()->all();
+
+        $this->assertSame(['mariadb', 'mongodb', 'mysql', 'postgresql', 'redis'], $types);
+        $this->assertTrue(TechStackRoutingService::isValidCombination(
+            $language,
+            $databases->firstWhere('type', 'postgresql')
+        ));
+    }
+
+    public function test_wordpress_still_limited_to_mysql_family(): void
+    {
+        DatabaseTemplate::query()->delete();
+
+        $language = $this->createLanguage('wordpress');
+        DatabaseTemplate::create([
+            'name' => 'PostgreSQL',
+            'slug' => 'postgres-wp-test',
+            'description' => 'Postgres',
+            'type' => 'postgresql',
+            'docker_image' => 'postgres:16',
+            'default_port' => 5432,
+            'required_ram_mb' => 256,
+            'hosting_type' => 'container',
+            'is_active' => true,
+            'order' => 1,
+        ]);
+        $this->createDatabase('container');
+
+        $databases = TechStackRoutingService::getAvailableDatabasesForLanguage($language);
+
+        $this->assertCount(1, $databases);
+        $this->assertSame('mysql', $databases->first()->type);
+        $this->assertFalse(TechStackRoutingService::isValidCombination(
+            $language,
+            DatabaseTemplate::where('slug', 'postgres-wp-test')->first()
+        ));
+    }
+
     public function test_directadmin_databases_are_invalid_for_php_stacks(): void
     {
         $language = $this->createLanguage('php');

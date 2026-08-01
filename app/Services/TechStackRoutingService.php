@@ -75,14 +75,19 @@ class TechStackRoutingService
             return $language->slug === 'static-site';
         }
 
-        if (in_array(strtolower($language->slug), ['php', 'wordpress', 'laravel'])) {
-            return in_array($database->type, ['mysql', 'mariadb'])
+        // WordPress (and plain PHP) stay on MySQL/MariaDB.
+        if (in_array(strtolower($language->slug), ['php', 'wordpress'], true)) {
+            return in_array($database->type, ['mysql', 'mariadb'], true)
                 && $database->hosting_type === 'container';
         }
 
-        if ($language->hosting_type === 'container' || $language->hosting_type === 'directadmin') {
-            // Legacy templates may still be tagged directadmin; platform sales use container DBs.
-            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql'])
+        // Laravel and other application stacks can use any container database.
+        if (
+            self::isLaravel($language)
+            || $language->hosting_type === 'container'
+            || $language->hosting_type === 'directadmin'
+        ) {
+            return in_array($database->type, ['postgresql', 'mongodb', 'redis', 'mysql', 'mariadb'], true)
                 && $database->hosting_type === 'container';
         }
 
@@ -96,8 +101,8 @@ class TechStackRoutingService
         ContainerTemplate $language,
         ?string $deploymentPlatform = null
     ): Collection {
-        // PHP / WordPress / Laravel → container MySQL / MariaDB only
-        if (in_array(strtolower($language->slug), ['php', 'laravel', 'wordpress'])) {
+        // WordPress / plain PHP → container MySQL / MariaDB only
+        if (in_array(strtolower($language->slug), ['php', 'wordpress'], true)) {
             return DatabaseTemplate::active()
                 ->whereIn('type', ['mysql', 'mariadb'])
                 ->where('hosting_type', 'container')
@@ -109,7 +114,7 @@ class TechStackRoutingService
             return collect();
         }
 
-        // All other stacks → container databases
+        // Laravel and all other stacks → every container database
         return DatabaseTemplate::active()
             ->forHostingType('container')
             ->get();
@@ -125,14 +130,22 @@ class TechStackRoutingService
         }
 
         // MySQL and MariaDB support PHP, WordPress, and Laravel
-        if (in_array($database->type, ['mysql', 'mariadb'])) {
+        if (in_array($database->type, ['mysql', 'mariadb'], true)) {
             return ContainerTemplate::whereIn('slug', ['php', 'wordpress', 'laravel'])
                 ->active()
                 ->get();
         }
 
-        return ContainerTemplate::where('hosting_type', 'container')
+        // Other DBs: Laravel plus non-PHP application stacks
+        return ContainerTemplate::query()
             ->active()
+            ->where(function ($q) {
+                $q->where('slug', 'laravel')
+                    ->orWhere(function ($inner) {
+                        $inner->where('hosting_type', 'container')
+                            ->whereNotIn('slug', ['php', 'wordpress', 'static-site']);
+                    });
+            })
             ->get();
     }
 
