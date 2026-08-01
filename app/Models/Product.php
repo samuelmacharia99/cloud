@@ -121,47 +121,12 @@ class Product extends Model
         return $this->deletionBlockers() === [];
     }
 
-    public function isSystemProtected(): bool
-    {
-        return $this->slug === ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG;
-    }
-
-    /**
-     * True when live services (or historical invoice/order lines) must be moved
-     * to another product before this one can be removed.
-     */
-    public function requiresReplacementBeforeDelete(): bool
-    {
-        if ($this->isSystemProtected()) {
-            return false;
-        }
-
-        return $this->services()->exists()
-            || $this->invoiceItems()->exists()
-            || $this->orderItems()->exists();
-    }
-
-    /**
-     * Compatible products that can receive services when this product is deleted.
-     *
-     * @return \Illuminate\Database\Eloquent\Collection<int, self>
-     */
-    public function replacementCandidates()
-    {
-        return static::query()
-            ->where('id', '!=', $this->id)
-            ->where('type', $this->type)
-            ->orderByDesc('is_active')
-            ->orderBy('name')
-            ->get(['id', 'name', 'type', 'is_active', 'monthly_price']);
-    }
-
     /**
      * @return list<string> Human-readable reasons deletion is blocked.
      */
     public function deletionBlockers(): array
     {
-        if ($this->isSystemProtected()) {
+        if ($this->slug === ResellerProvisionProductResolver::SHELL_PRODUCT_SLUG) {
             return ['This is a system product used for reseller DirectAdmin provisioning and cannot be deleted. Deactivate it instead if needed.'];
         }
 
@@ -169,7 +134,7 @@ class Product extends Model
 
         $servicesCount = $this->services()->count();
         if ($servicesCount > 0) {
-            $blockers[] = "It is linked to {$servicesCount} service(s). Choose a replacement package to move them before deleting.";
+            $blockers[] = "It is linked to {$servicesCount} service(s).";
         }
 
         $invoiceItemsCount = $this->invoiceItems()->count();
@@ -193,46 +158,8 @@ class Product extends Model
             return '';
         }
 
-        if ($this->isSystemProtected()) {
-            return 'This product cannot be deleted. '.implode(' ', $blockers);
-        }
-
-        if ($this->requiresReplacementBeforeDelete()) {
-            return 'This product has linked records. '.implode(' ', $blockers);
-        }
-
         return 'This product cannot be deleted. '.implode(' ', $blockers)
             .' Deactivate the product instead to hide it from new orders.';
-    }
-
-    /**
-     * Move dependents to another product of the same type, then delete this product.
-     */
-    public function reassignDependentsAndDelete(self $replacement): void
-    {
-        if ($this->isSystemProtected()) {
-            throw new \InvalidArgumentException('System products cannot be deleted.');
-        }
-
-        if ($replacement->id === $this->id) {
-            throw new \InvalidArgumentException('Choose a different product as the replacement.');
-        }
-
-        if ($replacement->type !== $this->type) {
-            throw new \InvalidArgumentException('Replacement product must be the same type ('.$this->type.').');
-        }
-
-        \Illuminate\Support\Facades\DB::transaction(function () use ($replacement) {
-            $this->services()->update(['product_id' => $replacement->id]);
-            $this->invoiceItems()->update(['product_id' => $replacement->id]);
-            $this->orderItems()->update(['product_id' => $replacement->id]);
-
-            static::query()
-                ->where('bundled_email_product_id', $this->id)
-                ->update(['bundled_email_product_id' => $replacement->type === 'email_hosting' ? $replacement->id : null]);
-
-            $this->delete();
-        });
     }
 
     public function containerTemplate()

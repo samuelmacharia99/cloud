@@ -96,7 +96,7 @@ class PlatformApplicationHostingOnlyTest extends TestCase
             ->assertSessionHas('error');
     }
 
-    public function test_techstack_confirm_queues_application_checkout_not_shared(): void
+    public function test_techstack_confirm_shows_only_application_packages(): void
     {
         [$language, $containerDb, $appProduct] = $this->seedLaravelStack();
         $customer = User::factory()->customer()->create(['reseller_id' => null]);
@@ -107,19 +107,13 @@ class PlatformApplicationHostingOnlyTest extends TestCase
                 'database_id' => $containerDb->id,
                 'deployment_platform' => 'container',
             ])
-            ->assertRedirect(route('customer.checkout.show'));
-
-        $cart = session('cart', []);
-        $this->assertNotEmpty($cart);
-        $item = reset($cart);
-        $this->assertSame($appProduct->id, $item['product_id']);
-        $this->assertTrue($item['usage_billing'] ?? false);
+            ->assertRedirect(route('customer.confirm-techstack'));
 
         $this->actingAs($customer)
-            ->get(route('customer.checkout.show'))
+            ->get(route('customer.confirm-techstack'))
             ->assertOk()
-            ->assertSee('Application domain', false)
-            ->assertDontSee('Shared Plan', false);
+            ->assertSee($appProduct->name)
+            ->assertDontSee('Shared Plan');
     }
 
     public function test_language_databases_api_excludes_directadmin(): void

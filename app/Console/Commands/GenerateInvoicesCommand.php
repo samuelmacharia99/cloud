@@ -71,7 +71,7 @@ class GenerateInvoicesCommand extends BaseCronCommand
                         'amount' => $price,
                     ]);
 
-                    if (app(ContainerOverageBillingService::class)->shouldBillOverage($service)) {
+                    if ($service->product->overage_enabled && $service->containerDeployment) {
                         app(ContainerOverageBillingService::class)->addOverageItemsToInvoice(
                             $invoice,
                             $service,

@@ -243,7 +243,6 @@
                         @include('customer.services.partials.staging')
 
                         @include('customer.services.partials.overview-quick-links')
-                        @include('customer.services.partials.usage-billing-report')
 
                         @if (!empty($isLaravelTemplate))
                             @include('customer.services.partials.laravel-setup')

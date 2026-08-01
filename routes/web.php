@@ -196,7 +196,6 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::post('admin/directadmin-accounts/link', [HostedDirectAdminAccountController::class, 'link'])->name('admin.directadmin-accounts.link');
         Route::post('admin/services/{service}/connect-billing', [HostedDirectAdminAccountController::class, 'connectBilling'])->name('admin.directadmin-accounts.connect-billing');
         Route::post('admin/products/{product}/duplicate', [ProductController::class, 'duplicate'])->name('admin.products.duplicate');
-        Route::get('admin/products/{product}/delete', [ProductController::class, 'deleteConfirm'])->name('admin.products.delete-confirm');
         Route::resource('admin/products', ProductController::class)->names('admin.products');
         Route::resource('admin/invoices', InvoiceController::class)->names('admin.invoices');
         Route::get('admin/invoices/{invoice}/download', [InvoiceController::class, 'download'])->name('admin.invoices.download');
@@ -645,7 +644,6 @@ Route::middleware(['auth', 'skip.verification.if.impersonating'])->group(functio
         Route::get('/select-techstack', [ServiceBrowserController::class, 'selectTechstack'])->name('customer.select-techstack');
         Route::get('/confirm-techstack', [ServiceBrowserController::class, 'showConfirmTechstack'])->name('customer.confirm-techstack');
         Route::post('/confirm-techstack', [ServiceBrowserController::class, 'confirmTechstack'])->name('customer.confirm-techstack.store');
-        Route::post('/confirm-techstack/continue', [ServiceBrowserController::class, 'continueUsageDeploy'])->name('customer.confirm-techstack.usage');
         Route::get('/api/languages/{language}/databases', [ServiceBrowserController::class, 'getAvailableDatabases'])->name('api.languages.databases');
         Route::get('/api/databases/{database}/languages', [ServiceBrowserController::class, 'getAvailableLanguages'])->name('api.databases.languages');
         Route::get('/api/products', [ServiceBrowserController::class, 'getAvailableProducts'])->name('api.products');

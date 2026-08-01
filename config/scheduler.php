@@ -45,7 +45,6 @@ return [
     */
     'skip_in_local' => [
         'cron:collect-container-metrics',
-        'cron:collect-mail-usage-snapshots',
         'cron:poll-node-health',
         'cron:check-node-health',
         'cron:auto-restart-containers',

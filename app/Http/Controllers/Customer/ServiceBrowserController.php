@@ -7,7 +7,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ContainerTemplate;
 use App\Models\DatabaseTemplate;
 use App\Models\Product;
-use App\Services\Billing\UsageBillingProfileService;
 use App\Services\Checkout\SharedHostingCheckoutService;
 use App\Services\Customer\CustomerNextStepsService;
 use App\Services\ResellerCustomerCatalogService;
@@ -161,17 +160,11 @@ class ServiceBrowserController extends Controller
 
         session(['selected_techstack' => $techstackData]);
 
-        $usageProfile = app(UsageBillingProfileService::class);
-        if ($usageProfile->shouldUseUsageBillingForCustomer($user)) {
-            return $this->queueUsageAppCheckout($request, $language);
-        }
-
         return redirect()->route('customer.confirm-techstack');
     }
 
     /**
      * Show confirmed techstack packages (GET — safe to refresh).
-     * Platform usage customers skip packages and go straight to checkout.
      */
     public function showConfirmTechstack(Request $request)
     {
@@ -218,11 +211,6 @@ class ServiceBrowserController extends Controller
                     : 'No application hosting plans are available for this tech stack.');
         }
 
-        $usageProfile = app(UsageBillingProfileService::class);
-        if ($usageProfile->shouldUseUsageBillingForCustomer($user)) {
-            return $this->queueUsageAppCheckout($request, $language);
-        }
-
         $currency = app(UserCurrencyService::class)->model($user);
 
         return view('customer.confirm-techstack', [
@@ -236,104 +224,6 @@ class ServiceBrowserController extends Controller
             'currencyCode' => $currency->code,
             'attachDomain' => app(SharedHostingCheckoutService::class)->attachDomainFromSession(),
         ]);
-    }
-
-    /**
-     * Legacy route: domain is chosen on checkout now.
-     */
-    public function continueUsageDeploy(Request $request)
-    {
-        $user = $request->user();
-        $usageProfile = app(UsageBillingProfileService::class);
-
-        if (! $usageProfile->shouldUseUsageBillingForCustomer($user)) {
-            return redirect()->route('customer.confirm-techstack');
-        }
-
-        $techstack = session('selected_techstack');
-        if (! is_array($techstack) || empty($techstack['language_id'])) {
-            return redirect()->route('customer.select-techstack')
-                ->with('error', 'Please select your tech stack first.');
-        }
-
-        $language = ContainerTemplate::find($techstack['language_id']);
-        if (! $language) {
-            session()->forget('selected_techstack');
-
-            return redirect()->route('customer.select-techstack')
-                ->with('error', 'Your tech stack selection expired. Please choose again.');
-        }
-
-        return $this->queueUsageAppCheckout($request, $language);
-    }
-
-    /**
-     * Auto-select usage product, add to cart (domain chosen at checkout), go to checkout.
-     */
-    private function queueUsageAppCheckout(Request $request, ContainerTemplate $language)
-    {
-        $user = $request->user();
-        $usageProfile = app(UsageBillingProfileService::class);
-
-        // Hard gate: never queue free/usage deploy for reseller customers.
-        if (! $usageProfile->shouldUseUsageBillingForCustomer($user)) {
-            return redirect()->route('customer.confirm-techstack');
-        }
-
-        $guard = app(\App\Services\Billing\UsageDeployGuardService::class);
-
-        $product = $usageProfile->resolveAppProductForTemplate($language);
-        if (! $product) {
-            session()->forget('selected_techstack');
-
-            return redirect()->route('customer.select-techstack')
-                ->with('error', 'No application hosting product is available yet. Please contact support.');
-        }
-
-        try {
-            $guard->assertCanStartDeploy($user);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return redirect()->route('customer.select-techstack')
-                ->withErrors($e->errors())
-                ->with('error', collect($e->errors())->flatten()->first());
-        }
-
-        $freeEligible = $guard->qualifiesForFreePeriod($user);
-        $cart = session(CartController::CART_SESSION_KEY, []);
-
-        // Avoid stacking duplicate usage lines for the same stack selection.
-        foreach ($cart as $existing) {
-            if (! empty($existing['usage_billing'])
-                && (int) ($existing['product_id'] ?? 0) === (int) $product->id) {
-                return redirect()->route('customer.checkout.show')
-                    ->with('success', 'Continue checkout — choose register, transfer, or use your own domain.');
-            }
-        }
-
-        $key = 'usage_'.bin2hex(random_bytes(8));
-        $item = [
-            'type' => 'product',
-            'product_id' => $product->id,
-            'billing_cycle' => 'monthly',
-            'usage_billing' => true,
-            'usage_free_period' => $freeEligible,
-            'include_email' => $usageProfile->autoIncludeEmail(),
-            'added_at' => now()->toIso8601String(),
-        ];
-
-        if ($request->filled('selected_version')) {
-            $item['selected_version'] = (string) $request->input('selected_version');
-        }
-
-        $item = app(SharedHostingCheckoutService::class)->applyAttachDomainToHostingItem($item);
-        $cart[$key] = $item;
-        session([CartController::CART_SESSION_KEY => $cart]);
-
-        $message = $freeEligible
-            ? 'Application hosting added — first '.$guard->freePeriodDays().' days free. Choose a domain at checkout (register, transfer, or use your own).'
-            : 'Application hosting added. Choose a domain at checkout to continue.';
-
-        return redirect()->route('customer.checkout.show')->with('success', $message);
     }
 
     /**

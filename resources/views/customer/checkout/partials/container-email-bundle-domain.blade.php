@@ -6,11 +6,7 @@
         </p>
         <div class="space-y-4">
             @foreach ($bundledContainerItems as $entry)
-                @php
-                    $key = $entry['key'];
-                    $cartItem = session('cart.'.$key, []);
-                    $defaultDomain = old('bundle_primary_domain.'.$key, $cartItem['primary_domain'] ?? '');
-                @endphp
+                @php $key = $entry['key']; @endphp
                 <div class="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
                     <p class="text-sm font-medium text-slate-900 dark:text-white mb-1">
                         {{ $entry['product']->name }}
@@ -21,7 +17,7 @@
                         type="text"
                         id="bundle_primary_domain_{{ $key }}"
                         name="bundle_primary_domain[{{ $key }}]"
-                        value="{{ $defaultDomain }}"
+                        value="{{ old('bundle_primary_domain.'.$key) }}"
                         placeholder="example.com"
                         required
                         class="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 rounded-lg text-slate-900 dark:text-white @error('bundle_primary_domain.'.$key) border-red-500 @enderror"

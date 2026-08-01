@@ -185,7 +185,6 @@ class ResellerCustomerCatalogService
             'customer.select-techstack',
             'customer.confirm-techstack',
             'customer.confirm-techstack.store',
-            'customer.confirm-techstack.usage',
             'api.products',
         ], true);
     }

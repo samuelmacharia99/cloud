@@ -101,16 +101,6 @@ class ContainerController extends Controller
             $service->product->containerTemplate,
             $deployment
         );
-        $usageProfile = app(\App\Services\Billing\UsageBillingProfileService::class);
-        if ($usageProfile->serviceUsesUsageBilling($service)) {
-            $included = $usageProfile->effectiveContainerIncluded($service);
-            $containerLimits = [
-                'cpu' => $included['cpu'],
-                'memory_mb' => (int) $included['memory_mb'],
-                'disk_gb' => $included['disk_gb'],
-            ];
-        }
-        $usageReport = app(\App\Services\Billing\UsagePeriodReportService::class)->report($service);
         $dbImportMaxMb = (int) config('security.container_db_import.max_size_mb', 50);
 
         $latestBackup = null;
@@ -157,7 +147,6 @@ class ContainerController extends Controller
             'supportsGitRepository',
             'gitRepository',
             'containerLimits',
-            'usageReport',
             'dbImportMaxMb',
             'latestBackup',
             'domainCount',
@@ -1765,15 +1754,6 @@ class ContainerController extends Controller
             }
 
             $hostname = strtolower($request->domain);
-
-            try {
-                app(\App\Services\Billing\UsageDeployGuardService::class)
-                    ->assertDomainAvailableForBind(auth()->user(), $hostname, $service);
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                return $this->domainsTabRedirect($service)
-                    ->withErrors($e->errors())
-                    ->withInput();
-            }
             $nodeIp = $deployment->node->ip_address;
             $nginxService = new NginxProxyService;
 

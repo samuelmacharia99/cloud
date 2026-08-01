@@ -444,16 +444,6 @@ class CartController extends Controller
             return app(ServerProductConfigService::class)->priceForCartItem($product, $item, $listing);
         }
 
-        if (! empty($item['usage_billing']) && $product->type === 'container_hosting') {
-            $price = app(\App\Services\Billing\UsageBillingProfileService::class)
-                ->checkoutHostingPrice(auth()->user(), $product);
-
-            return [
-                'unit_price' => $price,
-                'setup_fee' => 0,
-            ];
-        }
-
         return [
             'unit_price' => $this->getProductPrice($product, $item['billing_cycle']),
             'setup_fee' => (float) ($listing?->setup_fee ?? $product->setup_fee ?? 0),

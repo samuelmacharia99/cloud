@@ -86,24 +86,8 @@
                     </div>
                 @endif
 
-                @if (!empty($usageAppItems))
-                    <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-                        <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Application domain</h2>
-                        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                            Register a new domain, transfer one to us, or use a domain you already own. Hosting may be free for your first period — you only pay for domain fees when applicable.
-                        </p>
-                        @include('customer.checkout.partials.usage-app-domain', [
-                            'usageAppItems' => $usageAppItems,
-                            'linkedAppDomains' => $linkedAppDomains ?? [],
-                            'customerDomains' => $customerDomains ?? collect(),
-                            'domainExtensions' => $domainExtensions,
-                            'defaultNameservers' => $defaultNameservers,
-                        ])
-                    </div>
-                @endif
-
                 @include('customer.checkout.partials.container-email-bundle-domain', [
-                    'bundledContainerItems' => $legacyBundledContainerItems ?? [],
+                    'bundledContainerItems' => $bundledContainerItems ?? [],
                 ])
 
                 @if (!empty($sharedHostingItems))
