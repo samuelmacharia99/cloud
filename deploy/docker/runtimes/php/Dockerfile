@@ -25,6 +25,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
         libxml2-dev \
         libicu-dev \
         libgmp-dev \
+        libpq-dev \
     && docker-php-ext-configure intl \
     && docker-php-ext-install -j"$(nproc)" \
         bcmath \
@@ -34,6 +35,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
         opcache \
         pcntl \
         pdo_mysql \
+        pdo_pgsql \
         xml \
         zip \
     && git config --system --add safe.directory '*' \

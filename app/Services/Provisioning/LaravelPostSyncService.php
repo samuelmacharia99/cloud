@@ -136,6 +136,11 @@ class LaravelPostSyncService
         $containerPath = ContainerDeploymentService::CONTAINER_BASE_PATH.'/'.$deployment->container_name;
         $envValues = is_array($deployment->env_values) ? $deployment->env_values : [];
 
+        if ($databaseTemplate->type === 'postgresql') {
+            // Runtime images historically shipped only pdo_mysql; install pdo_pgsql before the wait.
+            $this->initialization->ensurePostgresqlPdoDriver($ssh, $deployment);
+        }
+
         $this->deploymentService->waitForDatabaseSidecar($ssh, $containerPath, $databaseTemplate, $envValues);
         $this->deploymentService->waitForApplicationDatabaseAccess(
             $ssh,

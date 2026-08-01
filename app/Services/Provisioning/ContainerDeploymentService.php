@@ -1302,6 +1302,7 @@ class ContainerDeploymentService
         $delaySeconds = 5;
         $maxAttempts = max(1, (int) ceil($timeoutSeconds / $delaySeconds));
         $containerArg = escapeshellarg($containerName);
+        $lastError = null;
 
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             try {
@@ -1309,12 +1310,22 @@ class ContainerDeploymentService
                     return;
                 }
             } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
                 \Log::debug('Application database access check failed', [
                     'attempt' => $attempt + 1,
                     'max_attempts' => $maxAttempts,
                     'container_name' => $containerName,
-                    'error' => $e->getMessage(),
+                    'error' => $lastError,
                 ]);
+
+                if ($this->isMissingDatabaseDriverError($lastError)) {
+                    throw new \RuntimeException(
+                        'Application could not connect to the database: '.$lastError
+                        .' Install the PDO driver for this database (pdo_pgsql for PostgreSQL) and retry.',
+                        0,
+                        $e
+                    );
+                }
             }
 
             if ($attempt < $maxAttempts - 1) {
@@ -1322,7 +1333,21 @@ class ContainerDeploymentService
             }
         }
 
-        throw new \RuntimeException('Application could not connect to the database within '.$timeoutSeconds.' seconds.');
+        $suffix = $lastError ? ' Last error: '.$lastError : '';
+
+        throw new \RuntimeException(
+            'Application could not connect to the database within '.$timeoutSeconds.' seconds.'.$suffix
+        );
+    }
+
+    private function isMissingDatabaseDriverError(string $message): bool
+    {
+        $normalized = strtolower($message);
+
+        return str_contains($normalized, 'could not find driver')
+            || str_contains($normalized, 'missing_pdo_pgsql')
+            || str_contains($normalized, 'pdo pgsql driver missing')
+            || str_contains($normalized, 'pdo_pgsql');
     }
 
     private function tearDownStack(SSHService $ssh, string $containerPath, bool $removeVolumes): void
@@ -1444,17 +1469,21 @@ class ContainerDeploymentService
         $database = (string) ($envVars['DB_DATABASE'] ?? $envVars['POSTGRES_DB'] ?? 'appdb');
         $username = (string) ($envVars['DB_USERNAME'] ?? $envVars['POSTGRES_USER'] ?? 'appuser');
         $password = (string) ($envVars['DB_PASSWORD'] ?? $envVars['POSTGRES_PASSWORD'] ?? '');
+        $port = (string) ($envVars['DB_PORT'] ?? '5432');
 
-        $script = 'try { '
+        $script = 'if (!in_array("pgsql", PDO::getAvailableDrivers(), true)) {'
+            .' fwrite(STDERR, "missing_pdo_pgsql"); exit(2);'
+            .'}'
+            .'try { '
             .'$pdo = new PDO('
-            .'"pgsql:host=db;port=5432;dbname='.addslashes($database).'", '
+            .'"pgsql:host=db;port='.addslashes($port).';dbname='.addslashes($database).'", '
             .'"'.addslashes($username).'", '
             .'"'.addslashes($password).'", '
             .'[PDO::ATTR_TIMEOUT => 5]'
             .'); '
             .'$pdo->query("SELECT 1"); '
             .'exit(0); '
-            .'} catch (Throwable $e) { exit(1); }';
+            .'} catch (Throwable $e) { fwrite(STDERR, $e->getMessage()); exit(1); }';
 
         $ssh->exec(
             'docker exec -u www-data '.$containerArg.' php -r '.escapeshellarg($script),

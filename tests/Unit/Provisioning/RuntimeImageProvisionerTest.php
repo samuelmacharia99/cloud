@@ -27,7 +27,7 @@ class RuntimeImageProvisionerTest extends TestCase
     {
         config([
             'containers.runtime_registry' => 'talksasa',
-            'containers.runtime_build_revision' => 2,
+            'containers.runtime_build_revision' => 3,
         ]);
 
         $provisioner = new RuntimeImageProvisioner;
@@ -35,8 +35,8 @@ class RuntimeImageProvisionerTest extends TestCase
 
         $reference = $provisioner->resolveImageReference($template, '8.3');
 
-        $this->assertSame('talksasa/laravel-runtime:8.3-r2', $reference['image']);
-        $this->assertSame('8.3-r2', $reference['tag']);
+        $this->assertSame('talksasa/laravel-runtime:8.3-r3', $reference['image']);
+        $this->assertSame('8.3-r3', $reference['tag']);
         $this->assertSame('8.3', $reference['php_version']);
     }
 }

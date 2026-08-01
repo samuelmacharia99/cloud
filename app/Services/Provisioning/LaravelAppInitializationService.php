@@ -551,6 +551,37 @@ class LaravelAppInitializationService
         }
 
         $this->ensurePhpExtension($ssh, $deployment, 'gmp', 'libgmp-dev');
+
+        if ($this->deploymentNeedsPostgresqlDriver($service, $deployment)) {
+            $this->ensurePostgresqlPdoDriver($ssh, $deployment);
+        }
+    }
+
+    public function ensurePostgresqlPdoDriver(SSHService $ssh, ContainerDeployment $deployment): void
+    {
+        $this->ensurePhpExtension($ssh, $deployment, 'pdo_pgsql', 'libpq-dev');
+    }
+
+    private function deploymentNeedsPostgresqlDriver(?Service $service, ContainerDeployment $deployment): bool
+    {
+        $env = is_array($deployment->env_values) ? $deployment->env_values : [];
+        $connection = strtolower((string) ($env['DB_CONNECTION'] ?? ''));
+
+        if (in_array($connection, ['pgsql', 'postgresql'], true)) {
+            return true;
+        }
+
+        if (! empty($env['POSTGRES_DB']) || ! empty($env['POSTGRES_USER'])) {
+            return true;
+        }
+
+        if ($service) {
+            $databaseTemplate = app(ContainerDeploymentService::class)->resolveDatabaseTemplateForService($service);
+
+            return $databaseTemplate?->type === 'postgresql';
+        }
+
+        return false;
     }
 
     public function dockerExecPublic(
@@ -853,6 +884,9 @@ class LaravelAppInitializationService
         string $projectRoot,
         bool $preserveUserSettings = false,
     ): array {
+        $dbConnection = strtolower((string) ($envValues['DB_CONNECTION'] ?? 'mysql'));
+        $defaultDbPort = in_array($dbConnection, ['pgsql', 'postgresql'], true) ? '5432' : '3306';
+
         $replacements = [
             'APP_NAME' => 'Talksasa App',
             'APP_ENV' => $envValues['APP_ENV'] ?? 'production',
@@ -860,10 +894,13 @@ class LaravelAppInitializationService
             'APP_URL' => $deployment->getAccessUrl() ?? 'http://localhost',
             'DB_CONNECTION' => $envValues['DB_CONNECTION'] ?? 'mysql',
             'DB_HOST' => $envValues['DB_HOST'] ?? 'db',
-            'DB_PORT' => $envValues['DB_PORT'] ?? '3306',
-            'DB_DATABASE' => $envValues['DB_DATABASE'] ?? ($envValues['MYSQL_DATABASE'] ?? 'appdb'),
-            'DB_USERNAME' => $envValues['DB_USERNAME'] ?? ($envValues['MYSQL_USER'] ?? 'appuser'),
-            'DB_PASSWORD' => $envValues['DB_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? ''),
+            'DB_PORT' => $envValues['DB_PORT'] ?? $defaultDbPort,
+            'DB_DATABASE' => $envValues['DB_DATABASE']
+                ?? ($envValues['POSTGRES_DB'] ?? ($envValues['MYSQL_DATABASE'] ?? 'appdb')),
+            'DB_USERNAME' => $envValues['DB_USERNAME']
+                ?? ($envValues['POSTGRES_USER'] ?? ($envValues['MYSQL_USER'] ?? 'appuser')),
+            'DB_PASSWORD' => $envValues['DB_PASSWORD']
+                ?? ($envValues['POSTGRES_PASSWORD'] ?? ($envValues['MYSQL_PASSWORD'] ?? '')),
             'TALKSASA_CLOUD_URL' => rtrim((string) config('app.url', ''), '/'),
         ];
 
